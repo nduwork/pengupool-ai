@@ -10,7 +10,7 @@ making the decisions the person would not. What is said in one session is lost i
 
 ## The product, in one loop
 
-1. **Say it once.** You speak ("I prefer small commits", "never touch the migrations folder").
+1. **Say it once.** You speak to the Muse app (or the terminal) ("I prefer small commits", "never touch the migrations folder").
    Muse Voice Transcribe turns it into text. A decision model judges the words; the host generalizes
    them into one line that is not too specific, merges duplicates, and proposes it. You confirm; it
    becomes a **Compass** line.
@@ -23,8 +23,10 @@ making the decisions the person would not. What is said in one session is lost i
 
 ## Rules the design keeps
 
-- **Only you write the Compass.** A line is saved only after your confirmation at a terminal; an
-  agent's words never become a line.
+- **Only you write the Compass.** Owner paths are the terminal, voice or the Muse app (confirmed), and
+  the owner API. Input relayed by an agent, voice, or the Muse app is a proposal: a line is saved only
+  after your confirmation (a second tap, or the terminal). An agent's words never become a line or an
+  instruction on their own.
 - **Nothing is forced.** A line is a preference or restriction the agent reads; it overrides no
   approval and answers no question for you.
 - **Keep it simple.** The Compass is one JSON-lines file: the index and the content. A line carries its
@@ -66,6 +68,27 @@ Inside the server:
   or retirement, old evidence counts for less. Confidence tracks the owner's current preference.
 - **Injection** (code over the judge's typed answers; no extra model call per turn). Choose which lines
   to return, and how many, from relevance and confidence, for the `instructions` and `compass_context`.
+
+## Owner API
+
+A small management API (stdlib `http.server`) on the owner's machine, reachable only over the tailnet.
+Its client is the Muse agent (Muse app, in Meta's VM): the VM accepts no inbound connections and reaches
+the tailnet only outbound through Muse's Tailscale proxy (TCP), as device `muse`. The agent long-polls for
+the questions other agents have asked the owner, shows each in the Muse app, and posts the owner's tap
+back. It replaces a phone app of our own. The API adds no checks of its own: it only carries questions an
+agent already asks.
+
+- `GET /questions?wait=N` (long-poll) → pending items
+  `{id, session, asked_at, question, options[2–3], payload_hash, expires_at}`.
+- `POST /questions/{id}/answer` `{option, payload_hash, idempotency_key}`. Only one of the offered options
+  for that pending id, with a matching hash, is accepted. Changed or expired → `409`, no effect. The same
+  `idempotency_key` returns the first result. After a timeout, check state; never re-approve.
+- No answer leaves the session waiting: never a yes or a no.
+- `POST /proposals` `{words}` for free text and new rules. They become proposals only; the owner confirms
+  with a second tap or in the terminal.
+- Question text is written by another agent: show it as untrusted data.
+- Auth: a bearer token read from the macOS keychain (never in argv, files or logs), plus a Tailscale ACL
+  limiting the API port to device `muse`. Both are set up by the owner (README, owner actions).
 
 ## Experience
 
@@ -112,6 +135,9 @@ than Claude Code and Muse Code, image models in the product (the logo is made wi
 You say a preference aloud → it becomes a generalized Compass line, you confirm → a new session in that
 repo starts with the line already loaded → the agent makes the choice you would → the experiment's chart: the
 agent matches your decisions more often, and you are interrupted less.
+
+Another scene: Claude asks a question → it pops up in the Muse app on the phone → the owner taps → the
+session continues.
 
 ## Open questions (resolve Oct 27)
 
