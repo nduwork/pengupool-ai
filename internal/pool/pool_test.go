@@ -261,9 +261,6 @@ func TestTeamGroupMovesWorktreeHelpers(t *testing.T) {
 		s.Sessions[0].TeamID, s.Sessions[1].TeamID = "t1", "t1"
 		return nil
 	})
-	if _, err := p.teamGroup(nil, groupIn{SessionID: "w"}); err == nil {
-		t.Fatal("a worktree helper left for the canvas alone")
-	}
 	if _, err := p.teamGroup(nil, groupIn{SessionID: "m1", ParentID: "m2"}); err != nil {
 		t.Fatal(err)
 	}
@@ -302,9 +299,6 @@ func TestTeamGroupEdges(t *testing.T) {
 		}
 		return nil
 	})
-	if _, err := p.teamGroup(nil, groupIn{SessionID: "w"}); err == nil {
-		t.Fatal("a worktree helper with a child rooted a new team")
-	}
 	if _, err := p.teamGroup(nil, groupIn{SessionID: "m", ParentID: "x"}); err != nil {
 		t.Fatal(err)
 	}
@@ -1908,5 +1902,108 @@ func TestAddMessageKeepsQueued(t *testing.T) {
 	ms := st.Domain.Messages
 	if len(ms) != keepMessages || ms[0].ID != "q" || ms[len(ms)-1].ID != fmt.Sprint(keepMessages+4) {
 		t.Fatalf("%d kept, first %s, last %s", len(ms), ms[0].ID, ms[len(ms)-1].ID)
+	}
+}
+
+// The owner's rule for team assembly: no limit, and only the rules that keep the roster whole. A
+// session joins under the anchor (the group frame's drop), a subtree splits off as a team of its own
+// with its worktree, a worktree session leaves for ungrouped, and a refused move says why in the log.
+func TestTeamAssemblyIsFlexible(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logged []string
+	p := New(Options{Store: st, Exe: "pengupool", Logf: func(f string, a ...any) { logged = append(logged, fmt.Sprintf(f, a...)) }})
+	_ = st.Update(func(s *store.State) error {
+		for _, id := range []string{"m", "w", "c", "x", "y"} {
+			s.Sessions = append(s.Sessions, store.Session{ID: id, Name: id, Harness: "claude", State: "running"})
+		}
+		s.Sessions = append(s.Sessions, store.Session{ID: "sh", Name: "sh", State: "running"})
+		for i := 0; i < 12; i++ { // a team of 14: no cap
+			id := fmt.Sprintf("h%d", i)
+			s.Sessions = append(s.Sessions, store.Session{ID: id, Name: id, Harness: "claude", State: "running", TeamID: "t1", Role: "helper"})
+		}
+		ms := []protocol.Member{
+			{SessionID: "m", Name: "m", Role: "main", State: "active"},
+			{SessionID: "w", Name: "w", Role: "helper", State: "active", Worktree: "/wt/w", Branch: "b", RepoID: "r1"},
+			{SessionID: "c", Name: "c", Role: "helper", State: "active", Parent: "w"}}
+		for i := 0; i < 12; i++ {
+			ms = append(ms, protocol.Member{SessionID: fmt.Sprintf("h%d", i), Name: fmt.Sprintf("h%d", i), Role: "helper", State: "active"})
+		}
+		s.Domain.Teams = append(s.Domain.Teams, protocol.Team{ID: "t1", Name: "one", RepoID: "r1", State: "active", Members: ms})
+		for i := range s.Sessions {
+			if s.Sessions[i].ID == "m" || s.Sessions[i].ID == "w" || s.Sessions[i].ID == "c" {
+				s.Sessions[i].TeamID = "t1"
+			}
+		}
+		return nil
+	})
+	// No cap, and the group frame's drop: x joins under the anchor.
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "x", ParentID: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	d := st.State().Domain
+	if tm := teamOf(&d, "x"); tm == nil || tm.ID != "t1" || activeMembers(tm) != 16 || parentOf(tm, "x") != "m" {
+		t.Fatalf("x did not join under the anchor of a 15-member team: %+v", tm)
+	}
+	// Split a worktree session with its subtree into a team of its own: it keeps its worktree.
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w"}); err != nil {
+		t.Fatalf("a worktree session could not split off: %v", err)
+	}
+	d = st.State().Domain
+	nt := teamOf(&d, "w")
+	if nt == nil || nt.ID == "t1" || activeMembers(nt) != 2 || anchorOf(&d, nt) != "w" || parentOf(nt, "c") != "w" {
+		t.Fatalf("the subtree did not become a team: %+v", nt)
+	}
+	if r := nt.Members[0]; r.SessionID != "w" || r.Role != "main" || r.Worktree != "/wt/w" || r.Branch != "b" || r.RepoID != "r1" {
+		t.Fatalf("the new team's root lost its worktree: %+v", r)
+	}
+	// A worktree session moves between teams, and back to ungrouped; the worktree stays on the record.
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w", ParentID: "y"}); err != nil {
+		t.Fatal(err)
+	}
+	d = st.State().Domain
+	if tm := teamOf(&d, "w"); tm == nil || tm.ID == "t1" || teamOf(&d, "c") == nil || teamOf(&d, "c").ID != tm.ID {
+		t.Fatalf("w and c did not move onto y: %+v", d.Teams)
+	}
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w", Ungroup: true}); err != nil {
+		t.Fatal(err)
+	}
+	d = st.State().Domain
+	if teamOf(&d, "w") != nil || teamOf(&d, "c") == nil {
+		t.Fatalf("w left, c stays: %+v", d.Teams)
+	}
+	kept := false
+	for _, tm := range d.Teams {
+		for _, m := range tm.Members {
+			kept = kept || m.SessionID == "w" && m.Worktree == "/wt/w" && m.State == "closed"
+		}
+	}
+	if !kept {
+		t.Fatal("the worktree session's worktree is no longer on any roster")
+	}
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "h1", ParentID: "h0"}); err != nil {
+		t.Fatal(err)
+	}
+	// What still refuses, with its reason in the error and in the log.
+	for name, c := range map[string]struct {
+		in   groupIn
+		want string
+	}{
+		"shell":     {groupIn{SessionID: "sh", ParentID: "m"}, "only agent sessions"},
+		"itself":    {groupIn{SessionID: "m", ParentID: "m"}, "under itself"},
+		"main":      {groupIn{SessionID: "m", Ungroup: true}, "main worker"},
+		"loop":      {groupIn{SessionID: "h0", ParentID: "h1"}, "its own descendant"},
+		"nosession": {groupIn{SessionID: "nope", ParentID: "m"}, "no session"},
+	} {
+		logged = nil
+		_, err := p.teamGroup(nil, c.in)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Fatalf("%s: err = %v, want it to say %q", name, err, c.want)
+		}
+		if len(logged) != 1 || !strings.Contains(logged[0], c.want) {
+			t.Fatalf("%s: log = %v", name, logged)
+		}
 	}
 }

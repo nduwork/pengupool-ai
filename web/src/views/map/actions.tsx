@@ -117,7 +117,12 @@ export function SessionMenu({ s, folded, canFold, onFold }: { s: SessionView; fo
       ) : null}
       {team !== undefined && !main ? (
         <Item icon={<ArrowUpToLine />} onSelect={() => void app.call("team.group", { session_id: s.id })}>
-          Move to top level, with its helpers (leave {team.name})
+          Split off as its own group, with its helpers (leave {team.name})
+        </Item>
+      ) : null}
+      {team !== undefined && !main ? (
+        <Item icon={<ArrowUpToLine />} onSelect={() => void app.call("team.group", { session_id: s.id, ungroup: true })}>
+          Remove from {team.name} (keeps running, ungrouped)
         </Item>
       ) : null}
       {canFold ? (

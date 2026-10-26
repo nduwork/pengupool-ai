@@ -251,6 +251,9 @@ type groupIn struct {
 	// alone takes only this session off its team (a close): its children move up to its parent, and
 	// a main worker's team ends.
 	alone bool
+	// Ungroup takes the session off its team, which goes on without it: the session stays running,
+	// ungrouped, and its children move up to its parent.
+	Ungroup bool `json:"ungroup,omitempty"`
 }
 
 // teamGroup is the map's drag: put a session under another, or on the empty canvas. The session
@@ -259,10 +262,19 @@ type groupIn struct {
 // subtree becomes a team of its own, rooted at the moved session. One harness per team is not
 // required; no loops. The owner's drag is the approval of the formation change; it is recorded, and
 // the roster updated, like any other.
+//
+// The rules left are the ones that keep the roster whole: a session cannot join itself or its own
+// descendant (no cycles), only agent sessions group (a plain terminal cannot receive team messages),
+// and the main worker is the team's one root (move its team onto another session instead). A refused
+// move says why, to the owner and in the daemon's log.
 func (p *Pool) teamGroup(ctx context.Context, in groupIn) (any, error) {
 	moved, from, to, err := p.regroup(ctx, in)
-	if err != nil || from == to {
+	if err != nil {
+		p.logf("pool: move %s refused: %v", in.SessionID, err)
 		return nil, err
+	}
+	if from == to {
+		return nil, nil
 	}
 	for _, id := range moved {
 		s, _ := p.session(id)
@@ -295,6 +307,19 @@ func (p *Pool) regroup(_ context.Context, in groupIn) (moved []string, from, to 
 		if in.alone {
 			if cur != nil {
 				leaveAlone(st, cur, in.SessionID)
+			}
+			return nil
+		}
+		if in.Ungroup {
+			switch {
+			case cur == nil:
+				to = from
+			case teamRole(cur, in.SessionID) == "main":
+				return invalid("%s is the main worker of %s, the team's root: move the team onto another session, or close it", src.Name, cur.Name)
+			default:
+				to = ""
+				leaveKeeping(st, cur, in.SessionID)
+				moved = []string{in.SessionID}
 			}
 			return nil
 		}
@@ -343,9 +368,6 @@ func (p *Pool) regroup(_ context.Context, in groupIn) (moved []string, from, to 
 			case cur == nil, sub[0].Role == "main":
 				to = from
 				return nil // already a root
-			case sub[0].Worktree != "":
-				// A new team's root is its main worker, which has no worktree of the team's to review.
-				return conflict("%s works in its own worktree on this team; move it under another session, or close it", sub[0].Name)
 			}
 		}
 		// Take the subtree off its team; what is left ends when it is one member or none.
@@ -371,6 +393,12 @@ func (p *Pool) regroup(_ context.Context, in groupIn) (moved []string, from, to 
 		// A new team only now: appending to the teams may move them, and cur with them.
 		if in.ParentID == "" {
 			target = newTeam(st, &st.Sessions[si], lan)
+			// The new team's root keeps its worktree, branch and repository: it stays a worktree session.
+			r := &target.Members[0]
+			r.SkillID, r.RepoID, r.Worktree, r.Branch, r.BaseCommit = sub[0].SkillID, sub[0].RepoID, sub[0].Worktree, sub[0].Branch, sub[0].BaseCommit
+			if r.Worktree != "" && r.RepoID == "" && cur != nil {
+				r.RepoID = cur.RepoID
+			}
 			sub = sub[1:]
 		} else {
 			if target = teamOf(&st.Domain, in.ParentID); target == nil {
@@ -491,6 +519,32 @@ func leaveAlone(st *store.State, t *protocol.Team, id string) {
 	}
 	if activeMembers(t) <= 1 {
 		dissolve(st, t)
+	}
+}
+
+// teamRole is a member's role on the team, "" when it is not an active member.
+func teamRole(t *protocol.Team, id string) string {
+	for _, m := range t.Members {
+		if m.SessionID == id && m.State == "active" {
+			return m.Role
+		}
+	}
+	return ""
+}
+
+// leaveKeeping takes a non-main member off its team like leaveAlone, but a worktree session stays
+// on the roster as closed, so the worktree and branch it was working in are still on the record.
+func leaveKeeping(st *store.State, t *protocol.Team, id string) {
+	var keep protocol.Member
+	for _, m := range t.Members {
+		if m.SessionID == id && m.State == "active" && m.Worktree != "" {
+			keep = m
+		}
+	}
+	leaveAlone(st, t, id)
+	if keep.SessionID != "" {
+		keep.State, keep.Parent = "closed", ""
+		t.Members = append(t.Members, keep)
 	}
 }
 
