@@ -211,7 +211,7 @@ func TestContextSendsOnlyChangedSections(t *testing.T) {
 	}
 	// A member joining reaches them as their Team members section, and only there.
 	_ = st.Update(func(s *store.State) error {
-		s.Sessions = append(s.Sessions, store.Session{ID: "newaaaaaaaaa", Name: "newcomer", State: "running"})
+		s.Sessions = append(s.Sessions, store.Session{ID: "newaaaaaaaaa", Name: "newcomer", Harness: "claude", State: "running"})
 		return nil
 	})
 	if _, err := p.teamAddSession(ctx, addSessionIn{TeamID: "team1", SessionID: "newaaaaaaaaa"}); err != nil {

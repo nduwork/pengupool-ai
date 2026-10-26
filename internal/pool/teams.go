@@ -823,13 +823,18 @@ func (p *Pool) member(teamID, sessionID string) (protocol.Team, protocol.Member,
 	if r := findRepo(&d, t.RepoID); r != nil {
 		repo = *r
 	}
-	for _, m := range t.Members {
-		if m.SessionID == sessionID {
-			if r := findRepo(&d, m.RepoID); r != nil { // an SME works in its own repository
-				repo = *r
-			}
-			return *t, m, repo, nil
+	found := -1
+	for i, m := range t.Members {
+		if m.SessionID == sessionID && (found < 0 || m.State == "active" && t.Members[found].State != "active") {
+			found = i // a session may also have a closed record here: the active one wins
 		}
+	}
+	if found >= 0 {
+		m := t.Members[found]
+		if r := findRepo(&d, m.RepoID); r != nil { // an SME works in its own repository
+			repo = *r
+		}
+		return *t, m, repo, nil
 	}
 	return *t, protocol.Member{}, repo, notFound("not a member of %s", t.Name)
 }
@@ -1080,6 +1085,9 @@ func (p *Pool) teamAddSession(_ context.Context, in addSessionIn) (any, error) {
 			return notFound("no session")
 		}
 		s := &st.Sessions[i]
+		if !harness.IsAgent(s.Harness) {
+			return invalid("only agent sessions join a team (%s)", firstNonEmpty(s.Harness, "shell"))
+		}
 		if teamOf(&st.Domain, s.ID) != nil {
 			return conflict("already in a team")
 		}

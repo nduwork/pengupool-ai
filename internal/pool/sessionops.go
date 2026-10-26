@@ -229,7 +229,7 @@ func (p *Pool) sessionClose(ctx context.Context, in sessionIn) (any, error) {
 	d := p.st.State().Domain
 	if t := teamOf(&d, in.SessionID); t != nil {
 		for _, m := range t.Members {
-			if m.SessionID == in.SessionID && (m.Worktree != "" || m.SkillID != "") && m.Role != "main" {
+			if m.SessionID == in.SessionID && m.State == "active" && (m.Worktree != "" || m.SkillID != "") && m.Role != "main" {
 				return p.closeHelperRPC(ctx, closeIn{TeamID: t.ID, SessionID: m.SessionID, KeepWorktree: true, Reason: "closed on the map"})
 			}
 		}
@@ -357,6 +357,12 @@ func (p *Pool) regroup(_ context.Context, in groupIn) (moved []string, from, to 
 		}
 		// The subtree that moves, parents first; a session on no team moves alone.
 		sub := []protocol.Member{{SessionID: src.ID, Name: src.Name, State: "active", Assignment: src.Summary}}
+		// A session that left a team (or whose team ended) still works in its worktree: it brings the
+		// worktree back from the closed record that kept it.
+		old, hadWorktree := closedWorktree(st, src.ID)
+		if cur == nil && hadWorktree {
+			sub[0].SkillID, sub[0].RepoID, sub[0].Worktree, sub[0].Branch, sub[0].BaseCommit = old.SkillID, old.RepoID, old.Worktree, old.Branch, old.BaseCommit
+		}
 		if cur != nil {
 			sub = subtree(cur, in.SessionID)
 			if len(sub) == 0 {
@@ -399,6 +405,11 @@ func (p *Pool) regroup(_ context.Context, in groupIn) (moved []string, from, to 
 			if r.Worktree != "" && r.RepoID == "" && cur != nil {
 				r.RepoID = cur.RepoID
 			}
+			// The team works in the repository its root's worktree is in (placeHelper and the one-team-
+			// per-repository check read the team's).
+			if target.RepoID == "" {
+				target.RepoID = r.RepoID
+			}
 			sub = sub[1:]
 		} else {
 			if target = teamOf(&st.Domain, in.ParentID); target == nil {
@@ -407,6 +418,9 @@ func (p *Pool) regroup(_ context.Context, in groupIn) (moved []string, from, to 
 			sub[0].Parent = in.ParentID
 		}
 		to = target.ID
+		if cur == nil && hadWorktree {
+			dropClosed(st, src.ID) // the live record carries the worktree now
+		}
 		for _, m := range sub {
 			if m.Worktree != "" && m.RepoID == "" && cur != nil {
 				m.RepoID = cur.RepoID // the worktree stays in the repository it was made in
@@ -522,6 +536,34 @@ func leaveAlone(st *store.State, t *protocol.Team, id string) {
 	}
 }
 
+// closedWorktree is the worktree record kept for a session that is on no team: its latest closed
+// member record that has one (left through leaveKeeping, or closed when its team ended).
+func closedWorktree(st *store.State, id string) (protocol.Member, bool) {
+	for i := len(st.Domain.Teams) - 1; i >= 0; i-- {
+		ms := st.Domain.Teams[i].Members
+		for j := len(ms) - 1; j >= 0; j-- {
+			if ms[j].SessionID == id && ms[j].State != "active" && ms[j].Worktree != "" {
+				return ms[j], true
+			}
+		}
+	}
+	return protocol.Member{}, false
+}
+
+// dropClosed removes the closed worktree records of a session that has joined a team again, so a
+// team never holds two records of one session.
+func dropClosed(st *store.State, id string) {
+	for i := range st.Domain.Teams {
+		out := st.Domain.Teams[i].Members[:0]
+		for _, m := range st.Domain.Teams[i].Members {
+			if !(m.SessionID == id && m.State != "active" && m.Worktree != "") {
+				out = append(out, m)
+			}
+		}
+		st.Domain.Teams[i].Members = out
+	}
+}
+
 // teamRole is a member's role on the team, "" when it is not an active member.
 func teamRole(t *protocol.Team, id string) string {
 	for _, m := range t.Members {
@@ -567,8 +609,8 @@ func parentOf(t *protocol.Team, id string) string {
 	return ""
 }
 
-// dissolve ends a team whose members are all plain sessions; worktree helpers stay members until
-// they are closed through their review.
+// dissolve ends a team: every member is closed and off the team. A worktree member's closed record
+// keeps its worktree, branch and repository, so the session brings them along when it joins a team again.
 func dissolve(st *store.State, t *protocol.Team) {
 	t.State = "closed"
 	for i := range t.Members {

@@ -2007,3 +2007,93 @@ func TestTeamAssemblyIsFlexible(t *testing.T) {
 		}
 	}
 }
+
+// Review of #75: a worktree session that leaves a team, or whose split team ends, keeps its worktree
+// for the next team; the team it roots works in its repository; closing finds the live record.
+func TestWorktreeSessionKeepsItsWorktreeOffTeam(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(Options{Store: st, Exe: "pengupool"})
+	_ = st.Update(func(s *store.State) error {
+		for _, id := range []string{"m", "w", "c", "sh"} {
+			h := "claude"
+			if id == "sh" {
+				h = ""
+			}
+			s.Sessions = append(s.Sessions, store.Session{ID: id, Name: id, Harness: h, State: "running"})
+		}
+		s.Domain.Repos = append(s.Domain.Repos, protocol.Repo{ID: "r1", Path: "/repo"})
+		s.Domain.Teams = append(s.Domain.Teams, protocol.Team{ID: "t1", Name: "one", RepoID: "r1", State: "active", Members: []protocol.Member{
+			{SessionID: "m", Name: "m", Role: "main", State: "active"},
+			{SessionID: "w", Name: "w", Role: "helper", State: "active", Worktree: "/wt/w", Branch: "b", BaseCommit: "abc", RepoID: "r1"},
+			{SessionID: "c", Name: "c", Role: "helper", State: "active", Parent: "w"}}})
+		for i := range s.Sessions {
+			if s.Sessions[i].ID != "sh" {
+				s.Sessions[i].TeamID = "t1"
+			}
+		}
+		return nil
+	})
+	live := func(team, id string) protocol.Member {
+		_, m, _, err := p.member(team, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	// Ungroup, then regroup into the same team: one live record with the worktree, and it closes as a helper.
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w", Ungroup: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w", ParentID: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	if m := live("t1", "w"); m.State != "active" || m.Worktree != "/wt/w" || m.Branch != "b" || m.BaseCommit != "abc" || m.RepoID != "r1" {
+		t.Fatalf("w lost its worktree on regroup: %+v", m)
+	}
+	n := 0
+	for _, m := range st.State().Domain.Teams[0].Members {
+		if m.SessionID == "w" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("t1 holds %d records of w", n)
+	}
+	// A split worktree root whose last child leaves is teamless; it still brings the worktree back.
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "c", ParentID: "w"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w"}); err != nil {
+		t.Fatal(err)
+	}
+	d := st.State().Domain
+	nt := teamOf(&d, "w")
+	if nt == nil || nt.RepoID != "r1" {
+		t.Fatalf("the split team has no repository: %+v", nt)
+	}
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "c", Ungroup: true}); err != nil {
+		t.Fatal(err)
+	}
+	d = st.State().Domain
+	if teamOf(&d, "w") != nil {
+		t.Fatal("the one-member team did not end")
+	}
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w", ParentID: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	d = st.State().Domain
+	tm := teamOf(&d, "w")
+	if tm == nil || teamOf(&d, "m") == nil || teamOf(&d, "m").ID != tm.ID { // t1 ended with its last helper; m's team is new
+		t.Fatalf("w did not join m: %+v", tm)
+	}
+	if m := live(tm.ID, "w"); m.Worktree != "/wt/w" || m.State != "active" {
+		t.Fatalf("w lost its worktree after its team ended: %+v", m)
+	}
+	// A plain terminal does not join a team by any request.
+	if _, err := p.teamAddSession(nil, addSessionIn{TeamID: tm.ID, SessionID: "sh"}); err == nil || !strings.Contains(err.Error(), "only agent sessions") {
+		t.Fatalf("a shell joined through team.add_session: %v", err)
+	}
+}
