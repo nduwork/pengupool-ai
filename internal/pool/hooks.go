@@ -185,7 +185,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		t := turn{Prompt: str("prompt")}
 		if t.fromOwner() && !p.ownerSent(s.ID, t.Prompt) {
 			t.Unverified = true // looks like the owner's, but the owner sent nothing: not the owner's
-			p.logLine(s.ID, "prompt: a user turn the owner did not send; treated as a teammate's words")
+			p.logLine(s.ID, "prompt: a user turn the owner did not send; treated as a teammate's words ("+p.ownerInputSeen(s.ID)+")")
 		}
 		owner := t.fromOwner()
 		wait := p.promptArrived(s, owner)

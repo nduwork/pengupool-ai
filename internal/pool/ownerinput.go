@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"fmt"
 	"strings"
 	"time"
 	"unicode"
@@ -85,10 +86,17 @@ func (p *Pool) ownerSent(sessionID, prompt string) bool {
 	for len(q) > 0 && time.Since(q[0].at) > ownerEnterTTL {
 		q = q[1:]
 	}
-	for i, c := range q {
-		if c.text == want {
-			p.ownerEnter[sessionID] = append(q[:i:i], q[i+1:]...)
-			return true
+	// One submission, or several in a row: an agent busy with a turn takes what the owner types
+	// meanwhile as a single prompt, the lines joined. Only text the owner typed adds up to a match.
+	for i := range q {
+		for j, acc := i, ""; j < len(q); j++ {
+			if acc += q[j].text; acc == want {
+				p.ownerEnter[sessionID] = append(q[:i:i], q[j+1:]...)
+				return true
+			}
+			if len(acc) >= len(want) {
+				break
+			}
 		}
 	}
 	if len(q) == 0 {
@@ -97,6 +105,19 @@ func (p *Pool) ownerSent(sessionID, prompt string) bool {
 		p.ownerEnter[sessionID] = q
 	}
 	return false
+}
+
+// ownerInputSeen says what the gateway saw of the owner in a session when a prompt that looked like the
+// owner's matched nothing, for the run log: no submission at all (the prompt came by a path the
+// gateway does not see: another client, Claude's own remote control) or submissions of other text (the
+// owner recalled, completed or edited it).
+func (p *Pool) ownerInputSeen(sessionID string) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if n := len(p.ownerEnter[sessionID]); n > 0 {
+		return fmt.Sprintf("the owner submitted %d other text(s) here in the last half hour", n)
+	}
+	return "the owner submitted nothing here in the last half hour"
 }
 
 // InAgentSession: the process runs inside an agent session's process tree (the gateway refuses the owner's
