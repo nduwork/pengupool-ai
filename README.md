@@ -7,9 +7,7 @@ See [DESIGN.md](DESIGN.md). Each module lands as an `M<n>` step: self-check, a r
 Python 3.9+, standard library only.
 
 ```bash
-export MUSE_BASE_URL=...   # any OpenAI-compatible endpoint serving a Muse model
-export MUSE_API_KEY=...
-export MUSE_MODEL=...
+# Meta Model API by default (key in META_API, model muse-spark-1.3); MUSE_* override for Baseten/Modal/Ollama
 
 python3 -m muse rule "from now on, you can run the test suite without asking"   # asks you to confirm
 python3 -m muse list

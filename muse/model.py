@@ -10,14 +10,13 @@ class ModelError(Exception):
     pass
 
 
-def chat(messages, model=None, timeout=60):
-    base = os.environ.get("MUSE_BASE_URL", "").rstrip("/")
-    if not base:
-        raise ModelError("set MUSE_BASE_URL (and MUSE_API_KEY, MUSE_MODEL)")
-    body = {"model": model or os.environ.get("MUSE_MODEL", ""), "messages": messages, "temperature": 0}
+# Meta Model API by default; MUSE_* point the same client at Baseten, Modal or Ollama.
+def chat(messages, model=None, timeout=60, **extra):
+    base = os.environ.get("MUSE_BASE_URL", "https://api.meta.ai/v1").rstrip("/")
+    key = os.environ.get("MUSE_API_KEY") or os.environ.get("META_API", "")
+    body = {"model": model or os.environ.get("MUSE_MODEL", "muse-spark-1.3"), "messages": messages, **extra}
     req = urllib.request.Request(base + "/chat/completions", data=json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json",
-                                          "Authorization": "Bearer " + os.environ.get("MUSE_API_KEY", "")})
+                                 headers={"Content-Type": "application/json", "Authorization": "Bearer " + key})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.load(r)["choices"][0]["message"]["content"]
@@ -25,9 +24,11 @@ def chat(messages, model=None, timeout=60):
         raise ModelError(str(e)) from e
 
 
-def ask_json(system, user, model=None):
-    """Ask for a JSON object; tolerate prose or code fences around it."""
-    text = chat([{"role": "system", "content": system}, {"role": "user", "content": user}], model)
+def ask_json(system, user, model=None, schema=None):
+    """Ask for a JSON object, held to `schema` when given (the Meta Model API enforces it strictly);
+    tolerate prose or code fences around it for endpoints that don't."""
+    extra = {"response_format": {"type": "json_schema", "json_schema": {"name": "answer", "strict": True, "schema": schema}}} if schema else {}
+    text = chat([{"role": "system", "content": system}, {"role": "user", "content": user}], model, **extra)
     m = re.search(r"\{.*\}", text, re.S)
     if not m:
         raise ModelError("no JSON object in the answer: " + text[:200])
