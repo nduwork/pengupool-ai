@@ -29,6 +29,17 @@ same rules. Rules typed into one session are lost in the next.
   server, no database.
 - **A change is reviewed, then benchmarked, then you decide.** Passing tests is not a review.
 
+## The Compass host
+
+Ingestion and injection live in our `muse serve` client. It is the only client of the session, so
+input it sends is the owner's. Per owner turn, Muse Spark makes three voted decisions: **add** (a new
+rule?), **update** (refines or contradicts line X?) and **inject** (which lines matter now?). Add and
+update are proposals the owner confirms; inject prepends the lines to the turn as data, not commands.
+Approvals and check-ins are answered from the Compass only on a match; an unknown request kind is never
+auto-approved, and a protected write allows allow-once only. Claude Code gets the same logic through
+hooks (UserPromptSubmit context, PermissionRequest). Precision and recall of the three decisions are
+measured in the gate.
+
 ## Meta models
 
 | Job | Model |
