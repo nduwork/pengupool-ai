@@ -2089,6 +2089,9 @@ func TestWorktreeSessionKeepsItsWorktreeOffTeam(t *testing.T) {
 	if tm == nil || teamOf(&d, "m") == nil || teamOf(&d, "m").ID != tm.ID { // t1 ended with its last helper; m's team is new
 		t.Fatalf("w did not join m: %+v", tm)
 	}
+	if tm.RepoID != "r1" && !slices.Contains(tm.Repos, "r1") {
+		t.Fatalf("the team's context leaves out the repository w works in: repo %q repos %v", tm.RepoID, tm.Repos)
+	}
 	if m := live(tm.ID, "w"); m.Worktree != "/wt/w" || m.State != "active" {
 		t.Fatalf("w lost its worktree after its team ended: %+v", m)
 	}

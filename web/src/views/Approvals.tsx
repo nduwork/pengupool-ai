@@ -357,35 +357,33 @@ export function ProposalSheet({ taskId }: { taskId: string }): ReactElement {
               </div>
             </div>
           ))}
-          {members.length < 4 ? (
-            <Select
-              value=""
-              aria-label="Add helper"
-              onChange={(e) => {
-                const sk = app.domain.skills.find((s) => s.id === e.target.value);
-                if (sk !== undefined)
-                  setMembers([
-                    ...members,
-                    {
-                      skill_id: sk.id,
-                      name: sk.name,
-                      role: "helper",
-                      assignment: `Assist with ${task.title}`,
-                      harness: sk.harness === "" ? undefined : sk.harness,
-                    },
-                  ]);
-              }}
-            >
-              <option value="">Add a helper agent…</option>
-              {app.domain.skills
-                .filter((s) => !members.some((m) => m.skill_id === s.id))
-                .map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-            </Select>
-          ) : null}
+          <Select
+            value=""
+            aria-label="Add helper"
+            onChange={(e) => {
+              const sk = app.domain.skills.find((s) => s.id === e.target.value);
+              if (sk !== undefined)
+                setMembers([
+                  ...members,
+                  {
+                    skill_id: sk.id,
+                    name: sk.name,
+                    role: "helper",
+                    assignment: `Assist with ${task.title}`,
+                    harness: sk.harness === "" ? undefined : sk.harness,
+                  },
+                ]);
+            }}
+          >
+            <option value="">Add a helper agent…</option>
+            {app.domain.skills
+              .filter((s) => !members.some((m) => m.skill_id === s.id))
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+          </Select>
           <div className="flex gap-2">
             <Button
               size="sm"

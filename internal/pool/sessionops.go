@@ -426,6 +426,9 @@ func (p *Pool) regroup(_ context.Context, in groupIn) (moved []string, from, to 
 				m.RepoID = cur.RepoID // the worktree stays in the repository it was made in
 			}
 			m.Role, m.Coordinator, m.State = "helper", false, "active"
+			if m.RepoID != "" && m.RepoID != target.RepoID && !slices.Contains(target.Repos, m.RepoID) {
+				target.Repos = append(target.Repos, m.RepoID) // the team's context names every repository it works in
+			}
 			target.Members = append(target.Members, m)
 			if j := sessionIndex(st, m.SessionID); j >= 0 {
 				st.Sessions[j].TeamID, st.Sessions[j].Role = target.ID, "helper"
