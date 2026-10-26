@@ -35,15 +35,16 @@ same rules. Rules typed into one session are lost in the next.
 |-----|-------|
 | Speech to text | Muse Voice Transcribe (Meta Model API) |
 | Is this a rule? Word it. Does a line allow this call? | Muse Spark (Meta Model API), or Muse Spark Open / Muse Glimmer (open weights) |
-| The coding agent under test | Muse Code if it exposes hooks; otherwise an agent on Muse Spark Open |
+| Coding agent, reviewer, visible work | Muse Code 1.4.13, driven through `muse serve` (MSP session host); the Compass answers its approval requests on the wire |
+| Second coding agent | Claude Code, approvals through its permission hook; the two agents chat with each other through the harness |
 
 All model calls go through one OpenAI-compatible client (`muse/model.py`), configured by
 `MUSE_BASE_URL`, `MUSE_API_KEY` and `MUSE_MODEL`.
 
 ## Out of scope
 
-Team trees and messaging, routing, helper marketplaces, phone apps, journals, more than one coding
-agent, image models.
+Team trees beyond the two agents, routing, helper marketplaces, phone apps, journals, coding agents other
+than Claude Code and Muse Code, image models.
 
 ## Demo (3 minutes)
 
@@ -53,6 +54,6 @@ confirm → the task re-runs with no prompts → the gate's chart: interruptions
 ## Open questions (resolve Oct 27)
 
 - Muse Voice Transcribe: endpoint, audio format, latency.
-- Muse Code: does it have hooks (prompt, pre-tool-use, stop) and a headless mode? This decides the
-  agent under test.
+- Muse Code: hooks and headless mode exist (plugins, `muse exec`, `muse serve`); open: which MSP events
+  carry approval requests and tool calls.
 - Structured output support, for the rule and match answers.
