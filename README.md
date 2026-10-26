@@ -2,7 +2,7 @@
 
 Say a rule once; your coding agent stops asking, and you can measure that it did.
 Built on Meta's Muse models for the Meta Global AI Developer Hackathon (Oct 27 – Nov 4, 2026).
-See [DESIGN.md](DESIGN.md).
+See [DESIGN.md](DESIGN.md). Each module lands as an `M<n>` step: self-check, a review by a Muse model, a working command, then a push.
 
 Python 3.9+, standard library only.
 
