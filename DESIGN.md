@@ -49,7 +49,7 @@ both load it from `mcpServers` (Muse: `~/.config/muse/settings.json`; stdio supp
 
 Two limits of MCP, stated up front: (1) it is **pull-based**: an agent has to call the tool, so nothing
 reaches its context mid-turn unless it asks. The instructions tell it to consult the Compass before a
-decision, and gate metric (d) measures whether it does. (2) The server hears the owner only through agent
+decision, and the M8 experiment measures whether it does. (2) The server hears the owner only through agent
 relay, voice or the CLI, hence the confirmation step.
 
 Inside the server:
@@ -85,7 +85,7 @@ experience never becomes a Compass line. One JSON-lines file per helper (index a
 - **Pull-based.** The server instructions tell helpers "when you receive a job, call `experience_for`
   first"; the job is unknown at `initialize`, so, as with the Compass, the agent has to ask.
 - **Feedback.** The outcome of a task that used retrieved entries becomes evidence on those entries.
-- **Open.** Retrieval needs a small hand-labelled set (task → entries that helped) for the gate; check in
+- **Open.** Retrieval needs a small hand-labelled set (task → entries that helped) for the experiment; check in
   M4 whether the judge's confidence separates relevant from irrelevant before trusting a threshold.
   Per helper by default; sharing across helpers with the same skill later.
 
@@ -110,7 +110,7 @@ than Claude Code and Muse Code, image models.
 ## Demo (3 minutes)
 
 You say a preference aloud → it becomes a generalized Compass line, you confirm → a new session in that
-repo starts with the line already loaded → the agent makes the choice you would → the gate's chart: the
+repo starts with the line already loaded → the agent makes the choice you would → the experiment's chart: the
 agent matches your decisions more often, and you are interrupted less.
 
 ## Open questions (resolve Oct 27)
