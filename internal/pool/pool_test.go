@@ -312,7 +312,7 @@ func TestTeamGroupEdges(t *testing.T) {
 	if tm := teamOf(&d, "h"); tm == nil || anchorOf(&d, tm) != "x" || parentOf(tm, "h") != "m" {
 		t.Fatalf("the helper under a closed member was left behind: %+v", d.Teams)
 	}
-	// x's team is 5; seven more sessions make it 8, and then a ninth is refused.
+	// x's team is 5; three more make 8, and a team of 8 takes more: a team has no size limit.
 	_ = st.Update(func(s *store.State) error {
 		for _, id := range []string{"a1", "a2", "a3"} {
 			s.Sessions = append(s.Sessions, store.Session{ID: id, Name: id, Harness: "claude", State: "running"})
@@ -324,8 +324,16 @@ func TestTeamGroupEdges(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := p.teamGroup(nil, groupIn{SessionID: "x", ParentID: "y"}); err == nil {
-		t.Fatal("an 8-member team made 9 on a loose session")
+	_ = st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions, store.Session{ID: "a4", Name: "a4", Harness: "claude", State: "running"})
+		return nil
+	})
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "a4", ParentID: "x"}); err != nil {
+		t.Fatalf("a ninth member was refused: %v", err)
+	}
+	d = st.State().Domain
+	if tm := teamOf(&d, "a4"); tm == nil || activeMembers(tm) != 9 {
+		t.Fatalf("the team did not grow to 9: %+v", tm)
 	}
 }
 

@@ -244,9 +244,6 @@ func (p *Pool) addMember(ctx context.Context, teamID string, c protocol.Formatio
 	if !repo.Git {
 		return protocol.Member{}, invalid("an SME works in a worktree, so its repository must use Git")
 	}
-	if n := activeMembers(team); n >= maxMembers {
-		return protocol.Member{}, conflict("a team has at most %d members", maxMembers)
-	}
 	task := protocol.Task{Title: team.Name, Objective: team.Goal}
 	if t := findTask(&d, team.TaskID); t != nil {
 		task = *t

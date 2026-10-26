@@ -348,15 +348,6 @@ func (p *Pool) regroup(_ context.Context, in groupIn) (moved []string, from, to 
 				return conflict("%s works in its own worktree on this team; move it under another session, or close it", sub[0].Name)
 			}
 		}
-		n := len(sub)
-		if in.ParentID == "" {
-			n-- // the subtree's root is the new team's main worker
-		}
-		if target != nil && activeMembers(target)+n > 8 {
-			return conflict("team %s is full", target.Name)
-		} else if target == nil && 1+n > 8 {
-			return conflict("a team holds 8 members; %s brings %d", src.Name, n)
-		}
 		// Take the subtree off its team; what is left ends when it is one member or none.
 		if cur != nil {
 			in := map[string]bool{}
