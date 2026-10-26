@@ -112,6 +112,30 @@ func TestQueuedPromptsJoinedAreTheOwners(t *testing.T) {
 	}
 }
 
+// Only the order the owner typed adds up, and a lapsed credit in the run spoils it.
+func TestJoinedPromptsKeepOrderAndTTL(t *testing.T) {
+	p, _ := twoTeams(t)
+	p.requireOwnerInput = true
+	const id = "leadaaaaaaaa"
+	p.OwnerInput(id, "alpha")
+	p.OwnerInput(id, "beta")
+	if tr := prompt(t, p, id, "beta\nalpha"); tr.fromOwner() {
+		t.Fatal("the owner's lines in the wrong order were believed")
+	}
+	if tr := prompt(t, p, id, "alpha beta"); !tr.fromOwner() {
+		t.Fatal("the lines in the order typed were not")
+	}
+	p.mu.Lock()
+	p.ownerEnter[id] = []credit{{time.Now().Add(-ownerEnterTTL - time.Minute), squash("old")}, {time.Now(), squash("new")}}
+	p.mu.Unlock()
+	if tr := prompt(t, p, id, "old new"); tr.fromOwner() {
+		t.Fatal("a lapsed credit joined a fresh one")
+	}
+	if tr := prompt(t, p, id, "new"); !tr.fromOwner() {
+		t.Fatal("the fresh credit was lost")
+	}
+}
+
 // Where there is no gateway to say (tests, the offline evaluation), every prompt is believed, as before.
 func TestWithoutAGatewayEveryPromptIsBelieved(t *testing.T) {
 	p, _ := twoTeams(t)
