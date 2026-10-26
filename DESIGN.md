@@ -67,13 +67,35 @@ Inside the server:
 - **Injection** (code over the judge's typed answers; no extra model call per turn). Choose which lines
   to return, and how many, from relevance and confidence, for the `instructions` and `compass_context`.
 
+## Experience
+
+The same MCP server also keeps what the helper agents learned, separate from the Compass: an agent's
+experience never becomes a Compass line. One JSON-lines file per helper (index and content). Entry:
+`{id, helper, title, task, lesson, evidence: [{at, session, outcome: worked|failed}], uses, last_used}`;
+`lesson` is general, at most ~5 lines, what to do or avoid.
+
+- **Save.** `experience_save(task, summary, outcome)` at "Done: <title>". The summary is the agent's own
+  compacted context (no new logs); secrets are redacted before storing. Muse Spark, off the hot path,
+  generalizes it into lessons and matches each against existing entries: merge (add evidence), refine
+  (reword), contradict (weaken) or new.
+- **Retrieve.** `experience_for(task)`: (1) candidates in code, sqlite3 FTS5 over the helper's entries,
+  top 10–20; (2) the decision model (the M4 adapter) judges relevance, one batched typed predicate per
+  candidate, with confidence; (3) code keeps those above a threshold and ranks by relevance × outcome ×
+  recency, capped at 5 entries or a token budget.
+- **Pull-based.** The server instructions tell helpers "when you receive a job, call `experience_for`
+  first"; the job is unknown at `initialize`, so, as with the Compass, the agent has to ask.
+- **Feedback.** The outcome of a task that used retrieved entries becomes evidence on those entries.
+- **Open.** Retrieval needs a small hand-labelled set (task → entries that helped) for the gate; check in
+  M4 whether the judge's confidence separates relevant from irrelevant before trusting a threshold.
+  Per helper by default; sharing across helpers with the same skill later.
+
 ## Meta models
 
 | Job | Model |
 |-----|-------|
 | Speech to text | Muse Voice Transcribe (Meta Model API) |
 | Decision model: signal kind, supports/contradicts, relevance | Jev today; any local Ollama model through the same config |
-| Word a line in general terms, merge duplicates, propose rewordings (ingestion only) | Muse Spark (Meta Model API) |
+| Word a line in general terms, merge duplicates, propose rewordings; generalize saved experience into lessons (off the hot path only) | Muse Spark (Meta Model API) |
 | Coding agent, reviewer, visible work | Muse Code 1.4.13 (`muse exec`, `muse serve`), loading the Compass MCP server |
 | Second coding agent | Claude Code, loading the same Compass MCP server; the two agents chat with each other through the harness |
 
@@ -82,7 +104,7 @@ All model calls go through one OpenAI-compatible client (`muse/model.py`), confi
 
 ## Out of scope
 
-Team trees beyond the two agents, routing, helper marketplaces, phone apps, journals, coding agents other
+Team trees beyond the two agents, routing, helper marketplaces, phone apps, coding agents other
 than Claude Code and Muse Code, image models.
 
 ## Demo (3 minutes)
