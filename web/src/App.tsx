@@ -8,7 +8,8 @@ import { Ctx, harnessLabel, isAgent, useApp, usePersisted, type AppCtx, type Edi
 import { desktop, onSSHHost } from "./app/desktop";
 import { AttachSession, type AttachState } from "./client/attach";
 import { Connection, type ConnectionInfo } from "./client/connection";
-import { TerminalPane } from "./components/TerminalPane";
+import { TerminalPane, pruneTerminals } from "./components/TerminalPane";
+import { instanceOf } from "./components/termCache";
 import { Button } from "./components/ui/button";
 import { Tip } from "./components/ui/controls";
 import { cn } from "./lib/utils";
@@ -130,6 +131,11 @@ export function App(): ReactElement {
       epoch: store.currentEpoch === "" ? undefined : store.currentEpoch,
     });
   }, [connection, info.status, info.connectionID]);
+
+  // A closed or removed session's kept terminal goes with it.
+  useEffect(() => {
+    pruneTerminals(new Set(view.sessions.map((s) => s.id)));
+  }, [view.sessions]);
 
   useEffect(() => {
     if (selected !== null && view.sessions.some((s) => s.id === selected)) return;
@@ -293,6 +299,7 @@ export function App(): ReactElement {
       <TerminalPane
         key={selectedView.id}
         sessionId={selectedView.id}
+        instance={instanceOf(storeRef.current.currentEpoch, selectedView)}
         channel={channelFor(selectedView.id)}
         connection={connection}
         clientKind={connection.clientKind}

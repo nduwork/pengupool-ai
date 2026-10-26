@@ -23,6 +23,8 @@ export function isShiftEnter(e: Pick<KeyboardEvent, "key" | "shiftKey" | "ctrlKe
 
 /** A terminal left behind by a session the user switched away from, and where its screen had got to. */
 interface Kept {
+  /** The process it was kept from (see `instanceOf`). */
+  instance: string;
   term: Terminal;
   fit: FitAddon;
   retained: { generation: number; offset: bigint } | undefined;
@@ -35,8 +37,15 @@ interface Kept {
  */
 const kept = new TermCache<Kept>(4, (k) => k.term.dispose());
 
+/** Disposes the kept terminals of sessions no longer listed. */
+export function pruneTerminals(live: ReadonlySet<string>): void {
+  kept.prune(live);
+}
+
 export interface TerminalPaneProps {
   sessionId: string;
+  /** The process behind the session (`instanceOf`); a terminal kept from another one is not resumed. */
+  instance: string;
   channel: number;
   connection: Connection;
   /** The kind this page announced in `hello`; `ios` is view-only and never claims the lease. */
@@ -52,6 +61,7 @@ export interface TerminalPaneProps {
 
 export function TerminalPane({
   sessionId,
+  instance: instanceProp,
   channel,
   connection,
   clientKind,
@@ -64,12 +74,15 @@ export function TerminalPane({
 }: TerminalPaneProps): ReactElement {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sessionRef = useRef<AttachSession | null>(null);
+  const instanceRef = useRef(instanceProp);
+  instanceRef.current = instanceProp;
 
   useEffect(() => {
     const host = hostRef.current;
     if (host === null) return;
 
-    const back = kept.take(sessionId);
+    const instance = instanceRef.current;
+    const back = kept.take(sessionId, instance);
     const term = back?.term ?? new Terminal({
       fontFamily: '"Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace',
       fontSize: 13,
@@ -247,7 +260,7 @@ export function TerminalPane({
       session.detach();
       sessionRef.current = null;
       onAttach(null);
-      kept.put(sessionId, { term, fit, retained: session.retainedState() });
+      kept.put(sessionId, { instance, term, fit, retained: session.retainedState() });
     };
     // The pane is remounted per session (keyed by session id); connection identity is stable. Its
     // terminal outlives the mount (see `kept`).

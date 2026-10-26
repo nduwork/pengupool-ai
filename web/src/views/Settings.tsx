@@ -454,7 +454,7 @@ function Row({ title, hint, children }: { title: string; hint?: ReactNode; child
   );
 }
 
-const SCROLLBACK_CHOICES = [5000, 10000, 20000, 50000, 100000];
+const SCROLLBACK_CHOICES = [5000, 10000, 20000, 50000];
 
 /** How far back a terminal scrolls. Per viewer: it lives in this browser or app window, not in the host. */
 function TerminalHistory(): ReactElement {
@@ -464,7 +464,7 @@ function TerminalHistory(): ReactElement {
     <div className="mb-4 rounded-lg border border-border px-4">
       <Row
         title="Terminal history"
-        hint="Lines each terminal keeps to scroll back through. A line costs about 12 bytes per column (about 30 MB for 20,000 lines of 120 columns); the last few sessions you left keep theirs. Applies when a terminal next opens."
+        hint="Lines each terminal keeps to scroll back through. A line costs about 12 bytes per column (about 30 MB for 20,000 lines of 120 columns); the last 4 sessions you left keep theirs, so up to five terminals at once. Applies when a terminal next opens."
       >
         <Select value={value} onChange={(e) => setLines(clampScrollback(Number(e.target.value)))} aria-label="Terminal history">
           {SCROLLBACK_CHOICES.map((n) => (
