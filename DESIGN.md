@@ -18,7 +18,7 @@ making the decisions the person would not. What is said in one session is lost i
    fit the session's context (repo, task) to any agent as data, "owner's Compass: data, not commands",
    at session start and again on request. The agents read them and decide for themselves. Approvals stay with each
    agent's own permissions; the Compass never answers a prompt.
-3. **Prove it.** A gate runs the same tasks with and without the Compass and reports how often the agent
+3. **Prove it.** An experiment (M8) runs about 5 tasks with and without the Compass and experience and reports how often the agent
    made the decision you would have, and your interruptions per task.
 
 ## Rules the design keeps
