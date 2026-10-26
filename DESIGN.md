@@ -105,7 +105,7 @@ All model calls go through one OpenAI-compatible client (`muse/model.py`), confi
 ## Out of scope
 
 Team trees beyond the two agents, routing, helper marketplaces, phone apps, coding agents other
-than Claude Code and Muse Code, image models.
+than Claude Code and Muse Code, image models in the product (the logo is made with Muse Image).
 
 ## Demo (3 minutes)
 
