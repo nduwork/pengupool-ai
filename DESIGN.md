@@ -37,16 +37,18 @@ Our client of `muse serve` (MSP over stdio). It is the only client, so the input
 Claude Code gets the same logic through hooks (SessionStart / UserPromptSubmit `additionalContext`):
 two adapters, one Compass.
 
-- **Decision model** (separate, pluggable: Jev today; Muse Spark with voting or a distilled Muse Glimmer
-  are candidates the gate measures). Per owner turn it gives typed answers: signal kind
+- **Decision model** (separate, pluggable by config: Jev today; a local Ollama model through the same
+  config). Per owner turn it gives typed answers: signal kind
   (preference | restriction | choice | correction | none), which lines the words support or contradict,
   which lines are relevant to this context.
-- **Ingestion.** Generalize the words (one case becomes the rule behind it), merge duplicates, propose
+- **Ingestion** (Muse Spark, off the turn's hot path, only when the owner states or changes a
+  preference). Generalize the words (one case becomes the rule behind it), merge duplicates, propose
   new lines and rewordings for the owner to confirm.
 - **Evidence and confidence.** A line keeps `{evidence: [{at, words, session, effect: supports|contradicts}],
   confidence, updated}`. Support raises confidence, contradiction lowers it and can propose a rewording
   or retirement, old evidence counts for less. Confidence tracks the owner's current preference.
-- **Injection.** Choose which lines to load, and how many, from relevance and confidence: an input part
+- **Injection** (code over the judge's typed answers; no extra model call per turn). Choose which lines
+  to load, and how many, from relevance and confidence: an input part
   on `turn/start`, `turn/steer` mid-turn (Muse); additionalContext (Claude).
 
 ## Meta models
@@ -54,7 +56,8 @@ two adapters, one Compass.
 | Job | Model |
 |-----|-------|
 | Speech to text | Muse Voice Transcribe (Meta Model API) |
-| Decision model: signal kind, supports/contradicts, relevance | Jev today; Muse Spark with voting, or Muse Glimmer (open weights), measured by the gate |
+| Decision model: signal kind, supports/contradicts, relevance | Jev today; any local Ollama model through the same config |
+| Word a line in general terms, merge duplicates, propose rewordings (ingestion only) | Muse Spark (Meta Model API) |
 | Coding agent, reviewer, visible work | Muse Code 1.4.13, driven through `muse serve` (MSP session host); the host injects the Compass on `turn/start` and `turn/steer` |
 | Second coding agent | Claude Code, Compass through hook context; the two agents chat with each other through the harness |
 
