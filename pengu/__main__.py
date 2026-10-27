@@ -9,6 +9,7 @@
     python3 -m pengu new --agent muse --task "hello" --trust-workspace
     python3 -m pengu ls
     python3 -m pengu stop ID
+    python3 -m pengu mcp   # serve the Compass MCP server on stdio
 """
 
 import argparse
@@ -16,7 +17,7 @@ import json
 import subprocess
 import sys
 
-from . import compass, review, rules, session
+from . import compass, mcp, review, rules, session
 from .model import ModelError
 
 
@@ -86,6 +87,8 @@ def main(argv=None):
                 print(f"{r['id']}  {r['agent']}  {'alive' if r['alive'] else 'dead'}  {r['task'][:60]}")
         elif cmd == "stop" and len(args) == 2:
             print("stopped" if session.stop(args[1]) else "no such session")
+        elif cmd == "mcp":
+            mcp.serve_stdio()
         else:
             sys.exit(__doc__)
     except (ModelError, RuntimeError, ValueError) as e:

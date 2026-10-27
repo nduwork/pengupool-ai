@@ -15,7 +15,22 @@ def load():
     p = path()
     if not p.exists():
         return []
-    return [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
+    lines = []
+    for raw in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not raw.strip():
+            continue
+        try:
+            line = json.loads(raw)
+        except ValueError:
+            continue  # a half-written line never breaks the store
+        if isinstance(line, dict) and isinstance(line.get("rule"), str):
+            lines.append(line)
+    return lines
+
+
+def format_lines(lines):
+    """One wording for Compass lines everywhere (MCP, task prefix, resources)."""
+    return "\n".join("- %s" % l.get("rule", "") for l in lines)
 
 
 def add(rule, source):

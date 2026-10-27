@@ -21,6 +21,13 @@ python3 -m pengu stop <id>
 python3 test_pengu.py   # self-check, no network
 ```
 
+The Compass host is an MCP server (`python3 -m pengu mcp`, stdio). Register it:
+Claude Code: `claude mcp add -s user pengu-compass -e PENGUPOOL_MUSE_HOME=~/.pengupool-muse
+-e PYTHONPATH=<repo> -- python3 -m pengu mcp`. Muse: a `pengu-compass` entry
+under `mcpServers` in `~/.config/muse/settings.json` (same command/args/env).
+Measured: Muse loads stdio tools, but server `instructions` do not reach its
+prompt, so `pengu new --task` prepends the lines to the task instead.
+
 The Compass lives in `~/.pengupool-muse/compass.jsonl` (`PENGUPOOL_MUSE_HOME` moves it).
 
 ## Status

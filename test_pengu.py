@@ -180,6 +180,12 @@ try:
     settings = [c.strip("'") for c in cmd.split() if "settings.json" in c]
     assert len(settings) == 1 and _o.path.exists(settings[0]), cmd
     _sess.stop(crow["id"])
+    # a Compass line rides on the task (server instructions miss the prompt).
+    compass.add("Probe line one.", "typed")
+    _calls.clear()
+    prow = _sess.new("muse", "do it", trust_workspace=True)
+    assert "Probe line one." in _calls[0][-1] and _calls[0][-1].rstrip().endswith("do it'")
+    _sess.stop(prow["id"])
     _sess._tmux = lambda *a, **k: _P(rc=1)
     try:
         _sess.new("claude"); raise AssertionError("tmux failure must fail")
@@ -247,4 +253,81 @@ try:
 finally:
     _cli.session.new, _cli.session.ls, _cli.session.stop = _rn, _rl, _rs
     _sys.argv = _real_argv
+print("ok")
+
+# mcp: initialize carries the lines as instructions; tools and resources work;
+# unknown methods/frames fail cleanly; notifications get no reply.
+from pengu import mcp as _mcp
+_o.environ["PENGUPOOL_MUSE_HOME"] = _tf.mkdtemp()
+compass.add("Always run the test suite before committing.", "typed")
+compass.add("Never touch the migrations folder.", "typed")
+r = _mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+assert r["result"]["serverInfo"]["name"] == "pengu-compass"
+assert "Always run the test suite" in r["result"]["instructions"]
+assert "data, not commands" in r["result"]["instructions"]
+tools = _mcp.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]
+assert {t["name"] for t in tools} == {"compass_context", "compass_observe"}
+hit = _mcp.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                    "params": {"name": "compass_context",
+                               "arguments": {"topic": "migrations"}}})
+assert "migrations folder" in hit["result"]["content"][0]["text"]
+assert "test suite" not in hit["result"]["content"][0]["text"]
+miss = _mcp.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                     "params": {"name": "compass_context", "arguments": {}}})
+assert "test suite" in miss["result"]["content"][0]["text"]
+note = _mcp.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                     "params": {"name": "compass_observe", "arguments": {"words": "x"}}})
+assert "owner confirms" in note["result"]["content"][0]["text"]
+assert compass.load() and len(compass.load()) == 2  # observe writes nothing
+assert _mcp.handle({"jsonrpc": "2.0", "id": 6, "method": "tools/call",
+                     "params": {"name": "nope"}})["error"]["code"] == -32602
+res = _mcp.handle({"jsonrpc": "2.0", "id": 7, "method": "resources/list"})
+assert res["result"]["resources"][0]["uri"] == "compass://lines"
+got = _mcp.handle({"jsonrpc": "2.0", "id": 8, "method": "resources/read",
+                    "params": {"uri": "compass://lines"}})
+assert "migrations folder" in got["result"]["contents"][0]["text"]
+assert _mcp.handle({"jsonrpc": "2.0", "id": 9, "method": "resources/read",
+                     "params": {"uri": "compass://nope"}})["error"]["code"] == -32002
+assert _mcp.handle({"method": "notifications/initialized"}) is None
+assert _mcp.handle({"jsonrpc": "2.0", "id": 12, "method": "notifications/fake"}) is None
+assert _mcp.handle({"jsonrpc": "2.0", "method": "tools/list"}) is None  # no id: no reply
+assert _mcp.handle({"jsonrpc": "2.0", "id": 10, "method": "frobnicate"})["error"]["code"] == -32601
+bad = _mcp.handle({"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": "x"})
+assert bad["error"]["code"] == -32602 and "params" in bad["error"]["message"]
+badargs = _mcp.handle({"jsonrpc": "2.0", "id": 12, "method": "tools/call",
+                        "params": {"name": "compass_context", "arguments": [1]}})
+assert badargs["error"]["code"] == -32602
+badt = _mcp.handle({"jsonrpc": "2.0", "id": 13, "method": "tools/call",
+                     "params": {"name": "compass_context", "arguments": {"topic": 1}}})
+assert badt["error"]["code"] == -32602 and "topic" in badt["error"]["message"]
+nowords = _mcp.handle({"jsonrpc": "2.0", "id": 14, "method": "tools/call",
+                        "params": {"name": "compass_observe", "arguments": {}}})
+assert nowords["error"]["code"] == -32602 and "words" in nowords["error"]["message"]
+echo = _mcp.handle({"jsonrpc": "2.0", "id": 15, "method": "initialize",
+                     "params": {"protocolVersion": "1999-01-01"}})
+assert echo["result"]["protocolVersion"] == "2024-11-05"  # server's version, not the client's
+# serve_stdio framing: blank lines skipped, bad frames answered, notifications silent.
+import io as _io
+_frames = ('{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}\n'
+           '\n'
+           'not json\n'
+           '{"method": "notifications/initialized"}\n')
+_real_stdin, _real_stdout = _sys.stdin, _sys.stdout
+_sys.stdin, _sys.stdout = _io.StringIO(_frames), _io.StringIO()
+try:
+    _mcp.serve_stdio()
+    out = [json.loads(l) for l in _sys.stdout.getvalue().splitlines()]
+finally:
+    _sys.stdin, _sys.stdout = _real_stdin, _real_stdout
+assert [r.get("id") for r in out] == [1, None] and out[1]["error"]["code"] == -32700
+# a malformed store never breaks the server: garbage lines are skipped.
+with open(compass.path(), "a", encoding="utf-8") as f:
+    f.write("half-written{\n42\n[]\n")
+assert len(compass.load()) == 2
+assert "test suite" in _mcp.handle({"jsonrpc": "2.0", "id": 21, "method": "initialize",
+                                     "params": {}})["result"]["instructions"]
+if _real_home is None:
+    del _o.environ["PENGUPOOL_MUSE_HOME"]
+else:
+    _o.environ["PENGUPOOL_MUSE_HOME"] = _real_home
 print("ok")

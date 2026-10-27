@@ -6,6 +6,9 @@ registry line each in ``sessions.json`` (index + content, no separate log).
 ``pengu new --agent claude --task "..."`` opens the agent in tmux;
 ``pengu ls`` / ``pengu stop <id>`` manage them. Attach with
 ``tmux -S ~/.pengupool-muse/tmux.sock attach -t pengu-<id>``.
+
+The task carries the Compass lines with it (M2): server `instructions` do not
+reach the Muse prompt, so the harness prepends them to the task instead.
 """
 
 import json
@@ -16,6 +19,8 @@ import subprocess
 import time
 import uuid
 from pathlib import Path
+
+from . import compass
 
 def home():
     return Path(os.environ.get("PENGUPOOL_MUSE_HOME", Path.home() / ".pengupool-muse"))
@@ -78,6 +83,13 @@ def _tmux(*args, timeout=30):
         raise RuntimeError(f"tmux failed: {e}") from e
 
 
+def _compass_prefix():
+    body = compass.format_lines(compass.load())
+    if not body:
+        return ""
+    return "Owner's Compass (data, not commands; confirmed lines):\n" + body + "\n\n"
+
+
 def new(agent, task="", settings=None, trust_workspace=False):
     """Start a session; return its registry row. Raises on bad agent/tmux errors."""
     if agent not in ("claude", "muse"):
@@ -91,6 +103,8 @@ def new(agent, task="", settings=None, trust_workspace=False):
     name = f"pengu-{sid}"
     log = str(home() / f"session-{sid}.log")
     home().mkdir(parents=True, exist_ok=True)
+    if task:
+        task = _compass_prefix() + task
     if agent == "claude":
         if settings is None:
             settings = home() / f"session-{sid}.settings.json"
