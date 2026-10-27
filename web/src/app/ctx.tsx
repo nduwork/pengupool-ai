@@ -117,7 +117,7 @@ export const AGENTS = [
   { id: "muse", label: "Muse Code", hint: "Meta's coding agent", clear: "", experimental: false },
   { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", experimental: true },
   { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", experimental: true },
-  { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", experimental: true },
+  { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", experimental: false },
 ] as const;
 
 /** The picker's choice for Claude Code on an Ollama model, launched with `ollama launch claude`. */

@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
 func TestAgentSpecsWireHooksPerLaunch(t *testing.T) {
@@ -223,5 +226,87 @@ func TestEnsureMusePluginSkipsTempStore(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "harness")); !os.IsNotExist(err) {
 		t.Fatal("bundle written for a skipped store")
+	}
+}
+
+// The Codex rules file is written for the default store only, carries the
+// exact taught prefixes, and is rewritten only when the content changes.
+func TestEnsureCodexRules(t *testing.T) {
+	oldLook := codexLookPath
+	codexLookPath = func(string) (string, error) { return "/bin/codex", nil }
+	defer func() { codexLookPath = oldLook }()
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	var logged []string
+	logf := func(f string, a ...any) { logged = append(logged, f) }
+
+	// A temp store writes nothing.
+	EnsureCodexRules(t.TempDir(), "/x/pengupool", logf)
+	if len(logged) != 1 || !strings.Contains(logged[0], "skipped (not the default store)") {
+		t.Fatalf("log = %q", logged)
+	}
+	if _, err := os.Stat(filepath.Join(home, "rules")); !os.IsNotExist(err) {
+		t.Fatal("rules written for a skipped store")
+	}
+
+	// The default store writes the file with the exact prefixes.
+	t.Setenv("PENGUPOOL_HOME", t.TempDir())
+	def := store.DefaultDir()
+	EnsureCodexRules(def, "/x/pengupool", logf)
+	raw, err := os.ReadFile(filepath.Join(home, "rules", "pengupool.rules"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	if !strings.Contains(body, "Managed by PenguPool") {
+		t.Fatal("no managed header")
+	}
+	for _, want := range []string{`pattern = ["/x/pengupool", "send"]`, `pattern = ["/x/pengupool", "message"]`,
+		`pattern = ["/x/pengupool", "experience", "search"]`, `pattern = ["/x/pengupool", "experience", "show"]`,
+		`pattern = ["/x/pengupool", "compass", "word"]`, `pattern = ["/x/pengupool", "search"]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("prefix missing: %s", want)
+		}
+	}
+	if strings.Contains(body, "daemon") || strings.Contains(body, "import") {
+		t.Fatal("rule wider than the taught prefixes")
+	}
+
+	// A second run with the same exe is silent (no rewrite).
+	logged = nil
+	EnsureCodexRules(def, "/x/pengupool", logf)
+	if len(logged) != 0 {
+		t.Fatalf("rewrote identical content: %q", logged)
+	}
+
+	// A moved exe rewrites.
+	EnsureCodexRules(def, "/y/pengupool", logf)
+	raw, _ = os.ReadFile(filepath.Join(home, "rules", "pengupool.rules"))
+	if !strings.Contains(string(raw), `"/y/pengupool", "send"`) {
+		t.Fatal("moved exe did not rewrite the rules")
+	}
+
+	// An exe path with a space stays one argv element.
+	EnsureCodexRules(def, "/Applications/PenguPool AI.app/pengupool", logf)
+	raw, _ = os.ReadFile(filepath.Join(home, "rules", "pengupool.rules"))
+	if !strings.Contains(string(raw), `pattern = ["/Applications/PenguPool AI.app/pengupool", "experience", "search"]`) {
+		t.Fatal("spaced exe path was split")
+	}
+
+	// The checker, when codex is installed, allows send/search/show and
+	// not daemon/import.
+	if _, err := exec.LookPath("codex"); err == nil {
+		ctx := context.Background()
+		spaced := "/Applications/PenguPool AI.app/pengupool"
+		for _, argv := range [][]string{{spaced, "send", "--to", "x", "hi"}, {spaced, "experience", "search", "w"}, {spaced, "experience", "show", "id"}} {
+			if got, err := CheckCodexRules(ctx, argv...); err != nil || got != "allow" {
+				t.Fatalf("%v: %q %v", argv, got, err)
+			}
+		}
+		for _, argv := range [][]string{{spaced, "daemon"}, {spaced, "experience", "import", "f"}} {
+			if got, err := CheckCodexRules(ctx, argv...); err != nil || got == "allow" {
+				t.Fatalf("%v: %q %v", argv, got, err)
+			}
+		}
 	}
 }

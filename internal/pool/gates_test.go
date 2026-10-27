@@ -1614,3 +1614,38 @@ func TestAutonomySectionIsAlwaysGiven(t *testing.T) {
 		t.Fatalf("context lacks the autonomy section: %s", out)
 	}
 }
+
+// The go-ahead through a verbatim Codex Stop payload, as captured live
+// (codex exec probe, hook stdin): the pool reads the real shape and the
+// turn continues with the go-ahead as its next input.
+func TestGoAheadThroughRealCodexStopPayload(t *testing.T) {
+	const id = "leadaaaaaaaa"
+	p, _, sent := gateTeam(t)
+	guide(t, p)
+	p.setSession(id, func(x *store.Session) { x.Harness = harness.Codex })
+	b, _ := json.Marshal(map[string]any{"prompt": "[PenguPool team message from web (helper)] carry on"})
+	if _, err := p.hookEvent(context.Background(), hookIn{SessionID: id, Harness: "codex", Event: "UserPromptSubmit", Payload: b}); err != nil {
+		t.Fatal(err)
+	}
+	// Verbatim shape of a real Codex Stop hook payload (ids are the
+	// probe's; the pool keys the turn by the session, not by these).
+	real := `{"session_id":"01a17ea0-7c4a-7022-8327-33803f8a5a6d","turn_id":"01a17ea0-7c7f-7a83-a1e2-ba447b7ec2fb","transcript_path":"/Users/nduwork/.codex/sessions/2026/10/27/rollout-2026-10-27T11-30-09-01a17ea0-7c4a-7022-8327-33803f8a5a6d.jsonl","cwd":"/tmp/h3ws","hook_event_name":"Stop","model":"glm-5.3-flash:cloud","permission_mode":"bypassPermissions","stop_hook_active":false,"last_assistant_message":"` + checkInReply + `"}`
+	out, err := p.hookEvent(context.Background(), hookIn{SessionID: id, Harness: "codex", Event: "Stop", Payload: json.RawMessage(real)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := json.Marshal(map[string]any{"decision": "block", "reason": autoProceed})
+	if out.(HookOut).Stdout != string(want) {
+		t.Fatalf("Stop output = %q, want %q", out.(HookOut).Stdout, want)
+	}
+	if g := waitGate(t, p, id, func(agentdb.Gate) bool { return true }); g.Outcome != "auto_proceeded" || sent.n() != 0 {
+		t.Fatalf("gate = %+v; sent %v", g, sent.got)
+	}
+	s, _ := p.session(id)
+	p.mu.Lock()
+	tr := p.turns[id]
+	p.mu.Unlock()
+	if s.Status == "idle" || tr == nil || tr.Prompt != autoProceed {
+		t.Fatalf("the turn did not go on: status %q, turn %+v", s.Status, tr)
+	}
+}

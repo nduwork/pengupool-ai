@@ -54,7 +54,7 @@ var Agents = []Agent{
 	{ID: Muse, Label: "Muse Code", Hint: "Meta's coding agent", Typed: true},
 	{ID: OMP, Label: "OMP", Hint: "oh-my-pi agent", Compact: "/compact", Clear: "/new", Ollama: true, Experimental: true},
 	{ID: Pi, Label: "pi", Hint: "pi coding agent", Compact: "/compact", Clear: "/new", Ollama: true, Experimental: true},
-	{ID: Codex, Label: "Codex", Hint: "OpenAI's coding agent", Compact: "/compact", Clear: "/new", Typed: true, Ollama: true, Experimental: true},
+	{ID: Codex, Label: "Codex", Hint: "OpenAI's coding agent", Compact: "/compact", Clear: "/new", Typed: true, Ollama: true},
 }
 
 // Ollama runs an agent on a model served by Ollama, set per launch: no global config is edited.

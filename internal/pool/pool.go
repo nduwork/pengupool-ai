@@ -149,6 +149,7 @@ func New(o Options) *Pool {
 	p.expireStaleApprovals()
 	p.retireRemovedHarnesses()
 	harness.EnsureMusePlugin(o.Store.Dir(), o.Exe, logf)
+	harness.EnsureCodexRules(o.Store.Dir(), o.Exe, logf)
 	p.dropRetiredProviders()
 	if db, err := agentdb.Open(filepath.Join(o.Store.Dir(), "agents.db")); err != nil {
 		logf("agent db: %v", err)
