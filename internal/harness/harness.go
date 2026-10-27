@@ -3,8 +3,8 @@
 //
 // Nothing here edits the user's global harness configuration; every hook arrives per launch.
 // Claude gets hooks, status line and inbound-message policy through --settings; OMP and pi load
-// PenguPool's extension (--hook / -e); Codex gets hooks through -c overrides; Copilot loads a
-// PenguPool plugin directory (--plugin-dir). So v1 and v2 can be installed side by side.
+// PenguPool's extension (--hook / -e); Codex gets hooks through -c overrides. So v1 and v2 can be
+// installed side by side.
 package harness
 
 import (
@@ -20,16 +20,13 @@ import (
 )
 
 const (
-	Claude   = "claude"
-	Muse     = "muse"
-	OMP      = "omp"
-	Pi       = "pi"
-	Codex    = "codex"
-	Copilot  = "copilot"
-	Gemini   = "gemini"
-	OpenCode = "opencode"
-	Shell    = "shell"
-	Custom   = "custom"
+	Claude = "claude"
+	Muse   = "muse"
+	OMP    = "omp"
+	Pi     = "pi"
+	Codex  = "codex"
+	Shell  = "shell"
+	Custom = "custom"
 )
 
 // Agent is an agent runtime PenguPool can run, watch and message. Shell and custom sessions are
@@ -47,9 +44,6 @@ type Agent struct {
 	Ollama bool `json:"ollama"`
 	// Experimental agents work but are not where PenguPool's support is focused (Claude Code is).
 	Experimental bool `json:"experimental"`
-	// EarlyStart agents fire SessionStart before their login and trust dialogs, so they count as
-	// ready only after their first finished turn.
-	EarlyStart bool `json:"-"`
 }
 
 // Agents are the supported runtimes, in menu order: Claude Code (on its account or on Ollama) is
@@ -60,10 +54,7 @@ var Agents = []Agent{
 	{ID: Muse, Label: "Muse Code", Hint: "Meta's coding agent", Typed: true},
 	{ID: OMP, Label: "OMP", Hint: "oh-my-pi agent", Compact: "/compact", Clear: "/new", Ollama: true, Experimental: true},
 	{ID: Pi, Label: "pi", Hint: "pi coding agent", Compact: "/compact", Clear: "/new", Ollama: true, Experimental: true},
-	{ID: OpenCode, Label: "OpenCode", Hint: "open-source coding agent", Compact: "/compact", Clear: "/new", Ollama: true, Experimental: true},
 	{ID: Codex, Label: "Codex", Hint: "OpenAI's coding agent", Compact: "/compact", Clear: "/new", Typed: true, Ollama: true, Experimental: true},
-	{ID: Copilot, Label: "GitHub Copilot", Hint: "GitHub Copilot CLI", Compact: "/compact", Clear: "/clear", Typed: true, Ollama: true, Experimental: true},
-	{ID: Gemini, Label: "Gemini CLI", Hint: "Google's agent (Google login; no Ollama)", Compact: "/compress", Clear: "/clear", Typed: true, EarlyStart: true, Experimental: true},
 }
 
 // Ollama runs an agent on a model served by Ollama, set per launch: no global config is edited.
@@ -94,9 +85,6 @@ var ClaudeEvents = []string{
 //go:embed omp_extension.ts
 var ompExtension []byte
 
-//go:embed opencode_plugin.js
-var opencodePlugin []byte
-
 // Params describe one launch.
 type Params struct {
 	SessionID string
@@ -112,12 +100,11 @@ type Params struct {
 	// SkillRepo is a helper's skill repository: its skills/ load natively for this one session
 	// (Claude --plugin-dir, pi --skill, OMP a per-run config overlay); nothing is installed. A helper
 	// works outside it (a worktree or a scratch folder), so the agents that ask before reading
-	// outside their working directory are given read access to it (Claude and Copilot --add-dir,
-	// Gemini --include-directories, OpenCode external_directory); Codex, OMP and pi read anywhere.
+	// outside their working directory are given read access to it (Claude --add-dir);
+	// Codex, OMP and pi read anywhere.
 	SkillRepo string
 	// ReadDirs are folders a helper may read outside its working directory (the team's repositories),
-	// given where a clean flag exists: Claude and Copilot --add-dir, Gemini --include-directories,
-	// OpenCode external_directory. ponytail: Codex, OMP and pi read anywhere already.
+	// given where a clean flag exists: Claude --add-dir. ponytail: Codex, OMP and pi read anywhere already.
 	ReadDirs []string
 	// Effort is "" or a level the agent takes; Claude, Codex, omp and pi take it,
 	// the others ignore it.
@@ -265,100 +252,6 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 			cmd = append(cmd, "-c", fmt.Sprintf("model_reasoning_effort=%q", p.Effort))
 		}
 		return cmd, env, nil
-	case Copilot:
-		bin, err := Lookup(Copilot, p.Env)
-		if err != nil {
-			return nil, nil, err
-		}
-		dir, err := WriteCopilotPlugin(p.StoreDir, p.Exe)
-		if err != nil {
-			return nil, nil, err
-		}
-		cmd := []string{bin, "--plugin-dir", dir}
-		if p.Resume != "" {
-			cmd = append(cmd, "--resume="+p.Resume)
-		} else {
-			cmd = append(cmd, "--session-id", p.SessionID, "--name", p.Name)
-		}
-		if o := p.Ollama; o != nil {
-			// Copilot's bring-your-own-provider settings, pointed at Ollama's OpenAI-compatible API.
-			env = append(env, "COPILOT_PROVIDER_BASE_URL="+o.URL+"/v1", "COPILOT_PROVIDER_API_KEY=",
-				"COPILOT_PROVIDER_WIRE_API=responses", "COPILOT_MODEL="+o.Model)
-		} else if p.Model != "" {
-			cmd = append(cmd, "--model", p.Model)
-		}
-		if p.SkillRepo != "" {
-			cmd = append(cmd, "--add-dir", p.SkillRepo)
-		}
-		for _, d := range p.ReadDirs {
-			cmd = append(cmd, "--add-dir", d)
-		}
-		return cmd, env, nil
-	case OpenCode:
-		bin, err := Lookup(OpenCode, p.Env)
-		if err != nil {
-			return nil, nil, err
-		}
-		plugin, err := writeFile(filepath.Join(p.StoreDir, "harness", "pengupool-opencode.js"), opencodePlugin)
-		if err != nil {
-			return nil, nil, err
-		}
-		// Inline config: layered over the user's opencode.json, never written into it.
-		cfg := map[string]any{"plugin": []string{"file://" + plugin}}
-		cmd := []string{bin}
-		if o := p.Ollama; o != nil {
-			cfg["provider"] = map[string]any{"ollama": map[string]any{
-				"npm": "@ai-sdk/openai-compatible", "name": "Ollama",
-				"options": map[string]any{"baseURL": o.URL + "/v1"},
-				"models":  map[string]any{o.Model: map[string]any{"name": o.Model}},
-			}}
-			cmd = append(cmd, "--model", "ollama/"+o.Model)
-		} else if p.Model != "" {
-			cmd = append(cmd, "--model", p.Model)
-		}
-		if p.Resume != "" {
-			cmd = append(cmd, "--session", p.Resume)
-		}
-		if p.SkillRepo != "" {
-			cfg["permission"] = map[string]any{"external_directory": map[string]string{p.SkillRepo + "/**": "allow"}}
-		}
-		if len(p.ReadDirs) > 0 {
-			ext := map[string]string{}
-			if perm, ok := cfg["permission"].(map[string]any); ok {
-				ext = perm["external_directory"].(map[string]string)
-			}
-			for _, d := range p.ReadDirs {
-				ext[d+"/**"] = "allow"
-			}
-			cfg["permission"] = map[string]any{"external_directory": ext}
-		}
-		b, _ := json.Marshal(cfg)
-		return cmd, append(env, "OPENCODE_CONFIG_CONTENT="+string(b)), nil
-	case Gemini:
-		bin, err := Lookup(Gemini, p.Env)
-		if err != nil {
-			return nil, nil, err
-		}
-		home, err := GeminiHome(p.StoreDir, p.Exe, envValue(p.Env, "HOME"))
-		if err != nil {
-			return nil, nil, err
-		}
-		cmd := []string{bin}
-		if p.Resume != "" {
-			cmd = append(cmd, "--resume", p.Resume)
-		} else {
-			cmd = append(cmd, "--session-id", p.SessionID)
-		}
-		if p.Model != "" {
-			cmd = append(cmd, "--model", p.Model)
-		}
-		if p.SkillRepo != "" {
-			cmd = append(cmd, "--include-directories", p.SkillRepo)
-		}
-		for _, d := range p.ReadDirs {
-			cmd = append(cmd, "--include-directories", d)
-		}
-		return cmd, append(env, "GEMINI_CLI_HOME="+home), nil
 	case Shell, "":
 		sh := envValue(p.Env, "SHELL")
 		if sh == "" {
@@ -411,96 +304,6 @@ func writeFile(path string, b []byte) (string, error) {
 		return "", err
 	}
 	return path, os.Rename(tmp, path)
-}
-
-// geminiEvents maps Gemini CLI hook events to PenguPool's.
-var geminiEvents = [][2]string{
-	{"SessionStart", "SessionStart"}, {"BeforeAgent", "UserPromptSubmit"}, {"BeforeTool", "PreToolUse"},
-	{"AfterTool", "PostToolUse"}, {"AfterAgent", "Stop"}, {"SessionEnd", "SessionEnd"},
-}
-
-// GeminiHome builds the home PenguPool gives Gemini CLI (GEMINI_CLI_HOME): Gemini reads hooks only
-// from settings files, and a per-launch system settings file must be root-owned. So .gemini here
-// links to everything in the user's ~/.gemini (login, history, trust) except settings.json, which
-// is the user's settings plus PenguPool's hooks, rebuilt at every launch.
-func GeminiHome(storeDir, exe, userHome string) (string, error) {
-	if userHome == "" {
-		userHome, _ = os.UserHomeDir()
-	}
-	home := filepath.Join(storeDir, "harness", "gemini-home")
-	dir := filepath.Join(home, ".gemini")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
-	}
-	src := filepath.Join(userHome, ".gemini")
-	entries, _ := os.ReadDir(src)
-	for _, e := range entries {
-		if e.Name() == "settings.json" {
-			continue
-		}
-		link := filepath.Join(dir, e.Name())
-		if _, err := os.Lstat(link); err == nil {
-			continue
-		}
-		_ = os.Symlink(filepath.Join(src, e.Name()), link)
-	}
-	settings := map[string]any{}
-	if b, err := os.ReadFile(filepath.Join(src, "settings.json")); err == nil {
-		_ = json.Unmarshal(b, &settings)
-	}
-	hooks, _ := settings["hooks"].(map[string]any)
-	if hooks == nil {
-		hooks = map[string]any{}
-	}
-	for _, e := range geminiEvents {
-		group := map[string]any{"hooks": []any{map[string]any{
-			"type": "command", "name": "pengupool", "command": shellQuote(exe) + " hook gemini " + e[1], "timeout": 15000}}}
-		list, _ := hooks[e[0]].([]any)
-		hooks[e[0]] = append(list, group)
-	}
-	settings["hooks"] = hooks
-	b, _ := json.MarshalIndent(settings, "", "  ")
-	if _, err := writeFile(filepath.Join(dir, "settings.json"), b); err != nil {
-		return "", err
-	}
-	return home, nil
-}
-
-// copilotEvents maps Copilot CLI hook events to PenguPool's.
-var copilotEvents = [][2]string{
-	{"sessionStart", "SessionStart"}, {"userPromptSubmitted", "UserPromptSubmit"}, {"preToolUse", "PreToolUse"},
-	{"postToolUse", "PostToolUse"}, {"agentStop", "Stop"}, {"sessionEnd", "SessionEnd"},
-}
-
-// WriteCopilotPlugin places a Copilot plugin under the store whose hooks call back into PenguPool.
-// It is loaded per launch with --plugin-dir, never installed into ~/.copilot.
-func WriteCopilotPlugin(storeDir, exe string) (string, error) {
-	dir := filepath.Join(storeDir, "harness", "copilot-plugin")
-	hooks := map[string]any{}
-	for _, e := range copilotEvents {
-		hooks[e[0]] = []any{map[string]any{"type": "command", "bash": shellQuote(exe) + " hook copilot " + e[1], "timeoutSec": 15}}
-	}
-	files := map[string]any{
-		"plugin.json":      map[string]any{"name": "pengupool", "version": "2.0.0", "description": "PenguPool session status and team context"},
-		"hooks/hooks.json": map[string]any{"version": 1, "hooks": hooks},
-	}
-	for name, v := range files {
-		b, _ := json.MarshalIndent(v, "", "  ")
-		path := filepath.Join(dir, name)
-		if old, err := os.ReadFile(path); err == nil && string(old) == string(b) {
-			continue
-		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(path+".tmp", b, 0o600); err != nil {
-			return "", err
-		}
-		if err := os.Rename(path+".tmp", path); err != nil {
-			return "", err
-		}
-	}
-	return dir, nil
 }
 
 // Lookup finds a harness binary on the given environment's PATH.

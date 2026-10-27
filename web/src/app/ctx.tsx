@@ -118,9 +118,6 @@ export const AGENTS = [
   { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", experimental: true },
   { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", experimental: true },
   { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", experimental: true },
-  { id: "copilot", label: "GitHub Copilot", hint: "GitHub Copilot CLI", clear: "/clear", experimental: true },
-  { id: "opencode", label: "OpenCode", hint: "open-source coding agent", clear: "/new", experimental: true },
-  { id: "gemini", label: "Gemini CLI", hint: "Google's agent (Google login)", clear: "/clear", experimental: true },
 ] as const;
 
 /** The picker's choice for Claude Code on an Ollama model, launched with `ollama launch claude`. */

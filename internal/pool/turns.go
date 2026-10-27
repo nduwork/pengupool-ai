@@ -80,14 +80,14 @@ func (p *Pool) turnTool(id string) {
 	}
 }
 
-// writesFiles: the tool's name says it changes files (Claude Edit, Codex apply_patch, Gemini write_file).
+// writesFiles: the tool's name says it changes files (Claude Edit, Codex apply_patch).
 func writesFiles(tool string) bool {
 	tool = strings.ToLower(tool)
 	return strings.Contains(tool, "edit") || strings.Contains(tool, "write") || strings.Contains(tool, "patch") || strings.Contains(tool, "replace")
 }
 
 // changedFile is the path a file-changing tool (name has edit, write, patch or replace, any case:
-// Claude Edit, Codex apply_patch, Gemini write_file) acts on, else "".
+// Claude Edit, Codex apply_patch) acts on, else "".
 func changedFile(pl map[string]any) string {
 	if name, _ := pl["tool_name"].(string); !writesFiles(name) {
 		return ""

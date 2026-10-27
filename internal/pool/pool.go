@@ -18,6 +18,7 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/agentdb"
 	"github.com/nduwork/pengupool-ai/internal/decision"
 	"github.com/nduwork/pengupool-ai/internal/gateway"
+	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/hub"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
@@ -145,6 +146,7 @@ func New(o Options) *Pool {
 	}
 	p.loadInboxes()
 	p.expireStaleApprovals()
+	p.retireRemovedHarnesses()
 	p.dropRetiredProviders()
 	if db, err := agentdb.Open(filepath.Join(o.Store.Dir(), "agents.db")); err != nil {
 		logf("agent db: %v", err)
@@ -161,6 +163,22 @@ func New(o Options) *Pool {
 		p.sweepDropped(ls) // lines dropped before the Compass stopped keeping them
 	}
 	return p
+}
+
+// retireRemovedHarnesses ends stored sessions whose harness PenguPool no
+// longer runs: they show as ended, never crash the load, and cannot resume.
+func (p *Pool) retireRemovedHarnesses() {
+	_ = p.update(func(st *store.State) error {
+		for i := range st.Sessions {
+			s := &st.Sessions[i]
+			if s.Harness == "" || s.Harness == harness.Shell || s.Harness == harness.Custom || harness.IsAgent(s.Harness) {
+				continue
+			}
+			s.State = "exited"
+			s.Status = "harness no longer supported"
+		}
+		return nil
+	})
 }
 
 // keyHelpers gives every helper registered without a repository key the key of its checkout's
@@ -190,7 +208,7 @@ func (p *Pool) keyHelpers() {
 // sessionMarkers are set by a running Claude Code for its own children. A host started from inside
 // a Claude session would pass them on, and each agent would think it is a sub-session (no
 // transcript, no resume). User settings such as CLAUDE_CODE_USE_BEDROCK pass through. CI makes
-// agents (Gemini CLI, Ink TUIs) run non-interactively, and a PenguPool session is interactive.
+// agents (Ink TUIs) run non-interactively, and a PenguPool session is interactive.
 var sessionMarkers = map[string]bool{
 	"CI": true, "CLAUDECODE": true, "CLAUDE_CODE_ENTRYPOINT": true, "CLAUDE_CODE_CHILD_SESSION": true, "CLAUDE_CODE_SSE_PORT": true,
 	"CLAUDE_CODE_MESSAGING_SOCKET": true, "CLAUDE_CODE_MESSAGING_TOKEN": true, "CLAUDE_CODE_SESSION_ID": true,
@@ -210,7 +228,7 @@ func agentEnv(env []string) []string {
 // the owner's login-shell PATH (launchd gives /usr/bin:/bin:/usr/sbin:/sbin) would find none of
 // them, so the ones that exist are added after PATH's own entries.
 // ponytail: fixed list; a version manager's bin (nvm, asdf) still needs the login shell's PATH.
-var userBins = []string{"~/.local/bin", "~/.bun/bin", "~/.npm-global/bin", "~/.opencode/bin", "~/.cargo/bin", "~/go/bin",
+var userBins = []string{"~/.local/bin", "~/.bun/bin", "~/.npm-global/bin", "~/.cargo/bin", "~/go/bin",
 	"/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin"}
 
 func withUserPath(env []string, home string) []string {

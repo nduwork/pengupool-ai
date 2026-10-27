@@ -11,7 +11,7 @@ import { cn } from "../lib/utils";
 import type { SessionView } from "../protocol/control";
 import { GitHubRepoPicker } from "./GitHub";
 
-// New session: an agent runtime (Claude Code, OMP, pi, Codex or Copilot) in a folder. Two paths, as the plan defines
+// New session: an agent runtime (Claude Code, Muse Code, OMP, pi or Codex) in a folder. Two paths, as the plan defines
 // them: use a local repository, folder or existing worktree as it is, or clone a Git repository into
 // a new destination. A parent puts the new session under that session on the map; it may run a
 // different agent, since team messages go through PenguPool.

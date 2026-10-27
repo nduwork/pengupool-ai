@@ -450,7 +450,7 @@ func TestHelperAgentHonoursRequires(t *testing.T) {
 	if a, _, ok := helperAgent(protocol.Skill{Name: "x", Harness: "codex"}, "", "claude", installed); !ok || a != "claude" {
 		t.Fatalf("fallback %q %v", a, ok)
 	}
-	if _, _, ok := helperAgent(protocol.Skill{Name: "y", Requires: []string{"gemini"}}, "", "claude", installed); ok {
+	if _, _, ok := helperAgent(protocol.Skill{Name: "y", Requires: []string{"codex"}}, "", "claude", installed); ok {
 		t.Fatal("ran without a required agent")
 	}
 }
@@ -1730,11 +1730,37 @@ func TestChecklistFlagsHarnessFiles(t *testing.T) {
 	os.MkdirAll(filepath.Join(src, ".git"), 0o755)
 	os.WriteFile(filepath.Join(src, ".git", "CLAUDE.md"), []byte("x\n"), 0o644)
 	os.WriteFile(filepath.Join(src, "AGENTS.md"), []byte("# ci helper\n"), 0o644)
-	os.WriteFile(filepath.Join(src, "GEMINI.md"), []byte("# ci helper\n"), 0o644)
+	os.WriteFile(filepath.Join(src, "CLAUDE.md"), []byte("# ci helper\n"), 0o644)
 	os.WriteFile(filepath.Join(src, "skills", "ci", "SKILL.md"), []byte("---\nname: ci\ndescription: Triage CI.\n---\nBody\n"), 0o644)
 	got := checkSkillRepo(src)
-	if len(got) != 2 || !strings.HasPrefix(got[0], "GEMINI.md is specific") || !strings.HasPrefix(got[1], filepath.Join("skills", "ci", ".claude")+"/ is specific") {
+	if len(got) != 2 || !strings.HasPrefix(got[0], "CLAUDE.md is specific") || !strings.HasPrefix(got[1], filepath.Join("skills", "ci", ".claude")+"/ is specific") {
 		t.Fatalf("checklist %q", got)
+	}
+}
+
+// A stored session of a removed harness loads as ended, with the reason
+// on it, and does not take the daemon down.
+func TestRemovedHarnessSessionIsRetired(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions,
+			store.Session{ID: "gone1", Name: "gone", Harness: "gemini", State: "running"},
+			store.Session{ID: "kept1", Name: "kept", Harness: "claude", State: "running"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p := New(Options{Store: st, Exe: "pengupool"})
+	_ = p
+	got := st.State().Sessions
+	if got[0].State != "exited" || got[0].Status != "harness no longer supported" {
+		t.Fatalf("removed harness session: %+v", got[0])
+	}
+	if got[1].State != "running" {
+		t.Fatalf("kept session changed: %+v", got[1])
 	}
 }
 

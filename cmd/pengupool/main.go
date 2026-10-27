@@ -23,7 +23,7 @@ const help = `usage: pengupool <command> [options]
 
   daemon [--store DIR] [--http ADDR] [--lan]
         run the host: state, sessions, browser app. Loopback only unless --lan.
-  new [--name N] [--cwd DIR] [--harness claude|omp|pi|codex|copilot] [--model M]
+  new [--name N] [--cwd DIR] [--harness claude|muse|omp|pi|codex] [--model M]
         start an agent session (Claude Code by default) in that directory.
   ls [--json]
         list sessions.

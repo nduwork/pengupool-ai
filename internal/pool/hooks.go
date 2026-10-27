@@ -45,9 +45,6 @@ func (p *Pool) hookEvent(ctx context.Context, in hookIn) (any, error) {
 	}
 	var pl map[string]any
 	_ = json.Unmarshal(in.Payload, &pl)
-	if pl != nil {
-		copilotTool(pl)
-	}
 	str := func(k string) string { v, _ := pl[k].(string); return v }
 	// Activity time drives the map's Stale state; written at most every 30 s.
 	if time.Since(s.ActiveAt) > 30*time.Second && in.Event != "Status" {
@@ -75,14 +72,11 @@ func (p *Pool) hookEvent(ctx context.Context, in hookIn) (any, error) {
 	switch in.Event {
 	case "SessionStart":
 		conv, transcript := firstNonEmpty(str("session_id"), str("sessionId")), firstNonEmpty(str("transcript_path"), str("transcriptPath"))
-		a, _ := harness.Find(s.Harness)
 		if sock := in.Env["CLAUDE_CODE_MESSAGING_SOCKET"]; sock != "" {
 			p.setInbox(s.ID, claudeInbox{Socket: sock, Token: in.Env["CLAUDE_CODE_MESSAGING_TOKEN"]})
 		}
 		p.setSession(s.ID, func(x *store.Session) {
-			if !a.EarlyStart || x.Status != "starting" {
-				x.Status = "idle"
-			}
+			x.Status = "idle"
 			if conv != "" {
 				x.ConvID = conv
 			}
@@ -276,26 +270,6 @@ func (p *Pool) expireStaleApprovals() {
 	})
 }
 
-// copilotTool gives a Copilot tool hook's camelCase payload (toolName, toolArgs as a JSON string)
-// the names the other harnesses use (tool_name, tool_input).
-func copilotTool(pl map[string]any) {
-	if n, _ := pl["toolName"].(string); n != "" && pl["tool_name"] == nil {
-		pl["tool_name"] = n
-	}
-	if pl["tool_input"] != nil {
-		return
-	}
-	switch a := pl["toolArgs"].(type) {
-	case string:
-		var m map[string]any
-		if json.Unmarshal([]byte(a), &m) == nil {
-			pl["tool_input"] = m
-		}
-	case map[string]any:
-		pl["tool_input"] = a
-	}
-}
-
 // guardSendMessage checks a Claude SendMessage to another session: only its parent or a child on
 // the team's tree, or a session the owner opened a channel to with @. An address (a socket, a
 // bridge or cloud session) that is not such a session is refused; a plain name that is no
@@ -473,9 +447,6 @@ func (p *Pool) contextOut(id, event string, extra ...string) HookOut {
 	text += strings.Join(extra, "") // what this task adds: the journal entries that fit it
 	if text == "" {
 		return HookOut{}
-	}
-	if s, _ := p.session(id); s.Harness == harness.Copilot {
-		return hookJSON(map[string]any{"additionalContext": text})
 	}
 	return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 		"hookEventName": event, "additionalContext": text}})

@@ -236,7 +236,7 @@ func cmdNew(args []string) error {
 	storeFlag := fs.String("store", "", "store directory")
 	name := fs.String("name", "", "session name (default: <folder>-<harness>)")
 	cwd := fs.String("cwd", "", "working directory (default: the current directory)")
-	harnessFlag := fs.String("harness", "claude", "agent runtime: claude, omp, pi, codex or copilot")
+	harnessFlag := fs.String("harness", "claude", "agent runtime: claude, muse, omp, pi or codex")
 	model := fs.String("model", "", "model (default: the harness default)")
 	raw := fs.Bool("raw", false, "tests only: run the command after -- as a plain, non-agent session")
 	if err := fs.Parse(args); err != nil {
@@ -254,7 +254,7 @@ func cmdNew(args []string) error {
 		}
 	}
 	if len(rest) > 0 {
-		return fmt.Errorf("a PenguPool session runs an agent (--harness claude|omp|pi|codex|copilot), not a command")
+		return fmt.Errorf("a PenguPool session runs an agent (--harness claude|muse|omp|pi|codex), not a command")
 	}
 	if *cwd == "" {
 		wd, err := os.Getwd()
