@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
 // The Muse app API: the owner's phone reads one waiting session at a time
@@ -60,19 +62,20 @@ func (s *Server) museDevice(token string) (string, bool) {
 	}
 	sum := sha256.Sum256([]byte(token))
 	want := hex.EncodeToString(sum[:])
-	cfg := s.opts.Store.Config()
-	touch := false
-	for i := range cfg.MuseDevices {
-		d := &cfg.MuseDevices[i]
+	for _, d := range s.opts.Store.Config().MuseDevices {
 		if subtle.ConstantTimeCompare([]byte(d.TokenHash), []byte(want)) != 1 {
 			continue
 		}
 		if last, err := time.Parse(time.RFC3339, d.LastSeen); err != nil || time.Since(last) > time.Minute {
-			d.LastSeen = time.Now().UTC().Format(time.RFC3339)
-			touch = true
-		}
-		if touch {
-			_ = s.opts.Store.SaveConfig(cfg)
+			// Under the store lock, so a revoke racing this touch is never undone.
+			_ = s.opts.Store.UpdateConfig(func(cfg *store.Config) error {
+				for i := range cfg.MuseDevices {
+					if cfg.MuseDevices[i].TokenHash == d.TokenHash {
+						cfg.MuseDevices[i].LastSeen = time.Now().UTC().Format(time.RFC3339)
+					}
+				}
+				return nil
+			})
 		}
 		return d.Name, true
 	}

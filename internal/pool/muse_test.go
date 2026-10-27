@@ -128,8 +128,8 @@ func TestMusePairing(t *testing.T) {
 	}
 	// Revoke takes effect on the next request.
 	museOwnerCall(t, p, "muse.revoke", map[string]any{"name": "phone1"})
-	if _, ok := p.museDeviceToken(tok); ok {
-		t.Fatal("revoked token still works")
+	if devs := p.st.Config().MuseDevices; len(devs) != 0 {
+		t.Fatalf("revoked device still paired: %+v", devs)
 	}
 }
 

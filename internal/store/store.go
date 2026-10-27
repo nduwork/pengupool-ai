@@ -222,6 +222,26 @@ func (s *Store) Update(fn func(*State) error) error {
 	return nil
 }
 
+// UpdateConfig applies fn to a copy of the config under the store lock and, on success, writes it
+// atomically: a read-modify-write that cannot lose a concurrent change (a revoked Muse device stays
+// revoked). The device list is copied; fn must not mutate other shared maps in place.
+func (s *Store) UpdateConfig(fn func(*Config) error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.cfg
+	next.MuseDevices = append([]MuseDevice(nil), s.cfg.MuseDevices...)
+	if err := fn(&next); err != nil {
+		return err
+	}
+	next.Version = Version
+	next.UpdatedAt = time.Now().UTC()
+	if err := s.saveLocked(ConfigFile, next); err != nil {
+		return err
+	}
+	s.cfg = next
+	return nil
+}
+
 // SaveConfig writes config.json atomically.
 func (s *Store) SaveConfig(cfg Config) error {
 	s.mu.Lock()

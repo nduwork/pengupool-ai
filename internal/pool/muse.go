@@ -7,14 +7,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/nduwork/pengupool-ai/internal/gateway"
-	"github.com/nduwork/pengupool-ai/internal/harness"
-	"github.com/nduwork/pengupool-ai/internal/protocol"
-	"github.com/nduwork/pengupool-ai/internal/store"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nduwork/pengupool-ai/internal/gateway"
+	"github.com/nduwork/pengupool-ai/internal/harness"
+	"github.com/nduwork/pengupool-ai/internal/protocol"
+	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
 // The Muse app API's pool side: paired devices, one-card-at-a-time asks,
@@ -548,15 +550,6 @@ func (p *Pool) musePair(_ context.Context, _ gateway.Caller, raw json.RawMessage
 	}
 	delete(p.museCodes, code)
 	p.musePairFails = 0
-	cfg := p.st.Config()
-	for _, d := range cfg.MuseDevices {
-		// One name, one token, checked before the token mints (but after
-		// the code burns: a code is one pairing attempt, whatever it says).
-		if d.Name == name {
-			p.museMu.Unlock()
-			return nil, conflict("a device named %s is already paired", name)
-		}
-	}
 	p.museMu.Unlock()
 	var tok [32]byte
 	if _, err := rand.Read(tok[:]); err != nil {
@@ -564,53 +557,24 @@ func (p *Pool) musePair(_ context.Context, _ gateway.Caller, raw json.RawMessage
 	}
 	token := hex.EncodeToString(tok[:])
 	sum := sha256.Sum256([]byte(token))
-	cfg.MuseDevices = append(cfg.MuseDevices, store.MuseDevice{
-		Name: name, TokenHash: hex.EncodeToString(sum[:]), CreatedAt: now(),
+	err := p.st.UpdateConfig(func(cfg *store.Config) error {
+		for _, d := range cfg.MuseDevices {
+			// One name, one token (the code is burnt already: a code is one
+			// pairing attempt, whatever it says).
+			if d.Name == name {
+				return conflict("a device named %s is already paired", name)
+			}
+		}
+		cfg.MuseDevices = append(cfg.MuseDevices, store.MuseDevice{
+			Name: name, TokenHash: hex.EncodeToString(sum[:]), CreatedAt: now(),
+		})
+		return nil
 	})
-	if err := p.st.SaveConfig(cfg); err != nil {
+	if err != nil {
 		return nil, err
 	}
 	p.logf("muse device paired: %s", name)
 	return map[string]string{"token": token}, nil
-}
-
-// museDeviceToken resolves a bearer token to its device, updating last_seen
-// at most once a minute. Unknown, missing and revoked tokens fail.
-func (p *Pool) museDeviceToken(token string) (string, bool) {
-	if token == "" {
-		return "", false
-	}
-	sum := sha256.Sum256([]byte(token))
-	want := hex.EncodeToString(sum[:])
-	cfg := p.st.Config()
-	now := time.Now()
-	touch := false
-	for i := range cfg.MuseDevices {
-		d := &cfg.MuseDevices[i]
-		if subtleCompare(d.TokenHash, want) {
-			last, _ := time.Parse(time.RFC3339, d.LastSeen)
-			if now.Sub(last) > time.Minute {
-				d.LastSeen = now.UTC().Format(time.RFC3339)
-				touch = true
-			}
-			if touch {
-				_ = p.st.SaveConfig(cfg)
-			}
-			return d.Name, true
-		}
-	}
-	return "", false
-}
-
-func subtleCompare(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	var v byte
-	for i := range a {
-		v |= a[i] ^ b[i]
-	}
-	return v == 0
 }
 
 type museRevokeIn struct {
@@ -623,21 +587,15 @@ func (p *Pool) museRevoke(_ context.Context, _ gateway.Caller, raw json.RawMessa
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return nil, invalid("params: %v", err)
 	}
-	cfg := p.st.Config()
-	kept := cfg.MuseDevices[:0]
-	found := false
-	for _, d := range cfg.MuseDevices {
-		if d.Name == in.Name {
-			found = true
-			continue
+	err := p.st.UpdateConfig(func(cfg *store.Config) error {
+		i := slices.IndexFunc(cfg.MuseDevices, func(d store.MuseDevice) bool { return d.Name == in.Name })
+		if i < 0 {
+			return notFound("no device %q", in.Name)
 		}
-		kept = append(kept, d)
-	}
-	if !found {
-		return nil, notFound("no device %q", in.Name)
-	}
-	cfg.MuseDevices = kept
-	if err := p.st.SaveConfig(cfg); err != nil {
+		cfg.MuseDevices = slices.Delete(cfg.MuseDevices, i, i+1)
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	p.logf("muse device revoked: %s", in.Name)
