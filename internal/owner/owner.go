@@ -736,7 +736,30 @@ func Handler(token string) http.Handler {
 		}
 		send(w, 200, rows)
 	})
-	return mux
+	// The renderer runs on app://renderer (or localhost in dev) and sends
+	// an Authorization header, so browsers preflight every call. Answer
+	// the preflight and allow the renderer origin; the bearer token is
+	// still required on every endpoint.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if o := r.Header.Get("Origin"); allowedOrigin(o) {
+			w.Header().Set("Access-Control-Allow-Origin", o)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		}
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
+}
+
+func allowedOrigin(o string) bool {
+	if o == "app://renderer" {
+		return true
+	}
+	return strings.HasPrefix(o, "http://localhost:") || strings.HasPrefix(o, "http://127.0.0.1:")
 }
 
 // Serve builds the owner API server. Refuses to start without a token,

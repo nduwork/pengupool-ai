@@ -57,8 +57,10 @@ pgrep -f "PenguPool AI.app/Contents/MacOS/PenguPool AI" >/dev/null && APP_WAS_OP
 osascript -e 'tell application id "com.nduwork.pengupool-ai" to quit' >/dev/null 2>&1 || true
 sleep 1
 # The running server keeps serving from the old binary; stop it so the new one takes over.
+# (Also match the store's port: an earlier orphan with no parent still answers.)
 OLD=$(pgrep -f "PenguPool AI.app/Contents/Resources/bin/pengu owner-serve|\.local/bin/pengu owner-serve" || true)
-OLD=$(echo $OLD | tr ' ' '\n' | sort -u | tr '\n' ' ')
+PORT_OLD=$(lsof -ti tcp:8471 -sTCP:LISTEN 2>/dev/null || true)
+OLD="$OLD $PORT_OLD"
 if [ -n "${OLD% }" ]; then
   echo "stopping owner API: pid $OLD"
   kill $OLD

@@ -181,6 +181,7 @@ func TestHTTPAuthAndAnswer(t *testing.T) {
 }
 
 func TestServeGuards(t *testing.T) {
+	testEnv(t) // isolated store: no owner-token file to fall back to
 	t.Setenv("PENGUPOOL_OWNER_TOKEN", "")
 	if _, err := Serve("127.0.0.1", 8471); err == nil {
 		t.Fatal("missing token must fail")
@@ -258,5 +259,35 @@ func TestConfirmOverHTTP(t *testing.T) {
 	lines, _ := compass.Load()
 	if len(lines) != 1 || lines[0].Rule != "HTTP line" {
 		t.Fatalf("applied: %+v", lines)
+	}
+}
+
+func TestCORSPreflight(t *testing.T) {
+	testEnv(t)
+	srv := httptest.NewServer(Handler("tok"))
+	defer srv.Close()
+	req, _ := http.NewRequest("OPTIONS", srv.URL+"/lines", nil)
+	req.Header.Set("Origin", "app://renderer")
+	req.Header.Set("Access-Control-Request-Headers", "authorization")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 204 {
+		t.Fatalf("preflight: %d", resp.StatusCode)
+	}
+	if h := resp.Header.Get("Access-Control-Allow-Origin"); h != "app://renderer" {
+		t.Fatalf("allow-origin: %q", h)
+	}
+	req2, _ := http.NewRequest("OPTIONS", srv.URL+"/lines", nil)
+	req2.Header.Set("Origin", "https://evil.example")
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
+	if h := resp2.Header.Get("Access-Control-Allow-Origin"); h != "" {
+		t.Fatalf("evil origin allowed: %q", h)
 	}
 }

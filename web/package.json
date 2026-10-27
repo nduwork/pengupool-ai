@@ -1,7 +1,7 @@
 {
   "name": "pengupool-ai-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "PenguPool AI renderer: Compass lines, proposals, sessions, inbox, experiment chart.",
   "scripts": {
