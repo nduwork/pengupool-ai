@@ -743,6 +743,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("/api/healthz", s.handleHealthz)
 	mux.HandleFunc("/ws", s.handleWS)
 	s.workspaceRoutes(mux)
+	s.aiRoutes(mux)
 	mux.HandleFunc("/", s.handleStatic)
 	return s.hostGuard(mux)
 }
@@ -758,7 +759,8 @@ func (s *Server) hostGuard(next http.Handler) http.Handler {
 		// CORS for the desktop app's pages only; every API route still checks the token.
 		if r.Header.Get("Origin") == DesktopOrigin {
 			w.Header().Set("Access-Control-Allow-Origin", DesktopOrigin)
-			w.Header().Set("Access-Control-Allow-Headers", "X-PenguPool-Token")
+			w.Header().Set("Access-Control-Allow-Headers", "X-PenguPool-Token, Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 			w.Header().Set("Vary", "Origin")
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)

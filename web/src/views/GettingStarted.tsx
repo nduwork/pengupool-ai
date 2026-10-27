@@ -60,8 +60,8 @@ export function Welcome(): ReactElement {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background p-8 text-center">
       <Mascot className="size-20" />
-      <p className="text-title font-medium">Welcome to PenguPool</p>
-      <p className="max-w-md text-label text-muted-foreground">Start a session with an agent in a folder; teams and helpers build on it.</p>
+      <p className="text-title font-medium">Welcome to PenguPool AI</p>
+      <p className="max-w-md text-label text-muted-foreground">Start a session with an agent in a folder; teams and helpers build on it. Say a rule once in Compass AI and your agents stop asking.</p>
       <Button variant="default" onClick={() => app.showDialog(<NewSessionDialog onClose={() => app.showDialog(null)} />)}>
         New session
       </Button>

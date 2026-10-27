@@ -6,7 +6,7 @@ import type { Domain, Skill, Team } from "../protocol/domain";
 import type { OpenGate } from "../views/inbox";
 import { cn } from "../lib/utils";
 
-export type Nav = "workspace" | "skills" | "teams" | "settings";
+export type Nav = "workspace" | "skills" | "teams" | "settings" | "ai";
 
 /** An editor tab in the upper-centre pane: a file preview or a diff (the map is always tab 0). */
 export interface EditorTab {
