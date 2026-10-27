@@ -25,7 +25,6 @@ import { SkillLibrary } from "./views/SkillLibrary";
 import { isUnread, markViewed, type Viewed } from "./views/lanes";
 import { sessionNeeds, type OpenGate } from "./views/inbox";
 import { Teams } from "./views/Teams";
-import { CompassAI } from "./views/CompassAI";
 import { Handle } from "./views/Page";
 import { Workbench, usePanelRefs } from "./views/Workspace";
 
@@ -57,7 +56,7 @@ function channelFor(sessionId: string): number {
   return channel;
 }
 
-const NAV_TITLE: Record<Nav, string> = { workspace: "Workspace", skills: "Helper agents", teams: "Teams", settings: "Settings", ai: "Compass AI" };
+const NAV_TITLE: Record<Nav, string> = { workspace: "Workspace", skills: "Helper agents", teams: "Teams", settings: "Settings" };
 
 export function App(): ReactElement {
   // In the desktop app the page is loaded from the app bundle, so the host's address and token
@@ -380,7 +379,7 @@ export function App(): ReactElement {
                   )}
                 </div>
                 {nav !== "workspace" ? (
-                  <div className="absolute inset-0 bg-background">{nav === "skills" ? <SkillLibrary /> : nav === "teams" ? <Teams /> : nav === "ai" ? <CompassAI /> : <Settings />}</div>
+                  <div className="absolute inset-0 bg-background">{nav === "skills" ? <SkillLibrary /> : nav === "teams" ? <Teams /> : <Settings />}</div>
                 ) : null}
               </main>
             </div>

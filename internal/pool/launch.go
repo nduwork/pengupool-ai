@@ -104,7 +104,7 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 	cmd, env, err := harness.Spec(r.Harness, harness.Params{
 		SessionID: r.ID, Name: r.Name, Cwd: r.Cwd, Exe: p.exe, StoreDir: p.st.Dir(),
 		Model: r.Model, Effort: r.Effort, Resume: r.Resume, Command: r.Command, Env: p.env, Ollama: ollama,
-		SkillRepo: p.skillRepo(r.SkillID), ReadDirs: r.ReadDirs,
+		SkillRepo: p.skillRepo(r.SkillID), ReadDirs: r.ReadDirs, Bin: p.binFor(r.Harness),
 	})
 	if err != nil {
 		if strings.HasPrefix(err.Error(), "harness_unavailable") {
@@ -380,7 +380,7 @@ func (p *Pool) harnessProbe(_ context.Context, _ struct{}) (any, error) {
 	out := map[string]map[string]string{}
 	for _, a := range harness.Agents {
 		k := a.ID
-		v, err := harness.Probe(k, p.env)
+		v, err := harness.Probe(k, p.env, p.binFor(k))
 		r := map[string]string{"version": v}
 		if err != nil {
 			r["error"] = err.Error()
@@ -397,6 +397,14 @@ func agentIDs() string {
 		ids[i] = a.ID
 	}
 	return strings.Join(ids, ", ")
+}
+
+// binFor returns the configured binary override for an agent, or "".
+func (p *Pool) binFor(kind string) string {
+	if b, ok := p.st.Config().AgentBins[kind]; ok {
+		return strings.TrimSpace(b)
+	}
+	return ""
 }
 
 // ollamaPrefix marks a session's model as an Ollama model: "ollama/qwen3-coder".

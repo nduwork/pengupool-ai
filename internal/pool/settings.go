@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -144,9 +146,15 @@ var Restarter func()
 // HTTPAddr reports the gateway's bound address.
 var HTTPAddr func() string
 
+// settingsTailscale is the Tailscale checklist, on its own: it runs the CLI and a probe (seconds when
+// Tailscale is slow), so only the Phone connections panel asks for it, never every settings read.
+func (p *Pool) settingsTailscale(_ context.Context, _ struct{}) (any, error) {
+	return p.tailscaleChecks(), nil
+}
+
 func (p *Pool) settingsGet(_ context.Context, _ struct{}) (any, error) {
 	cfg := p.st.Config()
-	out := map[string]any{"network": cfg.Network, "store": p.st.Dir(), "executable": p.exe, "agent_models": cfg.AgentModels, "agents": harness.Agents, "version": p.version}
+	out := map[string]any{"network": cfg.Network, "store": p.st.Dir(), "executable": p.exe, "agent_models": cfg.AgentModels, "agent_bins": cfg.AgentBins, "agents": harness.Agents, "version": p.version}
 	if HTTPAddr != nil {
 		out["bound"] = HTTPAddr()
 	}
@@ -168,44 +176,66 @@ type settingsIn struct {
 	EnableServe bool               `json:"enable_serve,omitempty"`
 	Restart     bool               `json:"restart,omitempty"`
 	AgentModels *store.AgentModels `json:"agent_models,omitempty"`
+	AgentBins   map[string]string  `json:"agent_bins,omitempty"`
 }
 
 func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
-	cfg := p.st.Config()
-	if in.LAN != nil {
-		cfg.Network.LAN = *in.LAN
-	}
-	if in.LANAddr != nil {
-		cfg.Network.LANAddr = strings.TrimSpace(*in.LANAddr)
-	}
-	if in.Tailscale != nil {
-		cfg.Network.Tailscale = strings.TrimRight(strings.TrimSpace(*in.Tailscale), "/")
-	}
-	if am := in.AgentModels; am != nil {
-		for _, id := range am.Ollama {
-			if a, ok := harness.Find(id); !ok || !a.Ollama {
-				return nil, invalid("%s cannot run on Ollama", id)
-			}
+	// One locked read-modify-write: a Muse device revoked meanwhile stays revoked.
+	err := p.st.UpdateConfig(func(cfg *store.Config) error {
+		if in.LAN != nil {
+			cfg.Network.LAN = *in.LAN
 		}
-		am.OllamaURL, am.OllamaModel = strings.TrimSpace(am.OllamaURL), strings.TrimSpace(am.OllamaModel)
-		cfg.AgentModels = *am
-	}
-	if err := p.st.SaveConfig(cfg); err != nil {
+		if in.LANAddr != nil {
+			cfg.Network.LANAddr = strings.TrimSpace(*in.LANAddr)
+		}
+		if in.Tailscale != nil {
+			cfg.Network.Tailscale = strings.TrimRight(strings.TrimSpace(*in.Tailscale), "/")
+		}
+		if am := in.AgentModels; am != nil {
+			for _, id := range am.Ollama {
+				if a, ok := harness.Find(id); !ok || !a.Ollama {
+					return invalid("%s cannot run on Ollama", id)
+				}
+			}
+			am.OllamaURL, am.OllamaModel = strings.TrimSpace(am.OllamaURL), strings.TrimSpace(am.OllamaModel)
+			cfg.AgentModels = *am
+		}
+		if in.AgentBins != nil {
+			bins := map[string]string{}
+			for id, path := range in.AgentBins {
+				if id != harness.OMP && id != harness.Pi { // the only launches that take a set binary:
+					continue // any other id (an older save) is dropped, never fails the save
+				}
+				if path = strings.TrimSpace(path); path == "" {
+					continue // empty clears the override
+				}
+				if err := harness.ValidateBin(path); err != nil {
+					return invalid("%s: %v", id, err)
+				}
+				bins[id] = path
+			}
+			cfg.AgentBins = bins
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	res := map[string]any{"saved": true}
 	if in.EnableServe {
-		port := "7787"
-		if HTTPAddr != nil {
-			if i := strings.LastIndex(HTTPAddr(), ":"); i >= 0 {
-				port = HTTPAddr()[i+1:]
-			}
+		port := boundPort()
+		if port == "" {
+			port = "7787"
 		}
 		// Tailscale Serve on the tailnet only; never Funnel.
-		out, err := exec.CommandContext(ctx, "tailscale", "serve", "--bg", "--https=443", "http://127.0.0.1:"+port).CombinedOutput()
-		res["serve"] = strings.TrimSpace(string(out))
-		if err != nil {
-			res["serve_error"] = err.Error()
+		out, approve, err := serveOnce(ctx, port)
+		if approve != "" {
+			res["serve_approve_url"] = approve
+		} else {
+			res["serve"] = out
+			if err != nil {
+				res["serve_error"] = err.Error()
+			}
 		}
 	}
 	if in.Restart && Restarter != nil {
@@ -215,8 +245,51 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 	return res, nil
 }
 
+// tailscaleLookPath, tailscaleAppBundle and tailscaleCmd are the exec
+// seams for Tailscale: tests stub them, production uses the real CLI.
+var tailscaleLookPath = exec.LookPath
+
+var tailscaleAppBundle = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+
+var tailscaleCmd = func(ctx context.Context, bin string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, bin, args...).CombinedOutput()
+}
+
+// tailscaleBin finds the Tailscale CLI: PATH first, then the userBins
+// agent CLIs install into, then the macOS app bundle's CLI. A
+// GUI-launched daemon's PATH misses all but /usr/bin:/bin.
+func tailscaleBin() string {
+	if p, err := tailscaleLookPath("tailscale"); err == nil {
+		return p
+	}
+	home, _ := os.UserHomeDir()
+	for _, d := range userBins {
+		if rest, ok := strings.CutPrefix(d, "~/"); ok {
+			if home == "" {
+				continue
+			}
+			d = filepath.Join(home, rest)
+		}
+		p := filepath.Join(d, "tailscale")
+		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+			return p
+		}
+	}
+	if st, err := os.Stat(tailscaleAppBundle); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+		return tailscaleAppBundle
+	}
+	return ""
+}
+
 func tailscaleName() (string, error) {
-	out, err := exec.Command("tailscale", "status", "--json").Output()
+	bin := tailscaleBin()
+	if bin == "" {
+		return "", errors.New("tailscale is not running or not installed")
+	}
+	// Bounded: every settings read asks, and a hung tailscaled must not hold the Settings page.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, "status", "--json").Output()
 	if err != nil {
 		return "", errors.New("tailscale is not running or not installed")
 	}
@@ -229,6 +302,227 @@ func tailscaleName() (string, error) {
 	return strings.TrimSuffix(st.Self.DNSName, "."), nil
 }
 
+// tailscaleFix is the one fix a failing checklist row offers: a link to
+// open, or a button that runs an action.
+type tailscaleFix struct {
+	Kind   string `json:"kind"` // link | button
+	Label  string `json:"label"`
+	URL    string `json:"url,omitempty"`
+	Action string `json:"action,omitempty"` // serve | retry
+}
+
+// tailscaleCheck is one row of the Tailscale checklist.
+type tailscaleCheck struct {
+	ID     string        `json:"id"`
+	Label  string        `json:"label"`
+	OK     bool          `json:"ok"`
+	Detail string        `json:"detail"`
+	Fix    *tailscaleFix `json:"fix,omitempty"`
+}
+
+type tailscaleStatus struct {
+	BackendState string   `json:"BackendState"`
+	CertDomains  []string `json:"CertDomains"`
+	Self         struct {
+		DNSName     string   `json:"DNSName"`
+		CertDomains []string `json:"CertDomains"`
+	} `json:"Self"`
+}
+
+type tailscaleServeStatus struct {
+	Web map[string]struct {
+		Handlers map[string]struct {
+			Proxy string `json:"Proxy"`
+		} `json:"Handlers"`
+	} `json:"Web"`
+}
+
+// serveProxyTarget returns what the :443 serve entry proxies to
+// ("127.0.0.1:port"), or "" when Serve does not point at the app.
+func serveProxyTarget(s tailscaleServeStatus) string {
+	for name, web := range s.Web {
+		if !strings.HasSuffix(name, ":443") {
+			continue
+		}
+		for _, h := range web.Handlers {
+			if strings.HasPrefix(h.Proxy, "http://127.0.0.1:") {
+				return strings.TrimPrefix(h.Proxy, "http://")
+			}
+		}
+	}
+	return ""
+}
+
+func boundPort() string {
+	if HTTPAddr == nil {
+		return ""
+	}
+	if i := strings.LastIndex(HTTPAddr(), ":"); i >= 0 {
+		return HTTPAddr()[i+1:]
+	}
+	return ""
+}
+
+// runTailscaleStatus runs status --json (10 s) and parses what the checklist needs.
+func runTailscaleStatus(ctx context.Context, bin string) (tailscaleStatus, error) {
+	var st tailscaleStatus
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	out, err := tailscaleCmd(ctx, bin, "status", "--json")
+	if err != nil {
+		return st, err
+	}
+	if i := bytes.IndexByte(out, '{'); i > 0 {
+		out = out[i:] // the CLI may print a version-skew warning before the JSON
+	}
+	if err := json.Unmarshal(out, &st); err != nil {
+		return st, err
+	}
+	return st, nil
+}
+
+// tailscaleChecks builds the checklist, in order. Every failing row
+// carries exactly one fix.
+func (p *Pool) tailscaleChecks() []tailscaleCheck {
+	bin := tailscaleBin()
+	if bin == "" {
+		return []tailscaleCheck{{
+			ID: "installed", Label: "Installed", Detail: "The Tailscale CLI was not found.",
+			Fix: &tailscaleFix{Kind: "link", Label: "Install Tailscale", URL: "https://tailscale.com/download"},
+		}}
+	}
+	ctx := context.Background()
+	st, serr := runTailscaleStatus(ctx, bin)
+	checks := []tailscaleCheck{{ID: "installed", Label: "Installed", OK: true, Detail: bin}}
+	if serr != nil {
+		return append(checks, tailscaleCheck{
+			ID: "login", Label: "Logged in", Detail: strings.TrimSpace(serr.Error()),
+			Fix: &tailscaleFix{Kind: "button", Label: "Check again", Action: "retry"},
+		})
+	}
+	if st.BackendState == "Running" {
+		checks = append(checks, tailscaleCheck{ID: "login", Label: "Logged in", OK: true, Detail: "Backend running"})
+	} else {
+		checks = append(checks, tailscaleCheck{
+			ID: "login", Label: "Logged in", Detail: "Backend state: " + firstNonEmpty(st.BackendState, "not running"),
+			Fix: &tailscaleFix{Kind: "button", Label: "Check again", Action: "retry"},
+		})
+		return checks
+	}
+	name := strings.TrimSuffix(st.Self.DNSName, ".")
+	certs := append(append([]string{}, st.Self.CertDomains...), st.CertDomains...)
+	if len(certs) > 0 {
+		checks = append(checks, tailscaleCheck{ID: "https", Label: "HTTPS on the tailnet", OK: true, Detail: strings.Join(certs, ", ")})
+	} else {
+		checks = append(checks, tailscaleCheck{
+			ID: "https", Label: "HTTPS on the tailnet", Detail: "No HTTPS certificate on the tailnet.",
+			Fix: &tailscaleFix{Kind: "link", Label: "Enable HTTPS in the admin console", URL: "https://login.tailscale.com/admin/dns"},
+		})
+	}
+	port := boundPort()
+	var target string
+	if out, err := func() ([]byte, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return tailscaleCmd(ctx, bin, "serve", "status", "--json")
+	}(); err == nil {
+		var ss tailscaleServeStatus
+		if json.Unmarshal(out, &ss) == nil {
+			target = serveProxyTarget(ss)
+		}
+	}
+	want := "127.0.0.1:" + port
+	switch {
+	case port != "" && target == want:
+		checks = append(checks, tailscaleCheck{ID: "serve", Label: "Serve points at this app", OK: true, Detail: "https://" + name + " serves this app"})
+	case target != "":
+		checks = append(checks, tailscaleCheck{
+			ID: "serve", Label: "Serve points at this app", Detail: "Serve points at " + target + ", not this app.",
+			Fix: &tailscaleFix{Kind: "button", Label: "Serve", Action: "serve"},
+		})
+	default:
+		checks = append(checks, tailscaleCheck{
+			ID: "serve", Label: "Serve points at this app", Detail: "Serve is not pointing at this app.",
+			Fix: &tailscaleFix{Kind: "button", Label: "Serve", Action: "serve"},
+		})
+	}
+	if name == "" {
+		return append(checks, tailscaleCheck{
+			ID: "reachable", Label: "Reachable", Detail: "No tailnet name.",
+			Fix: &tailscaleFix{Kind: "button", Label: "Retry", Action: "retry"},
+		})
+	}
+	client := http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("https://" + name + "/")
+	if err == nil {
+		resp.Body.Close()
+		checks = append(checks, tailscaleCheck{ID: "reachable", Label: "Reachable", OK: true, Detail: "HTTP " + resp.Status})
+	} else {
+		checks = append(checks, tailscaleCheck{
+			ID: "reachable", Label: "Reachable", Detail: strings.TrimSpace(err.Error()),
+			Fix: &tailscaleFix{Kind: "button", Label: "Retry", Action: "retry"},
+		})
+	}
+	return checks
+}
+
+var tailscaleApproveRe = regexp.MustCompile(`https://login\.tailscale\.com/[^\s"']*`)
+
+// serveOnce runs Tailscale Serve at this daemon's bound port (20 s). A
+// login.tailscale.com approval URL in the output is returned, not an error.
+func serveOnce(ctx context.Context, port string) (out, approveURL string, err error) {
+	bin := tailscaleBin()
+	if bin == "" {
+		return "", "", errors.New("tailscale is not installed")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	raw, err := tailscaleCmd(ctx, bin, "serve", "--bg", "--https=443", "http://127.0.0.1:"+port)
+	out = strings.TrimSpace(string(raw))
+	if approveURL = tailscaleApproveRe.FindString(out); approveURL != "" {
+		return out, approveURL, nil
+	}
+	return out, "", err
+}
+
+// HealTailscaleServe re-runs Serve when the saved Serve target is not this
+// daemon's bound port (e.g. after a restart onto a new port). Only for the
+// owner's real home; never for throwaway stores.
+func (p *Pool) HealTailscaleServe() {
+	cfg := p.st.Config()
+	if cfg.Network.Tailscale == "" || !store.IsHomeDefault(p.st.Dir()) {
+		return
+	}
+	port := boundPort()
+	if port == "" {
+		return
+	}
+	bin := tailscaleBin()
+	if bin == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	raw, err := tailscaleCmd(ctx, bin, "serve", "status", "--json")
+	if err != nil {
+		return
+	}
+	var ss tailscaleServeStatus
+	if json.Unmarshal(raw, &ss) != nil {
+		return
+	}
+	if serveProxyTarget(ss) == "127.0.0.1:"+port {
+		return
+	}
+	if out, approve, err := serveOnce(context.Background(), port); err != nil && approve == "" {
+		p.logf("pool: tailscale serve re-point failed: %v (%s)", err, out)
+		return
+	} else if approve != "" {
+		p.logf("pool: tailscale serve needs approval in the admin console")
+		return
+	}
+	p.logf("pool: tailscale serve re-pointed at 127.0.0.1:%s", port)
+}
 func lanIPs() []string {
 	out, err := exec.Command("ifconfig").Output()
 	if err != nil {

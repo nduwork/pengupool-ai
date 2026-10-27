@@ -22,6 +22,80 @@ import (
 // block agent work: the CLI gives up quickly and exits 0 when the daemon is not answering. Checked
 // operations (a SendMessage to a peer) fail closed only on an explicit refusal.
 
+// resolveMuseSession maps a Muse hook to its pool session. Muse scrubs the hook environment, so the
+// hook names no session. When the calling process is known, the session is the live Muse session whose
+// process it runs under: nothing else, so an agent in another session cannot speak as it, and two Muse
+// sessions in one folder (or the owner's own Muse, outside PenguPool) never take each other's identity.
+// Without a process to go by (a platform with no readable process tree, tests), a live Muse session
+// whose ConvID is the payload's session id wins, else the newest live, unbound Muse session in the same
+// folder is bound. Anything else resolves to nothing: the hook is a silent, fast no-op.
+func (p *Pool) resolveMuseSession(c gateway.Caller, pl map[string]any) (store.Session, bool) {
+	msid, _ := pl["session_id"].(string)
+	st := p.st.State()
+	if c.PeerPID > 0 && procTreeReadable {
+		for _, s := range st.Sessions {
+			if s.Harness != harness.Muse || !museLive(s) || s.Pid <= 0 || !p.onThisHost(s.NodeID) {
+				continue
+			}
+			if yes, _ := descendsFrom(c.PeerPID, s.Pid); yes {
+				if msid != "" && s.ConvID != msid {
+					p.setSession(s.ID, func(x *store.Session) { x.ConvID = msid })
+					s, _ = p.session(s.ID)
+				}
+				return s, true
+			}
+		}
+		return store.Session{}, false
+	}
+	cwd, _ := pl["cwd"].(string)
+	if msid == "" {
+		return store.Session{}, false
+	}
+	for _, s := range st.Sessions {
+		if s.Harness == harness.Muse && s.ConvID == msid && museLive(s) {
+			return s, true
+		}
+	}
+	if cwd == "" {
+		return store.Session{}, false
+	}
+	var best *store.Session
+	for i, s := range st.Sessions {
+		if s.Harness != harness.Muse || s.ConvID != "" || !museLive(s) || !sameDir(s.Cwd, cwd) {
+			continue
+		}
+		if best == nil || s.StartedAt.After(best.StartedAt) {
+			best = &st.Sessions[i]
+		}
+	}
+	if best == nil {
+		return store.Session{}, false
+	}
+	p.setSession(best.ID, func(x *store.Session) { x.ConvID = msid })
+	if s, ok := p.session(best.ID); ok {
+		return s, true
+	}
+	return store.Session{}, false
+}
+
+// museLive reports whether a pool session may take a Muse hook: still
+// running and not marked ended or unsupported. An exited session never
+// binds again.
+func museLive(s store.Session) bool {
+	return s.State != "exited" && s.Status != "ended" && s.Status != "harness no longer supported"
+}
+
+// sameDir reports whether two working directories are the same folder,
+// through symlinks (/tmp vs /private/tmp) as well as literally.
+func sameDir(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && ra == rb
+}
+
 type hookIn struct {
 	SessionID string            `json:"session_id"`
 	Harness   string            `json:"harness"`
@@ -37,16 +111,28 @@ type HookOut struct {
 	Exit   int    `json:"exit"`
 }
 
+// hookEvent is a hook with no known calling process (tests): see hookEventFrom.
 func (p *Pool) hookEvent(ctx context.Context, in hookIn) (any, error) {
+	return p.hookEventFrom(ctx, gateway.Caller{}, in)
+}
+
+// hookEventFrom is hook.event, with the calling process that resolves a Muse hook's session.
+func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (any, error) {
 	entered := time.Now() // a Stop's whole answer is due by entered + StopDeadline
+	var pl map[string]any
+	_ = json.Unmarshal(in.Payload, &pl)
+	if in.Harness == harness.Muse {
+		// Muse scrubs the hook environment, so the session is resolved
+		// for every event, in this one place.
+		s, ok := p.resolveMuseSession(c, pl)
+		if !ok {
+			return HookOut{}, nil // outside PenguPool, or the daemon just started: untouched
+		}
+		in.SessionID = s.ID
+	}
 	s, ok := p.session(in.SessionID)
 	if !ok {
 		return HookOut{}, nil // not a pool session: say nothing
-	}
-	var pl map[string]any
-	_ = json.Unmarshal(in.Payload, &pl)
-	if pl != nil {
-		copilotTool(pl)
 	}
 	str := func(k string) string { v, _ := pl[k].(string); return v }
 	// Activity time drives the map's Stale state; written at most every 30 s.
@@ -75,14 +161,11 @@ func (p *Pool) hookEvent(ctx context.Context, in hookIn) (any, error) {
 	switch in.Event {
 	case "SessionStart":
 		conv, transcript := firstNonEmpty(str("session_id"), str("sessionId")), firstNonEmpty(str("transcript_path"), str("transcriptPath"))
-		a, _ := harness.Find(s.Harness)
 		if sock := in.Env["CLAUDE_CODE_MESSAGING_SOCKET"]; sock != "" {
 			p.setInbox(s.ID, claudeInbox{Socket: sock, Token: in.Env["CLAUDE_CODE_MESSAGING_TOKEN"]})
 		}
 		p.setSession(s.ID, func(x *store.Session) {
-			if !a.EarlyStart || x.Status != "starting" {
-				x.Status = "idle"
-			}
+			x.Status = "idle"
 			if conv != "" {
 				x.ConvID = conv
 			}
@@ -124,6 +207,20 @@ func (p *Pool) hookEvent(ctx context.Context, in hookIn) (any, error) {
 		}
 		return p.contextOut(s.ID, "UserPromptSubmit", p.journalForPrompt(s, t.Prompt), p.nextStepNote(s, t.Prompt), p.subagentPlan(s, t.Prompt), p.wordingNote(s.ID)), nil
 	case "PreToolUse":
+		if in.Harness == harness.Muse {
+			if _, ok := pl["tool_name"].(string); !ok {
+				// The Muse tool payload shape is still unknown: never
+				// block on it, allow and note it once.
+				p.mu.Lock()
+				warned := p.museToolWarned
+				p.museToolWarned = true
+				p.mu.Unlock()
+				if !warned {
+					p.logf("pool: muse PreToolUse without tool_name; allowed")
+				}
+				return HookOut{}, nil
+			}
+		}
 		p.setStatus(s.ID, "working")
 		p.turnOpen(s.ID, "")
 		p.asking(s.ID, str("tool_name"), true)
@@ -274,26 +371,6 @@ func (p *Pool) expireStaleApprovals() {
 		}
 		return nil
 	})
-}
-
-// copilotTool gives a Copilot tool hook's camelCase payload (toolName, toolArgs as a JSON string)
-// the names the other harnesses use (tool_name, tool_input).
-func copilotTool(pl map[string]any) {
-	if n, _ := pl["toolName"].(string); n != "" && pl["tool_name"] == nil {
-		pl["tool_name"] = n
-	}
-	if pl["tool_input"] != nil {
-		return
-	}
-	switch a := pl["toolArgs"].(type) {
-	case string:
-		var m map[string]any
-		if json.Unmarshal([]byte(a), &m) == nil {
-			pl["tool_input"] = m
-		}
-	case map[string]any:
-		pl["tool_input"] = a
-	}
 }
 
 // guardSendMessage checks a Claude SendMessage to another session: only its parent or a child on
@@ -473,9 +550,6 @@ func (p *Pool) contextOut(id, event string, extra ...string) HookOut {
 	text += strings.Join(extra, "") // what this task adds: the journal entries that fit it
 	if text == "" {
 		return HookOut{}
-	}
-	if s, _ := p.session(id); s.Harness == harness.Copilot {
-		return hookJSON(map[string]any{"additionalContext": text})
 	}
 	return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 		"hookEventName": event, "additionalContext": text}})

@@ -9,10 +9,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nduwork/pengupool-ai/internal/compass"
 	"github.com/nduwork/pengupool-ai/internal/decision"
 	"github.com/nduwork/pengupool-ai/internal/harness"
-	"github.com/nduwork/pengupool-ai/internal/inject"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 )
 
@@ -173,24 +171,7 @@ func (p *Pool) renderCompass() string {
 		}
 		out.WriteString(l + "\n")
 	}
-	out.WriteString(penguCompass())
 	return out.String()
-}
-
-// penguCompass is the PenguPool AI improvement: the owner's confirmed
-// Compass lines from the pengu store (~/.pengupool-ai/compass.jsonl,
-// evidence-weighted, confirmed only — agents never write there) ride
-// along with the pool's own compass in every session's context.
-func penguCompass() string {
-	lines, err := compass.Load()
-	if err != nil || len(lines) == 0 {
-		return ""
-	}
-	body := compass.FormatLines(inject.Select(lines, "", 8, 2000))
-	if body == "" {
-		return ""
-	}
-	return "\n## Owner-confirmed Compass lines (PenguPool AI)\n" + body + "\n"
 }
 
 // renderNotes is the hint every agent gets: the record is PenguPool's, the compass is searchable.

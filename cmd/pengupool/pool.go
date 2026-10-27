@@ -136,24 +136,38 @@ func hookUnjudged(h, event, why string) string {
 // cmdHook forwards a harness hook to the daemon. A status hook never blocks agent work: when the
 // daemon does not answer it exits 0 and prints nothing; a PreToolUse fails closed (hookUnjudged).
 func cmdHook(args []string) error {
-	if len(args) < 2 {
-		return errors.New("usage: pengupool hook <harness> <event>")
+	// usage: pengupool hook [--store DIR] <harness> <event>. Muse scrubs
+	// the hook environment, so its hook command bakes --store in and the
+	// pool resolves the session from the payload's Muse session id.
+	storeOverride := ""
+	rest := args
+	if len(rest) >= 3 && rest[0] == "--store" {
+		storeOverride, rest = rest[1], rest[2:]
 	}
+	if len(rest) < 2 {
+		return errors.New("usage: pengupool hook [--store DIR] <harness> <event>")
+	}
+	harness, event := rest[0], rest[1]
 	sid := os.Getenv("PENGUPOOL_SESSION_ID")
 	payload, _ := io.ReadAll(io.LimitReader(os.Stdin, 1<<20+1))
-	if sid == "" {
+	if sid == "" && harness != "muse" {
 		return nil
 	}
+	store := poolStore()
+	if storeOverride != "" {
+		store = storeOverride
+	}
+	silent := harness == "muse" // unknown sessions and a down daemon are silent no-ops
 	if len(payload) > 1<<20 {
-		if msg := hookUnjudged(args[0], args[1], "the call is too large"); msg != "" {
+		if msg := hookUnjudged(harness, event, "the call is too large"); msg != "" && !silent {
 			fmt.Println(msg)
 		}
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), hookWait(args[1]))
+	ctx, cancel := context.WithTimeout(context.Background(), hookWait(event))
 	defer cancel()
 	if !json.Valid(payload) {
-		if msg := hookUnjudged(args[0], args[1], "the call could not be read"); msg != "" {
+		if msg := hookUnjudged(harness, event, "the call could not be read"); msg != "" && !silent {
 			fmt.Println(msg)
 			return nil
 		}
@@ -165,11 +179,11 @@ func cmdHook(args []string) error {
 			env[k] = v
 		}
 	}
-	res, err := rpc(ctx, poolStore(), "hook.event", map[string]any{
-		"session_id": sid, "harness": args[0], "event": args[1], "payload": json.RawMessage(payload), "env": env,
+	res, err := rpc(ctx, store, "hook.event", map[string]any{
+		"session_id": sid, "harness": harness, "event": event, "payload": json.RawMessage(payload), "env": env,
 	})
 	if err != nil {
-		if msg := hookUnjudged(args[0], args[1], "the host did not answer"); msg != "" {
+		if msg := hookUnjudged(harness, event, "the host did not answer"); msg != "" && !silent {
 			fmt.Println(msg)
 		}
 		return nil

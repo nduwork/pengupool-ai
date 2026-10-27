@@ -130,7 +130,7 @@ func TestOnlyADoneReportMakesAnEntry(t *testing.T) {
 // that is working again, a compaction that never lands, and a second report joins the first.
 func TestDoneReportFallsBackToTheReport(t *testing.T) {
 	t.Run("no compact for the harness", func(t *testing.T) {
-		p, _, typed := journalSetup(t, harness.OpenCode)
+		p, _, typed := journalSetup(t, harness.Muse)
 		p.doneReport(done("Done: shipped\nthe report"))
 		if e := waitEntry(t, p); e.Title != "shipped" || e.Body != "Done: shipped\nthe report" || len(*typed) != 0 {
 			t.Fatalf("entry %+v, typed %q", e, *typed)
@@ -169,7 +169,7 @@ func TestDoneReportFallsBackToTheReport(t *testing.T) {
 		}
 	})
 	t.Run("secrets", func(t *testing.T) {
-		p, _, _ := journalSetup(t, harness.OpenCode)
+		p, _, _ := journalSetup(t, harness.Muse)
 		p.doneReport(done("Done: key sk-ant-abcdefghijklmnopqrstuvwxyz0123 rotated\nsk-ant-abcdefghijklmnopqrstuvwxyz0123"))
 		if e := waitEntry(t, p); strings.Contains(e.Title+e.Body, "sk-ant-") {
 			t.Fatalf("entry %+v", e)

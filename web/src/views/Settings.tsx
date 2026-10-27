@@ -1,5 +1,5 @@
 import { Bot, Check, DatabaseBackup, KeyRound, Loader2, Lock, MonitorUp, Network, RefreshCw, Server, Settings2, Sparkles, X } from "lucide-react";
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useState, type ReactElement, type ReactNode, Fragment } from "react";
 import { toast } from "sonner";
 
 import { useApp, usePersisted } from "../app/ctx";
@@ -413,6 +413,7 @@ interface SettingsResp {
   executable: string;
   agent_models?: AgentModels;
   agents?: { id: string; label: string; ollama: boolean; experimental?: boolean }[];
+  agent_bins?: Record<string, string>;
   version?: string;
 }
 
@@ -517,6 +518,8 @@ function Connections(): ReactElement {
           </Button>
         </Row>
       </Card>
+      <TailscaleChecklist rev={n} onChanged={() => setN(n + 1)} />
+      <MuseDevices onChanged={() => setN(n + 1)} />
       <p className="mt-3 rounded-md bg-warning/10 p-3 text-caption text-warning">
         A group password does not encrypt plain HTTP. Use the local network only when you trust it; new teams get iOS access off while it is on.
       </p>
@@ -524,6 +527,113 @@ function Connections(): ReactElement {
   );
 }
 
+type TailscaleCheck = { id: string; label: string; ok: boolean; detail: string; fix?: { kind: "link" | "button"; label: string; url?: string; action?: string } };
+
+function TailscaleChecklist({ rev, onChanged }: { rev: number; onChanged: () => void }): ReactElement {
+  const app = useApp();
+  const [approveUrl, setApproveUrl] = useState<string | null>(null);
+  const [checks, setChecks] = useState<TailscaleCheck[]>([]);
+  // Its own request: the checks run the Tailscale CLI, which must not slow every settings read.
+  useEffect(() => {
+    void app.call<TailscaleCheck[]>("settings.tailscale").then((r) => setChecks(r ?? []));
+  }, [rev]);
+  if (checks.length === 0) return <></>;
+  return (
+    <Card className="mb-4 px-4">
+      <div className="border-b border-border py-3">
+        <p className="text-label font-medium">Tailscale checklist</p>
+        <p className="text-caption text-muted-foreground">Each step in order. Serve points at this app over your tailnet only, never Funnel.</p>
+      </div>
+      {checks.map((c) => (
+        <Row key={c.id} title={c.label} hint={c.ok ? c.detail : c.detail}>
+          {c.ok ? (
+            <Badge tone="success">ok</Badge>
+          ) : c.fix === undefined ? null : c.fix.kind === "link" ? (
+            <Button size="sm" onClick={() => window.open(c.fix?.url, "_blank", "noopener")}>
+              {c.fix.label}
+            </Button>
+          ) : c.fix.action === "serve" ? (
+            <Button
+              size="sm"
+              onClick={async () => {
+                setApproveUrl(null);
+                const r = await app.call<{ serve?: string; serve_error?: string; serve_approve_url?: string }>("settings.save", { enable_serve: true });
+                if (r === undefined) return;
+                if (r.serve_approve_url !== undefined) setApproveUrl(r.serve_approve_url);
+                else toast(r.serve_error ?? r.serve ?? "Serve updated");
+                onChanged();
+              }}
+            >
+              {c.fix.label}
+            </Button>
+          ) : (
+            <Button size="sm" onClick={() => onChanged()}>
+              {c.fix.label}
+            </Button>
+          )}
+        </Row>
+      ))}
+      {approveUrl !== null ? (
+        <div className="py-3">
+          <Button size="sm" onClick={() => window.open(approveUrl, "_blank", "noopener")}>
+            Approve in Tailscale
+          </Button>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+type MuseDevice = { name: string; created_at: string; last_seen?: string };
+
+/** Pair Muse devices, one at a time, each with its own revocable token. */
+function MuseDevices({ onChanged }: { onChanged: () => void }): ReactElement {
+  const app = useApp();
+  const [devices, setDevices] = useState<MuseDevice[] | null>(null);
+  const [code, setCode] = useState<{ code: string; url: string } | null>(null);
+  useEffect(() => {
+    void app.call<MuseDevice[]>("muse.devices").then((d) => setDevices(d ?? []));
+  }, [app]);
+  return (
+    <Card className="mb-4 px-4">
+      <div className="border-b border-border py-3">
+        <p className="text-label font-medium">Muse devices</p>
+        <p className="text-caption text-muted-foreground">Pair the Muse app on each device. Each device gets its own token; revoke one any time.</p>
+      </div>
+      {(devices ?? []).map((d) => (
+        <Row key={d.name} title={d.name} hint={d.last_seen !== undefined ? `Last seen ${d.last_seen}` : `Paired ${d.created_at}`}>
+          <Button
+            size="sm"
+            onClick={async () => {
+              if ((await app.call("muse.revoke", { name: d.name })) !== undefined) {
+                setDevices((prev) => (prev ?? []).filter((x) => x.name !== d.name));
+                onChanged();
+              }
+            }}
+          >
+            Revoke
+          </Button>
+        </Row>
+      ))}
+      <div className="flex flex-wrap items-center gap-2 py-3">
+        <Button
+          size="sm"
+          onClick={async () => {
+            const r = await app.call<{ code: string; url: string }>("muse.pairCode", {});
+            if (r !== undefined) setCode({ code: r.code, url: r.url });
+          }}
+        >
+          Pair a Muse device
+        </Button>
+        {code !== null ? (
+          <p className="text-caption">
+            Enter <span className="font-mono font-semibold">{code.code}</span> in the Muse app within 5 minutes. URL: <span className="font-mono">{code.url}</span>
+          </p>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
 function Nodes(): ReactElement {
   const app = useApp();
   const [keySetup, setKeySetup] = useState<NodeView | null>(null);
@@ -895,7 +1005,7 @@ function Harnesses(): ReactElement {
     void app.call<Probe>("harness.probe").then((x) => setR(x ?? null));
   }, [n]);
   const claude = r?.claude;
-  const others = (s?.agents ?? []).filter((a) => a.experimental === true);
+  const others = (s?.agents ?? []).filter((a) => a.id !== "claude");
   return (
     <div>
       <H title="Agents on this machine">
@@ -926,18 +1036,20 @@ function Harnesses(): ReactElement {
       {s !== null ? <ClaudeOnOllama s={s} claude={claude} /> : null}
       <details className="mb-4 rounded-lg border border-border px-4 py-2">
         <summary className="cursor-pointer py-1 text-label font-medium">
-          Other agents <span className="font-normal text-muted-foreground">(experimental)</span>
+          Other agents
         </summary>
-        <p className="py-2 text-caption text-muted-foreground">Not yet tested with PenguPool: sessions, teams and approvals may not work fully. Each signs in with its own account in its first session.</p>
         {others.map((a) => {
           const v = r?.[a.id];
           return (
-            <Row key={a.id} title={`${a.label} (experimental)`} hint={v === undefined ? "Checking…" : (v.error ?? v.version)}>
-              <span className="flex items-center gap-3">
-                {s !== null && devMode() && a.ollama ? <OllamaSwitch s={s} id={a.id} label={a.label} /> : null}
-                {v !== undefined ? <Badge tone={v.error === undefined ? "success" : "neutral"}>{v.error === undefined ? "installed" : "not installed"}</Badge> : null}
-              </span>
-            </Row>
+            <Fragment key={a.id}>
+              <Row title={a.label} hint={v === undefined ? "Checking…" : (v.error ?? v.version)}>
+                <span className="flex items-center gap-3">
+                  {s !== null && devMode() && a.ollama ? <OllamaSwitch s={s} id={a.id} label={a.label} /> : null}
+                  {v !== undefined ? <Badge tone={v.error === undefined ? "success" : "neutral"}>{v.error === undefined ? "installed" : "not installed"}</Badge> : null}
+                </span>
+              </Row>
+              {(a.id === "omp" || a.id === "pi") && s !== null ? <BinField s={s} id={a.id} label={a.label} probe={v} onSaved={() => setN(n + 1)} /> : null}
+            </Fragment>
           );
         })}
       </details>
@@ -1097,6 +1209,40 @@ function OllamaSwitch({ s, id, label }: { s: SettingsResp; id: string; label: st
   );
 }
 
+/** A user-set binary for an agent: absolute path, or empty to clear. The probed version or error shows underneath. */
+function BinField({ s, id, label, probe, onSaved }: { s: SettingsResp; id: string; label: string; probe?: { version: string; error?: string }; onSaved: () => void }): ReactElement {
+  const app = useApp();
+  const [path, setPath] = useState(s.agent_bins?.[id] ?? "");
+  const [err, setErr] = useState("");
+  return (
+    <div className="space-y-1 border-b border-border py-3 pl-4 last:border-0">
+      <Label>{label} binary path (optional)</Label>
+      <div className="flex items-center gap-2">
+        <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/usr/local/bin/..." spellCheck={false} />
+        <Button
+          size="sm"
+          onClick={async () => {
+            setErr("");
+            const cur = (await app.call<SettingsResp>("settings.get"))?.agent_bins ?? {};
+            const next = { ...cur };
+            if (path.trim() === "") delete next[id];
+            else next[id] = path.trim();
+            const res = await app.call<{ saved?: boolean; error?: string }>("settings.save", { agent_bins: next });
+            if (res === undefined) {
+              setErr("not saved");
+              return;
+            }
+            onSaved();
+          }}
+        >
+          Save
+        </Button>
+      </div>
+      {err !== "" ? <p className="text-caption text-danger">{err}</p> : null}
+      <p className="text-caption text-muted-foreground">{probe === undefined ? "Checking…" : (probe.error ?? probe.version)}</p>
+    </div>
+  );
+}
 /** The running version, and a check for a newer release (update.check). */
 function About({ version }: { version?: string }): ReactElement {
   const app = useApp();

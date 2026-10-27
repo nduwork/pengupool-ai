@@ -282,3 +282,27 @@ func TestRetiredHelpersDropAtLoad(t *testing.T) {
 		t.Fatalf("skills = %+v", sk)
 	}
 }
+
+// A whole-config save from an older copy never brings a revoked Muse device back.
+func TestSaveConfigKeepsMuseDevices(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateConfig(func(c *Config) error {
+		c.MuseDevices = []MuseDevice{{Name: "phone1", TokenHash: "h"}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stale := st.Config()
+	if err := st.UpdateConfig(func(c *Config) error { c.MuseDevices = nil; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveConfig(stale); err != nil {
+		t.Fatal(err)
+	}
+	if d := st.Config().MuseDevices; len(d) != 0 {
+		t.Fatalf("revoked device came back: %+v", d)
+	}
+}

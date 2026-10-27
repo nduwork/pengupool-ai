@@ -118,8 +118,22 @@ type Config struct {
 	Network   Network        `json:"network"`
 	// AgentModels routes agents to a local Ollama model per launch.
 	AgentModels AgentModels `json:"agent_models"`
+	// AgentBins overrides an agent's binary with an absolute path, used
+	// instead of the PATH lookup for that agent's launches.
+	AgentBins map[string]string `json:"agent_bins,omitempty"`
+	// MuseDevices are paired Muse app devices: name, token hash, created
+	// and last seen. Tokens themselves are shown once and never stored.
+	MuseDevices []MuseDevice `json:"muse_devices,omitempty"`
 	// Backup pushes the Compass and the helpers' experience to a private GitHub repository.
 	Backup Backup `json:"backup"`
+}
+
+// MuseDevice is one paired Muse app device: the token lives only as a hash.
+type MuseDevice struct {
+	Name      string `json:"name"`
+	TokenHash string `json:"token_hash"`
+	CreatedAt string `json:"created_at"`
+	LastSeen  string `json:"last_seen,omitempty"`
 }
 
 // Backup: a daily snapshot is always kept on this machine; GitHub adds the push to a private

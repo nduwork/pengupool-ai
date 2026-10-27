@@ -55,21 +55,18 @@ const autoProceed = "[PenguPool triage] The owner's decisions cover this: procee
 var StopBudget = 2 * time.Second
 
 // stopContinues: harnesses whose Stop hook can continue the turn with a reason, the sanctioned way
-// to give them triage's go-ahead (Claude and Codex Stop, Gemini AfterAgent, Copilot agentStop). A
+// to give them triage's go-ahead (Claude and Codex Stop). A
 // message from outside is what Claude, rightly, will not take as the owner's word.
 func stopContinues(h string) bool {
-	return h == harness.Claude || h == harness.Codex || h == harness.Gemini || h == harness.Copilot
+	return h == harness.Claude || h == harness.Codex
 }
 
 // sendsGoAhead: harnesses that take the go-ahead as a user message through their own extension or
 // plugin (sendUserMessage), so it is sent after the turn, behind goAhead's checks.
-func sendsGoAhead(h string) bool { return h == harness.OMP || h == harness.Pi || h == harness.OpenCode }
+func sendsGoAhead(h string) bool { return h == harness.OMP || h == harness.Pi }
 
 // continueTurn is the harness's Stop output that continues the turn with reason as its next input.
 func continueTurn(h, reason string) HookOut {
-	if h == harness.Gemini { // AfterAgent re-prompts on deny
-		return hookJSON(map[string]any{"decision": "deny", "reason": reason})
-	}
 	return hookJSON(map[string]any{"decision": "block", "reason": reason})
 }
 
@@ -437,7 +434,7 @@ func (p *Pool) stopGate(s store.Session, t turn, reply, transcript string, stopA
 		stopActive || p.queued(s.ID) {
 		return HookOut{}, false
 	}
-	if reply == "" { // Copilot's agentStop carries no message: its transcript does
+	if reply == "" { // a Stop with no message: the transcript carries it
 		reply = stopReply(firstNonEmpty(transcript, s.Transcript))
 	}
 	if strings.TrimSpace(reply) == "" {
@@ -1374,7 +1371,7 @@ func patchFloor(patch string) string {
 func inGitDir(path string) bool { return gitDirRe.MatchString(filepath.ToSlash(filepath.Clean(path))) }
 
 // written is what a file-writing tool puts in the file: Write's content, an edit's new text
-// (Edit, MultiEdit's edits; OpenCode's and pi's spellings too), a notebook cell's new source.
+// (Edit, MultiEdit's edits; pi's spellings too), a notebook cell's new source.
 func written(in map[string]any) string {
 	var parts []string
 	take := func(m map[string]any) {

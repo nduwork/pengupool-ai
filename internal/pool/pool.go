@@ -18,6 +18,7 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/agentdb"
 	"github.com/nduwork/pengupool-ai/internal/decision"
 	"github.com/nduwork/pengupool-ai/internal/gateway"
+	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/hub"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
@@ -64,6 +65,12 @@ type Pool struct {
 	nodes NodeManager
 
 	mu                sync.Mutex
+	museMu            sync.Mutex                   // guards the muse pairing/answer caches below
+	museCodes         map[string]*musePairCode     // one-time pairing codes
+	musePairFails     int                          // wrong codes since the last success: throttles guessing
+	musePairBlocked   time.Time                    // pairing refused until then, after too many wrong codes
+	museAnswered      map[string]museAnswerDone    // device\x00key -> first answer: replays return it
+	museInflight      map[string]bool              // device\x00key -> an answer still running
 	achvLocks         map[string]*sync.Mutex       // one achievement job per skill, under mu
 	achvAgain         map[string]bool              // a job was asked while one ran, under mu
 	msgSock           map[string]claudeInbox       // session id → Claude inbox socket
@@ -98,12 +105,13 @@ type Pool struct {
 	// testScreen stands in for the hub's followed screens in tests.
 	testScreen func(id string) (string, bool)
 	// testSend stands in for delivering text to a session in tests, testKeys for typing into one.
-	testSend func(id, text string) error
-	testKeys func(id, keys string) error
-	journal  map[string]*pendingEntry // helper session id → its done report waiting for the compaction (guarded by mu)
-	db       *agentdb.DB              // agents.db: the Compass and logs; nil if it could not open
-	formMu   sync.Mutex               // formation changes apply one at a time
-	revoker  Revoker
+	testSend       func(id, text string) error
+	testKeys       func(id, keys string) error
+	journal        map[string]*pendingEntry // helper session id → its done report waiting for the compaction (guarded by mu)
+	museToolWarned bool                     // a Muse PreToolUse without tool_name was allowed and noted (under mu)
+	db             *agentdb.DB              // agents.db: the Compass and logs; nil if it could not open
+	formMu         sync.Mutex               // formation changes apply one at a time
+	revoker        Revoker
 
 	reposCache atomic.Pointer[ghRepos] // the GitHub account's repositories
 	// backupFor is the backup repository checked this run (private, writable) and the account's
@@ -142,9 +150,14 @@ func New(o Options) *Pool {
 		unlocks: map[string]map[string]bool{}, failures: map[string][]time.Time{},
 		lastInput: map[string]time.Time{}, pending: map[string][]protocol.TeamMessage{},
 		ownerEnter: map[string][]credit{}, requireOwnerInput: o.RequireOwnerInput,
+		museCodes: map[string]*musePairCode{}, museAnswered: map[string]museAnswerDone{}, museInflight: map[string]bool{},
 	}
 	p.loadInboxes()
 	p.expireStaleApprovals()
+	p.retireRemovedHarnesses()
+	// Off the start path: a slow `muse plugins install` must not hold the daemon up.
+	go harness.EnsureMusePlugin(o.Store.Dir(), o.Exe, env, logf)
+	go harness.EnsureCodexRules(o.Store.Dir(), o.Exe, env, logf)
 	p.dropRetiredProviders()
 	if db, err := agentdb.Open(filepath.Join(o.Store.Dir(), "agents.db")); err != nil {
 		logf("agent db: %v", err)
@@ -158,9 +171,26 @@ func New(o Options) *Pool {
 				dropped, agentdb.PreUpgradePath(filepath.Join(o.Store.Dir(), "agents.db")))
 		}
 		ls, _ := db.Lines(p.owner(), "", "", 0)
-		p.sweepDropped(ls) // lines dropped before the Compass stopped keeping them
+		p.sweepDropped(ls)                // lines dropped before the Compass stopped keeping them
+		p.maybeImportPengu(o.Store.Dir()) // one-time import of the separate Compass layer
 	}
 	return p
+}
+
+// retireRemovedHarnesses ends stored sessions whose harness PenguPool no
+// longer runs: they show as ended, never crash the load, and cannot resume.
+func (p *Pool) retireRemovedHarnesses() {
+	_ = p.update(func(st *store.State) error {
+		for i := range st.Sessions {
+			s := &st.Sessions[i]
+			if s.Harness == "" || s.Harness == harness.Shell || s.Harness == harness.Custom || harness.IsAgent(s.Harness) {
+				continue
+			}
+			s.State = "exited"
+			s.Status = "harness no longer supported"
+		}
+		return nil
+	})
 }
 
 // keyHelpers gives every helper registered without a repository key the key of its checkout's
@@ -190,7 +220,7 @@ func (p *Pool) keyHelpers() {
 // sessionMarkers are set by a running Claude Code for its own children. A host started from inside
 // a Claude session would pass them on, and each agent would think it is a sub-session (no
 // transcript, no resume). User settings such as CLAUDE_CODE_USE_BEDROCK pass through. CI makes
-// agents (Gemini CLI, Ink TUIs) run non-interactively, and a PenguPool session is interactive.
+// agents (Ink TUIs) run non-interactively, and a PenguPool session is interactive.
 var sessionMarkers = map[string]bool{
 	"CI": true, "CLAUDECODE": true, "CLAUDE_CODE_ENTRYPOINT": true, "CLAUDE_CODE_CHILD_SESSION": true, "CLAUDE_CODE_SSE_PORT": true,
 	"CLAUDE_CODE_MESSAGING_SOCKET": true, "CLAUDE_CODE_MESSAGING_TOKEN": true, "CLAUDE_CODE_SESSION_ID": true,
@@ -210,7 +240,7 @@ func agentEnv(env []string) []string {
 // the owner's login-shell PATH (launchd gives /usr/bin:/bin:/usr/sbin:/sbin) would find none of
 // them, so the ones that exist are added after PATH's own entries.
 // ponytail: fixed list; a version manager's bin (nvm, asdf) still needs the login shell's PATH.
-var userBins = []string{"~/.local/bin", "~/.bun/bin", "~/.npm-global/bin", "~/.opencode/bin", "~/.cargo/bin", "~/go/bin",
+var userBins = []string{"~/.local/bin", "~/.bun/bin", "~/.npm-global/bin", "~/.cargo/bin", "~/go/bin",
 	"/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin"}
 
 func withUserPath(env []string, home string) []string {
@@ -255,7 +285,7 @@ func (p *Pool) RPC(ctx context.Context, c gateway.Caller, typ string, params jso
 	// as the owner, so no agent can decide an approval, change the Compass or the team, or reconfigure
 	// the host, whatever it sends.
 	// A phone reaches the app with no token, so it is never an agent: its own requests only.
-	if !c.Owner && !(c.Phone && iosAllowed[typ]) && !(c.Terminal && terminalAllowed[typ]) && !(agentAllowed[typ] && !c.Phone) {
+	if !c.Owner && !(c.Phone && iosAllowed[typ]) && !(c.Phone && (typ == "muse.pair" || c.Device != "" && museAllowed[typ])) && !(c.Terminal && terminalAllowed[typ]) && !(agentAllowed[typ] && !c.Phone) {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "%s is for the owner, in the PenguPool app", typ)
 	}
 	if err := p.bindSession(c, params); err != nil {
@@ -365,7 +395,7 @@ func (p *Pool) handlers() map[string]handler {
 		"team.unlock":           p.teamUnlock,
 		"team.lock":             p.teamLock,
 		"message.send":          bind(p.messageSend),
-		"hook.event":            bind(p.hookEvent),
+		"hook.event":            bindCaller(p.hookEventFrom),
 		"decision.providers":    bind(p.providers),
 		"decision.ask":          bindCaller(p.decisionAsk),
 		"provider.save":         bind(p.providerSave),
@@ -374,8 +404,18 @@ func (p *Pool) handlers() map[string]handler {
 		"ollama.status":         bind(p.ollamaStatus),
 		"provider.activate":     bind(p.providerActivate),
 		"settings.get":          bind(p.settingsGet),
+		"settings.tailscale":    bind(p.settingsTailscale),
 		"settings.save":         bind(p.settingsSave),
 		"backup.get":            bind(p.backupGet),
+		"muse.next":             p.museNext,
+		"muse.answer":           p.museAnswer,
+		"muse.say":              p.museSay,
+		"muse.sessions":         p.museSessions,
+		"muse.compass":          p.museCompass,
+		"muse.pair":             p.musePair,
+		"muse.pairCode":         p.musePairCode,
+		"muse.devices":          p.museDevices,
+		"muse.revoke":           p.museRevoke,
 		"backup.set":            bind(p.backupSet),
 		"backup.now":            bind(p.backupNow),
 		"backup.repos":          bind(p.backupRepos),

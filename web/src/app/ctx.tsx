@@ -6,7 +6,7 @@ import type { Domain, Skill, Team } from "../protocol/domain";
 import type { OpenGate } from "../views/inbox";
 import { cn } from "../lib/utils";
 
-export type Nav = "workspace" | "skills" | "teams" | "settings" | "ai";
+export type Nav = "workspace" | "skills" | "teams" | "settings";
 
 /** An editor tab in the upper-centre pane: a file preview or a diff (the map is always tab 0). */
 export interface EditorTab {
@@ -115,12 +115,9 @@ const STALE_MS = 10 * 60 * 1000;
 export const AGENTS = [
   { id: "claude", label: "Claude Code", hint: "Anthropic's coding agent", clear: "/clear", experimental: false },
   { id: "muse", label: "Muse Code", hint: "Meta's coding agent", clear: "", experimental: false },
-  { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", experimental: true },
-  { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", experimental: true },
-  { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", experimental: true },
-  { id: "copilot", label: "GitHub Copilot", hint: "GitHub Copilot CLI", clear: "/clear", experimental: true },
-  { id: "opencode", label: "OpenCode", hint: "open-source coding agent", clear: "/new", experimental: true },
-  { id: "gemini", label: "Gemini CLI", hint: "Google's agent (Google login)", clear: "/clear", experimental: true },
+  { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", experimental: false },
+  { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", experimental: false },
+  { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", experimental: false },
 ] as const;
 
 /** The picker's choice for Claude Code on an Ollama model, launched with `ollama launch claude`. */

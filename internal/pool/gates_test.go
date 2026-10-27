@@ -1013,7 +1013,7 @@ func TestGoAheadThroughTheStopHook(t *testing.T) {
 		b, _ := json.Marshal(map[string]any{"decision": decision, "reason": autoProceed})
 		return string(b)
 	}
-	for h, shape := range map[string]string{harness.Claude: "block", harness.Codex: "block", harness.Copilot: "block", harness.Gemini: "deny"} {
+	for h, shape := range map[string]string{harness.Claude: "block", harness.Codex: "block"} {
 		t.Run(h, func(t *testing.T) {
 			p, _, sent := gateTeam(t)
 			guide(t, p)
@@ -1067,7 +1067,7 @@ func TestStopHookAnswersNothingUnlessSure(t *testing.T) {
 }
 
 func TestGoAheadAfterTheTurnForExtensionAgents(t *testing.T) {
-	for _, h := range []string{harness.OMP, harness.Pi, harness.OpenCode} {
+	for _, h := range []string{harness.OMP, harness.Pi} {
 		p, _, sent := gateTeam(t)
 		guide(t, p)
 		p.setSession("leadaaaaaaaa", func(x *store.Session) { x.Harness = h })
@@ -1162,7 +1162,7 @@ func TestStopHookDeadline(t *testing.T) {
 	}
 }
 
-func TestCopilotReplyFromItsTranscript(t *testing.T) {
+func TestStopReplyFromTranscript(t *testing.T) {
 	const id = "leadaaaaaaaa"
 	p, _, _ := gateTeam(t)
 	guide(t, p)
@@ -1171,25 +1171,25 @@ func TestCopilotReplyFromItsTranscript(t *testing.T) {
 	line, _ := json.Marshal(map[string]any{"type": "assistant", "message": map[string]any{"content": []map[string]any{{"type": "text", "text": checkInReply}}}})
 	_ = os.WriteFile(good, append(line, '\n'), 0o600)
 	stop := func(transcript string) HookOut {
-		p.setSession(id, func(x *store.Session) { x.Harness = harness.Copilot })
+		p.setSession(id, func(x *store.Session) { x.Harness = harness.Codex })
 		b, _ := json.Marshal(map[string]any{"prompt": "[PenguPool team message from web (helper)] carry on"})
-		_, _ = p.hookEvent(context.Background(), hookIn{SessionID: id, Harness: "copilot", Event: "UserPromptSubmit", Payload: b})
-		b, _ = json.Marshal(map[string]any{"transcriptPath": transcript, "stop_hook_active": false}) // agentStop: no message
-		out, err := p.hookEvent(context.Background(), hookIn{SessionID: id, Harness: "copilot", Event: "Stop", Payload: b})
+		_, _ = p.hookEvent(context.Background(), hookIn{SessionID: id, Harness: "codex", Event: "UserPromptSubmit", Payload: b})
+		b, _ = json.Marshal(map[string]any{"transcriptPath": transcript, "stop_hook_active": false}) // Stop: no message
+		out, err := p.hookEvent(context.Background(), hookIn{SessionID: id, Harness: "codex", Event: "Stop", Payload: b})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return out.(HookOut)
 	}
 	if out := stop(good); !strings.Contains(out.Stdout, `"decision":"block"`) {
-		t.Fatalf("Copilot Stop = %q", out.Stdout)
+		t.Fatalf("Codex Stop = %q", out.Stdout)
 	}
 	// A transcript it cannot read: no text, so no gate at all.
 	bad := filepath.Join(dir, "bad.jsonl")
 	_ = os.WriteFile(bad, []byte(`{"kind":"something else"}`+"\n"), 0o600)
 	before := waitGate(t, p, id, func(g agentdb.Gate) bool { return g.Outcome == "auto_proceeded" }).ID
 	if out := stop(bad); out.Stdout != "" {
-		t.Fatalf("Copilot Stop = %q", out.Stdout)
+		t.Fatalf("Codex Stop = %q", out.Stdout)
 	}
 	time.Sleep(200 * time.Millisecond) // the turn's own triage, after the hook
 	if g := lastGate(t, p, id); g.ID != before {
@@ -1387,10 +1387,9 @@ func TestFloorGuardPayloadShapes(t *testing.T) {
 	p, _, _ := gateTeam(t)
 	const id = "planaaaaaaaa"
 	for _, c := range []struct{ harness, payload string }{
-		{harness.Copilot, `{"toolName":"bash","toolArgs":"{\"command\":\"git push --force\"}"}`},
 		{harness.Codex, `{"tool_name":"Bash","tool_input":{"command":["bash","-lc","git push"]}}`},
 		{harness.OMP, `{"tool_name":"bash","tool_input":{"command":"git push"}}`},
-		{harness.OpenCode, `{"tool_name":"write","tool_input":{"filePath":".git/config","content":"x"}}`},
+		{harness.Pi, `{"tool_name":"write","tool_input":{"filePath":".git/config","content":"x"}}`},
 	} {
 		_ = p.st.Update(func(s *store.State) error { s.Sessions[sessionIndex(s, id)].Harness = c.harness; return nil })
 		out, err := p.hookEvent(context.Background(), hookIn{SessionID: id, Harness: c.harness, Event: "PreToolUse", Payload: []byte(c.payload)})
@@ -1613,5 +1612,40 @@ func TestAutonomySectionIsAlwaysGiven(t *testing.T) {
 	out := p.renderContext("leadaaaaaaaa")
 	if !strings.Contains(out, "## Working autonomously") || !strings.Contains(out, "force-pushing") || !strings.Contains(out, "unless a confirmed Compass line") {
 		t.Fatalf("context lacks the autonomy section: %s", out)
+	}
+}
+
+// The go-ahead through a verbatim Codex Stop payload, as captured live
+// (codex exec probe, hook stdin): the pool reads the real shape and the
+// turn continues with the go-ahead as its next input.
+func TestGoAheadThroughRealCodexStopPayload(t *testing.T) {
+	const id = "leadaaaaaaaa"
+	p, _, sent := gateTeam(t)
+	guide(t, p)
+	p.setSession(id, func(x *store.Session) { x.Harness = harness.Codex })
+	b, _ := json.Marshal(map[string]any{"prompt": "[PenguPool team message from web (helper)] carry on"})
+	if _, err := p.hookEvent(context.Background(), hookIn{SessionID: id, Harness: "codex", Event: "UserPromptSubmit", Payload: b}); err != nil {
+		t.Fatal(err)
+	}
+	// Verbatim shape of a real Codex Stop hook payload (ids are the
+	// probe's; the pool keys the turn by the session, not by these).
+	real := `{"session_id":"01a17ea0-7c4a-7022-8327-33803f8a5a6d","turn_id":"01a17ea0-7c7f-7a83-a1e2-ba447b7ec2fb","transcript_path":"/Users/nduwork/.codex/sessions/2026/10/27/rollout-2026-10-27T11-30-09-01a17ea0-7c4a-7022-8327-33803f8a5a6d.jsonl","cwd":"/tmp/h3ws","hook_event_name":"Stop","model":"glm-5.3-flash:cloud","permission_mode":"bypassPermissions","stop_hook_active":false,"last_assistant_message":"` + checkInReply + `"}`
+	out, err := p.hookEvent(context.Background(), hookIn{SessionID: id, Harness: "codex", Event: "Stop", Payload: json.RawMessage(real)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := json.Marshal(map[string]any{"decision": "block", "reason": autoProceed})
+	if out.(HookOut).Stdout != string(want) {
+		t.Fatalf("Stop output = %q, want %q", out.(HookOut).Stdout, want)
+	}
+	if g := waitGate(t, p, id, func(agentdb.Gate) bool { return true }); g.Outcome != "auto_proceeded" || sent.n() != 0 {
+		t.Fatalf("gate = %+v; sent %v", g, sent.got)
+	}
+	s, _ := p.session(id)
+	p.mu.Lock()
+	tr := p.turns[id]
+	p.mu.Unlock()
+	if s.Status == "idle" || tr == nil || tr.Prompt != autoProceed {
+		t.Fatalf("the turn did not go on: status %q, turn %+v", s.Status, tr)
 	}
 }

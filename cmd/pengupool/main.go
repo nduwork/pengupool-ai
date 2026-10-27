@@ -14,16 +14,17 @@ import (
 
 	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/node"
+	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
 // Version of the prototype. It is not the protocol version; that is protocol.Version.
-const Version = "0.3.0"
+const Version = "0.4.0"
 
 const help = `usage: pengupool <command> [options]
 
   daemon [--store DIR] [--http ADDR] [--lan]
         run the host: state, sessions, browser app. Loopback only unless --lan.
-  new [--name N] [--cwd DIR] [--harness claude|omp|pi|codex|copilot] [--model M]
+  new [--name N] [--cwd DIR] [--harness claude|muse|omp|pi|codex] [--model M]
         start an agent session (Claude Code by default) in that directory.
   ls [--json]
         list sessions.
@@ -67,6 +68,10 @@ const help = `usage: pengupool <command> [options]
         internal: called by harness hooks and Claude's status line.
   worker --session-id ID
         internal: one PTY worker; the launch spec arrives on file descriptor 3.
+  review [REV]
+        Muse Code reviews the diff (commit, stdin, or worktree).
+  experiment [--tasks F] [--out D] [--only ID...] [--judge-model M] [--judge-base-url U] [--max-steps N]
+        run the with-vs-without benchmark.
   version | help
 
 Store directory: $PENGUPOOL_HOME/v2, default ~/.pengupool/v2 (override with --store or
@@ -134,6 +139,10 @@ func main() {
 		err = cmdBridge(args[1:])
 	case "worker":
 		err = cmdWorker(args[1:])
+	case "review":
+		err = runReview(args[1:])
+	case "experiment":
+		err = runExperiment(args[1:])
 	case "version", "-V", "--version":
 		fmt.Println(versionLine())
 	case "help", "-h", "--help":
@@ -153,14 +162,7 @@ func storeDir(override string) string {
 	if override != "" {
 		return override
 	}
-	if home := os.Getenv("PENGUPOOL_HOME"); home != "" {
-		return filepath.Join(home, "v2")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(".", ".pengupool-ai", "v2")
-	}
-	return filepath.Join(home, ".pengupool-ai", "v2")
+	return store.DefaultDir()
 }
 
 // hubSocket is the daemon's unix socket, derived from the store directory.

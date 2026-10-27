@@ -26,7 +26,43 @@ func (e *ErrCorrupt) Error() string {
 
 func (e *ErrCorrupt) Unwrap() error { return e.Err }
 
-// Store is the single writer of one PenguPool home directory.
+// DefaultDir is the store directory with no override: $PENGUPOOL_HOME/v2,
+// else ~/.pengupool-ai/v2.
+func DefaultDir() string {
+	if home := os.Getenv("PENGUPOOL_HOME"); home != "" {
+		return filepath.Join(home, "v2")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".", ".pengupool-ai", "v2")
+	}
+	return filepath.Join(home, ".pengupool-ai", "v2")
+}
+
+// IsHomeDefault reports whether dir is the owner's real store:
+// PENGUPOOL_HOME must be unset and dir must resolve to
+// ~/.pengupool-ai/v2. Installers that write outside the store (Muse
+// plugin, Codex rules) run only then: a throwaway daemon with
+// PENGUPOOL_HOME set is never the owner's home, even when its store
+// equals DefaultDir. Temp HOME/CODEX_HOME/XDG dirs are a separate
+// rule; this one guards the installers.
+func IsHomeDefault(dir string) bool {
+	if os.Getenv("PENGUPOOL_HOME") != "" {
+		return false
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	want := filepath.Join(home, ".pengupool-ai", "v2")
+	cdir, cerr := filepath.EvalSymlinks(filepath.Clean(dir))
+	cwant, werr := filepath.EvalSymlinks(filepath.Clean(want))
+	if cerr != nil || werr != nil {
+		return filepath.Clean(dir) == filepath.Clean(want)
+	}
+	return cdir == cwant
+}
+
 type Store struct {
 	dir string
 
@@ -186,10 +222,33 @@ func (s *Store) Update(fn func(*State) error) error {
 	return nil
 }
 
-// SaveConfig writes config.json atomically.
+// UpdateConfig applies fn to a copy of the config under the store lock and, on success, writes it
+// atomically: a read-modify-write that cannot lose a concurrent change (a revoked Muse device stays
+// revoked). The device list is copied; fn must not mutate other shared maps in place.
+func (s *Store) UpdateConfig(fn func(*Config) error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.cfg
+	next.MuseDevices = append([]MuseDevice(nil), s.cfg.MuseDevices...)
+	if err := fn(&next); err != nil {
+		return err
+	}
+	next.Version = Version
+	next.UpdatedAt = time.Now().UTC()
+	if err := s.saveLocked(ConfigFile, next); err != nil {
+		return err
+	}
+	s.cfg = next
+	return nil
+}
+
+// SaveConfig writes config.json atomically. It keeps the paired Muse devices as they are now: a caller
+// holding an older copy (a settings or backup save racing a revoke) can never bring a revoked device
+// back. Devices change only through UpdateConfig.
 func (s *Store) SaveConfig(cfg Config) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	cfg.MuseDevices = s.cfg.MuseDevices
 	cfg.Version = Version
 	cfg.UpdatedAt = time.Now().UTC()
 	if err := s.saveLocked(ConfigFile, cfg); err != nil {
