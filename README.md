@@ -6,6 +6,11 @@ See [DESIGN.md](DESIGN.md). Each module lands as an `M<n>` step: self-check, a r
 
 Python 3.9+, standard library only.
 
+## Install
+
+Download `PenguPool-Muse-<version>-mac-arm64.dmg` from this repository's
+Releases, open it, double-click `Install.command`, then run `pengu list`.
+(`~/.local/bin` must be on your `PATH`.)
 ```bash
 # Meta Model API by default (key in META_API, model muse-spark-1.3); MUSE_* override for Baseten/Modal/Ollama
 

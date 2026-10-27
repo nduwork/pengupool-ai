@@ -3,3 +3,4 @@ __pycache__/
 .env
 plans/
 experiment/results/*.md
+build/

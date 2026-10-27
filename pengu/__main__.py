@@ -190,7 +190,9 @@ def main(argv=None):
                 print(f"{e['id']}  {e.get('title', '')}: {e['lesson']}")
         elif cmd == "experiment":
             ap = argparse.ArgumentParser(prog="pengu experiment")
-            ap.add_argument("--tasks", default="experiment/tasks.json")
+            ap.add_argument("--tasks", default=os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "experiment", "tasks.json"))
             ap.add_argument("--out", default="experiment/results")
             ap.add_argument("--only", nargs="*", default=None)
             ap.add_argument("--judge-model", default=None)
