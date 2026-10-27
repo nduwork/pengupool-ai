@@ -42,10 +42,6 @@
         "to": "bin/pengupool"
       },
       {
-        "from": "../build/host/pengu",
-        "to": "bin/pengu"
-      },
-      {
         "from": "../build/host/linux",
         "to": "bin/linux"
       }

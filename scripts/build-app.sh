@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds PenguPool AI.app — the Electron desktop app with the Go host bundled inside, for
-# Apple Silicon (arm64) only — and installs it into ~/Applications, plus `pengupool-ai`
-# (host) and `pengu` (Compass) commands in ~/.local/bin.
+# Apple Silicon (arm64) only — and installs it into ~/Applications, plus the `pengupool-ai`
+# (host) command in ~/.local/bin.
 #   scripts/build-app.sh               build and install
 #   scripts/build-app.sh --no-install  build only (desktop/dist/mac-arm64/PenguPool AI.app)
 set -eu
@@ -28,9 +28,6 @@ LDFLAGS="-X main.Build=$BUILD"
 echo "==> go host (arm64), build $BUILD"
 rm -f "$OUT/host/pengupool" # go build won't overwrite an earlier universal (lipo) binary
 CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$LDFLAGS" -o "$OUT/host/pengupool" ./cmd/pengupool
-
-echo "==> pengu compass CLI (arm64)"
-CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$LDFLAGS" -o "$OUT/host/pengu" ./cmd/pengu
 
 echo "==> go host for Linux SSH hosts (amd64 + arm64)"
 mkdir -p "$OUT/host/linux"
@@ -61,7 +58,6 @@ DEST="$HOME/Applications/PenguPool AI.app"
 mkdir -p "$HOME/Applications" "$HOME/.local/bin"
 STORE="${PENGUPOOL_HOME:-$HOME/.pengupool-ai}/v2"
 CLI="$DEST/Contents/Resources/bin/pengupool"
-PENGU_CLI="$DEST/Contents/Resources/bin/pengu"
 
 APP_WAS_OPEN=
 pgrep -f "PenguPool AI.app/Contents/MacOS/PenguPool AI" >/dev/null && APP_WAS_OPEN=1
@@ -92,9 +88,8 @@ fi
 rm -rf "$DEST"
 ditto "$APP" "$DEST"
 ln -sfn "$CLI" "$HOME/.local/bin/pengupool-ai"
-ln -sfn "$PENGU_CLI" "$HOME/.local/bin/pengu"
 echo "installed $DEST"
-echo "cli: $HOME/.local/bin/pengupool-ai (host), $HOME/.local/bin/pengu (compass)"
+echo "cli: $HOME/.local/bin/pengupool-ai (host)"
 
 # Start the new host the way the app does (desktop/src/host.ts userEnv): detached, with the PATH of
 # an interactive login shell, so `claude`, `omp` and `git` resolve as in a terminal (~/.zshrc often

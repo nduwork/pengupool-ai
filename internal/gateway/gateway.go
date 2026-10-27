@@ -743,7 +743,6 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("/api/healthz", s.handleHealthz)
 	mux.HandleFunc("/ws", s.handleWS)
 	s.workspaceRoutes(mux)
-	s.aiRoutes(mux)
 	mux.HandleFunc("/", s.handleStatic)
 	return s.hostGuard(mux)
 }

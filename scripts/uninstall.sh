@@ -1,5 +1,5 @@
 #!/bin/sh
-# Removes PenguPool AI.app and the `pengupool-ai`/`pengu` links: everything `make install`
+# Removes PenguPool AI.app and the `pengupool-ai` link: everything `make install`
 # or the prebuilt app put on this Mac. The agents' memory, logs, Compass and team records
 # in ~/.pengupool-ai stay unless --purge.
 #   scripts/uninstall.sh            remove the app and the links, keep the data
@@ -8,7 +8,6 @@ set -eu
 APP="$HOME/Applications/PenguPool AI.app"
 [ -d "$APP" ] || APP="/Applications/PenguPool AI.app"
 LINK="$HOME/.local/bin/pengupool-ai"
-PENGU_LINK="$HOME/.local/bin/pengu"
 DATA="${PENGUPOOL_HOME:-$HOME/.pengupool-ai}/v2"
 CLI="$APP/Contents/Resources/bin/pengupool"
 
@@ -26,7 +25,6 @@ OLD=$(pgrep -f "PenguPool AI.app/Contents/Resources/bin/pengupool daemon|\.local
 
 [ -d "$APP" ] && rm -rf "$APP" && echo "removed $APP"
 [ -L "$LINK" ] && rm "$LINK" && echo "removed $LINK"
-[ -L "$PENGU_LINK" ] && rm "$PENGU_LINK" && echo "removed $PENGU_LINK"
 if [ "${1:-}" = "--purge" ]; then
   rm -rf "${PENGUPOOL_HOME:-$HOME/.pengupool-ai}" && echo "removed ${PENGUPOOL_HOME:-$HOME/.pengupool-ai}"
 else

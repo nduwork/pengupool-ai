@@ -68,6 +68,10 @@ const help = `usage: pengupool <command> [options]
         internal: called by harness hooks and Claude's status line.
   worker --session-id ID
         internal: one PTY worker; the launch spec arrives on file descriptor 3.
+  review [REV]
+        Muse Code reviews the diff (commit, stdin, or worktree).
+  experiment [--tasks F] [--out D] [--only ID...] [--judge-model M] [--judge-base-url U] [--max-steps N]
+        run the with-vs-without benchmark.
   version | help
 
 Store directory: $PENGUPOOL_HOME/v2, default ~/.pengupool/v2 (override with --store or
@@ -135,6 +139,10 @@ func main() {
 		err = cmdBridge(args[1:])
 	case "worker":
 		err = cmdWorker(args[1:])
+	case "review":
+		err = runReview(args[1:])
+	case "experiment":
+		err = runExperiment(args[1:])
 	case "version", "-V", "--version":
 		fmt.Println(versionLine())
 	case "help", "-h", "--help":

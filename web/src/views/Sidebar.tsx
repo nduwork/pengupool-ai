@@ -1,4 +1,4 @@
-import { BookOpen, ChevronDown, ChevronRight, Pencil, Plus, Settings as SettingsIcon, Sparkles, SquareTerminal, Users } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, Pencil, Plus, Settings as SettingsIcon, SquareTerminal, Users } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { Group, Panel, useDefaultLayout, usePanelRef } from "react-resizable-panels";
 
@@ -19,7 +19,6 @@ const NAV: Array<{ id: Nav; label: string; icon: ReactElement }> = [
   { id: "workspace", label: "Workspace", icon: <SquareTerminal /> },
   { id: "skills", label: "Helper agents", icon: <BookOpen /> },
   { id: "teams", label: "Teams", icon: <Users /> },
-  { id: "ai", label: "Compass AI", icon: <Sparkles /> },
   { id: "settings", label: "Settings", icon: <SettingsIcon /> },
 ];
 

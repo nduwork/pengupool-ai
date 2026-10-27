@@ -158,7 +158,7 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 		return cmd, env, nil
 	case Muse:
 		// Muse Code: the interactive TUI in the session's terminal. Approval is the
-		// TUI's own (or on the wire for muse serve; see internal/musehost).
+		// TUI's own.
 		bin, err := Lookup(Muse, p.Env)
 		if err != nil {
 			return nil, nil, err
