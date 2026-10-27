@@ -118,6 +118,9 @@ type Config struct {
 	Network   Network        `json:"network"`
 	// AgentModels routes agents to a local Ollama model per launch.
 	AgentModels AgentModels `json:"agent_models"`
+	// AgentBins overrides an agent's binary with an absolute path, used
+	// instead of the PATH lookup for that agent's launches.
+	AgentBins map[string]string `json:"agent_bins,omitempty"`
 	// Backup pushes the Compass and the helpers' experience to a private GitHub repository.
 	Backup Backup `json:"backup"`
 }

@@ -1,5 +1,5 @@
 import { Bot, Check, DatabaseBackup, KeyRound, Loader2, Lock, MonitorUp, Network, RefreshCw, Server, Settings2, Sparkles, X } from "lucide-react";
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useState, type ReactElement, type ReactNode, Fragment } from "react";
 import { toast } from "sonner";
 
 import { useApp, usePersisted } from "../app/ctx";
@@ -412,6 +412,7 @@ interface SettingsResp {
   store: string;
   executable: string;
   agent_models?: AgentModels;
+  agent_bins?: Record<string, string>;
   agents?: { id: string; label: string; ollama: boolean; experimental?: boolean }[];
   version?: string;
 }
@@ -895,7 +896,7 @@ function Harnesses(): ReactElement {
     void app.call<Probe>("harness.probe").then((x) => setR(x ?? null));
   }, [n]);
   const claude = r?.claude;
-  const others = (s?.agents ?? []).filter((a) => a.experimental === true);
+  const others = (s?.agents ?? []).filter((a) => a.id !== "claude");
   return (
     <div>
       <H title="Agents on this machine">
@@ -926,18 +927,20 @@ function Harnesses(): ReactElement {
       {s !== null ? <ClaudeOnOllama s={s} claude={claude} /> : null}
       <details className="mb-4 rounded-lg border border-border px-4 py-2">
         <summary className="cursor-pointer py-1 text-label font-medium">
-          Other agents <span className="font-normal text-muted-foreground">(experimental)</span>
+          Other agents
         </summary>
-        <p className="py-2 text-caption text-muted-foreground">Not yet tested with PenguPool: sessions, teams and approvals may not work fully. Each signs in with its own account in its first session.</p>
         {others.map((a) => {
           const v = r?.[a.id];
           return (
-            <Row key={a.id} title={`${a.label} (experimental)`} hint={v === undefined ? "Checking…" : (v.error ?? v.version)}>
-              <span className="flex items-center gap-3">
-                {s !== null && devMode() && a.ollama ? <OllamaSwitch s={s} id={a.id} label={a.label} /> : null}
-                {v !== undefined ? <Badge tone={v.error === undefined ? "success" : "neutral"}>{v.error === undefined ? "installed" : "not installed"}</Badge> : null}
-              </span>
-            </Row>
+            <Fragment key={a.id}>
+              <Row title={a.label} hint={v === undefined ? "Checking…" : (v.error ?? v.version)}>
+                <span className="flex items-center gap-3">
+                  {s !== null && devMode() && a.ollama ? <OllamaSwitch s={s} id={a.id} label={a.label} /> : null}
+                  {v !== undefined ? <Badge tone={v.error === undefined ? "success" : "neutral"}>{v.error === undefined ? "installed" : "not installed"}</Badge> : null}
+                </span>
+              </Row>
+              {(a.id === "omp" || a.id === "pi") && s !== null ? <BinField s={s} id={a.id} label={a.label} probe={v} onSaved={() => setN(n + 1)} /> : null}
+            </Fragment>
           );
         })}
       </details>
@@ -1097,6 +1100,40 @@ function OllamaSwitch({ s, id, label }: { s: SettingsResp; id: string; label: st
   );
 }
 
+/** A user-set binary for an agent: absolute path, or empty to clear. The probed version or error shows underneath. */
+function BinField({ s, id, label, probe, onSaved }: { s: SettingsResp; id: string; label: string; probe?: { version: string; error?: string }; onSaved: () => void }): ReactElement {
+  const app = useApp();
+  const [path, setPath] = useState(s.agent_bins?.[id] ?? "");
+  const [err, setErr] = useState("");
+  return (
+    <div className="space-y-1 border-b border-border py-3 pl-4 last:border-0">
+      <Label>{label} binary path (optional)</Label>
+      <div className="flex items-center gap-2">
+        <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/usr/local/bin/..." spellCheck={false} />
+        <Button
+          size="sm"
+          onClick={async () => {
+            setErr("");
+            const cur = (await app.call<SettingsResp>("settings.get"))?.agent_bins ?? {};
+            const next = { ...cur };
+            if (path.trim() === "") delete next[id];
+            else next[id] = path.trim();
+            const res = await app.call<{ saved?: boolean; error?: string }>("settings.save", { agent_bins: next });
+            if (res === undefined) {
+              setErr("not saved");
+              return;
+            }
+            onSaved();
+          }}
+        >
+          Save
+        </Button>
+      </div>
+      {err !== "" ? <p className="text-caption text-danger">{err}</p> : null}
+      <p className="text-caption text-muted-foreground">{probe === undefined ? "Checking…" : (probe.error ?? probe.version)}</p>
+    </div>
+  );
+}
 /** The running version, and a check for a newer release (update.check). */
 function About({ version }: { version?: string }): ReactElement {
   const app = useApp();

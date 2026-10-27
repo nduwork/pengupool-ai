@@ -115,8 +115,8 @@ const STALE_MS = 10 * 60 * 1000;
 export const AGENTS = [
   { id: "claude", label: "Claude Code", hint: "Anthropic's coding agent", clear: "/clear", experimental: false },
   { id: "muse", label: "Muse Code", hint: "Meta's coding agent", clear: "", experimental: false },
-  { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", experimental: true },
-  { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", experimental: true },
+  { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", experimental: false },
+  { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", experimental: false },
   { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", experimental: false },
 ] as const;
 

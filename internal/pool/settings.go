@@ -146,7 +146,7 @@ var HTTPAddr func() string
 
 func (p *Pool) settingsGet(_ context.Context, _ struct{}) (any, error) {
 	cfg := p.st.Config()
-	out := map[string]any{"network": cfg.Network, "store": p.st.Dir(), "executable": p.exe, "agent_models": cfg.AgentModels, "agents": harness.Agents, "version": p.version}
+	out := map[string]any{"network": cfg.Network, "store": p.st.Dir(), "executable": p.exe, "agent_models": cfg.AgentModels, "agent_bins": cfg.AgentBins, "agents": harness.Agents, "version": p.version}
 	if HTTPAddr != nil {
 		out["bound"] = HTTPAddr()
 	}
@@ -168,6 +168,7 @@ type settingsIn struct {
 	EnableServe bool               `json:"enable_serve,omitempty"`
 	Restart     bool               `json:"restart,omitempty"`
 	AgentModels *store.AgentModels `json:"agent_models,omitempty"`
+	AgentBins   map[string]string  `json:"agent_bins,omitempty"`
 }
 
 func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
@@ -189,6 +190,22 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 		}
 		am.OllamaURL, am.OllamaModel = strings.TrimSpace(am.OllamaURL), strings.TrimSpace(am.OllamaModel)
 		cfg.AgentModels = *am
+	}
+	if in.AgentBins != nil {
+		bins := map[string]string{}
+		for id, path := range in.AgentBins {
+			if _, ok := harness.Find(id); !ok {
+				return nil, invalid("unknown agent %q", id)
+			}
+			if path = strings.TrimSpace(path); path == "" {
+				continue // empty clears the override
+			}
+			if err := harness.ValidateBin(path); err != nil {
+				return nil, invalid("%s: %v", id, err)
+			}
+			bins[id] = path
+		}
+		cfg.AgentBins = bins
 	}
 	if err := p.st.SaveConfig(cfg); err != nil {
 		return nil, err

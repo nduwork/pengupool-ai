@@ -310,3 +310,38 @@ func TestEnsureCodexRules(t *testing.T) {
 		}
 	}
 }
+
+// A configured binary wins over PATH, and a missing one names its path
+// instead of silently falling back.
+func TestSpecBinOverride(t *testing.T) {
+	dir := t.TempDir()
+	other := t.TempDir()
+	for _, k := range []string{OMP, Pi} {
+		for _, d := range []string{dir, other} {
+			if err := os.WriteFile(filepath.Join(d, k), []byte("#!/bin/sh\necho "+d+"\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	p := Params{SessionID: "s1", Name: "n", Exe: "/x/pengupool", StoreDir: dir, Env: []string{"PATH=" + other}, Bin: filepath.Join(dir, OMP)}
+	cmd, _, err := Spec(OMP, p)
+	if err != nil || cmd[0] != filepath.Join(dir, OMP) {
+		t.Fatalf("override not used: %v %v", cmd, err)
+	}
+	gone := filepath.Join(dir, "gone-omp")
+	p.Bin = gone
+	p.Env = []string{"PATH=" + dir + string(os.PathListSeparator) + other}
+	if _, _, err := Spec(OMP, p); err == nil || !strings.Contains(err.Error(), gone) {
+		t.Fatalf("missing override did not name its path: %v", err)
+	}
+	// Probe resolves the same way.
+	if v, err := Probe(OMP, p.Env, filepath.Join(other, OMP)); err != nil || v == "" {
+		t.Fatalf("probe override: %q %v", v, err)
+	}
+	if _, err := Probe(Pi, p.Env, gone); err == nil || !strings.Contains(err.Error(), gone) {
+		t.Fatalf("probe missing did not name its path: %v", err)
+	}
+	if _, err := Probe(Pi, []string{"PATH=" + dir}, ""); err != nil {
+		t.Fatalf("probe PATH lookup: %v", err)
+	}
+}

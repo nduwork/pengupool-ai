@@ -52,8 +52,8 @@ type Agent struct {
 var Agents = []Agent{
 	{ID: Claude, Label: "Claude Code", Hint: "Anthropic's coding agent", Compact: "/compact", Clear: "/clear", Ollama: true},
 	{ID: Muse, Label: "Muse Code", Hint: "Meta's coding agent", Typed: true},
-	{ID: OMP, Label: "OMP", Hint: "oh-my-pi agent", Compact: "/compact", Clear: "/new", Ollama: true, Experimental: true},
-	{ID: Pi, Label: "pi", Hint: "pi coding agent", Compact: "/compact", Clear: "/new", Ollama: true, Experimental: true},
+	{ID: OMP, Label: "OMP", Hint: "oh-my-pi agent", Compact: "/compact", Clear: "/new", Ollama: true},
+	{ID: Pi, Label: "pi", Hint: "pi coding agent", Compact: "/compact", Clear: "/new", Ollama: true},
 	{ID: Codex, Label: "Codex", Hint: "OpenAI's coding agent", Compact: "/compact", Clear: "/new", Typed: true, Ollama: true},
 }
 
@@ -109,6 +109,9 @@ type Params struct {
 	// Effort is "" or a level the agent takes; Claude, Codex, omp and pi take it,
 	// the others ignore it.
 	Effort string
+	// Bin overrides the agent's binary with an absolute path: it is used
+	// instead of the PATH lookup, and never falls back to it.
+	Bin string
 }
 
 // Spec returns the command and environment for a launch.
@@ -174,7 +177,7 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 		}
 		return cmd, env, nil
 	case OMP:
-		bin, err := Lookup(OMP, p.Env)
+		bin, err := ResolveBin(OMP, p.Bin, p.Env)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -203,7 +206,7 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 		}
 		return cmd, env, nil
 	case Pi:
-		bin, err := Lookup(Pi, p.Env)
+		bin, err := ResolveBin(Pi, p.Bin, p.Env)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -308,6 +311,35 @@ func writeFile(path string, b []byte) (string, error) {
 	return path, os.Rename(tmp, path)
 }
 
+// ValidateBin checks a configured binary path: absolute, an existing
+// regular file, executable. It names the path in every error.
+func ValidateBin(path string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("%s is not an absolute path", path)
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("%s: %v", path, err)
+	}
+	if st.IsDir() || st.Mode()&0o111 == 0 {
+		return fmt.Errorf("%s is not an executable file", path)
+	}
+	return nil
+}
+
+// ResolveBin returns the override when one is configured, else the PATH
+// lookup. A configured path that stops existing fails naming the path:
+// it never falls back to PATH, because the user chose that binary.
+func ResolveBin(kind, bin string, env []string) (string, error) {
+	if bin == "" {
+		return Lookup(kind, env)
+	}
+	if err := ValidateBin(bin); err != nil {
+		return "", fmt.Errorf("harness_unavailable: %v", err)
+	}
+	return bin, nil
+}
+
 // Lookup finds a harness binary on the given environment's PATH.
 func Lookup(kind string, env []string) (string, error) {
 	path := envValue(env, "PATH")
@@ -331,13 +363,14 @@ func Lookup(kind string, env []string) (string, error) {
 	return "", fmt.Errorf("harness_unavailable: %s is not on PATH", kind)
 }
 
-// Probe reports the harness version, or why it is unavailable.
-func Probe(kind string, env []string) (string, error) {
-	bin, err := Lookup(kind, env)
+// Probe reports the harness version, or why it is unavailable. bin, when
+// set, is resolved before the PATH lookup, exactly like a launch.
+func Probe(kind string, env []string, bin string) (string, error) {
+	resolved, err := ResolveBin(kind, bin, env)
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.Command(bin, "--version")
+	cmd := exec.Command(resolved, "--version")
 	cmd.Env = env
 	done := make(chan struct{})
 	var out []byte
