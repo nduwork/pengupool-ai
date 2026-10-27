@@ -4,3 +4,11 @@ __pycache__/
 plans/
 experiment/results/*.md
 build/
+bin/
+node_modules/
+desktop/node_modules/
+desktop/out/
+desktop/dist/
+web/node_modules/
+.step-status/
+.DS_Store

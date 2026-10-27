@@ -1,0 +1,67 @@
+{
+  "name": "pengupool-ai-desktop",
+  "productName": "PenguPool AI",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PenguPool AI desktop: the native app around the pengu owner API.",
+  "license": "MIT",
+  "author": "nduwork",
+  "main": "out/main.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && electron .",
+    "package": "node build.mjs && electron-builder --mac --dir --arm64",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "electron": "^39.8.10",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.9.3"
+  },
+  "build": {
+    "appId": "com.nduwork.pengupool-ai",
+    "productName": "PenguPool AI",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../internal/webapp/dist",
+        "to": "renderer"
+      },
+      {
+        "from": "../build/host/pengu",
+        "to": "bin/pengu"
+      }
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "identity": null,
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "NSLocalNetworkUsageDescription": "PenguPool AI serves its owner API on localhost."
+      }
+    },
+    "npmRebuild": false
+  }
+}

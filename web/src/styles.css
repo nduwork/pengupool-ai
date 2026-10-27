@@ -1,0 +1,60 @@
+:root {
+  color-scheme: light dark;
+  --fg: #1a1a1a;
+  --muted: #666;
+  --border: #ddd;
+  --accent: #2f6fed;
+  font-family: system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #eee;
+    --muted: #999;
+    --border: #333;
+    --accent: #6f9bff;
+  }
+}
+body {
+  margin: 0;
+  color: var(--fg);
+}
+.app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px;
+}
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+h1 {
+  font-size: 20px;
+  margin: 0;
+}
+nav {
+  display: flex;
+  gap: 8px;
+}
+ul {
+  padding-left: 20px;
+}
+.dim,
+.kind {
+  color: var(--muted);
+}
+table {
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+th,
+td {
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  text-align: left;
+}
+input {
+  margin-left: 4px;
+}
