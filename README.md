@@ -59,7 +59,41 @@ The Compass lives in `~/.pengupool-muse/compass.jsonl` (`PENGUPOOL_MUSE_HOME` mo
 
 ## Status
 
-- [x] Compass store, rule extraction, rule matching, CLI (Oct 26)
-- [ ] Voice: Muse Voice Transcribe into `pengu rule`
-- [ ] Permission hook for the agent under test
-- [ ] Gate: the same tasks with and without a change, interruptions / pass rate / seconds
+- [x] M0 rename + `review`: a Muse Code session reviews diffs
+- [x] M1 `session`: start/list/stop Claude and Muse sessions in tmux
+- [x] M2 `mcp`: Compass MCP server both agents load (stdio; instructions verified per-client)
+- [x] M3 `chat` + owner API: Claude <-> Muse messaging, questions release waiting sessions
+- [x] M4 `judge` + experience: typed decisions, per-helper lessons, FTS5+judge retrieval
+- [x] M5 `ingest` + `wording`: generalize, evidence/confidence, owner confirms
+- [x] M6 `inject`: relevance x confidence selection; subscribe + list_changed
+- [x] M7 `voice`: transcribe a clip, then ingest -> propose -> confirm
+- [x] M8 `experiment`: with-vs-without on 5 tasks (chart below)
+
+## Experiment (M8)
+
+`python3 -m pengu experiment` runs five small tasks twice each: bare, and
+with the task's Compass lines prepended (the same header `pengu new`
+prepends; no MCP server registered, so the prompt text is the only
+difference). Per run: the owner's decision matched or not (local judge
+rates the transcript against the expected decision), questions asked
+(interruption proxy), and the task's own pass check. Oct 26 run, judge
+`qwen3.8:27b` on Ollama:
+
+| task | arm | decision | interruptions | pass |
+|------|-----|----------|----------------|------|
+| run-tests | without | matched | 0 | pass |
+| run-tests | with | matched | 0 | pass |
+| migrations | without | missed | 0 | pass |
+| migrations | with | matched | 0 | pass |
+| quiet-tests | without | missed | 0 | pass |
+| quiet-tests | with | matched | 0 | pass |
+| changelog | without | missed | 0 | FAIL |
+| changelog | with | matched | 0 | pass |
+| small-commits | without | missed | 0 | FAIL |
+| small-commits | with | matched | 0 | pass |
+
+With the lines: 5/5 decisions matched, 5/5 passed. Without: 1/5, 2/5.
+Interruptions read 0 in both arms: headless runs never ask, so the proxy
+only bites in interactive sessions. Full rows: `experiment/results.json`;
+task fixtures: `experiment/tasks.json`. Re-run: `python3 -m pengu
+experiment --out <dir>` (needs `muse` on PATH and a local judge).

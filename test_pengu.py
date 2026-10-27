@@ -366,6 +366,24 @@ try:
             assert _hit["clip"] == "clip.m4a" and _hit["ingest"] == ("always run tests", "s")
         finally:
             _cli.voice.transcribe, _cli.ingest.ingest = _rv, _ri3
+        _re2 = _cli.experiment.main
+        _jm = _o.environ.get("PENGUPOOL_JUDGE_MODEL")
+        def _fake_exp(tasks, out, only=None, max_steps=12, judge=None):
+            _hit["experiment"] = (tasks, out, only, max_steps, judge)
+            return []
+        _cli.experiment.main = _fake_exp
+        try:
+            _sys.argv = ["pengu", "experiment", "--tasks", "t.json", "--out", "o",
+                         "--only", "a", "--max-steps", "4", "--judge-model", "m"]
+            _cli.main()
+            assert _hit["experiment"] == ("t.json", "o", ["a"], 4, "m"), _hit
+            assert _o.environ["PENGUPOOL_JUDGE_MODEL"] == "m"
+        finally:
+            _cli.experiment.main = _re2
+            if _jm is None:
+                _o.environ.pop("PENGUPOOL_JUDGE_MODEL", None)
+            else:
+                _o.environ["PENGUPOOL_JUDGE_MODEL"] = _jm
     finally:
         _cli.judge.triage_route = _rj
         _cli.experience.save, _cli.experience.for_task, _cli.experience.ingest = _re, _rr, _ri
@@ -1078,4 +1096,51 @@ try:
         pass
 finally:
     _sp2.run = _real_run
+print("ok")
+
+# M8 experiment: questions counted, checks honored, table rendered.
+from pengu import experiment as _exp
+assert _exp._questions("Should I run the tests now? Yes.") == 1
+assert _exp._questions("Done. All green.") == 0
+assert _exp._check("exit 0", "/tmp") is True
+assert _exp._check("exit 3", "/tmp") is False
+assert _exp._check("", "/tmp") is None
+_real_relate2, _real_run_task = _judge.relate, _exp._run_agent
+_judge.relate = lambda words, line, model=None: {"relation": "supports", "confidence": 0.9}
+_exp._run_agent = lambda prompt, wd, **k: ("I ran pytest -q. All green?", {})
+try:
+    _o.environ["PENGUPOOL_MUSE_HOME"] = _tf.mkdtemp()
+    _t = {"id": "t1", "prompt": "Run the suite.", "compass": ["Always run tests."],
+          "setup": "echo hi > f.txt", "check": "test -f f.txt", "decides": "Run the tests."}
+    rows = _exp.run_task(_t, _o.environ["PENGUPOOL_MUSE_HOME"])
+    assert [r["arm"] for r in rows] == ["without", "with"]
+    assert all(r["matched"] is True and r["passed"] is True for r in rows)
+    assert all(r["interruptions"] == 1 for r in rows)
+    assert os.path.exists(os.path.join(_o.environ["PENGUPOOL_MUSE_HOME"], "t1-with", "f.txt"))
+    tab = _exp.table(rows)
+    assert "| t1 | with | matched | 1 | pass |" in tab
+    # Mixed arms: contradicts without, failing check with, error arm, bad id.
+    _judge.relate = lambda words, line, model=None: {"relation": "contradicts", "confidence": 0.8}
+    _t2 = dict(_t, id="t2", check="exit 3")
+    rows2 = _exp.run_task(_t2, _o.environ["PENGUPOOL_MUSE_HOME"])
+    assert [r["matched"] for r in rows2] == [False, False]
+    assert [r["passed"] for r in rows2] == [False, False]
+    assert "| t2 | without | missed | 1 | FAIL |" in _exp.table(rows2)
+    def _boom(prompt, wd, **k):
+        raise RuntimeError("agent down")
+    _exp._run_agent = _boom
+    rows3 = _exp.run_task(dict(_t, id="t3"), _o.environ["PENGUPOOL_MUSE_HOME"])
+    assert all(r["matched"] is None and r["passed"] is None for r in rows3)
+    assert "| t3 | with | unclear | 0 | ? |" in _exp.table(rows3)
+    _exp._run_agent = _boom  # safe_id raises before any agent call
+    _judge.relate = lambda words, line, model=None: {"relation": "supports", "confidence": 0.9}
+    rows4 = _exp.run_task(dict(_t, id="../evil"), _o.environ["PENGUPOOL_MUSE_HOME"])
+    assert all("error" in r for r in rows4)  # traversal contained, never raises
+finally:
+    _judge.relate = _real_relate2
+    _exp._run_agent = _real_run_task
+    if _real_home is None:
+        del _o.environ["PENGUPOOL_MUSE_HOME"]
+    else:
+        _o.environ["PENGUPOOL_MUSE_HOME"] = _real_home
 print("ok")

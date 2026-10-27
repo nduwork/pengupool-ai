@@ -21,14 +21,16 @@
     python3 -m pengu ingest --text "..." --session <id>   # propose a Compass change
     python3 -m pengu confirm <proposal-id>   # apply a confirmed proposal
     python3 -m pengu voice --clip <audio.m4a> [--session <id>]   # transcribe, then propose
+    python3 -m pengu experiment [--only ID] [--out DIR]   # with-vs-without, ~5 tasks
 """
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 
-from . import chat, compass, experience, ingest, judge, mcp, owner, review, rules, session, voice
+from . import chat, compass, experience, experiment, ingest, judge, mcp, owner, review, rules, session, voice
 from .model import ModelError
 
 
@@ -186,6 +188,21 @@ def main(argv=None):
             ns = ap.parse_args(args[1:])
             for e in experience.for_task(ns.helper, ns.task, k=ns.k):
                 print(f"{e['id']}  {e.get('title', '')}: {e['lesson']}")
+        elif cmd == "experiment":
+            ap = argparse.ArgumentParser(prog="pengu experiment")
+            ap.add_argument("--tasks", default="experiment/tasks.json")
+            ap.add_argument("--out", default="experiment/results")
+            ap.add_argument("--only", nargs="*", default=None)
+            ap.add_argument("--judge-model", default=None)
+            ap.add_argument("--judge-base-url", default=None)
+            ap.add_argument("--max-steps", type=int, default=12)
+            ns = ap.parse_args(args[1:])
+            if ns.judge_model:
+                os.environ["PENGUPOOL_JUDGE_MODEL"] = ns.judge_model
+            if ns.judge_base_url:
+                # Judge-only: _run_agent strips MUSE_BASE_URL from agent env.
+                os.environ["MUSE_BASE_URL"] = ns.judge_base_url
+            experiment.main(ns.tasks, ns.out, judge=ns.judge_model, only=ns.only, max_steps=ns.max_steps)
         else:
             sys.exit(__doc__)
     except (ModelError, RuntimeError, ValueError, OSError) as e:
