@@ -22,8 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nduwork/pengupool-ai/internal/session"
-	"github.com/nduwork/pengupool-ai/internal/store"
+	"github.com/nduwork/pengupool-ai/internal/pengusession"
+	"github.com/nduwork/pengupool-ai/internal/pengustore"
 )
 
 // Keep is the chat retention window: 30 days.

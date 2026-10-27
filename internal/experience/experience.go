@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/judge"
-	"github.com/nduwork/pengupool-ai/internal/store"
+	"github.com/nduwork/pengupool-ai/internal/pengustore"
 	"github.com/nduwork/pengupool-ai/internal/wording"
 	_ "modernc.org/sqlite"
 )

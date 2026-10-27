@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nduwork/pengupool-ai/internal/store"
+	"github.com/nduwork/pengupool-ai/internal/pengustore"
 )
 
 func testHome(t *testing.T) string {

@@ -1,157 +1,142 @@
-// The pengu owner API as the desktop app sees it: find the running one for
-// this store, or start the bundled binary with the user's login-shell PATH.
-// The server is never tied to the app's lifetime: quitting the app leaves it
-// running. Auth is a same-machine token in the store (0600), shared with the
-// CLI's owner-serve fallback.
+// The PenguPool host (the Go daemon) as the desktop app sees it: find the running one for this
+// store, or start the bundled binary with the user's login-shell PATH. The host is never tied to
+// the app's lifetime: quitting the app leaves it, and every session, running.
 import { execFile, spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, openSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
-export interface OwnerConnection {
+export interface HostConnection {
   url: string;
   token: string;
 }
 
+/** An environment the app can work in: this machine, or an SSH host set up in Settings. */
+export interface Environment {
+  id: string;
+  name: string;
+  kind: string; // local | ssh
+  address?: string;
+  status: string;
+  reason?: string;
+}
+
 export function storeDir(): string {
-  const home = process.env.PENGUPOOL_AI_HOME;
-  return home !== undefined && home !== "" ? home : join(homedir(), ".pengupool-ai");
+  const home = process.env.PENGUPOOL_HOME;
+  return home !== undefined && home !== "" ? join(home, "v2") : join(homedir(), ".pengupool-ai", "v2");
 }
 
-export function tokenFile(): string {
-  return join(storeDir(), "owner-token");
+function run(file: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(file, args, { env, timeout: timeoutMs }, (err, stdout) => resolve(err === null ? stdout.trim() : null));
+  });
 }
-
-/** The same-machine token, created once and shared with the CLI. */
-export function loadOrCreateToken(): string {
-  mkdirSync(storeDir(), { recursive: true });
-  try {
-    const t = readFileSync(tokenFile(), "utf8").trim();
-    if (t !== "") return t;
-  } catch {
-    /* create below */
-  }
-  const t = randomBytes(16).toString("hex");
-  writeFileSync(tokenFile(), t + "\n", { mode: 0o600 });
-  return t;
-}
-
-const run = promisify(execFile);
 
 let loginEnv: NodeJS.ProcessEnv | undefined;
 
-/** The user's login-shell environment, so tmux, claude and muse resolve as in their terminal. */
+/** The user's login-shell environment, so claude, omp, git and ssh resolve as in their terminal. */
 export async function userEnv(): Promise<NodeJS.ProcessEnv> {
   if (loginEnv !== undefined) return loginEnv;
   const env: NodeJS.ProcessEnv = { ...process.env };
   const shell = env.SHELL ?? "/bin/zsh";
-  try {
-    const { stdout } = await run(shell, ["-l", "-i", "-c", 'printf "__PATH__%s" "$PATH"'], {
-      env,
-      timeout: 20000,
-    });
-    const path = stdout.split("__PATH__").pop();
-    if (path !== undefined && path !== "") {
-      env.PATH = path;
-      loginEnv = env;
-    }
-  } catch {
-    /* keep the inherited PATH; a later Restart retries */
-  }
+  // A cold first launch (after an update, say) can be slow to run the shell's startup files.
+  const out = await run(shell, ["-l", "-i", "-c", 'printf "__PATH__%s" "$PATH"'], env, 20000);
+  const path = out?.split("__PATH__").pop();
+  const found = path !== undefined && path !== "";
+  if (found) env.PATH = path;
   // Never leak Electron's own variables into agents.
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
+  env.PENGUPOOL_APP = "desktop";
+  // A failed lookup is tried again at the next start (Restart host), not kept for the app's life;
+  // meanwhile the host adds the usual install folders to the bare PATH itself.
+  if (found) loginEnv = env;
   return env;
 }
 
-async function probe(url: string, token: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${url}/lines`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(1500),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 export class Host {
-  constructor(
-    private readonly binary: string,
-    private readonly port = 8471,
-  ) {}
+  constructor(private readonly binary: string) {}
 
   get cli(): string {
     return this.binary;
   }
 
-  url(): string {
-    return `http://127.0.0.1:${this.port}`;
-  }
-
-  /** Link the bundled CLI into ~/.local/bin so `pengu` works from a DMG install too. */
-  linkCli(): void {
+  /** The running host's address and token, if it answers its health check. */
+  async probe(): Promise<HostConnection | null> {
+    const out = await run(this.binary, ["web", "--store", storeDir()], process.env, 3000);
+    if (out === null) return null;
+    let u: URL;
     try {
-      const binDir = join(homedir(), ".local", "bin");
-      mkdirSync(binDir, { recursive: true });
-      const link = join(binDir, "pengu");
-      try {
-        symlinkSync(this.binary, link);
-      } catch {
-        /* already there (ours or the user's); leave it */
-      }
+      u = new URL(out);
     } catch {
-      /* the app still works; only the CLI link is missing */
+      return null;
     }
+    const token = new URLSearchParams(u.hash.slice(1)).get("token") ?? "";
+    try {
+      const res = await fetch(`${u.origin}/api/healthz`, { headers: { "X-PenguPool-Token": token }, signal: AbortSignal.timeout(1500) });
+      // A host of another store can answer on the same port; only ours accepts our token.
+      if (!res.ok || ((await res.json()) as { owner?: boolean }).owner !== true) return null;
+    } catch {
+      return null;
+    }
+    return { url: u.origin, token };
   }
 
-  /** Finds the server or starts it, waiting up to 20 s for its health check. */
-  async ensure(): Promise<OwnerConnection> {
-    const token = loadOrCreateToken();
-    const url = this.url();
-    if (await probe(url, token)) return { url, token };
-    if (!existsSync(this.binary)) throw new Error(`the bundled host is missing at ${this.binary}`);
-    this.linkCli();
+  /** Starts the host detached from the app; its output goes to logs/daemon.log. */
+  async start(): Promise<void> {
     const dir = storeDir();
     mkdirSync(join(dir, "logs"), { recursive: true });
-    const log = openSync(join(dir, "logs", "owner-serve.log"), "a");
-    const env = await userEnv();
-    env.PENGUPOOL_OWNER_TOKEN = token;
-    env.PENGUPOOL_AI_HOME = dir;
-    const child = spawn(this.binary, ["owner-serve", "--bind", "127.0.0.1", "--port", String(this.port)], {
-      env,
+    const log = openSync(join(dir, "logs", "daemon.log"), "a");
+    const child = spawn(this.binary, ["daemon", "--store", dir], {
+      env: await userEnv(),
       detached: true,
       stdio: ["ignore", log, log],
     });
     child.unref();
-    for (let i = 0; i < 100; i++) {
-      await new Promise((r) => setTimeout(r, 200));
-      if (await probe(url, token)) return { url, token };
-    }
-    throw new Error("the owner API did not answer after 20 s; see logs/owner-serve.log");
   }
 
-  /** Stops the server and starts it fresh. */
-  async restart(): Promise<OwnerConnection> {
-    try {
-      const { stdout } = await run("/usr/bin/pgrep", ["-f", `${this.binary} owner-serve`]);
-      for (const pid of stdout.split("\n").filter(Boolean)) {
-        try {
-          process.kill(Number(pid), "SIGTERM");
-        } catch {
-          /* already gone */
+  /** Finds the host or starts it, waiting up to 20 s for its health check. */
+  async ensure(): Promise<HostConnection | null> {
+    const found = await this.probe();
+    if (found !== null) return found;
+    if (!existsSync(this.binary)) throw new Error(`the bundled host is missing at ${this.binary}`);
+    await this.start();
+    for (let i = 0; i < 100; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      const c = await this.probe();
+      if (c !== null) return c;
+    }
+    return null;
+  }
+
+  /** Runs a pool request on this machine's host through the CLI; it rejects with the host's message. */
+  rpc<T>(type: string, params: unknown): Promise<T> {
+    return new Promise((resolve, reject) => {
+      execFile(this.binary, ["rpc", "--store", storeDir(), type, JSON.stringify(params)], { env: process.env, timeout: 6 * 60_000 }, (err, stdout, stderr) => {
+        if (err !== null) {
+          reject(new Error(stderr.trim().replace(/^pengupool: /, "") || err.message));
+          return;
         }
+        try {
+          resolve(JSON.parse(stdout) as T);
+        } catch {
+          reject(new Error(`unexpected answer to ${type}`));
+        }
+      });
+    });
+  }
+
+  /** Stops the host (sessions keep running and are adopted again) and starts it fresh. */
+  async restart(): Promise<HostConnection | null> {
+    const pids = await run("/usr/bin/pgrep", ["-f", `${this.binary} daemon --store ${storeDir()}`], process.env, 3000);
+    for (const pid of (pids ?? "").split("\n").filter(Boolean)) {
+      try {
+        process.kill(Number(pid), "SIGTERM");
+      } catch {
+        /* already gone */
       }
-    } catch {
-      /* not running */
     }
-    const token = loadOrCreateToken();
-    for (let i = 0; i < 50 && (await probe(this.url(), token)); i++) {
-      await new Promise((r) => setTimeout(r, 100));
-    }
+    for (let i = 0; i < 50 && (await this.probe()) !== null; i++) await new Promise((r) => setTimeout(r, 100));
     return this.ensure();
   }
 }

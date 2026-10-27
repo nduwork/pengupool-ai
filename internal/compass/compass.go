@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nduwork/pengupool-ai/internal/store"
+	"github.com/nduwork/pengupool-ai/internal/pengustore"
 )
 
 // Evidence records one supporting or contradicting observation.

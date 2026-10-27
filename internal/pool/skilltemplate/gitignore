@@ -1,0 +1,4 @@
+# Owner memory: personal, never committed (anchored so docs/memory.md is not ignored)
+/MEMORY.md
+/MEMORY.md.lock
+.DS_Store

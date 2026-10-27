@@ -1,0 +1,8 @@
+{
+  "name": "snapshot_part3",
+  "type": 5,
+  "channel": 1,
+  "seq": 3,
+  "length": 13,
+  "payload_hex": "726f772d3320636f6e74656e74"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "control_hello",
+  "type": 1,
+  "channel": 0,
+  "seq": 0,
+  "length": 144,
+  "payload_utf8": "{\"id\":\"0199a5f1-0000-7000-8000-000000000001\",\"type\":\"hello\",\"v\":1,\"client\":{\"kind\":\"cli\",\"name\":\"pengupool attach\",\"version\":\"0.1.0-prototype\"}}"
+}

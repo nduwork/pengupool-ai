@@ -1,9 +1,9 @@
 # PenguPool AI. `make install` builds PenguPool AI.app into ~/Applications and links the
-# `pengu` CLI into ~/.local/bin; `make uninstall` removes both. `make dist` builds the app
-# once as a disk image others install without Go, Node or Xcode, and `make release` publishes
-# it. Every target is safe to re-run.
+# `pengupool-ai` (host) and `pengu` (compass) CLIs into ~/.local/bin; `make uninstall`
+# removes them. `make dist` builds the app once as a disk image others install without
+# Go, Node or Xcode, and `make release` publishes it. Every target is safe to re-run.
 
-VERSION          := $(shell sed -n 's/^const Version = "\(.*\)"/\1/p' cmd/pengu/main.go)
+VERSION          := $(shell sed -n 's/^const Version = "\(.*\)"/\1/p' cmd/pengupool/main.go)
 DIST             := build/PenguPool-AI-$(VERSION)-mac-arm64.dmg
 
 .PHONY: install install-app uninstall dist release app web build test smoke clean

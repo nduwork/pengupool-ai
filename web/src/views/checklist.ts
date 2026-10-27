@@ -1,0 +1,23 @@
+import type { Nav } from "../app/ctx";
+
+/** What the owner has set up, as far as the app can tell. */
+export interface Setup {
+  agent: boolean; // Claude Code is installed on this machine
+  teams: number;
+  decision: boolean; // a decision model is active
+}
+
+export interface Step {
+  id: string;
+  label: string;
+  done: boolean;
+  /** Where it is done: a page, and a Settings section. */
+  nav: Nav;
+  section?: string;
+}
+
+export const stepsOf = (s: Setup): Step[] => [
+  { id: "agent", label: "Set up Claude Code", done: s.agent, nav: "settings", section: "general" },
+  { id: "team", label: "Create a team", done: s.teams > 0, nav: "teams" },
+  { id: "decision", label: "Set a decision model", done: s.decision, nav: "settings", section: "models" },
+];

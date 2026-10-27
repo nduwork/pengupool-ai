@@ -1,0 +1,8 @@
+{
+  "name": "output_seq4096",
+  "type": 2,
+  "channel": 1,
+  "seq": 4096,
+  "length": 22,
+  "payload_hex": "68656c6c6f2066726f6d20746865206167656e740d0a"
+}

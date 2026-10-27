@@ -17,8 +17,8 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/owner"
 	"github.com/nduwork/pengupool-ai/internal/review"
 	"github.com/nduwork/pengupool-ai/internal/rules"
-	"github.com/nduwork/pengupool-ai/internal/session"
-	"github.com/nduwork/pengupool-ai/internal/store"
+	"github.com/nduwork/pengupool-ai/internal/pengusession"
+	"github.com/nduwork/pengupool-ai/internal/pengustore"
 	"github.com/nduwork/pengupool-ai/internal/voice"
 )
 

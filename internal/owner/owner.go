@@ -26,8 +26,8 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/compass"
 	"github.com/nduwork/pengupool-ai/internal/experiment"
 	"github.com/nduwork/pengupool-ai/internal/ingest"
-	"github.com/nduwork/pengupool-ai/internal/session"
-	"github.com/nduwork/pengupool-ai/internal/store"
+	"github.com/nduwork/pengupool-ai/internal/pengusession"
+	"github.com/nduwork/pengupool-ai/internal/pengustore"
 )
 
 // Experiment run state for the renderer's run/status endpoints.

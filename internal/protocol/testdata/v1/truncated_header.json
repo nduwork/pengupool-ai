@@ -1,0 +1,9 @@
+{
+  "name": "truncated_header",
+  "type": 0,
+  "channel": 0,
+  "seq": 0,
+  "length": 0,
+  "expect_error": "protocol.truncated_frame",
+  "truncate_to": 12
+}

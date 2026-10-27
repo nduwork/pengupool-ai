@@ -1,0 +1,8 @@
+{
+  "name": "oversize_length",
+  "type": 0,
+  "channel": 0,
+  "seq": 0,
+  "length": 65537,
+  "expect_error": "protocol.frame_too_large"
+}

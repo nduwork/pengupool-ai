@@ -1,0 +1,136 @@
+@import "tailwindcss";
+
+/* PenguPool design tokens: a neutral, dense desktop palette (dark first) with the teal brand.
+   Semantic roles only; components never use raw colours. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-sidebar: var(--sidebar);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-hover: var(--hover);
+  --color-selected: var(--selected);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-faint: var(--faint);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-terminal: var(--terminal);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --text-micro: 11px;
+  --text-micro--line-height: 15px;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-label: 13px;
+  --text-label--line-height: 18px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-title: 16px;
+  --text-title--line-height: 24px;
+}
+
+:root {
+  --background: #fbfbfc;
+  --foreground: #16181d;
+  --sidebar: #f3f4f6;
+  --panel: #ffffff;
+  --raised: #ffffff;
+  --hover: #eceef1;
+  --selected: #e3f2f2;
+  --border: #e2e4e9;
+  --input: #d6d9df;
+  --muted: #f1f2f4;
+  --muted-foreground: #5d6472;
+  --faint: #8a91a0;
+  --primary: #0b7f8f;
+  --primary-foreground: #ffffff;
+  --ring: #22b3a6;
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #c0262d;
+  --info: #2563eb;
+  --terminal: #0d1117;
+  /* Workflow lanes, one per member: distinct at a glance, quiet beside the text. */
+  --lane-1: #0b7f8f;
+  --lane-2: #4f5bd5;
+  --lane-3: #b7791f;
+  --lane-4: #c2416b;
+  --lane-5: #3f8f3a;
+  --lane-6: #8a4fc7;
+}
+
+.dark {
+  --background: #111318;
+  --foreground: #e6e8ec;
+  --sidebar: #0c0e12;
+  --panel: #16191f;
+  --raised: #1c2027;
+  --hover: #22262e;
+  --selected: #183338;
+  --border: #262a33;
+  --input: #323743;
+  --muted: #1b1e25;
+  --muted-foreground: #9aa1ae;
+  --faint: #6b7280;
+  --primary: #2ec4b6;
+  --primary-foreground: #04201d;
+  --ring: #2ec4b6;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+  --terminal: #0d1117;
+  --lane-1: #2ec4b6;
+  --lane-2: #8b94ff;
+  --lane-3: #f2b552;
+  --lane-4: #f27aa0;
+  --lane-5: #7fd26f;
+  --lane-6: #c39bff;
+}
+
+@layer base {
+  * { @apply border-border; }
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-background text-foreground font-sans text-body antialiased;
+    margin: 0;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible { @apply outline-2 outline-offset-1 outline-ring; }
+  button { cursor: default; }
+  ::selection { background: color-mix(in srgb, var(--primary) 30%, transparent); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--input); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+/* Desktop window chrome: drag regions for the hidden-inset title bar. */
+.drag { -webkit-app-region: drag; }
+.no-drag, .drag button, .drag input, .drag a, .drag [role="button"] { -webkit-app-region: no-drag; }
+
+/* Map: beads run along a lit edge, parent → child (down) or child → parent (up); one dash period is 14px. */
+@keyframes bead-down { to { stroke-dashoffset: -14; } }
+@keyframes bead-up { to { stroke-dashoffset: 14; } }
+.bead-down { animation: bead-down 0.7s linear infinite; }
+.bead-up { animation: bead-up 0.7s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* xterm fills its host; the WebGL renderer draws the cells. */
+.xterm { height: 100%; padding: 6px 0 0 10px; }
+.xterm .xterm-viewport { background: transparent !important; }
