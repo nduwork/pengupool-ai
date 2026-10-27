@@ -175,20 +175,22 @@ try:
     _calls.clear()
     trow = _sess.new("muse", "a;b", trust_workspace=True)
     tcmd = _calls[0][-1]
-    assert "--trust-workspace" in tcmd and _sx.quote("a;b") in tcmd
+    parts = _sx.split(tcmd)
+    assert parts[0] == "/bin/muse" and "--trust-workspace" in parts
+    assert parts[-1] == _sess._compass_prefix("a;b") + "a;b"  # exact round-trip
     _sess.stop(trow["id"])
     _calls.clear()
     crow = _sess.new("claude", "do;rm -rf /")
     cmd = _calls[0][-1]
-    assert "--settings" in cmd and _sx.quote("do;rm -rf /") in cmd  # task quoted, not raw
+    assert _sx.split(cmd)[-1] == _sess._compass_prefix("do;rm -rf /") + "do;rm -rf /"
     settings = [c.strip("'") for c in cmd.split() if "settings.json" in c]
     assert len(settings) == 1 and _o.path.exists(settings[0]), cmd
     _sess.stop(crow["id"])
     # a Compass line rides on the task (server instructions miss the prompt).
     compass.add("Probe line one.", "typed")
     _calls.clear()
-    prow = _sess.new("muse", "do it", trust_workspace=True)
-    assert "Probe line one." in _calls[0][-1] and _calls[0][-1].rstrip().endswith("do it'")
+    prow = _sess.new("muse", "probe the line", trust_workspace=True)
+    assert "Probe line one." in _calls[0][-1] and _calls[0][-1].rstrip().endswith("probe the line'")
     _sess.stop(prow["id"])
     _sess._tmux = lambda *a, **k: _P(rc=1)
     try:
@@ -967,4 +969,76 @@ finally:
         del _o.environ["PENGUPOOL_MUSE_HOME"]
     else:
         _o.environ["PENGUPOOL_MUSE_HOME"] = _real_home
+print("ok")
+
+# M6 inject: relevance x confidence, k and budget caps, confidence floor.
+from pengu import inject as _inj
+_lines = [
+    {"id": "a", "rule": "Run the test suite before committing.", "confidence": 1.0},
+    {"id": "b", "rule": "Never touch the migrations folder.", "confidence": 1.0},
+    {"id": "c", "rule": "Prefer small commits.", "confidence": 0.1},
+]
+got = _inj.select(_lines, "should I run the tests now?")
+assert [g["id"] for g in got] == ["a"]  # relevant only; weak + off-topic excluded
+got = _inj.select(_lines, "something entirely different here")
+assert got == []  # non-empty context, zero overlap: nothing
+got = _inj.select(_lines, "")
+assert [g["id"] for g in got] == ["a", "b"]  # empty context: confidence order
+assert _inj.select([], "x") == []
+assert [g["id"] for g in _inj.select(_lines, "", budget=10)] == ["a"]
+# session prefix carries relevant lines + the experience_for hint.
+_o.environ["PENGUPOOL_MUSE_HOME"] = _tf.mkdtemp()
+_sess._save([{"id": "aaa", "agent": "muse", "tmux": "pengu-aaa", "task": "",
+              "log": "x", "started": "x"}])
+compass.add("Always run the test suite before committing.", "typed")
+compass.add("Never touch the migrations folder.", "typed")
+p = _sess._compass_prefix("do the migrations hold up?")
+assert "migrations folder" in p and "test suite" not in p and "experience_for" in p
+# MCP: instructions select by roots, context filters by topic, subscribe notifies.
+_st = {}
+r = _mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                  "params": {"roots": [{"uri": "file:///repo/migrations"}]}}, _st)
+assert "migrations folder" in r["result"]["instructions"]
+assert _st.get("roots") == ["/repo/migrations"]  # scheme://authority stripped
+r = _mcp.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                  "params": {"name": "compass_context", "arguments": {"topic": "migrations"}}},
+                 _st)
+assert "migrations folder" in r["result"]["content"][0]["text"]
+assert "test suite" not in r["result"]["content"][0]["text"]
+r = _mcp.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/subscribe",
+                  "params": {"uri": "compass://lines"}}, _st)
+assert r["result"] == {} and "compass://lines" in _st["subscribed"]
+_real_mtime = _mcp._mtime
+_ticks = iter([1000.0, 1000.0, 1001.0, 1001.0])
+_mcp._mtime = lambda: next(_ticks)
+try:
+    _st["mtime"] = _mcp._mtime()
+    outs = list(_mcp.serve_one('{"jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": {}}', _st))
+    assert len(outs) == 1 and outs[0].get("id") == 4  # unchanged file: no notification
+    outs = list(_mcp.serve_one('{"jsonrpc": "2.0", "id": 5, "method": "tools/list", "params": {}}', _st))
+    assert len(outs) == 2
+    assert outs[0].get("method") == "notifications/resources/updated"
+    assert outs[0]["params"] == {"uri": "compass://lines"} and outs[1].get("id") == 5
+finally:
+    _mcp._mtime = _real_mtime
+assert _mcp.handle({"jsonrpc": "2.0", "id": 6, "method": "initialize", "params": {}})["result"]["capabilities"]["resources"] == {"subscribe": True}
+# subscribe/unsubscribe round-trip; unknown resources rejected.
+_st2 = {}
+assert _mcp.handle({"jsonrpc": "2.0", "id": 7, "method": "resources/subscribe",
+                    "params": {"uri": "compass://nope"}}, _st2)["error"]["code"] == -32602
+_mcp.handle({"jsonrpc": "2.0", "id": 8, "method": "resources/subscribe",
+              "params": {"uri": "compass://lines"}}, _st2)
+assert _mcp.handle({"jsonrpc": "2.0", "id": 9, "method": "resources/unsubscribe",
+                    "params": {"uri": "compass://lines"}}, _st2)["result"] == {}
+assert _st2["subscribed"] == set()
+assert _mcp.handle({"jsonrpc": "2.0", "id": 10, "method": "tools/call",
+                    "params": {"name": "compass_context", "arguments": 42}},
+                    _st2)["error"]["code"] == -32602
+# _context honors k/budget and tolerates non-string topics.
+assert "migrations" in _mcp._context("migrations", k=1)
+assert "migrations" in _mcp._context(42)  # non-string topic: no filter, no crash
+if _real_home is None:
+    del _o.environ["PENGUPOOL_MUSE_HOME"]
+else:
+    _o.environ["PENGUPOOL_MUSE_HOME"] = _real_home
 print("ok")

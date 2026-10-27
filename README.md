@@ -35,6 +35,10 @@ ever proposes; `confirm` applies. Evidence moves confidence (support up,
 contradiction down, age discounts); `learned` generalizes a finished task into
 lessons that merge with similar ones.
 
+Inject (M6): lines are chosen by word overlap x confidence (0.3 floor) for
+`instructions`, `compass_context` and the task text, so a session starts with
+the relevant lines and not the others; `compass://lines` supports subscribe
+and the server sends list_changed when the file moves mid-session.
 Owner API (the Muse-app agent's window; stdlib HTTP on localhost):
 `PENGUPOOL_OWNER_TOKEN` from the macOS keychain, then `python3 -m pengu owner-serve`.
 Owner actions: `security add-generic-password -s pengu-owner -a owner -w <token>`;
