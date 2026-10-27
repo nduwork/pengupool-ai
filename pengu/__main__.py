@@ -20,6 +20,7 @@
     python3 -m pengu recall --helper H --task "..."   # <=5 lessons for this task
     python3 -m pengu ingest --text "..." --session <id>   # propose a Compass change
     python3 -m pengu confirm <proposal-id>   # apply a confirmed proposal
+    python3 -m pengu voice --clip <audio.m4a> [--session <id>]   # transcribe, then propose
 """
 
 import argparse
@@ -27,7 +28,7 @@ import json
 import subprocess
 import sys
 
-from . import chat, compass, experience, ingest, judge, mcp, owner, review, rules, session
+from . import chat, compass, experience, ingest, judge, mcp, owner, review, rules, session, voice
 from .model import ModelError
 
 
@@ -168,6 +169,15 @@ def main(argv=None):
             if code != 200:
                 sys.exit(f"pengu: {out.get('error')}")
             print(out.get("applied"), out.get("id", ""))
+        elif cmd == "voice":
+            ap = argparse.ArgumentParser(prog="pengu voice")
+            ap.add_argument("--clip", required=True, help="audio file to transcribe")
+            ap.add_argument("--session", default="")
+            ns = ap.parse_args(args[1:])
+            words = voice.transcribe(ns.clip)
+            pid, msg = ingest.ingest(words, ns.session)
+            print(f"heard: {words}")
+            print(f"{pid or '-'}  {msg}")
         elif cmd == "recall":
             ap = argparse.ArgumentParser(prog="pengu recall")
             ap.add_argument("--helper", required=True)

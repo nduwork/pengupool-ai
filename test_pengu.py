@@ -355,6 +355,17 @@ try:
                 assert "already decided" in str(e.code)
         finally:
             _cli.ingest.ingest, _cli.owner.confirm_proposal = _ri2, _rc
+        _rv, _ri3 = _cli.voice.transcribe, _cli.ingest.ingest
+        def _fake_say(clip):
+            _hit["clip"] = clip
+            return "always run tests"
+        _cli.voice.transcribe, _cli.ingest.ingest = _fake_say, _fake_ingest
+        try:
+            _sys.argv = ["pengu", "voice", "--clip", "clip.m4a", "--session", "s"]
+            _cli.main()
+            assert _hit["clip"] == "clip.m4a" and _hit["ingest"] == ("always run tests", "s")
+        finally:
+            _cli.voice.transcribe, _cli.ingest.ingest = _rv, _ri3
     finally:
         _cli.judge.triage_route = _rj
         _cli.experience.save, _cli.experience.for_task, _cli.experience.ingest = _re, _rr, _ri
@@ -1041,4 +1052,30 @@ if _real_home is None:
     del _o.environ["PENGUPOOL_MUSE_HOME"]
 else:
     _o.environ["PENGUPOOL_MUSE_HOME"] = _real_home
+print("ok")
+
+# M7 voice: transcription failures surface; CLI passes clip through to ingest.
+import subprocess as _sp2
+from pengu import voice as _voice
+_real_run = _sp2.run
+class _PP:
+    def __init__(self, rc, out, err=""):
+        self.returncode, self.stdout, self.stderr = rc, out, err
+try:
+    _sp2.run = lambda *a, **k: _PP(0, "  hello  \n")
+    assert _voice.transcribe("x.m4a") == "hello"
+    _sp2.run = lambda *a, **k: _PP(1, "", "boom")
+    try:
+        _voice.transcribe("x"); raise AssertionError("nonzero must fail")
+    except RuntimeError:
+        pass
+    def _timeout(*a, **k):
+        raise _sp2.TimeoutExpired("muse", 1)
+    _sp2.run = _timeout
+    try:
+        _voice.transcribe("x"); raise AssertionError("timeout must fail")
+    except RuntimeError:
+        pass
+finally:
+    _sp2.run = _real_run
 print("ok")
