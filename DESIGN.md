@@ -71,24 +71,29 @@ Inside the server:
 
 ## Owner API
 
-A small management API (stdlib `http.server`) on the owner's machine, reachable only over the tailnet.
-Its client is the Muse agent (Muse app, in Meta's VM): the VM accepts no inbound connections and reaches
-the tailnet only outbound through Muse's Tailscale proxy (TCP), as device `muse`. The agent long-polls for
-the questions other agents have asked the owner, shows each in the Muse app, and posts the owner's tap
-back. It replaces a phone app of our own. The API adds no checks of its own: it only carries questions an
-agent already asks.
+A small management API on the owner's machine, reachable only over the tailnet
+(host-gated: anything else gets 403, even on loopback). Its client is the
+Muse agent (Muse app, in Meta's VM): paired once from the app's Settings
+with a one-time 6-digit code (5 min, one use; 10 wrong guesses throttles
+pairing a minute), then a device token whose hash only the daemon stores.
+The agent walks one card at a time and posts the owner's tap back. It
+replaces a phone app of our own. The API adds no checks of its own: it only
+carries questions an agent already asks.
 
-- `GET /questions?wait=N` (long-poll) → pending items
-  `{id, session, asked_at, question, options[2–3], payload_hash, expires_at}`.
-- `POST /questions/{id}/answer` `{option, payload_hash, idempotency_key}`. Only one of the offered options
-  for that pending id, with a matching hash, is accepted. Changed or expired → `409`, no effect. The same
-  `idempotency_key` returns the first result. After a timeout, check state; never re-approve.
-- No answer leaves the session waiting: never a yes or a no.
-- `POST /proposals` `{words}` for free text and new rules. They become proposals only; the owner confirms
-  with a second tap or in the terminal.
-- Question text is written by another agent: show it as untrusted data.
-- Auth: a bearer token read from the macOS keychain (never in argv, files or logs), plus a Tailscale ACL
-  limiting the API port to device `muse`. Both are set up by the owner (README, owner actions).
+- `GET /api/muse/v1/next?wait=N` (long-poll, at most 60 s) → the oldest
+  waiting card `{type, session, team, title, description, ask_id,
+  payload_hash, actions}`, or 204 when nothing waits. Order: waiting
+  sessions, then approvals, then check-in gates, oldest first.
+- `POST /api/muse/v1/asks/{id}/answer`
+  `{action, payload_hash, idempotency_key}`. A tap works exactly like
+  clicking the app's button: same hash check, same single winner. A tap that
+  raced another in flight → 503 with `Retry-After: 1`; changed or consumed
+  → 409; the same key on another tap → 409, never a free answer.
+- `POST /api/muse/v1/sessions/{id}/say` `{words}`: chat, credited as the
+  owner, so the Compass learns. `GET /api/muse/v1/sessions` (only teams
+  with iOS access), `GET /api/muse/v1/compass`, `GET /api/muse/v1/openapi.json`.
+- Auth: per-device bearer tokens plus the tailnet host gate. Revoking a
+  device takes effect on its next request.
 
 ## Experience
 

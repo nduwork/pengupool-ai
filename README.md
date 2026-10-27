@@ -72,6 +72,19 @@ sh scripts/smoke-pengu.sh    # compass: CLI, owner API contract, MCP stdio
 make dist            # PenguPool-AI-<version>-mac-arm64.dmg
 ```
 
+## Muse app (H6)
+
+The owner's phone reaches waiting sessions over Tailscale Serve. Pair once
+from the app's Settings (6-digit code, 5 min, one use, 10 wrong guesses
+throttles pairing a minute), then the app walks one card at a time:
+`GET /api/muse/v1/next` (204 when nothing waits, `?wait=` long-polls up to
+60 s), `POST /asks/{id}/answer` (idempotency key required; a tap that raced
+another returns 503 with `Retry-After: 1`, a changed ask 409), `POST
+/sessions/{id}/say` (chat; credited as the owner, so the Compass learns),
+`GET /sessions`, `GET /compass`, `GET /openapi.json`. A device sees only
+teams with iOS access. A tap works exactly like clicking the app's button:
+same hash/version check, same single-winner rule.
+
 ## Status
 
 v0.2.0: PenguPool2 app base (host daemon/gateway/PTY workers, Electron shell,

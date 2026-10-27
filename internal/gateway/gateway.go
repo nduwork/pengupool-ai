@@ -109,6 +109,9 @@ type Caller struct {
 	Owner bool
 	// Phone: the owner's phone (reached the app without the token, through the phone path).
 	Phone bool
+	// Device: the paired Muse device name, when Phone came with a valid
+	// device token on /api/muse/v1. Empty otherwise.
+	Device string
 	// Terminal: the owner's CLI on the unix socket (it sent the daemon's token in hello).
 	Terminal bool
 	// PeerPID is the process on the other end of a unix-socket connection (0 if unknown or not a
@@ -743,6 +746,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("/api/healthz", s.handleHealthz)
 	mux.HandleFunc("/ws", s.handleWS)
 	s.workspaceRoutes(mux)
+	s.museRoutes(mux)
 	mux.HandleFunc("/", s.handleStatic)
 	return s.hostGuard(mux)
 }

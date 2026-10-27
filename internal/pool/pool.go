@@ -65,6 +65,11 @@ type Pool struct {
 	nodes NodeManager
 
 	mu                sync.Mutex
+	museMu            sync.Mutex                   // guards the muse pairing/answer caches below
+	museCodes         map[string]*musePairCode     // one-time pairing codes
+	musePairFails     int                          // wrong codes since the last success: throttles guessing
+	musePairBlocked   time.Time                    // pairing refused until then, after too many wrong codes
+	museAnswered      map[string]museAnswerDone    // device\x00key -> first answer: replays return it
 	achvLocks         map[string]*sync.Mutex       // one achievement job per skill, under mu
 	achvAgain         map[string]bool              // a job was asked while one ran, under mu
 	msgSock           map[string]claudeInbox       // session id → Claude inbox socket
@@ -144,6 +149,7 @@ func New(o Options) *Pool {
 		unlocks: map[string]map[string]bool{}, failures: map[string][]time.Time{},
 		lastInput: map[string]time.Time{}, pending: map[string][]protocol.TeamMessage{},
 		ownerEnter: map[string][]credit{}, requireOwnerInput: o.RequireOwnerInput,
+		museCodes: map[string]*musePairCode{}, museAnswered: map[string]museAnswerDone{},
 	}
 	p.loadInboxes()
 	p.expireStaleApprovals()
@@ -277,7 +283,7 @@ func (p *Pool) RPC(ctx context.Context, c gateway.Caller, typ string, params jso
 	// as the owner, so no agent can decide an approval, change the Compass or the team, or reconfigure
 	// the host, whatever it sends.
 	// A phone reaches the app with no token, so it is never an agent: its own requests only.
-	if !c.Owner && !(c.Phone && iosAllowed[typ]) && !(c.Terminal && terminalAllowed[typ]) && !(agentAllowed[typ] && !c.Phone) {
+	if !c.Owner && !(c.Phone && iosAllowed[typ]) && !(c.Phone && (typ == "muse.pair" || c.Device != "" && museAllowed[typ])) && !(c.Terminal && terminalAllowed[typ]) && !(agentAllowed[typ] && !c.Phone) {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "%s is for the owner, in the PenguPool app", typ)
 	}
 	if err := p.bindSession(c, params); err != nil {
@@ -397,7 +403,15 @@ func (p *Pool) handlers() map[string]handler {
 		"provider.activate":     bind(p.providerActivate),
 		"settings.get":          bind(p.settingsGet),
 		"settings.save":         bind(p.settingsSave),
-		"backup.get":            bind(p.backupGet),
+		"muse.next":             p.museNext,
+		"muse.answer":           p.museAnswer,
+		"muse.say":              p.museSay,
+		"muse.sessions":         p.museSessions,
+		"muse.compass":          p.museCompass,
+		"muse.pair":             p.musePair,
+		"muse.pairCode":         p.musePairCode,
+		"muse.devices":          p.museDevices,
+		"muse.revoke":           p.museRevoke,
 		"backup.set":            bind(p.backupSet),
 		"backup.now":            bind(p.backupNow),
 		"backup.repos":          bind(p.backupRepos),

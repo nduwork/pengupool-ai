@@ -520,6 +520,7 @@ function Connections(): ReactElement {
         </Row>
       </Card>
       <TailscaleChecklist s={s} onChanged={() => setN(n + 1)} />
+      <MuseDevices onChanged={() => setN(n + 1)} />
     </div>
   );
 }
@@ -577,6 +578,56 @@ function TailscaleChecklist({ s, onChanged }: { s: SettingsResp; onChanged: () =
   );
 }
 
+type MuseDevice = { name: string; created_at: string; last_seen?: string };
+
+/** Pair Muse devices, one at a time, each with its own revocable token. */
+function MuseDevices({ onChanged }: { onChanged: () => void }): ReactElement {
+  const app = useApp();
+  const [devices, setDevices] = useState<MuseDevice[] | null>(null);
+  const [code, setCode] = useState<{ code: string; url: string } | null>(null);
+  useEffect(() => {
+    void app.call<MuseDevice[]>("muse.devices").then((d) => setDevices(d ?? []));
+  }, [app]);
+  return (
+    <Card className="mb-4 px-4">
+      <div className="border-b border-border py-3">
+        <p className="text-label font-medium">Muse devices</p>
+        <p className="text-caption text-muted-foreground">Pair the Muse app on each device. Each device gets its own token; revoke one any time.</p>
+      </div>
+      {(devices ?? []).map((d) => (
+        <Row key={d.name} title={d.name} hint={d.last_seen !== undefined ? `Last seen ${d.last_seen}` : `Paired ${d.created_at}`}>
+          <Button
+            size="sm"
+            onClick={async () => {
+              if ((await app.call("muse.revoke", { name: d.name })) !== undefined) {
+                setDevices((prev) => (prev ?? []).filter((x) => x.name !== d.name));
+                onChanged();
+              }
+            }}
+          >
+            Revoke
+          </Button>
+        </Row>
+      ))}
+      <div className="flex flex-wrap items-center gap-2 py-3">
+        <Button
+          size="sm"
+          onClick={async () => {
+            const r = await app.call<{ code: string; url: string }>("muse.pairCode", {});
+            if (r !== undefined) setCode({ code: r.code, url: r.url });
+          }}
+        >
+          Pair a Muse device
+        </Button>
+        {code !== null ? (
+          <p className="text-caption">
+            Enter <span className="font-mono font-semibold">{code.code}</span> in the Muse app within 5 minutes. URL: <span className="font-mono">{code.url}</span>
+          </p>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
 function Nodes(): ReactElement {
   const app = useApp();
   const [keySetup, setKeySetup] = useState<NodeView | null>(null);
