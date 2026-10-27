@@ -41,6 +41,33 @@ func TestAgentSpecsWireHooksPerLaunch(t *testing.T) {
 	}
 }
 
+func TestMuseSpec(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "muse"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := Params{SessionID: "s1", Name: "n", Cwd: "/repo", Model: "m1", Effort: "low", Exe: "/x/pengupool", StoreDir: dir, Env: []string{"PATH=" + dir}}
+	cmd, env, err := Spec(Muse, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{filepath.Join(dir, "muse"), "--workspace", "/repo", "--model", "m1", "--reasoning-effort", "low"}
+	if !slices.Equal(cmd, want) {
+		t.Fatalf("muse spec: %v", cmd)
+	}
+	if !strings.Contains(strings.Join(env, " "), "PENGUPOOL_HARNESS=muse") {
+		t.Fatal("harness env missing")
+	}
+	p.Resume = "ref1"
+	cmd, _, err = Spec(Muse, p)
+	if err != nil || !slices.Equal(cmd, []string{filepath.Join(dir, "muse"), "resume", "ref1"}) {
+		t.Fatalf("muse resume: %v %v", cmd, err)
+	}
+	if _, ok := Find(Muse); !ok {
+		t.Fatal("muse not in Agents")
+	}
+}
+
 func TestOllamaAndNewAgents(t *testing.T) {
 	dir := t.TempDir()
 	for _, k := range []string{Codex, Copilot, OpenCode, Gemini, Claude, "ollama"} {

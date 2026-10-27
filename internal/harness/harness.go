@@ -21,6 +21,7 @@ import (
 
 const (
 	Claude   = "claude"
+	Muse     = "muse"
 	OMP      = "omp"
 	Pi       = "pi"
 	Codex    = "codex"
@@ -56,6 +57,7 @@ type Agent struct {
 // team messages go through PenguPool, which delivers each in the recipient's own way.
 var Agents = []Agent{
 	{ID: Claude, Label: "Claude Code", Hint: "Anthropic's coding agent", Compact: "/compact", Clear: "/clear", Ollama: true},
+	{ID: Muse, Label: "Muse Code", Hint: "Meta's coding agent", Typed: true},
 	{ID: OMP, Label: "OMP", Hint: "oh-my-pi agent", Compact: "/compact", Clear: "/new", Ollama: true, Experimental: true},
 	{ID: Pi, Label: "pi", Hint: "pi coding agent", Compact: "/compact", Clear: "/new", Ollama: true, Experimental: true},
 	{ID: OpenCode, Label: "OpenCode", Hint: "open-source coding agent", Compact: "/compact", Clear: "/new", Ollama: true, Experimental: true},
@@ -162,6 +164,24 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 		}
 		for _, d := range p.ReadDirs {
 			cmd = append(cmd, "--add-dir", d)
+		}
+		return cmd, env, nil
+	case Muse:
+		// Muse Code: the interactive TUI in the session's terminal. Approval is the
+		// TUI's own (or on the wire for muse serve; see internal/musehost).
+		bin, err := Lookup(Muse, p.Env)
+		if err != nil {
+			return nil, nil, err
+		}
+		if p.Resume != "" {
+			return []string{bin, "resume", p.Resume}, env, nil
+		}
+		cmd := []string{bin, "--workspace", p.Cwd}
+		if p.Model != "" {
+			cmd = append(cmd, "--model", p.Model)
+		}
+		if p.Effort != "" {
+			cmd = append(cmd, "--reasoning-effort", p.Effort)
 		}
 		return cmd, env, nil
 	case OMP:
@@ -491,6 +511,14 @@ func Lookup(kind string, env []string) (string, error) {
 	}
 	for _, dir := range filepath.SplitList(path) {
 		p := filepath.Join(dir, kind)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+			return p, nil
+		}
+	}
+	// Installers (muse, claude) put binaries in ~/.local/bin, which a
+	// GUI-launched daemon's PATH often lacks.
+	if home, err := os.UserHomeDir(); err == nil {
+		p := filepath.Join(home, ".local", "bin", kind)
 		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
 			return p, nil
 		}

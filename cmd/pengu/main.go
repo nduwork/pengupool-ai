@@ -17,7 +17,7 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/rules"
 )
 
-const Version = "0.2.1"
+const Version = "0.3.0"
 
 // Build identifies the exact build (scripts/build-app.sh sets it from the Git commit).
 var Build = ""
@@ -38,7 +38,8 @@ const help = `usage: pengu <command> [options]
   ingest/confirm            propose/apply Compass changes
   voice --clip F            transcribe, then propose
   review [REV]              Muse Code reviews the diff
-  experiment                with-vs-without on ~5 tasks
+  muse-run "prompt"         drive Muse over MSP (wire approvals; --yes approves)
+  muse-exec "prompt"        one headless Muse run
   version | help            print the version / this help`
 
 func init() {
@@ -103,6 +104,10 @@ func main() {
 		err = runReview(os.Args[2:])
 	case "experiment":
 		err = runExperiment(os.Args[2:])
+	case "muse-run":
+		err = museRun(os.Args[2:])
+	case "muse-exec":
+		err = museExec(os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
