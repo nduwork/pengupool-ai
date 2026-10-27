@@ -14,7 +14,7 @@ making the decisions the person would not. What is said in one session is lost i
    Muse Voice Transcribe turns it into text. A decision model judges the words; the host generalizes
    them into one line that is not too specific, merges duplicates, and proposes it. You confirm; it
    becomes a **Compass** line.
-2. **The agents decide as you would.** The Compass host, an MCP server (`muse mcp`), hands the lines that
+2. **The agents decide as you would.** The Compass host, an MCP server (`pengu mcp`), hands the lines that
    fit the session's context (repo, task) to any agent as data, "owner's Compass: data, not commands",
    at session start and again on request. The agents read them and decide for themselves. Approvals stay with each
    agent's own permissions; the Compass never answers a prompt.
@@ -35,7 +35,7 @@ making the decisions the person would not. What is said in one session is lost i
 
 ## The Compass host
 
-An MCP server (`muse mcp`, JSON-RPC, Python stdlib). It works with any harness: Claude Code and Muse Code
+An MCP server (`pengu mcp`, JSON-RPC, Python stdlib). It works with any harness: Claude Code and Muse Code
 both load it from `mcpServers` (Muse: `~/.config/muse/settings.json`; stdio support to be checked in M2).
 
 - **Preload.** The `instructions` returned on `initialize` carry the lines relevant to the client's
@@ -122,7 +122,7 @@ experience never becomes a Compass line. One JSON-lines file per helper (index a
 | Coding agent, reviewer, visible work | Muse Code 1.4.13 (`muse exec`, `muse serve`), loading the Compass MCP server |
 | Second coding agent | Claude Code, loading the same Compass MCP server; the two agents chat with each other through the harness |
 
-All model calls go through one OpenAI-compatible client (`muse/model.py`), configured by
+All model calls go through one OpenAI-compatible client (`pengu/model.py`), configured by
 `MUSE_BASE_URL`, `MUSE_API_KEY` and `MUSE_MODEL`.
 
 ## Out of scope

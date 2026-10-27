@@ -9,12 +9,13 @@ Python 3.9+, standard library only.
 ```bash
 # Meta Model API by default (key in META_API, model muse-spark-1.3); MUSE_* override for Baseten/Modal/Ollama
 
-python3 -m muse rule "from now on, you can run the test suite without asking"   # asks you to confirm
-python3 -m muse list
-python3 -m muse check '{"tool": "Bash", "input": {"command": "pytest -q"}}'
-python3 -m muse forget <id>
+python3 -m pengu rule "from now on, you can run the test suite without asking"   # asks you to confirm
+python3 -m pengu list
+python3 -m pengu check '{"tool": "Bash", "input": {"command": "pytest -q"}}'
+python3 -m pengu forget <id>
+git diff HEAD | python3 -m pengu review   # Muse Code reviews the diff
 
-python3 test_muse.py   # self-check, no network
+python3 test_pengu.py   # self-check, no network
 ```
 
 The Compass lives in `~/.pengupool-muse/compass.jsonl` (`PENGUPOOL_MUSE_HOME` moves it).
@@ -22,6 +23,6 @@ The Compass lives in `~/.pengupool-muse/compass.jsonl` (`PENGUPOOL_MUSE_HOME` mo
 ## Status
 
 - [x] Compass store, rule extraction, rule matching, CLI (Oct 26)
-- [ ] Voice: Muse Voice Transcribe into `muse rule`
+- [ ] Voice: Muse Voice Transcribe into `pengu rule`
 - [ ] Permission hook for the agent under test
 - [ ] Gate: the same tasks with and without a change, interruptions / pass rate / seconds
