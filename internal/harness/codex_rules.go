@@ -105,12 +105,13 @@ func firstLine(b []byte) string {
 }
 
 // EnsureCodexRules writes the PenguPool rules file into the Codex home,
-// once per content, and only for the app's real store: any other store
-// logs one line and installs nothing. It runs at daemon start, only when
-// codex is found. One log line when it writes; silence otherwise.
+// once per content, and only for the owner's real home
+// (store.IsHomeDefault): any other store logs one line and installs
+// nothing. It runs at daemon start, only when codex is found. One log
+// line when it writes; silence otherwise.
 func EnsureCodexRules(storeDir, exe string, logf func(string, ...any)) {
-	if storeDir != store.DefaultDir() {
-		logf("codex rules: skipped (not the default store)")
+	if !store.IsHomeDefault(storeDir) {
+		logf("codex rules: skipped (not the owner's home)")
 		return
 	}
 	if _, err := codexLookPath("codex"); err != nil {

@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -211,7 +212,18 @@ func TestMusePluginBakesHookIdentity(t *testing.T) {
 	}
 }
 
-// A non-default store never reaches the installer: the exec entry points
+// withUnsetEnv unsets key for the test, restoring it after.
+func withUnsetEnv(t *testing.T, key string) {
+	t.Helper()
+	if v, ok := os.LookupEnv(key); ok {
+		t.Cleanup(func() { os.Setenv(key, v) })
+	} else {
+		t.Cleanup(func() { os.Unsetenv(key) })
+	}
+	os.Unsetenv(key)
+}
+
+// A non-home store never reaches the installer: the exec entry points
 // stay untouched, so no test can install into the owner's muse home.
 func TestEnsureMusePluginSkipsTempStore(t *testing.T) {
 	oldLook, oldRun := museLookPath, museRun
@@ -221,11 +233,63 @@ func TestEnsureMusePluginSkipsTempStore(t *testing.T) {
 	var logged []string
 	dir := t.TempDir()
 	EnsureMusePlugin(dir, "/x/pengupool", func(f string, a ...any) { logged = append(logged, f) })
-	if len(logged) != 1 || !strings.Contains(logged[0], "skipped (not the default store)") {
+	if len(logged) != 1 || !strings.Contains(logged[0], "skipped (not the owner's home)") {
 		t.Fatalf("log = %q", logged)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "harness")); !os.IsNotExist(err) {
 		t.Fatal("bundle written for a skipped store")
+	}
+}
+
+// The installer gate is the owner's real home, not DefaultDir: with
+// PENGUPOOL_HOME set, even a store equal to DefaultDir installs nothing;
+// with PENGUPOOL_HOME unset and HOME in a temp dir, both installers run.
+func TestInstallersGateOnRealHome(t *testing.T) {
+	oldLook, oldRun := museLookPath, museRun
+	oldCLook := codexLookPath
+	museLookPath = func(string) (string, error) { return "/bin/muse", nil }
+	called := map[string]bool{}
+	museRun = func(_ context.Context, args ...string) error { called["muse:"+args[0]] = true; return nil }
+	codexLookPath = func(string) (string, error) { called["codex:lookpath"] = true; return "/bin/codex", nil }
+	defer func() { museLookPath, museRun, codexLookPath = oldLook, oldRun, oldCLook }()
+	var logged []string
+	logf := func(f string, a ...any) { logged = append(logged, fmt.Sprintf(f, a...)) }
+
+	// PENGUPOOL_HOME set: even DefaultDir() is not the owner's home.
+	t.Setenv("PENGUPOOL_HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	EnsureMusePlugin(store.DefaultDir(), "/x/pengupool", logf)
+	EnsureCodexRules(store.DefaultDir(), "/x/pengupool", logf)
+	if len(called) != 0 {
+		t.Fatalf("installer ran under PENGUPOOL_HOME: %v", called)
+	}
+	for _, l := range logged {
+		if !strings.Contains(l, "skipped (not the owner's home)") {
+			t.Fatalf("log = %q", logged)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex", "rules")); !os.IsNotExist(err) {
+		t.Fatal("rules written under PENGUPOOL_HOME")
+	}
+
+	// PENGUPOOL_HOME unset, HOME in a temp dir: both installers run.
+	withUnsetEnv(t, "PENGUPOOL_HOME")
+	home2 := t.TempDir()
+	t.Setenv("HOME", home2)
+	t.Setenv("CODEX_HOME", filepath.Join(home2, ".codex"))
+	def := store.DefaultDir()
+	EnsureMusePlugin(def, "/x/pengupool", logf)
+	EnsureCodexRules(def, "/x/pengupool", logf)
+	if !called["muse:plugins"] {
+		t.Fatalf("muse installer did not run for the real home: %v", called)
+	}
+	if !called["codex:lookpath"] {
+		t.Fatalf("codex installer did not run for the real home: %v", called)
+	}
+	if _, err := os.Stat(filepath.Join(home2, ".codex", "rules", "pengupool.rules")); err != nil {
+		t.Fatalf("codex rules not written: %v", err)
 	}
 }
 
@@ -242,15 +306,17 @@ func TestEnsureCodexRules(t *testing.T) {
 
 	// A temp store writes nothing.
 	EnsureCodexRules(t.TempDir(), "/x/pengupool", logf)
-	if len(logged) != 1 || !strings.Contains(logged[0], "skipped (not the default store)") {
+	if len(logged) != 1 || !strings.Contains(logged[0], "skipped (not the owner's home)") {
 		t.Fatalf("log = %q", logged)
 	}
 	if _, err := os.Stat(filepath.Join(home, "rules")); !os.IsNotExist(err) {
 		t.Fatal("rules written for a skipped store")
 	}
 
-	// The default store writes the file with the exact prefixes.
-	t.Setenv("PENGUPOOL_HOME", t.TempDir())
+	// The owner's home (PENGUPOOL_HOME unset, HOME in a temp dir) writes
+	// the file with the exact prefixes.
+	withUnsetEnv(t, "PENGUPOOL_HOME")
+	t.Setenv("HOME", t.TempDir())
 	def := store.DefaultDir()
 	EnsureCodexRules(def, "/x/pengupool", logf)
 	raw, err := os.ReadFile(filepath.Join(home, "rules", "pengupool.rules"))

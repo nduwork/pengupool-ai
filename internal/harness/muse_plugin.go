@@ -88,13 +88,13 @@ var museRun = func(ctx context.Context, args ...string) error {
 }
 
 // EnsureMusePlugin installs and approves the PenguPool plugin in the
-// user's muse home, once per bundle hash, and only for the app's real
-// store: any other store logs one line and installs nothing, so a
-// throwaway daemon never touches the owner's muse home. One log line
-// when it installs; silence otherwise.
+// user's muse home, once per bundle hash, and only for the owner's real
+// home (store.IsHomeDefault): any other store logs one line and installs
+// nothing, so a throwaway daemon never touches the owner's muse home.
+// One log line when it installs; silence otherwise.
 func EnsureMusePlugin(storeDir, exe string, logf func(string, ...any)) {
-	if storeDir != store.DefaultDir() {
-		logf("muse plugin: skipped (not the default store)")
+	if !store.IsHomeDefault(storeDir) {
+		logf("muse plugin: skipped (not the owner's home)")
 		return
 	}
 	sum, err := writeMusePlugin(storeDir, exe)
