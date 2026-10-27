@@ -10,6 +10,11 @@
     python3 -m pengu ls
     python3 -m pengu stop ID
     python3 -m pengu mcp   # serve the Compass MCP server on stdio
+    python3 -m pengu send --from <id> --to <id|owner> --text "..."   # chat along the tree
+    python3 -m pengu inbox <id|owner>
+    python3 -m pengu ask --session <id> --question "..." --option A --option B
+    python3 -m pengu owner-serve   # the Muse-app agent's HTTP window (needs PENGUPOOL_OWNER_TOKEN)
+    python3 -m pengu proposals   # proposals the owner has not confirmed yet
 """
 
 import argparse
@@ -17,7 +22,7 @@ import json
 import subprocess
 import sys
 
-from . import compass, mcp, review, rules, session
+from . import chat, compass, mcp, owner, review, rules, session
 from .model import ModelError
 
 
@@ -89,9 +94,44 @@ def main(argv=None):
             print("stopped" if session.stop(args[1]) else "no such session")
         elif cmd == "mcp":
             mcp.serve_stdio()
+        elif cmd == "send":
+            ap = argparse.ArgumentParser(prog="pengu send")
+            ap.add_argument("--from", dest="from_sid", required=True)
+            ap.add_argument("--to", dest="to_sid", required=True)
+            ap.add_argument("--text", required=True)
+            ns = ap.parse_args(args[1:])
+            e = chat.send(ns.from_sid, ns.to_sid, ns.text)
+            print(f"{e['id']}  {e['from']} -> {e['to']}")
+        elif cmd == "inbox" and len(args) == 2:
+            for e in chat.inbox(args[1]):
+                print(f"{e['id']}  from {e['from']}: {e['text']}")
+        elif cmd == "ask":
+            ap = argparse.ArgumentParser(prog="pengu ask")
+            ap.add_argument("--session", required=True)
+            ap.add_argument("--question", required=True)
+            ap.add_argument("--option", action="append", required=True)
+            ap.add_argument("--expires", type=int, default=300)
+            ns = ap.parse_args(args[1:])
+            q = owner.create_question(ns.session, ns.question, ns.option, ns.expires)
+            print(f"question {q['id']} waiting for owner...")
+            opt, err = owner.wait_answer(q["id"], ns.expires)
+            if err == "timeout":
+                sys.exit(f"still waiting: question {q['id']} is pending (owner has not answered)")
+            if err:
+                sys.exit(f"no answer: {err}")
+            print(opt)
+        elif cmd == "owner-serve":
+            ap = argparse.ArgumentParser(prog="pengu owner-serve")
+            ap.add_argument("--bind", default="127.0.0.1")
+            ap.add_argument("--port", type=int, default=8471)
+            ns = ap.parse_args(args[1:])
+            owner.main_serve(ns.bind, ns.port)
+        elif cmd == "proposals":
+            for p in owner.list_proposals():
+                print(f"{p['at']:.0f}  {p['words']}  ({p['status']})")
         else:
             sys.exit(__doc__)
-    except (ModelError, RuntimeError, ValueError) as e:
+    except (ModelError, RuntimeError, ValueError, OSError) as e:
         sys.exit(f"pengu: {e}")
 
 

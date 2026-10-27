@@ -250,6 +250,57 @@ try:
         _cli.main(); raise AssertionError("--trust-workspace with claude must fail")
     except SystemExit as e:
         assert e.code == 2
+    _rc, _rs2 = _cli.chat.send, _cli.chat.inbox
+    def _fake_send(f, t, x):
+        _hit["send"] = (f, t, x)
+        return {"id": "m1", "from": f, "to": t}
+    def _fake_inbox(sid):
+        _hit["inbox"] = sid
+        return []
+    _cli.chat.send, _cli.chat.inbox = _fake_send, _fake_inbox
+    try:
+        _sys.argv = ["pengu", "send", "--from", "a", "--to", "b", "--text", "hi"]
+        _cli.main()
+        assert _hit["send"] == ("a", "b", "hi"), _hit
+        _sys.argv = ["pengu", "inbox", "b"]
+        _cli.main()
+        assert _hit["inbox"] == "b"
+    finally:
+        _cli.chat.send, _cli.chat.inbox = _rc, _rs2
+    _ro, _rw, _rp, _rpl = (_cli.owner.create_question, _cli.owner.wait_answer,
+                           _cli.owner.main_serve, _cli.owner.list_proposals)
+    def _fake_ask(*a):
+        _hit["ask"] = a
+        return {"id": "ask1"}
+    _cli.owner.create_question = _fake_ask
+    _cli.owner.wait_answer = lambda qid, t: ("yes", None)
+    def _fake_serve(b, p):
+        _hit["serve"] = (b, p)
+    def _fake_props():
+        _hit["props"] = True
+        return [{"at": 1.0, "words": "w", "status": "proposed"}]
+    _cli.owner.main_serve, _cli.owner.list_proposals = _fake_serve, _fake_props
+    try:
+        _sys.argv = ["pengu", "ask", "--session", "s", "--question", "Q?",
+                     "--option", "A", "--option", "B", "--expires", "10"]
+        _cli.main()
+        assert _hit["ask"] == ("s", "Q?", ["A", "B"], 10), _hit
+        _sys.argv = ["pengu", "owner-serve", "--bind", "127.0.0.1", "--port", "9999"]
+        _cli.main()
+        assert _hit["serve"] == ("127.0.0.1", 9999), _hit
+        _sys.argv = ["pengu", "proposals"]
+        _cli.main()
+        assert _hit["props"] is True
+        _cli.owner.wait_answer = lambda qid, t: (None, "timeout")
+        _sys.argv = ["pengu", "ask", "--session", "s", "--question", "Q?",
+                     "--option", "A", "--option", "B"]
+        try:
+            _cli.main(); raise AssertionError("timeout must exit nonzero")
+        except SystemExit as e:
+            assert e.code != 0 and "still waiting" in str(e.code)
+    finally:
+        (_cli.owner.create_question, _cli.owner.wait_answer, _cli.owner.main_serve,
+         _cli.owner.list_proposals) = (_ro, _rw, _rp, _rpl)
 finally:
     _cli.session.new, _cli.session.ls, _cli.session.stop = _rn, _rl, _rs
     _sys.argv = _real_argv
@@ -330,4 +381,207 @@ if _real_home is None:
     del _o.environ["PENGUPOOL_MUSE_HOME"]
 else:
     _o.environ["PENGUPOOL_MUSE_HOME"] = _real_home
+print("ok")
+
+# chat: turns recorded, inbox per recipient, off-tree refused, pane nudge best-effort.
+from pengu import chat as _chat
+_o.environ["PENGUPOOL_MUSE_HOME"] = _tf.mkdtemp()
+_ct, _ca = _sess._tmux, _sess._tmux_alive
+_sess._save([{"id": "aaa", "agent": "claude", "tmux": "pengu-aaa", "task": "",
+              "log": "x", "started": "x"},
+             {"id": "bbb", "agent": "muse", "tmux": "pengu-bbb", "task": "",
+              "log": "x", "started": "x"}])
+_sess._tmux_alive = lambda name: True
+_nudge_calls = []
+def _fake_nudge(*a, **k):
+    _nudge_calls.append(a)
+    raise RuntimeError("tmux down")
+_sess._tmux = _fake_nudge
+try:
+    e1 = _chat.send("aaa", "bbb", "please review the diff")
+    assert e1["from"] == "aaa" and e1["to"] == "bbb"  # nudge failure doesn't fail send
+    assert _nudge_calls[-1][:5] == ("send-keys", "-t", "pengu-bbb", "-l",
+                                    "[pengu] message from aaa; run: pengu inbox bbb")
+    assert [e["text"] for e in _chat.inbox("bbb")] == ["please review the diff"]
+    e2 = _chat.send("bbb", "aaa", "no issues")
+    assert [e["text"] for e in _chat.inbox("aaa")] == ["no issues"]
+    assert _chat.inbox("owner") == []
+    try:
+        _chat.send("aaa", "zzz", "x"); raise AssertionError("off-tree must fail")
+    except ValueError:
+        pass
+    try:
+        _chat.send("aaa", "bbb", "  "); raise AssertionError("empty must fail")
+    except ValueError:
+        pass
+    _real_stdin_now = _sys.stdin
+    class _NotTty:
+        def isatty(self):
+            return False
+    _sys.stdin = _NotTty()
+    try:
+        _chat.send("owner", "aaa", "x"); raise AssertionError("owner send needs a terminal")
+    except ValueError:
+        pass
+    finally:
+        _sys.stdin = _real_stdin_now
+    # entries older than 30 days are pruned on send.
+    with open(_chat._chat_path(), "a", encoding="utf-8") as f:
+        f.write(json.dumps({"id": "old", "at": "2020-01-01", "ts": 0,
+                            "from": "aaa", "to": "bbb", "text": "old"}) + "\n")
+    _chat.send("aaa", "bbb", "new")
+    texts = [e["text"] for e in _chat.inbox("bbb")]
+    assert "old" not in texts and "new" in texts
+finally:
+    _sess._tmux, _sess._tmux_alive = _ct, _ca
+print("ok")
+
+# owner API: real HTTP on localhost; auth, long-poll, answer rules, idempotency, proposals.
+import threading as _th
+import urllib.request as _ur
+from pengu import owner as _own
+_o.environ["PENGUPOOL_OWNER_TOKEN"] = "test-token"
+_o.environ["PENGUPOOL_MUSE_HOME"] = _tf.mkdtemp()
+_sess._save([{"id": "s1", "agent": "claude", "tmux": "pengu-s1", "task": "",
+              "log": "x", "started": "x"}])
+_srv = _own.serve("127.0.0.1", 0)
+_th.Thread(target=_srv.serve_forever, daemon=True).start()
+_base = f"http://127.0.0.1:{_srv.server_port}"
+def _call(method, path, body=None, token="test-token", raw=False):
+    req = _ur.Request(_base + path, method=method,
+                      headers={"Authorization": f"Bearer {token}"})
+    try:
+        with _ur.urlopen(req, data=json.dumps(body).encode() if body else None,
+                         timeout=10) as r:
+            return r.status, json.loads(r.read() or b"null")
+    except _ur.HTTPError as e:
+        return e.code, json.loads(e.read() or b"null")
+q = _own.create_question("s1", "Ship it?", ["yes", "no"], expires_in=60)
+for bad_q in (["only"], ["a", "a"], ["", "b"], "yesno", ["a", 1]):
+    try:
+        _own.create_question("s1", "Bad?", bad_q); raise AssertionError(f"must fail: {bad_q}")
+    except ValueError:
+        pass
+for bad_c in [("zzz", "Q?", ["a", "b"]), ("s1", "", ["a", "b"])]:
+    try:
+        _own.create_question(*bad_c); raise AssertionError(f"must fail: {bad_c}")
+    except ValueError:
+        pass
+_saved_token = _o.environ.pop("PENGUPOOL_OWNER_TOKEN")
+try:
+    _own.serve("127.0.0.1", 0); raise AssertionError("missing token must fail closed")
+except RuntimeError:
+    pass
+finally:
+    _o.environ["PENGUPOOL_OWNER_TOKEN"] = _saved_token
+try:
+    code, items = _call("GET", "/questions?wait=0")
+    assert code == 200 and [i["id"] for i in items] == [q["id"]]
+    assert _call("POST", "/proposals", {"words": "x"}, token="wrong")[0] == 401
+    assert _call("GET", "/questions?wait=0", token="wrong")[0] == 401
+    assert _call("POST", f"/questions/{q['id']}/answer", None, token="wrong")[0] == 401
+    ans = {"option": "yes", "payload_hash": q["payload_hash"], "idempotency_key": "k1"}
+    code, got = _call("POST", f"/questions/{q['id']}/answer", ans)
+    assert code == 200 and got["option"] == "yes", (code, got)
+    code, got2 = _call("POST", f"/questions/{q['id']}/answer", ans)  # idempotent replay
+    assert code == 200 and got2 == got
+    changed = dict(ans, option="no", payload_hash="deadbeef", idempotency_key="k1")
+    code, got3 = _call("POST", f"/questions/{q['id']}/answer", changed)
+    assert (code, got3) == (200, got)  # same key replays the first result, not the new body
+    other = dict(ans, option="no", idempotency_key="k2")
+    assert _call("POST", f"/questions/{q['id']}/answer", other)[0] == 409
+    bad = _own.create_question("s1", "Q?", ["a", "b"], expires_in=60)
+    wrong = dict(ans, payload_hash="deadbeef", idempotency_key="k3")
+    assert _call("POST", f"/questions/{bad['id']}/answer", wrong)[0] == 409
+    assert _call("POST", f"/questions/{bad['id']}/answer",
+                  {"option": "zzz", "payload_hash": bad["payload_hash"],
+                   "idempotency_key": "k4"})[0] == 400
+    # errors replay too: the same key returns the first 409.
+    code, body = _call("POST", f"/questions/{bad['id']}/answer", wrong)
+    assert code == 409 and body["error"] == "changed"
+    # non-object JSON and non-string words are 400, not crashes.
+    assert _call("POST", f"/questions/{bad['id']}/answer", [1, 2])[0] == 400
+    assert _call("POST", "/proposals", {"words": 42})[0] == 400
+    code, props = _call("POST", "/proposals", {"words": "prefer small commits"})
+    assert code == 202, (code, props)
+    code, listed = _call("GET", "/proposals")
+    assert code == 200 and any(p["words"] == "prefer small commits" for p in listed)
+    assert _call("POST", "/questions/nope/answer", dict(ans, idempotency_key="k404"))[0] == 404
+    assert _call("POST", f"/questions/{bad['id']}/answer",
+                  {"option": "a", "payload_hash": bad["payload_hash"]})[0] == 400
+    assert _call("GET", "/questions?wait=nan")[0] == 400
+    assert _call("GET", "/questions?wait=inf")[0] == 400
+    exp = _own.create_question("s1", "Old?", ["a", "b"], expires_in=60)
+    with _sess._locked():
+        st = _own._load_state()
+        st["questions"][exp["id"]]["expires_at"] = 1.0  # long past, no sleep
+        _own._save_state(st)
+    assert _call("POST", f"/questions/{exp['id']}/answer",
+                  {"option": "a", "payload_hash": exp["payload_hash"],
+                   "idempotency_key": "kexp"})[0] == 409
+    assert _own.wait_answer(q["id"], 0.1) == ("yes", None)
+    # long-poll releases when a question lands.
+    _own.answer_question(bad["id"], "a", bad["payload_hash"], "k-late")
+    def _ask_late():
+        import time as _t
+        _t.sleep(0.6)
+        _own.create_question("s1", "Late?", ["y", "n"], expires_in=60)
+    _th.Thread(target=_ask_late, daemon=True).start()
+    code, items = _call("GET", "/questions?wait=5")
+    assert code == 200 and any(i["question"] == "Late?" for i in items)
+    # a corrupt state file is backed up, not wiped.
+    _own._save_state({"questions": {}, "idempotency": {}, "proposals": []})
+    _own._state_path().write_text("{broken", encoding="utf-8")
+    assert _own.pending_questions() == []
+    left = list(_own._state_path().parent.glob("owner.corrupt-*.json"))
+    assert len(left) == 1 and left[0].read_text(encoding="utf-8") == "{broken"
+    left[0].unlink()
+    # malformed inner rows are skipped, not fatal.
+    _own._save_state({"questions": {"q1": [1, 2], "q2": {"status": "pending"}},
+                      "idempotency": {"k": [1]},
+                      "proposals": [[1], {"words": "w"},
+                                    {"words": "w2", "at": 9999999999.0, "status": "proposed"}]})
+    assert _own.pending_questions() == []
+    assert [p["words"] for p in _own.list_proposals()] == ["w2"]
+    assert _own.wait_answer("missing", 0.1) == (None, "no such question")
+    q2 = _own.create_question("s1", "Slow?", ["a", "b"], expires_in=60)
+    assert _own.wait_answer(q2["id"], 0) == (None, "timeout")  # pending, waiter gave up
+    def _late():
+        import time as _t
+        _t.sleep(0.6)
+        _own.answer_question(q2["id"], "a", q2["payload_hash"], "k5")
+    _th.Thread(target=_late, daemon=True).start()
+    assert _own.wait_answer(q2["id"], 5) == ("a", None)  # a posted answer releases the waiter
+    q3 = _own.create_question("s1", "Never?", ["a", "b"], expires_in=1)
+    assert _own.wait_answer(q3["id"], 3) == (None, "expired")
+    # a non-loopback bind needs explicit opt-in.
+    try:
+        _own.serve("0.0.0.0", 0); raise AssertionError("public bind must fail closed")
+    except RuntimeError:
+        pass
+finally:
+    _srv.shutdown()
+    if _real_home is None:
+        del _o.environ["PENGUPOOL_MUSE_HOME"]
+    else:
+        _o.environ["PENGUPOOL_MUSE_HOME"] = _real_home
+    del _o.environ["PENGUPOOL_OWNER_TOKEN"]
+print("ok")
+
+# send-to-owner lands in the owner's inbox; no pane nudge is attempted.
+_o.environ["PENGUPOOL_MUSE_HOME"] = _tf.mkdtemp()
+_sess._save([{"id": "aaa", "agent": "claude", "tmux": "pengu-aaa", "task": "",
+              "log": "x", "started": "x"}])
+_ct2, _ca2 = _sess._tmux, _sess._tmux_alive
+_sess._tmux = lambda *a, **k: (_ for _ in ()).throw(AssertionError("no nudge for owner"))
+_sess._tmux_alive = lambda name: (_ for _ in ()).throw(AssertionError("no lookup for owner"))
+try:
+    _chat.send("aaa", "owner", "should I ship it?")
+    assert [e["text"] for e in _chat.inbox("owner")] == ["should I ship it?"]
+finally:
+    _sess._tmux, _sess._tmux_alive = _ct2, _ca2
+    if _real_home is None:
+        del _o.environ["PENGUPOOL_MUSE_HOME"]
+    else:
+        _o.environ["PENGUPOOL_MUSE_HOME"] = _real_home
 print("ok")

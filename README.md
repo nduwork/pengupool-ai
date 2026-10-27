@@ -19,7 +19,20 @@ python3 -m pengu ls
 python3 -m pengu stop <id>
 
 python3 test_pengu.py   # self-check, no network
+
+python3 -m pengu send --from <id> --to <id|owner> --text "..."   # chat along the tree
+python3 -m pengu inbox <id>                                      # turns addressed to a session
+python3 -m pengu ask --session <id> --question "..." --option A --option B  # wait for the owner
 ```
+
+Owner API (the Muse-app agent's window; stdlib HTTP on localhost):
+`PENGUPOOL_OWNER_TOKEN` from the macOS keychain, then `python3 -m pengu owner-serve`.
+Owner actions: `security add-generic-password -s pengu-owner -a owner -w <token>`;
+launch with `PENGUPOOL_OWNER_TOKEN=$(security find-generic-password -s pengu-owner -a owner -w)`;
+expose over the tailnet and set a Tailscale ACL limiting the port to device `muse`.
+Agents must never run `pengu send --from owner`: a pty can fake a terminal.
+Measured: `muse session-message` from outside a session is closed on this
+machine, so chat is harness-side (inbox file + pane nudge).
 
 The Compass host is an MCP server (`python3 -m pengu mcp`, stdio). Register it:
 Claude Code: `claude mcp add -s user pengu-compass -e PENGUPOOL_MUSE_HOME=~/.pengupool-muse
