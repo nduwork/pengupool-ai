@@ -14,6 +14,9 @@ python3 -m pengu list
 python3 -m pengu check '{"tool": "Bash", "input": {"command": "pytest -q"}}'
 python3 -m pengu forget <id>
 git diff HEAD | python3 -m pengu review   # Muse Code reviews the diff
+python3 -m pengu new --agent muse --task "hello" --trust-workspace   # start a session in tmux
+python3 -m pengu ls
+python3 -m pengu stop <id>
 
 python3 test_pengu.py   # self-check, no network
 ```

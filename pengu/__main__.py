@@ -6,6 +6,9 @@
     python3 -m pengu check '{"tool": "Bash", "input": {"command": "pytest"}}'
     git diff HEAD | python3 -m pengu review
     python3 -m pengu review HEAD~1
+    python3 -m pengu new --agent muse --task "hello" --trust-workspace
+    python3 -m pengu ls
+    python3 -m pengu stop ID
 """
 
 import argparse
@@ -13,7 +16,7 @@ import json
 import subprocess
 import sys
 
-from . import compass, review, rules
+from . import compass, review, rules, session
 from .model import ModelError
 
 
@@ -67,6 +70,22 @@ def main(argv=None):
             if not diff.strip():
                 sys.exit("no diff to review")
             print(review.review_diff(diff))
+        elif cmd == "new":
+            ap = argparse.ArgumentParser(prog="pengu new")
+            ap.add_argument("--agent", required=True, choices=["claude", "muse"])
+            ap.add_argument("--task", default="")
+            ap.add_argument("--trust-workspace", action="store_true",
+                            help="muse only: pass --trust-workspace (skips the trust prompt)")
+            ns = ap.parse_args(args[1:])
+            if ns.trust_workspace and ns.agent != "muse":
+                ap.error("--trust-workspace is muse only")
+            row = session.new(ns.agent, ns.task, trust_workspace=ns.trust_workspace)
+            print(f"{row['id']}  {row['agent']}  tmux:{row['tmux']}")
+        elif cmd == "ls":
+            for r in session.ls():
+                print(f"{r['id']}  {r['agent']}  {'alive' if r['alive'] else 'dead'}  {r['task'][:60]}")
+        elif cmd == "stop" and len(args) == 2:
+            print("stopped" if session.stop(args[1]) else "no such session")
         else:
             sys.exit(__doc__)
     except (ModelError, RuntimeError, ValueError) as e:
