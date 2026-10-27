@@ -242,10 +242,13 @@ func (s *Store) UpdateConfig(fn func(*Config) error) error {
 	return nil
 }
 
-// SaveConfig writes config.json atomically.
+// SaveConfig writes config.json atomically. It keeps the paired Muse devices as they are now: a caller
+// holding an older copy (a settings or backup save racing a revoke) can never bring a revoked device
+// back. Devices change only through UpdateConfig.
 func (s *Store) SaveConfig(cfg Config) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	cfg.MuseDevices = s.cfg.MuseDevices
 	cfg.Version = Version
 	cfg.UpdatedAt = time.Now().UTC()
 	if err := s.saveLocked(ConfigFile, cfg); err != nil {

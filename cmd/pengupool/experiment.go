@@ -33,7 +33,7 @@ func runExperiment(args []string) error {
 			}
 		case "--only":
 			i++
-			for ; i < len(args) && !strings.HasPrefix(args[i], "--"); i++ {
+			for ; i < len(args) && args[i] != "" && !strings.HasPrefix(args[i], "--"); i++ {
 				only = append(only, args[i])
 			}
 			i--

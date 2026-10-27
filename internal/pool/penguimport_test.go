@@ -20,10 +20,11 @@ func TestPenguImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PENGUPOOL_AI_HOME", ai)
-	// The real store is the owner's own home with no PENGUPOOL_HOME; muse and codex stay out of reach.
+	// The real store is the owner's own home with no PENGUPOOL_HOME.
 	t.Setenv("HOME", filepath.Join(root, "home"))
 	t.Setenv("PENGUPOOL_HOME", "")
 	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("CODEX_HOME", filepath.Join(root, "codex"))
 	compass := `{"id":"a1","rule":"Always run the tests before committing","source":"app","created":"2026-10-27T08:32:56-0700","evidence":[],"confidence":1}` + "\n" +
 		`{"id":"b2","rule":"Never touch prod","kind":"restriction","source":"app","created":"2026-10-27T08:32:56-0700","evidence":[],"confidence":1}` + "\n" +
 		"{a truncated row\n" +
@@ -46,7 +47,9 @@ func TestPenguImport(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	mk := func() *Pool { return New(Options{Store: def, Exe: "pengupool"}) }
+	// An explicit Env: the pool's own user PATH (Homebrew, npm) would find a real muse or codex.
+	noAgents := []string{"PATH=/nonexistent", "HOME=" + filepath.Join(root, "home")}
+	mk := func() *Pool { return New(Options{Store: def, Exe: "pengupool", Env: noAgents}) }
 	p := mk()
 	own := p.owner()
 
@@ -124,7 +127,7 @@ func TestPenguImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PENGUPOOL_AI_HOME", ai2)
-	other := New(Options{Store: st2, Exe: "pengupool"})
+	other := New(Options{Store: st2, Exe: "pengupool", Env: noAgents})
 	ls, _ := other.db.Lines(other.owner(), "", "", 0)
 	if len(ls) != 0 {
 		t.Fatalf("non-default store imported: %+v", ls)
@@ -139,7 +142,7 @@ func TestPenguImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := New(Options{Store: moved, Exe: "pengupool"})
+	m := New(Options{Store: moved, Exe: "pengupool", Env: noAgents})
 	if ls, _ := m.db.Lines(m.owner(), "", "", 0); len(ls) != 0 {
 		t.Fatalf("PENGUPOOL_HOME store imported: %+v", ls)
 	}

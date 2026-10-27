@@ -203,8 +203,8 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 		if in.AgentBins != nil {
 			bins := map[string]string{}
 			for id, path := range in.AgentBins {
-				if id != harness.OMP && id != harness.Pi { // the only launches that take a set binary
-					return invalid("a binary path can be set for OMP and pi only, not %q", id)
+				if id != harness.OMP && id != harness.Pi { // the only launches that take a set binary:
+					continue // any other id (an older save) is dropped, never fails the save
 				}
 				if path = strings.TrimSpace(path); path == "" {
 					continue // empty clears the override
@@ -286,7 +286,10 @@ func tailscaleName() (string, error) {
 	if bin == "" {
 		return "", errors.New("tailscale is not running or not installed")
 	}
-	out, err := exec.Command(bin, "status", "--json").Output()
+	// Bounded: every settings read asks, and a hung tailscaled must not hold the Settings page.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, "status", "--json").Output()
 	if err != nil {
 		return "", errors.New("tailscale is not running or not installed")
 	}
@@ -951,4 +954,3 @@ func (p *Pool) ollamaStatus(ctx context.Context, in ollamaStatusIn) (any, error)
 	}
 	return out, nil
 }
-

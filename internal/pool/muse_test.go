@@ -311,4 +311,20 @@ func TestMuseAnswerRespectsVisibility(t *testing.T) {
 	if a := st.State().Domain.Approvals; a[len(a)-1].State != "pending" {
 		t.Fatalf("hidden approval changed: %+v", a[len(a)-1])
 	}
+	// A launch /next never lists (no session, the team not active yet), posted with a correct hash.
+	_ = st.Update(func(s *store.State) error {
+		s.Domain.Approvals = append(s.Domain.Approvals, protocol.Approval{
+			ID: "h2", Kind: "launch", TeamID: "team1", Version: 1,
+			State: "pending", Detail: "launch it", CreatedAt: "2026-10-27T10:00:00Z",
+		})
+		return nil
+	})
+	hash := payloadHash("launch\x00h2\x00Launch proposal v1: launch it")
+	in = map[string]any{"ask_id": "approval:h2", "action": "allow", "payload_hash": hash, "idempotency_key": "kv2"}
+	if _, err := p.RPC(context.Background(), museCaller(), "muse.answer", toJSON(t, in)); err == nil || !strings.Contains(err.Error(), "no ask") {
+		t.Fatalf("unlisted hidden launch answered: %v", err)
+	}
+	if a := st.State().Domain.Approvals; a[len(a)-1].State != "pending" {
+		t.Fatalf("hidden launch changed: %+v", a[len(a)-1])
+	}
 }

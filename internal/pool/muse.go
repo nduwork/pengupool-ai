@@ -184,6 +184,21 @@ func (p *Pool) museVisible(sessionID string) bool {
 	return true
 }
 
+// museTeamVisible reports whether a device may act on an ask of this team: only a team with iOS
+// access. Checked on the ask's own team, so an ask /next never listed (a team not yet active) is no
+// way around it. An ask on no team is the owner's own.
+func (p *Pool) museTeamVisible(teamID string) bool {
+	if teamID == "" {
+		return true
+	}
+	for _, t := range p.st.State().Domain.Teams {
+		if t.ID == teamID {
+			return t.IOSAccess
+		}
+	}
+	return false
+}
+
 // museCardFor builds the card for one ask.
 func (p *Pool) museCard(a museAsk) *museCard {
 	s, ok := p.session(a.sessionID)
@@ -253,7 +268,8 @@ func (p *Pool) museAnswer(ctx context.Context, c gateway.Caller, raw json.RawMes
 	// reusing it is a conflict, not a free copy of the first answer.
 	key := c.Device + "\x00" + in.IdempotencyKey
 	// Check and claim the key in one step: a retry that arrives while the
-	// first tap is still launching a team waits, never answers a second time.
+	// first tap is still launching a team is told to retry (503), and never
+	// answers a second time; once the first finishes, a retry replays it.
 	p.museMu.Lock()
 	if done, ok := p.museAnswered[key]; ok {
 		p.museMu.Unlock()
@@ -273,13 +289,6 @@ func (p *Pool) museAnswer(ctx context.Context, c gateway.Caller, raw json.RawMes
 		delete(p.museInflight, key)
 		p.museMu.Unlock()
 	}()
-	// A waiting ask this device may not see (a team without iOS access) stays
-	// out of reach, whatever id is posted. A settled one falls through to its
-	// handler, which says 409.
-	asks := p.museAsks()
-	if i := slices.IndexFunc(asks, func(a museAsk) bool { return a.id == in.AskID }); i >= 0 && !p.museVisible(asks[i].sessionID) {
-		return nil, notFound("no ask %s", in.AskID)
-	}
 	kind, id, _ := strings.Cut(in.AskID, ":")
 	var res any
 	var err error
@@ -343,6 +352,9 @@ func (p *Pool) museAnswerApproval(ctx context.Context, c gateway.Caller, id stri
 	if a == nil || a.State != "pending" {
 		return nil, protocol.Errorf(protocol.CodeConflict, "the ask changed or expired")
 	}
+	if !p.museTeamVisible(a.TeamID) {
+		return nil, notFound("no ask approval:%s", id)
+	}
 	text := a.Detail
 	if a.Kind == "launch" {
 		text = fmt.Sprintf("Launch proposal v%d: %s", a.Version, a.Detail)
@@ -372,6 +384,9 @@ func (p *Pool) museAnswerGate(id string, in museAnswerIn) (any, error) {
 	g, err := p.db.Gate(gid)
 	if err != nil || g.Kind != "checkin" || g.Outcome != "pending" {
 		return nil, protocol.Errorf(protocol.CodeConflict, "the ask changed or expired")
+	}
+	if !p.museTeamVisible(g.TeamID) {
+		return nil, notFound("no ask gate:%s", id)
 	}
 	if payloadHash("checkin\x00"+id+"\x00"+g.Question) != in.PayloadHash {
 		return nil, protocol.Errorf(protocol.CodeConflict, "the ask changed or expired")

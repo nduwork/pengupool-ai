@@ -94,7 +94,6 @@ func TestAgentBinsValidation(t *testing.T) {
 		"missing":   {"pi": filepath.Join(dir, "nope")},
 		"directory": {"pi": sub},
 		"nonexec":   {"pi": plain},
-		"noagent":   {"wat": exe},
 	}
 	for name, bins := range bad {
 		if _, err := call(t, p, true, "settings.save", map[string]any{"agent_bins": bins}); err == nil {
@@ -106,6 +105,13 @@ func TestAgentBinsValidation(t *testing.T) {
 	}
 	if got := st.Config().AgentBins; len(got) != 1 || got["pi"] != exe {
 		t.Fatalf("bins = %v", got)
+	}
+	// An id other than OMP/pi (an older save sent back by the UI) is dropped, never fails the save.
+	if _, err := call(t, p, true, "settings.save", map[string]any{"agent_bins": map[string]string{"pi": exe, "claude": exe, "wat": exe}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Config().AgentBins; len(got) != 1 || got["pi"] != exe {
+		t.Fatalf("other ids kept: %v", got)
 	}
 	if _, err := call(t, p, true, "settings.save", map[string]any{"agent_bins": map[string]string{}}); err != nil {
 		t.Fatal(err)

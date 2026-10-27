@@ -34,15 +34,8 @@ func codexRulesFile() string {
 	return filepath.Join(home, "rules", "pengupool.rules")
 }
 
-// codexLookPath and codexRun are exec entry points, stubbed in tests.
+// codexLookPath finds codex on the user's PATH; stubbed in tests.
 var codexLookPath = func(env []string) (string, error) { return Lookup("codex", env) }
-
-var codexRun = func(ctx context.Context, args ...string) error {
-	if out, err := exec.CommandContext(ctx, "codex", args...).CombinedOutput(); err != nil {
-		return fmt.Errorf("codex %s: %v: %s", args[0], err, firstLine(out))
-	}
-	return nil
-}
 
 // codexRule is one allowed argv prefix with its justification. The prefix
 // is an argv slice, never split on spaces: an exe path may itself contain

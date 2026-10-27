@@ -40,6 +40,7 @@ func (p *Pool) resolveMuseSession(c gateway.Caller, pl map[string]any) (store.Se
 			if yes, _ := descendsFrom(c.PeerPID, s.Pid); yes {
 				if msid != "" && s.ConvID != msid {
 					p.setSession(s.ID, func(x *store.Session) { x.ConvID = msid })
+					s, _ = p.session(s.ID)
 				}
 				return s, true
 			}

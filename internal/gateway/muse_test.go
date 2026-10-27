@@ -21,9 +21,10 @@ func museTestServer(t *testing.T, rpc func(context.Context, Caller, string, json
 		PhoneHosts: func() []string { return []string{"127.0.0.1"} }})
 	const token = "muse-test-token"
 	sum := sha256.Sum256([]byte(token))
-	cfg := st.Config()
-	cfg.MuseDevices = append(cfg.MuseDevices, store.MuseDevice{Name: "phone1", TokenHash: hex.EncodeToString(sum[:])})
-	if err := st.SaveConfig(cfg); err != nil {
+	if err := st.UpdateConfig(func(cfg *store.Config) error {
+		cfg.MuseDevices = append(cfg.MuseDevices, store.MuseDevice{Name: "phone1", TokenHash: hex.EncodeToString(sum[:])})
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	return srv, token

@@ -26,7 +26,10 @@ OLD=$(pgrep -f "PenguPool AI.app/Contents/Resources/bin/pengupool daemon|\.local
 
 [ -d "$APP" ] && rm -rf "$APP" && echo "removed $APP"
 [ -L "$LINK" ] && rm "$LINK" && echo "removed $LINK"
-[ -L "$PENGU_LINK" ] && rm "$PENGU_LINK" && echo "removed $PENGU_LINK"
+# Only our own: a pengu link into a PenguPool app, never someone else's pengu.
+case "$(readlink "$PENGU_LINK" 2>/dev/null || true)" in
+*PenguPool*) rm "$PENGU_LINK" && echo "removed $PENGU_LINK" ;;
+esac
 if [ "${1:-}" = "--purge" ]; then
   rm -rf "${PENGUPOOL_HOME:-$HOME/.pengupool-ai}" && echo "removed ${PENGUPOOL_HOME:-$HOME/.pengupool-ai}"
 else
