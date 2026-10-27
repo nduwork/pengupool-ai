@@ -163,7 +163,8 @@ func New(o Options) *Pool {
 				dropped, agentdb.PreUpgradePath(filepath.Join(o.Store.Dir(), "agents.db")))
 		}
 		ls, _ := db.Lines(p.owner(), "", "", 0)
-		p.sweepDropped(ls) // lines dropped before the Compass stopped keeping them
+		p.sweepDropped(ls)                // lines dropped before the Compass stopped keeping them
+		p.maybeImportPengu(o.Store.Dir()) // one-time import of the separate Compass layer
 	}
 	return p
 }
