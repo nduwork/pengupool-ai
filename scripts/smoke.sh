@@ -20,7 +20,8 @@ echo "== build"
 pg="$tmp/pengu"
 
 echo "== cli"
-[ "$("$pg" version)" = "0.1.0" ] || fail "version"
+want=$(sed -n 's/^const Version = "\(.*\)"/\1/p' "$repo/cmd/pengu/main.go")
+[ "$("$pg" version)" = "$want" ] || fail "version"
 [ -z "$("$pg" list)" ] || fail "fresh store lists nothing"
 [ "$("$pg" check '{"tool":"Bash"}')" = "no line allows it" ] || fail "check"
 [ "$("$pg" forget missing)" = "no such line" ] || fail "forget"

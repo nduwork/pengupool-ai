@@ -19,12 +19,22 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/chat"
 	"github.com/nduwork/pengupool-ai/internal/compass"
+	"github.com/nduwork/pengupool-ai/internal/experiment"
+	"github.com/nduwork/pengupool-ai/internal/ingest"
 	"github.com/nduwork/pengupool-ai/internal/session"
 	"github.com/nduwork/pengupool-ai/internal/store"
+)
+
+// Experiment run state for the renderer's run/status endpoints.
+var (
+	expMu      sync.Mutex
+	expRunning bool
+	expLastErr string
 )
 
 // DefaultPort of the owner API.
@@ -313,7 +323,7 @@ func loadSwept() *state {
 
 // PendingQuestions sweeps and returns pending items.
 func PendingQuestions() ([]*Question, error) {
-	var out []*Question
+	out := []*Question{}
 	err := store.Locked(func() error {
 		for _, q := range loadSwept().Questions {
 			if q.Status == "pending" {
@@ -440,6 +450,31 @@ func ConfirmProposal(pid string) (int, map[string]any) {
 		p.Status = "confirmed"
 		_ = saveState(st)
 		status, body = 200, out
+		return nil
+	})
+	return status, body
+}
+
+// DismissProposal marks a proposal dismissed without applying it.
+func DismissProposal(pid string) (int, map[string]any) {
+	var status int
+	var body map[string]any
+	_ = store.Locked(func() error {
+		st := loadSwept()
+		for _, p := range st.Proposals {
+			if p.ID != pid {
+				continue
+			}
+			if p.Status != "proposed" {
+				status, body = 409, map[string]any{"error": "already decided"}
+				return nil
+			}
+			p.Status = "dismissed"
+			_ = saveState(st)
+			status, body = 200, map[string]any{"dismissed": pid}
+			return nil
+		}
+		status, body = 404, map[string]any{"error": "no such proposal"}
 		return nil
 	})
 	return status, body
@@ -646,6 +681,11 @@ func Handler(token string) http.Handler {
 				send(w, code, out)
 				return
 			}
+			if r.Method == "POST" && len(parts) == 3 && parts[0] == "proposals" && parts[2] == "dismiss" {
+				code, out := DismissProposal(parts[1])
+				send(w, code, out)
+				return
+			}
 			send(w, 404, map[string]any{"error": "unknown path"})
 		}
 	}
@@ -653,67 +693,172 @@ func Handler(token string) http.Handler {
 	mux.HandleFunc("/proposals/", proposals)
 	// Read endpoints for the desktop renderer: lines, sessions, inbox,
 	// and the last experiment results. Same loopback + token guard.
-	mux.HandleFunc("/lines", func(w http.ResponseWriter, r *http.Request) {
+	linesEP := func(w http.ResponseWriter, r *http.Request) {
 		if !authed(r) {
 			send(w, 401, map[string]any{"error": "unauthorized"})
 			return
 		}
-		if r.URL.Path != "/lines" || r.Method != "GET" {
+		switch {
+		case r.URL.Path == "/lines" && r.Method == "GET":
+			lines, err := compass.Load()
+			if err != nil {
+				send(w, 500, map[string]any{"error": err.Error()})
+				return
+			}
+			if lines == nil {
+				lines = []*compass.Line{}
+			}
+			send(w, 200, lines)
+		case r.URL.Path == "/lines" && r.Method == "POST":
+			// The GUI is an owner path: a line typed here is confirmed here.
+			body, ok := readBody(r)
+			if !ok {
+				send(w, 400, map[string]any{"error": "bad json"})
+				return
+			}
+			rule, _ := body["rule"].(string)
+			if strings.TrimSpace(rule) == "" {
+				send(w, 400, map[string]any{"error": "empty rule"})
+				return
+			}
+			line, err := compass.Add(strings.TrimSpace(rule), "app", 1.0)
+			if err != nil {
+				send(w, 500, map[string]any{"error": err.Error()})
+				return
+			}
+			send(w, 201, line)
+		case strings.HasPrefix(r.URL.Path, "/lines/") && r.Method == "DELETE":
+			id := strings.TrimPrefix(r.URL.Path, "/lines/")
+			ok, err := compass.Forget(id)
+			if err != nil {
+				send(w, 500, map[string]any{"error": err.Error()})
+				return
+			}
+			if !ok {
+				send(w, 404, map[string]any{"error": "no such line"})
+				return
+			}
+			send(w, 200, map[string]any{"forgotten": id})
+		default:
 			send(w, 404, map[string]any{"error": "unknown path"})
-			return
 		}
-		lines, err := compass.Load()
-		if err != nil {
-			send(w, 500, map[string]any{"error": err.Error()})
-			return
-		}
-		if lines == nil {
-			lines = []*compass.Line{}
-		}
-		send(w, 200, lines)
-	})
-	mux.HandleFunc("/sessions", func(w http.ResponseWriter, r *http.Request) {
+	}
+	mux.HandleFunc("/lines", linesEP)
+	mux.HandleFunc("/lines/", linesEP)
+	mux.HandleFunc("/ingest", func(w http.ResponseWriter, r *http.Request) {
 		if !authed(r) {
 			send(w, 401, map[string]any{"error": "unauthorized"})
 			return
 		}
-		if r.URL.Path != "/sessions" || r.Method != "GET" {
+		if r.URL.Path != "/ingest" || r.Method != "POST" {
 			send(w, 404, map[string]any{"error": "unknown path"})
 			return
 		}
-		rows, err := session.Ls()
-		if err != nil {
-			send(w, 500, map[string]any{"error": err.Error()})
+		body, ok := readBody(r)
+		if !ok {
+			send(w, 400, map[string]any{"error": "bad json"})
 			return
 		}
-		if rows == nil {
-			rows = []*session.Row{}
+		words, _ := body["words"].(string)
+		sid, _ := body["session"].(string)
+		pid, msg, err := ingest.Ingest(words, sid, "")
+		if err != nil {
+			send(w, 502, map[string]any{"error": err.Error()})
+			return
 		}
-		send(w, 200, rows)
+		send(w, 200, map[string]any{"proposal": pid, "message": msg})
 	})
+	sessionsEP := func(w http.ResponseWriter, r *http.Request) {
+		if !authed(r) {
+			send(w, 401, map[string]any{"error": "unauthorized"})
+			return
+		}
+		switch {
+		case r.URL.Path == "/sessions" && r.Method == "GET":
+			rows, err := session.Ls()
+			if err != nil {
+				send(w, 500, map[string]any{"error": err.Error()})
+				return
+			}
+			if rows == nil {
+				rows = []*session.Row{}
+			}
+			send(w, 200, rows)
+		case r.URL.Path == "/sessions" && r.Method == "POST":
+			body, ok := readBody(r)
+			if !ok {
+				send(w, 400, map[string]any{"error": "bad json"})
+				return
+			}
+			agent, _ := body["agent"].(string)
+			task, _ := body["task"].(string)
+			trust, _ := body["trustWorkspace"].(bool)
+			row, err := session.New(agent, task, "", trust)
+			if err != nil {
+				send(w, 400, map[string]any{"error": err.Error()})
+				return
+			}
+			send(w, 201, row)
+		case strings.HasPrefix(r.URL.Path, "/sessions/") && strings.HasSuffix(r.URL.Path, "/stop") && r.Method == "POST":
+			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/sessions/"), "/stop")
+			ok, err := session.Stop(id)
+			if err != nil {
+				send(w, 500, map[string]any{"error": err.Error()})
+				return
+			}
+			if !ok {
+				send(w, 404, map[string]any{"error": "no such session"})
+				return
+			}
+			send(w, 200, map[string]any{"stopped": id})
+		default:
+			send(w, 404, map[string]any{"error": "unknown path"})
+		}
+	}
+	mux.HandleFunc("/sessions", sessionsEP)
+	mux.HandleFunc("/sessions/", sessionsEP)
 	mux.HandleFunc("/inbox", func(w http.ResponseWriter, r *http.Request) {
 		if !authed(r) {
 			send(w, 401, map[string]any{"error": "unauthorized"})
 			return
 		}
-		if r.URL.Path != "/inbox" || r.Method != "GET" {
+		switch {
+		case r.URL.Path == "/inbox" && r.Method == "GET":
+			sid := r.URL.Query().Get("session")
+			if sid == "" {
+				send(w, 400, map[string]any{"error": "session query required"})
+				return
+			}
+			entries, err := chat.Inbox(sid)
+			if err != nil {
+				send(w, 404, map[string]any{"error": err.Error()})
+				return
+			}
+			if entries == nil {
+				entries = []*chat.Entry{}
+			}
+			send(w, 200, entries)
+		case r.URL.Path == "/inbox" && r.Method == "POST":
+			body, ok := readBody(r)
+			if !ok {
+				send(w, 400, map[string]any{"error": "bad json"})
+				return
+			}
+			from, _ := body["from"].(string)
+			to, _ := body["to"].(string)
+			text, _ := body["text"].(string)
+			if from == "" {
+				from = "owner"
+			}
+			e, err := chat.SendOwner(from, to, text)
+			if err != nil {
+				send(w, 400, map[string]any{"error": err.Error()})
+				return
+			}
+			send(w, 201, e)
+		default:
 			send(w, 404, map[string]any{"error": "unknown path"})
-			return
 		}
-		sid := r.URL.Query().Get("session")
-		if sid == "" {
-			send(w, 400, map[string]any{"error": "session query required"})
-			return
-		}
-		entries, err := chat.Inbox(sid)
-		if err != nil {
-			send(w, 404, map[string]any{"error": err.Error()})
-			return
-		}
-		if entries == nil {
-			entries = []*chat.Entry{}
-		}
-		send(w, 200, entries)
 	})
 	mux.HandleFunc("/results", func(w http.ResponseWriter, r *http.Request) {
 		if !authed(r) {
@@ -724,7 +869,18 @@ func Handler(token string) http.Handler {
 			send(w, 404, map[string]any{"error": "unknown path"})
 			return
 		}
-		data, err := os.ReadFile(filepath.Join(store.Home(), "experiment", "results.json"))
+		// The CLI writes <store>/experiment/results/results.json (out dir);
+		// older runs wrote <store>/experiment/results.json. Read either.
+		var data []byte
+		var err error
+		for _, p := range []string{
+			filepath.Join(store.Home(), "experiment", "results", "results.json"),
+			filepath.Join(store.Home(), "experiment", "results.json"),
+		} {
+			if data, err = os.ReadFile(p); err == nil {
+				break
+			}
+		}
 		if err != nil {
 			send(w, 404, map[string]any{"error": "no results yet"})
 			return
@@ -736,6 +892,63 @@ func Handler(token string) http.Handler {
 		}
 		send(w, 200, rows)
 	})
+	mux.HandleFunc("/experiment/run", func(w http.ResponseWriter, r *http.Request) {
+		if !authed(r) {
+			send(w, 401, map[string]any{"error": "unauthorized"})
+			return
+		}
+		if r.URL.Path != "/experiment/run" || r.Method != "POST" {
+			send(w, 404, map[string]any{"error": "unknown path"})
+			return
+		}
+		body, _ := readBody(r)
+		tasksPath, _ := body["tasks"].(string)
+		if tasksPath == "" {
+			for _, p := range []string{
+				filepath.Join(store.Home(), "experiment", "tasks.json"),
+				"experiment/tasks.json",
+			} {
+				if _, err := os.Stat(p); err == nil {
+					tasksPath = p
+					break
+				}
+			}
+		}
+		if tasksPath == "" {
+			send(w, 400, map[string]any{"error": "no tasks file: copy experiment/tasks.json into ~/.pengupool-ai/experiment/ or run `pengu experiment` in the repo"})
+			return
+		}
+		expMu.Lock()
+		if expRunning {
+			expMu.Unlock()
+			send(w, 409, map[string]any{"error": "experiment already running"})
+			return
+		}
+		expRunning = true
+		expMu.Unlock()
+		go func() {
+			out := filepath.Join(store.Home(), "experiment", "results")
+			_, err := experiment.Main(tasksPath, out, "", 5*time.Minute, 12, nil)
+			expMu.Lock()
+			expRunning = false
+			if err != nil {
+				expLastErr = err.Error()
+			} else {
+				expLastErr = ""
+			}
+			expMu.Unlock()
+		}()
+		send(w, 202, map[string]any{"status": "running"})
+	})
+	mux.HandleFunc("/experiment/status", func(w http.ResponseWriter, r *http.Request) {
+		if !authed(r) {
+			send(w, 401, map[string]any{"error": "unauthorized"})
+			return
+		}
+		expMu.Lock()
+		defer expMu.Unlock()
+		send(w, 200, map[string]any{"running": expRunning, "error": expLastErr})
+	})
 	// The renderer runs on app://renderer (or localhost in dev) and sends
 	// an Authorization header, so browsers preflight every call. Answer
 	// the preflight and allow the renderer origin; the bearer token is
@@ -745,7 +958,7 @@ func Handler(token string) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", o)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		}
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)

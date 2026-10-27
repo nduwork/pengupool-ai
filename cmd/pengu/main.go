@@ -17,7 +17,7 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/rules"
 )
 
-const Version = "0.1.1"
+const Version = "0.1.2"
 
 // Build identifies the exact build (scripts/build-app.sh sets it from the Git commit).
 var Build = ""

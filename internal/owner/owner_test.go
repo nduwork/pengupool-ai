@@ -291,3 +291,78 @@ func TestCORSPreflight(t *testing.T) {
 		t.Fatalf("evil origin allowed: %q", h)
 	}
 }
+
+func post(t *testing.T, srv, path, body string) (int, map[string]any) {
+	t.Helper()
+	req, _ := http.NewRequest("POST", srv+path, strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer tok")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return resp.StatusCode, out
+}
+
+func TestWriteEndpoints(t *testing.T) {
+	testEnv(t)
+	srv := httptest.NewServer(Handler("tok"))
+	defer srv.Close()
+	code, out := post(t, srv.URL, "/lines", `{"rule":"App line"}`)
+	if code != 201 || out["rule"] != "App line" {
+		t.Fatalf("add line: %d %+v", code, out)
+	}
+	id := out["id"].(string)
+	req, _ := http.NewRequest("DELETE", srv.URL+"/lines/"+id, nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("forget: %v", resp.StatusCode)
+	}
+	resp.Body.Close()
+	if lines, _ := compass.Load(); len(lines) != 0 {
+		t.Fatalf("forgotten: %+v", lines)
+	}
+	code, out = SaveProposal("note words", "note", nil)
+	if code != 202 {
+		t.Fatalf("save: %d", code)
+	}
+	if code, _ := post(t, srv.URL, "/proposals/"+out["id"].(string)+"/dismiss", `{}`); code != 200 {
+		t.Fatalf("dismiss: %d", code)
+	}
+	items, _ := ListProposals()
+	if items[0].Status != "dismissed" {
+		t.Fatalf("status: %+v", items[0])
+	}
+	if code, out := post(t, srv.URL, "/inbox", `{"to":"owner","text":"hi owner"}`); code != 201 || out["text"] != "hi owner" {
+		t.Fatalf("inbox send: %d %+v", code, out)
+	}
+	dir := filepath.Join(os.Getenv("PENGUPOOL_AI_HOME"), "experiment", "results")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "results.json"), []byte(`[{"task":"t","arm":"with","matched":true,"interruptions":0,"passed":true}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, raw := authedGet(t, srv.URL, "/results"); code != 200 || !strings.Contains(string(raw), `"matched":true`) {
+		t.Fatalf("results: %d %s", code, raw)
+	}
+	if code, out := post(t, srv.URL, "/experiment/run", `{}`); code != 400 || out["error"] == "" {
+		t.Fatalf("run: %d %+v", code, out)
+	}
+	if code, raw := authedGet(t, srv.URL, "/experiment/status"); code != 200 || !strings.Contains(string(raw), `"running":false`) {
+		t.Fatalf("status: %d %s", code, raw)
+	}
+}
+
+func TestPendingQuestionsEmptyIsArray(t *testing.T) {
+	testEnv(t)
+	srv := httptest.NewServer(Handler("tok"))
+	defer srv.Close()
+	if code, raw := authedGet(t, srv.URL, "/questions?wait=0"); code != 200 || string(raw) != "[]" {
+		t.Fatalf("empty questions must be []: %d %s", code, raw)
+	}
+}

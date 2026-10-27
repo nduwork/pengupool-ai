@@ -69,8 +69,20 @@ func newID() string {
 }
 
 // Send records a turn and nudges a live pane. Returns the entry.
+// Owner sends need a real terminal (see SendOwner for the GUI path).
 func Send(fromSID, toSID, text string) (*Entry, error) {
-	if fromSID == "owner" && !StdinIsTerminal() {
+	return send(fromSID, toSID, text, false)
+}
+
+// SendOwner is Send for the authenticated owner API: the bearer token
+// is the owner's credential there, so `from == "owner"` is allowed.
+// The CLI never uses this path.
+func SendOwner(fromSID, toSID, text string) (*Entry, error) {
+	return send(fromSID, toSID, text, true)
+}
+
+func send(fromSID, toSID, text string, ownerAuthed bool) (*Entry, error) {
+	if fromSID == "owner" && !ownerAuthed && !StdinIsTerminal() {
 		return nil, errors.New("only the owner, at a real terminal, sends as owner")
 	}
 	if strings.TrimSpace(text) == "" {
