@@ -18,6 +18,8 @@
     python3 -m pengu triage --text "..."   # route an owner-bound message
     python3 -m pengu learned --helper H --title T --task ... --lesson ... --outcome worked|failed
     python3 -m pengu recall --helper H --task "..."   # <=5 lessons for this task
+    python3 -m pengu ingest --text "..." --session <id>   # propose a Compass change
+    python3 -m pengu confirm <proposal-id>   # apply a confirmed proposal
 """
 
 import argparse
@@ -25,7 +27,7 @@ import json
 import subprocess
 import sys
 
-from . import chat, compass, experience, judge, mcp, owner, review, rules, session
+from . import chat, compass, experience, ingest, judge, mcp, owner, review, rules, session
 from .model import ModelError
 
 
@@ -143,13 +145,29 @@ def main(argv=None):
             ap.add_argument("--helper", required=True)
             ap.add_argument("--title", required=True)
             ap.add_argument("--task", required=True)
-            ap.add_argument("--lesson", required=True)
+            ap.add_argument("--lesson", required=True,
+                            help="the agent's compacted task summary; generalized on save")
             ap.add_argument("--outcome", required=True, choices=["worked", "failed"])
             ap.add_argument("--session", default="")
             ns = ap.parse_args(args[1:])
-            e = experience.save(ns.helper, ns.title, ns.task, ns.lesson,
-                                ns.outcome, ns.session)
-            print(f"saved {e['id']}")
+            r = experience.ingest(ns.helper, ns.title, ns.task, ns.lesson,
+                                  ns.outcome, ns.session)
+            print(f"{r['action']} {r['entry']['id']}")
+        elif cmd == "ingest":
+            ap = argparse.ArgumentParser(prog="pengu ingest")
+            ap.add_argument("--text", required=True)
+            ap.add_argument("--session", default="")
+            ns = ap.parse_args(args[1:])
+            pid, msg = ingest.ingest(ns.text, ns.session)
+            print(f"{pid or '-'}  {msg}")
+        elif cmd == "confirm":
+            ap = argparse.ArgumentParser(prog="pengu confirm")
+            ap.add_argument("proposal", help="proposal id from pengu proposals")
+            ns = ap.parse_args(args[1:])
+            code, out = owner.confirm_proposal(ns.proposal)
+            if code != 200:
+                sys.exit(f"pengu: {out.get('error')}")
+            print(out.get("applied"), out.get("id", ""))
         elif cmd == "recall":
             ap = argparse.ArgumentParser(prog="pengu recall")
             ap.add_argument("--helper", required=True)

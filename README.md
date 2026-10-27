@@ -26,10 +26,14 @@ python3 -m pengu ask --session <id> --question "..." --option A --option B  # wa
 python3 -m pengu triage --text "..."   # route an owner-bound message
 python3 -m pengu learned --helper H --title T --task ... --lesson ... --outcome worked
 python3 -m pengu recall --helper H --task "..."   # <=5 lessons for this task
+python3 -m pengu ingest --text "..." --session <id>   # propose a Compass change (M5)
+python3 -m pengu confirm <proposal-id>   # apply it after your tap
 ```
 
-Judge: `PENGUPOOL_JUDGE_MODEL` picks the decision model (default `MUSE_MODEL`,
-Jev today); the same `MUSE_BASE_URL` client talks to a local Ollama.
+Ingest (M5): `ingest` generalizes your words (Spark, off the hot path) and only
+ever proposes; `confirm` applies. Evidence moves confidence (support up,
+contradiction down, age discounts); `learned` generalizes a finished task into
+lessons that merge with similar ones.
 
 Owner API (the Muse-app agent's window; stdlib HTTP on localhost):
 `PENGUPOOL_OWNER_TOKEN` from the macOS keychain, then `python3 -m pengu owner-serve`.

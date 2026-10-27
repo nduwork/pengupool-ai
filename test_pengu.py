@@ -142,6 +142,10 @@ from pengu import session as _sess
 import os as _o
 _real_home = _o.environ.get("PENGUPOOL_MUSE_HOME")
 _o.environ["PENGUPOOL_MUSE_HOME"] = _tf.mkdtemp()
+# the store lock is re-entrant: confirm -> update_evidence nests in-process.
+with _sess._locked():
+    with _sess._locked():
+        pass
 try:
     _sess.new("bogus"); raise AssertionError("bad agent must fail")
 except ValueError:
@@ -301,18 +305,20 @@ try:
     finally:
         (_cli.owner.create_question, _cli.owner.wait_answer, _cli.owner.main_serve,
          _cli.owner.list_proposals) = (_ro, _rw, _rp, _rpl)
-    _rj, _re, _rr = _cli.judge.triage_route, _cli.experience.save, _cli.experience.for_task
+    _rj, _re, _rr, _ri = (_cli.judge.triage_route, _cli.experience.save,
+                          _cli.experience.for_task, _cli.experience.ingest)
     def _fake_tri(text):
         _hit["triage"] = text
         return {"route": "proposal", "kind": "preference", "confidence": 0.8}
     def _fake_learned(*a):
         _hit["learned"] = a
-        return {"id": "e1"}
+        return {"action": "new", "entry": {"id": "e1"}}
     def _fake_recall(*a, **k):
         _hit["recall"] = (a, k)
         return [{"id": "e1", "title": "t", "lesson": "l"}]
     _cli.judge.triage_route = _fake_tri
-    _cli.experience.save, _cli.experience.for_task = _fake_learned, _fake_recall
+    _cli.experience.save, _cli.experience.for_task = _re, _fake_recall
+    _cli.experience.ingest = _fake_learned
     try:
         _sys.argv = ["pengu", "triage", "--text", "always do X"]
         _cli.main()
@@ -324,9 +330,32 @@ try:
         _sys.argv = ["pengu", "recall", "--helper", "h", "--task", "fix it"]
         _cli.main()
         assert _hit["recall"] == (("h", "fix it"), {"k": 5}), _hit
+        _ri2, _rc = _cli.ingest.ingest, _cli.owner.confirm_proposal
+        def _fake_ingest(text, session, model=None):
+            _hit["ingest"] = (text, session)
+            return ("p1", "proposed new line")
+        def _fake_confirm(pid):
+            _hit["confirm"] = pid
+            return (200, {"applied": "new-line", "id": "x"})
+        _cli.ingest.ingest, _cli.owner.confirm_proposal = _fake_ingest, _fake_confirm
+        try:
+            _sys.argv = ["pengu", "ingest", "--text", "x", "--session", "s"]
+            _cli.main()
+            assert _hit["ingest"] == ("x", "s")
+            _sys.argv = ["pengu", "confirm", "p1"]
+            _cli.main()
+            assert _hit["confirm"] == "p1"
+            _cli.owner.confirm_proposal = lambda pid: (409, {"error": "already decided"})
+            _sys.argv = ["pengu", "confirm", "p1"]
+            try:
+                _cli.main(); raise AssertionError("failed confirm must exit nonzero")
+            except SystemExit as e:
+                assert "already decided" in str(e.code)
+        finally:
+            _cli.ingest.ingest, _cli.owner.confirm_proposal = _ri2, _rc
     finally:
         _cli.judge.triage_route = _rj
-        _cli.experience.save, _cli.experience.for_task = _re, _rr
+        _cli.experience.save, _cli.experience.for_task, _cli.experience.ingest = _re, _rr, _ri
 finally:
     _cli.session.new, _cli.session.ls, _cli.session.stop = _rn, _rl, _rs
     _sys.argv = _real_argv
@@ -532,7 +561,12 @@ try:
     assert code == 202, (code, props)
     code, listed = _call("GET", "/proposals")
     assert code == 200 and any(p["words"] == "prefer small commits" for p in listed)
-    assert _call("POST", "/questions/nope/answer", dict(ans, idempotency_key="k404"))[0] == 404
+    code, conf = _call("POST", f"/proposals/{props['id']}/confirm", {})
+    assert code == 200 and conf["applied"] == "note"
+    assert _call("POST", f"/proposals/{props['id']}/confirm", {})[0] == 409
+    assert _call("POST", "/proposals/nope/confirm", {})[0] == 404
+    assert _call("POST", "/proposals", {"words": "w", "kind": "bogus"})[0] == 400
+    assert _call("POST", "/proposals", {"words": "w", "ref": []})[0] == 400
     assert _call("POST", f"/questions/{bad['id']}/answer",
                   {"option": "a", "payload_hash": bad["payload_hash"]})[0] == 400
     assert _call("GET", "/questions?wait=nan")[0] == 400
@@ -565,8 +599,9 @@ try:
     # malformed inner rows are skipped, not fatal.
     _own._save_state({"questions": {"q1": [1, 2], "q2": {"status": "pending"}},
                       "idempotency": {"k": [1]},
-                      "proposals": [[1], {"words": "w"},
-                                    {"words": "w2", "at": 9999999999.0, "status": "proposed"}]})
+                      "proposals": [[1], {"id": "x", "words": "w"},
+                                    {"id": "y", "words": "w2", "at": 9999999999.0,
+                                     "status": "proposed", "kind": "note", "ref": None}]})
     assert _own.pending_questions() == []
     assert [p["words"] for p in _own.list_proposals()] == ["w2"]
     assert _own.wait_answer("missing", 0.1) == (None, "no such question")
@@ -770,6 +805,164 @@ try:
     assert {g["id"] for g in got3} >= {_e1["id"], _e8["id"]}
 finally:
     _exp.judge.rate_relevance = _real_rate
+    if _real_home is None:
+        del _o.environ["PENGUPOOL_MUSE_HOME"]
+    else:
+        _o.environ["PENGUPOOL_MUSE_HOME"] = _real_home
+print("ok")
+
+# M5 ingest: generalize proposes; evidence moves confidence; confirm applies.
+from pengu import ingest as _ing, wording as _word
+_o.environ["PENGUPOOL_MUSE_HOME"] = _tf.mkdtemp()
+_real_chat, _real_classify, _real_relate = _word.chat, _judge.classify, _judge.relate
+_real_gen_c, _real_gen_l = _word.generalize_compass, _word.generalize_lesson
+_word.chat = lambda messages, model=None: "Always run the test suite."
+assert _word.generalize_compass("from now on run tests") == "Always run the test suite."
+_word.chat = lambda messages, model=None: "none"
+assert _word.generalize_compass("fix the bug") == ""
+_seen_w = {}
+def _fake_wc(messages, model=None):
+    _seen_w["u"] = messages[1]["content"]
+    return "Always do X."
+_word.chat = _fake_wc
+assert _word.generalize_compass("set api key = SECRET123 now") == "Always do X."
+assert "SECRET123" not in _seen_w["u"]  # wording inputs are scrubbed
+_word.chat = lambda messages, model=None: "L1\nL2\nL3\nL4\nL5\nL6\nL7 with hunter2"
+assert _word.generalize_lesson("summary") == "L1\nL2\nL3\nL4\nL5"  # capped at 5, secrets out
+_judge.relate = lambda words, line, model=None: {"relation": "unrelated", "confidence": 0.9}
+_judge.classify = lambda words, model=None: {"kind": "preference", "confidence": 0.9}
+_texts = ["Always run the test suite.", "Prefer tiny commits.", "Reworded migrations rule."]
+_word.generalize_compass = lambda words, model=None: (_texts.pop(0) if _texts else "General rule.")
+try:
+    pid, msg = _ing.ingest("from now on run tests", "s1")
+    assert pid and "new line" in msg
+    assert _own.list_proposals()[-1]["kind"] == "new-line"
+    line = compass.add("Never touch the migrations folder.", "typed")
+    _judge.relate = lambda words, line, model=None: {"relation": "supports", "confidence": 0.9}
+    pid2, msg2 = _ing.ingest("we never touch migrations", "s1")
+    assert pid2 is None and "evidence recorded" in msg2
+    assert compass.load()[0]["confidence"] == 1.0  # capped
+    try:
+        compass.update_evidence(line["id"], "bogus", "x", "s")
+        raise AssertionError("bad effect must fail")
+    except ValueError:
+        pass
+    low = compass.add("Always deploy on Fridays.", "typed")
+    import time as _tmod
+    _t0 = _tmod.time()
+    compass.update_evidence(low["id"], "contradicts", "x", "s", now=_t0)
+    compass.update_evidence(low["id"], "contradicts", "x", "s", now=_t0 + 1)
+    compass.update_evidence(low["id"], "contradicts", "x", "s", now=_t0 + 2)
+    assert abs([l for l in compass.load() if l["id"] == low["id"]][0]["confidence"] - 0.1) < 1e-6
+    _judge.relate = lambda words, line, model=None: {"relation": (
+        "contradicts" if "Fridays" in line else "unrelated"), "confidence": 0.9}
+    pid3, msg3 = _ing.ingest("never deploy on fridays", "s1")
+    assert "retirement" in msg3  # 0.1-0.3 floors at 0.0 < 0.3
+    old = compass.add("Old line here.", "typed")
+    _t1 = _tmod.time()
+    compass.update_evidence(old["id"], "supports", "x", "s", now=_t1)
+    got = compass.update_evidence(old["id"], "supports", "x", "s", now=_t1 + 90 * 86400)
+    assert abs(got["confidence"] - 0.65) < 1e-9  # 90-day age halves, then +0.15
+    line2 = compass.add("Prefer small commits.", "typed")
+    _judge.relate = lambda words, line, model=None: {"relation": (
+        "contradicts" if "small commits" in line else "unrelated"), "confidence": 0.9}
+    pid4, msg4 = _ing.ingest("we prefer tiny commits", "s1")
+    assert "rewording" in msg4  # 0.7 stays above the retire line
+    _word.generalize_compass = lambda words, model=None: ""
+    pid4b, msg4b = _ing.ingest("we prefer enormous commits", "s1")
+    assert "owner words the rewording" in msg4b  # empty generalization still recorded evidence
+    assert [l for l in compass.load() if l["id"] == line2["id"]][0]["confidence"] < 1.0
+    _word.generalize_compass = lambda words, model=None: "Reworded text"
+    _judge.relate = lambda words, line, model=None: {"relation": (
+        "contradicts" if "migrations" in line else "unrelated"), "confidence": 0.9}
+    _judge.classify = lambda words, model=None: {"kind": "correction", "confidence": 0.9}
+    pid5, msg5 = _ing.ingest("that broke migrations", "s1")
+    assert "rewording after correction" in msg5
+    low2 = compass.add("Never rewrite history.", "typed")
+    rows = compass.load()
+    for r in rows:
+        if r["id"] == low2["id"]:
+            r["confidence"] = 0.2
+            r["updated"] = 9999999999.0
+    compass._save_all(rows)
+    _judge.relate = lambda words, line, model=None: {"relation": (
+        "contradicts" if "history" in line else "unrelated"), "confidence": 0.9}
+    pid5b, msg5b = _ing.ingest("stop rewriting history", "s1")
+    assert "retirement" in msg5b
+    _judge.classify = lambda words, model=None: {"kind": "choice", "confidence": 0.9}
+    pid6, msg6 = _ing.ingest("ship it?", "s1")
+    assert "owner decides" in msg6
+    # vanished lines, no matches, and empty generalizations all note.
+    _judge.classify = lambda words, model=None: {"kind": "preference", "confidence": 0.9}
+    _judge.relate = lambda words, line, model=None: {"relation": "unrelated", "confidence": 0.9}
+    _word.generalize_compass = lambda words, model=None: ""
+    pid7, msg7 = _ing.ingest("some vague preference", "s1")
+    assert pid7 is None and msg7 == "no standing rule in that"
+    gone = compass.add("Temporary line here.", "typed")
+    compass.forget(gone["id"])  # the stored id no longer resolves
+    pid8, outcome8, msg8 = _ing._after_contradict(
+        {"id": gone["id"], "rule": "Temporary line here."}, "words", "s", "Reword text")
+    assert outcome8 == "vanished" and "line vanished" in msg8
+    _judge.classify = lambda words, model=None: {"kind": "correction", "confidence": 0.9}
+    _judge.relate = lambda words, line, model=None: {"relation": "unrelated", "confidence": 0.9}
+    pid9, msg9 = _ing.ingest("that broke everything", "s1")
+    assert "no matching line" in msg9
+    code, out = _own.confirm_proposal(pid)
+    assert code == 200 and out["applied"] == "new-line"
+    assert any(l["rule"] == "Always run the test suite." for l in compass.load())
+    assert _own.confirm_proposal("missing")[0] == 404
+    code, out = _own.confirm_proposal(pid4)
+    assert code == 200 and out["applied"] == "reword"
+    assert [l for l in compass.load() if l["id"] == line2["id"]][0]["rule"] == "Reworded migrations rule."
+    code, out = _own.confirm_proposal(pid3)
+    assert code == 200 and out["applied"] == "retire"
+    assert not any("Fridays" in l["rule"] for l in compass.load())
+    # old proposals (no id/kind) migrate on load and still confirm.
+    st = _own._load_state()
+    st["proposals"].append({"words": "old note", "at": 9999999999.0, "status": "proposed"})
+    _own._save_state(st)
+    listed = [p for p in _own.list_proposals() if p["words"] == "old note"]
+    assert listed and listed[0]["kind"] == "note"
+    assert _own.confirm_proposal(listed[0]["id"])[0] == 200
+    # broken refs fail closed instead of writing junk.
+    for bad_kind, bad_ref in [("new-line", {"text": "  "}), ("reword", {"line_id": "x"}),
+                              ("retire", {}), ("reword", {"line_id": line2["id"]})]:
+        code, out = _own.save_proposal("w", bad_kind, bad_ref)
+        assert code == 202
+    assert _own.confirm_proposal(_own.list_proposals()[-4]["id"])[0] == 409
+    assert _own.confirm_proposal(_own.list_proposals()[-3]["id"])[0] == 409
+    assert _own.confirm_proposal(_own.list_proposals()[-2]["id"])[0] == 409
+    assert _own.confirm_proposal(_own.list_proposals()[-1]["id"])[0] == 409
+    try:
+        _exp.ingest("h", "t", "task", "x", "maybe", "s")
+        raise AssertionError("bad outcome must fail")
+    except ValueError:
+        pass
+finally:
+    _word.chat, _judge.classify, _judge.relate = _real_chat, _real_classify, _real_relate
+    _word.generalize_compass, _word.generalize_lesson = _real_gen_c, _real_gen_l
+# experience ingest: generalize, then merge / refine / contradict / new.
+_exp.save("h", "t", "task one", "pin tmux to a fixed -S socket", "worked", "s")
+_real_igl, _real_rel = _word.generalize_lesson, _judge.relate
+_word.generalize_lesson = lambda summary, model=None: "pin tmux to a fixed -S socket"
+_judge.relate = lambda words, line, model=None: {"relation": "supports", "confidence": 0.95}
+try:
+    r = _exp.ingest("h", "t", "task", "summary words", "worked", "s")
+    assert r["action"] == "merge" and len(r["entry"]["evidence"]) == 2
+    assert r["entry"]["lesson"] == "pin tmux to a fixed -S socket"  # merge keeps the lesson
+    _judge.relate = lambda words, line, model=None: {"relation": "supports", "confidence": 0.5}
+    _word.generalize_lesson = lambda summary, model=None: "reworded pin lesson"
+    r = _exp.ingest("h", "t", "task new", "summary words", "worked", "s")
+    assert r["action"] == "refine" and r["entry"]["lesson"] == "reworded pin lesson"
+    _judge.relate = lambda words, line, model=None: {"relation": "contradicts", "confidence": 0.9}
+    r = _exp.ingest("h", "t", "task", "summary words", "worked", "s")
+    assert r["action"] == "contradict"
+    assert r["entry"]["evidence"][-1]["outcome"] == "worked"  # truth, not inversion
+    _judge.relate = lambda words, line, model=None: {"relation": "unrelated", "confidence": 0.9}
+    r = _exp.ingest("h", "t", "task", "summary words", "worked", "s")
+    assert r["action"] == "new"
+finally:
+    _word.generalize_lesson, _judge.relate = _real_igl, _real_rel
     if _real_home is None:
         del _o.environ["PENGUPOOL_MUSE_HOME"]
     else:

@@ -66,15 +66,31 @@ def _load_state():
             or not isinstance(st.get("idempotency"), dict)
             or not isinstance(st.get("proposals"), list)):
         return _quarantine(p)
+    before = json.dumps(st, sort_keys=True)
     st["questions"] = {k: q for k, q in st["questions"].items() if _valid_question(q)}
     st["idempotency"] = {k: r for k, r in st["idempotency"].items() if _valid_verdict(r)}
+    st["proposals"] = [_normalize_proposal(x) for x in st["proposals"]]
     st["proposals"] = [x for x in st["proposals"] if _valid_proposal(x)]
+    if json.dumps(st, sort_keys=True) != before:
+        _save_state(st)  # caller holds the lock; migration must persist
     return st
 
 
+def _normalize_proposal(x):
+    if not isinstance(x, dict):
+        return x
+    x.setdefault("id", uuid.uuid4().hex[:12])
+    x.setdefault("kind", "note")
+    x.setdefault("ref", None)
+    return x
+
+
 def _valid_proposal(x):
-    return (isinstance(x, dict) and isinstance(x.get("words"), str)
-            and isinstance(x.get("at"), (int, float)) and isinstance(x.get("status"), str))
+    return (isinstance(x, dict) and isinstance(x.get("id"), str)
+            and isinstance(x.get("words"), str)
+            and isinstance(x.get("at"), (int, float)) and isinstance(x.get("status"), str)
+            and x.get("kind", "note") in ("note", "new-line", "reword", "retire")
+            and (x.get("ref") is None or isinstance(x.get("ref"), dict)))
 
 
 def _valid_verdict(r):
@@ -212,19 +228,78 @@ def answer_question(qid, option, payload_hash, idempotency_key):
         return _decide(200, {"id": qid, "option": option, "answered_at": now})
 
 
-def save_proposal(words):
+def save_proposal(words, kind="note", ref=None):
+    """A proposal for the owner to confirm. kind: note|new-line|reword|retire;
+    ref carries the payload (line text, line id...)."""
     if not isinstance(words, str) or not words.strip():
         return 400, {"error": "empty proposal"}
+    if kind not in ("note", "new-line", "reword", "retire"):
+        return 400, {"error": "unknown kind"}
+    if ref is not None and not isinstance(ref, dict):
+        return 400, {"error": "ref must be an object"}
     with session._locked():
         st = _load_swept()
-        st["proposals"].append({"at": time.time(), "words": words, "status": "proposed"})
+        p = {"id": uuid.uuid4().hex[:12], "at": time.time(), "words": words,
+             "kind": kind, "ref": ref, "status": "proposed"}
+        st["proposals"].append(p)
         _save_state(st)
-    return 202, {"status": "proposed"}
+    return 202, {"status": "proposed", "id": p["id"]}
 
 
 def list_proposals():
     with session._locked():
         return _load_swept()["proposals"]
+
+
+def confirm_proposal(pid):
+    """Owner confirms: apply the proposal. Returns (status, body)."""
+    with session._locked():
+        st = _load_swept()
+        for p in st["proposals"]:
+            if p.get("id") == pid:
+                break
+        else:
+            return 404, {"error": "no such proposal"}
+        if p.get("status") != "proposed":
+            return 409, {"error": "already decided"}
+        kind, ref = p.get("kind", "note"), p.get("ref")
+        ok, out = _apply_proposal(kind, ref, pid)
+        if not ok:
+            return 409, out
+        p["status"] = "confirmed"
+        _save_state(st)
+    return 200, out
+
+
+def _apply_proposal(kind, ref, pid):
+    from . import compass
+    ref = ref if isinstance(ref, dict) else {}
+    if kind == "new-line":
+        text = ref.get("text", "")
+        if not isinstance(text, str) or not text.strip():
+            return False, {"error": "empty line text"}
+        for line in compass.load():
+            if line.get("source") == f"ingest:{pid}":
+                return True, {"applied": "new-line", "id": line["id"]}
+        line = compass.add(text.strip(), f"ingest:{pid}")
+        return True, {"applied": "new-line", "id": line["id"]}
+    if kind == "reword":
+        text = ref.get("text", "")
+        if not isinstance(text, str) or not text.strip() or not ref.get("line_id"):
+            return False, {"error": "reword needs a line id and text"}
+        ok = compass.update_rule(ref["line_id"], text.strip())
+        if not ok:
+            return False, {"error": "line gone"}
+        return True, {"applied": "reword", "id": ref["line_id"]}
+    if kind == "retire":
+        if not ref.get("line_id"):
+            return False, {"error": "retire needs a line id"}
+        if not compass.forget(ref["line_id"]):
+            return True, {"applied": "retire", "id": ref["line_id"], "note": "already gone"}
+        return True, {"applied": "retire", "id": ref["line_id"]}
+    if kind == "note":
+        return True, {"applied": "note"}
+    return False, {"error": "unknown kind"}
 
 
 def wait_answer(qid, timeout):
@@ -320,7 +395,11 @@ def make_handler(token):
                                             body.get("idempotency_key"))
                 return self._send(code, out)
             if u.path == "/proposals":
-                code, out = save_proposal(body.get("words", ""))
+                code, out = save_proposal(body.get("words", ""), body.get("kind", "note"),
+                                          body.get("ref"))
+                return self._send(code, out)
+            if (len(parts) == 3 and parts[0] == "proposals" and parts[2] == "confirm"):
+                code, out = confirm_proposal(parts[1])
                 return self._send(code, out)
             return self._send(404, {"error": "unknown path"})
 

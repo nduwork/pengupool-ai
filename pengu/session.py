@@ -16,6 +16,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -47,17 +48,35 @@ except ImportError:  # pragma: no cover - non-POSIX
     fcntl = None
 
 
+_lock_state = threading.local()
+
+
 def _locked():
-    """Hold an exclusive lock on the registry across load-modify-save."""
+    """Hold an exclusive lock on the store across load-modify-save.
+
+    Re-entrant in-process (confirm -> update_evidence nests): only the
+    outermost entry takes flock; nested entries reuse it."""
     import contextlib
     home().mkdir(parents=True, exist_ok=True)
 
     @contextlib.contextmanager
     def _guard():
+        depth = getattr(_lock_state, "depth", 0)
+        if depth > 0:
+            _lock_state.depth = depth + 1
+            try:
+                yield
+            finally:
+                _lock_state.depth = depth
+            return
         with open(home() / "sessions.lock", "a") as f:
             if fcntl is not None:
                 fcntl.flock(f, fcntl.LOCK_EX)
-            yield
+            _lock_state.depth = 1
+            try:
+                yield
+            finally:
+                _lock_state.depth = 0
     return _guard()
 
 

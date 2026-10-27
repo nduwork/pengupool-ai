@@ -39,7 +39,7 @@ def load(helper):
 
 
 def save(helper, title, task, lesson, outcome, session_id):
-    """Store one entry (M5 generalizes/merges). Secrets redacted before storing."""
+    """Store one entry verbatim (already generalized or redacted by the caller)."""
     if outcome not in ("worked", "failed"):
         raise ValueError("outcome is worked or failed")
     e = {"id": uuid.uuid4().hex[:12], "helper": helper, "title": redact(title),
@@ -52,6 +52,63 @@ def save(helper, title, task, lesson, outcome, session_id):
         with open(p, "a", encoding="utf-8") as f:
             f.write(json.dumps(e) + "\n")
     return e
+
+
+def _append_evidence(entry, outcome, session_id, effect="supports"):
+    entry.setdefault("evidence", []).append(
+        {"at": time.time(), "session": session_id, "outcome": outcome, "effect": effect})
+
+
+def ingest(helper, title, task, summary, outcome, session_id, model=None):
+    """End of task: generalize the compacted summary, match existing lessons.
+    merge adds evidence; contradict weakens with counter-evidence; a supports
+    match below 0.85 confidence refines (the fresh generalization rewords);
+    otherwise the entry is new."""
+    if outcome not in ("worked", "failed"):
+        raise ValueError("outcome is worked or failed")
+    from . import wording
+    lesson = judge.redact(wording.generalize_lesson(summary, model=model) or "")
+    if not lesson.strip():
+        lesson = judge.redact(summary)
+    if not lesson.strip():
+        raise ValueError("empty lesson")
+    entries = load(helper)
+    best, best_rel, best_conf = None, None, -1.0
+    for e in _candidates(entries, lesson, limit=5):
+        try:
+            r = judge.relate(lesson, e.get("lesson", ""), model=model)
+        except ValueError:
+            continue
+        if r["relation"] != "unrelated" and r["confidence"] > best_conf:
+            best, best_rel, best_conf = e, r["relation"], r["confidence"]
+    if best is None:
+        return {"action": "new", "entry": save(helper, title, task, lesson, outcome, session_id)}
+    p = path(helper)
+    with session._locked():
+        fresh = load(helper)
+        matched = next((e for e in fresh if e["id"] == best["id"]), None)
+        if matched is None:
+            need_new = True
+        else:
+            need_new = False
+            if best_rel == "contradicts":
+                _append_evidence(matched, outcome, session_id, effect="contradicts")
+                action = "contradict"
+            elif best_rel == "supports" and best_conf >= 0.85:
+                _append_evidence(matched, outcome, session_id)
+                action = "merge"
+            else:
+                matched["lesson"] = lesson
+                _append_evidence(matched, outcome, session_id)
+                action = "refine"
+            tmp = p.with_suffix(".tmp")
+            tmp.write_text("".join(json.dumps(x) + "\n" for x in fresh), encoding="utf-8")
+            os.replace(tmp, p)
+    if need_new:
+        # entry vanished between match and write: store fresh instead.
+        return {"action": "new",
+                "entry": save(helper, title, task, lesson, outcome, session_id)}
+    return {"action": action, "entry": matched}
 
 
 def _candidates(entries, task, limit=20):
@@ -99,10 +156,15 @@ def _recency(e, now):
 
 
 def _outcome_factor(e):
-    evs = [ev.get("outcome") for ev in _evidences(e) if isinstance(ev, dict)]
+    evs = [ev for ev in _evidences(e) if isinstance(ev, dict)]
+    worked = sum(1 for ev in evs if ev.get("outcome") == "worked")
+    failed = sum(1 for ev in evs if ev.get("outcome") == "failed")
+    contradicted = sum(1 for ev in evs if ev.get("effect") == "contradicts")
     if not evs:
         return 1.0
-    return 1.0 if "worked" in evs else 0.5
+    base = 1.0 if worked >= failed else 0.5
+    return max(0.1, base * (0.5 ** contradicted))  # each contradiction halves, floor 0.1
+
 
 def for_task(helper, task, k=TOP_K, threshold=THRESHOLD, model=None):
     """<=k entries: FTS5 candidates, judge relevance, code ranking. Stamps use."""
