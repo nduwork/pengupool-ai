@@ -15,6 +15,9 @@
     python3 -m pengu ask --session <id> --question "..." --option A --option B
     python3 -m pengu owner-serve   # the Muse-app agent's HTTP window (needs PENGUPOOL_OWNER_TOKEN)
     python3 -m pengu proposals   # proposals the owner has not confirmed yet
+    python3 -m pengu triage --text "..."   # route an owner-bound message
+    python3 -m pengu learned --helper H --title T --task ... --lesson ... --outcome worked|failed
+    python3 -m pengu recall --helper H --task "..."   # <=5 lessons for this task
 """
 
 import argparse
@@ -22,7 +25,7 @@ import json
 import subprocess
 import sys
 
-from . import chat, compass, mcp, owner, review, rules, session
+from . import chat, compass, experience, judge, mcp, owner, review, rules, session
 from .model import ModelError
 
 
@@ -129,6 +132,32 @@ def main(argv=None):
         elif cmd == "proposals":
             for p in owner.list_proposals():
                 print(f"{p['at']:.0f}  {p['words']}  ({p['status']})")
+        elif cmd == "triage":
+            ap = argparse.ArgumentParser(prog="pengu triage")
+            ap.add_argument("--text", required=True)
+            ns = ap.parse_args(args[1:])
+            r = judge.triage_route(ns.text)
+            print(f"{r['route']}  {r['kind']}  {r['confidence']:.2f}")
+        elif cmd == "learned":
+            ap = argparse.ArgumentParser(prog="pengu learned")
+            ap.add_argument("--helper", required=True)
+            ap.add_argument("--title", required=True)
+            ap.add_argument("--task", required=True)
+            ap.add_argument("--lesson", required=True)
+            ap.add_argument("--outcome", required=True, choices=["worked", "failed"])
+            ap.add_argument("--session", default="")
+            ns = ap.parse_args(args[1:])
+            e = experience.save(ns.helper, ns.title, ns.task, ns.lesson,
+                                ns.outcome, ns.session)
+            print(f"saved {e['id']}")
+        elif cmd == "recall":
+            ap = argparse.ArgumentParser(prog="pengu recall")
+            ap.add_argument("--helper", required=True)
+            ap.add_argument("--task", required=True)
+            ap.add_argument("--k", type=int, default=5)
+            ns = ap.parse_args(args[1:])
+            for e in experience.for_task(ns.helper, ns.task, k=ns.k):
+                print(f"{e['id']}  {e.get('title', '')}: {e['lesson']}")
         else:
             sys.exit(__doc__)
     except (ModelError, RuntimeError, ValueError, OSError) as e:

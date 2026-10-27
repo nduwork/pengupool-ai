@@ -59,7 +59,7 @@ def send(from_sid, to_sid, text):
         if party != "owner" and party not in rows:
             raise ValueError(f"off the tree: no session {party}")
     now = time.time()
-    entry = {"id": uuid.uuid4().hex[:8], "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    entry = {"id": uuid.uuid4().hex[:12], "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
              "ts": now, "from": from_sid, "to": to_sid, "text": text}
     with session._locked():
         p = _chat_path()

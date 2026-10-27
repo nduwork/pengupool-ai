@@ -23,8 +23,7 @@ from pathlib import Path
 from . import compass
 
 def home():
-    return Path(os.environ.get("PENGUPOOL_MUSE_HOME", Path.home() / ".pengupool-muse"))
-
+    return Path(os.environ.get("PENGUPOOL_MUSE_HOME") or Path.home() / ".pengupool-muse")
 
 def _registry():
     return home() / "sessions.json"
@@ -99,7 +98,7 @@ def new(agent, task="", settings=None, trust_workspace=False):
     cmd = shutil.which(agent)
     if not cmd:
         raise RuntimeError(f"{agent} CLI not found")
-    sid = uuid.uuid4().hex[:8]
+    sid = uuid.uuid4().hex[:12]
     name = f"pengu-{sid}"
     log = str(home() / f"session-{sid}.log")
     home().mkdir(parents=True, exist_ok=True)

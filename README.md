@@ -23,7 +23,13 @@ python3 test_pengu.py   # self-check, no network
 python3 -m pengu send --from <id> --to <id|owner> --text "..."   # chat along the tree
 python3 -m pengu inbox <id>                                      # turns addressed to a session
 python3 -m pengu ask --session <id> --question "..." --option A --option B  # wait for the owner
+python3 -m pengu triage --text "..."   # route an owner-bound message
+python3 -m pengu learned --helper H --title T --task ... --lesson ... --outcome worked
+python3 -m pengu recall --helper H --task "..."   # <=5 lessons for this task
 ```
+
+Judge: `PENGUPOOL_JUDGE_MODEL` picks the decision model (default `MUSE_MODEL`,
+Jev today); the same `MUSE_BASE_URL` client talks to a local Ollama.
 
 Owner API (the Muse-app agent's window; stdlib HTTP on localhost):
 `PENGUPOOL_OWNER_TOKEN` from the macOS keychain, then `python3 -m pengu owner-serve`.

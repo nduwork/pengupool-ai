@@ -127,7 +127,7 @@ def create_question(session_id, question, options, expires_in=300):
     if session_id == "owner" or not any(r["id"] == session_id for r in session.load()):
         raise ValueError(f"off the tree: no session {session_id}")
     now = time.time()
-    q = {"id": uuid.uuid4().hex[:8], "session": session_id, "asked_at": now,
+    q = {"id": uuid.uuid4().hex[:12], "session": session_id, "asked_at": now,
          "question": question, "options": list(options),
          "payload_hash": _payload(session_id, question, list(options)),
          "expires_at": now + max(1, expires_in), "status": "pending", "answer": None}

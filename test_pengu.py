@@ -301,6 +301,32 @@ try:
     finally:
         (_cli.owner.create_question, _cli.owner.wait_answer, _cli.owner.main_serve,
          _cli.owner.list_proposals) = (_ro, _rw, _rp, _rpl)
+    _rj, _re, _rr = _cli.judge.triage_route, _cli.experience.save, _cli.experience.for_task
+    def _fake_tri(text):
+        _hit["triage"] = text
+        return {"route": "proposal", "kind": "preference", "confidence": 0.8}
+    def _fake_learned(*a):
+        _hit["learned"] = a
+        return {"id": "e1"}
+    def _fake_recall(*a, **k):
+        _hit["recall"] = (a, k)
+        return [{"id": "e1", "title": "t", "lesson": "l"}]
+    _cli.judge.triage_route = _fake_tri
+    _cli.experience.save, _cli.experience.for_task = _fake_learned, _fake_recall
+    try:
+        _sys.argv = ["pengu", "triage", "--text", "always do X"]
+        _cli.main()
+        assert _hit["triage"] == "always do X"
+        _sys.argv = ["pengu", "learned", "--helper", "h", "--title", "t", "--task", "task",
+                     "--lesson", "do X", "--outcome", "worked", "--session", "s"]
+        _cli.main()
+        assert _hit["learned"] == ("h", "t", "task", "do X", "worked", "s"), _hit
+        _sys.argv = ["pengu", "recall", "--helper", "h", "--task", "fix it"]
+        _cli.main()
+        assert _hit["recall"] == (("h", "fix it"), {"k": 5}), _hit
+    finally:
+        _cli.judge.triage_route = _rj
+        _cli.experience.save, _cli.experience.for_task = _re, _rr
 finally:
     _cli.session.new, _cli.session.ls, _cli.session.stop = _rn, _rl, _rs
     _sys.argv = _real_argv
@@ -580,6 +606,170 @@ try:
     assert [e["text"] for e in _chat.inbox("owner")] == ["should I ship it?"]
 finally:
     _sess._tmux, _sess._tmux_alive = _ct2, _ca2
+    if _real_home is None:
+        del _o.environ["PENGUPOOL_MUSE_HOME"]
+    else:
+        _o.environ["PENGUPOOL_MUSE_HOME"] = _real_home
+print("ok")
+
+# judge: typed answers validated, clamped, batched; triage routes in code.
+from pengu import judge as _judge
+from pengu import experience as _exp
+_real_ask = _judge.ask_json
+try:
+    _seen_judge = {}
+    def _fake_capture(s, u, model=None):
+        _seen_judge["u"] = u
+        return {"kind": "restriction", "confidence": 0.9}
+    _judge.ask_json = _fake_capture
+    assert _judge.classify("never touch migrations") == {"kind": "restriction", "confidence": 0.9}
+    _judge.ask_json = _fake_capture
+    _judge.classify("set openai_api_key = SECRETVALUE now")
+    assert "SECRETVALUE" not in _seen_judge["u"]  # judge prompts are scrubbed
+    assert _exp.redact("openai_api_key is abc123 done") == "[REDACTED] done"
+    for kind, route in [("choice", "question"), ("preference", "proposal"),
+                        ("restriction", "proposal"), ("correction", "proposal"),
+                        ("none", "fyi")]:
+        _judge.ask_json = (lambda k: (lambda s, u, model=None: {"kind": k, "confidence": 0.7}))(kind)
+        assert _judge.triage_route("words") == {"route": route, "kind": kind,
+                                                "confidence": 0.7}, kind
+    _judge.ask_json = lambda s, u, model=None: {"kind": "preference", "confidence": 5}
+    assert _judge.classify("x")["confidence"] == 1.0  # clamped, not rejected
+    _judge.ask_json = lambda s, u, model=None: {"kind": "whatever", "confidence": 0.5}
+    try:
+        _judge.classify("x"); raise AssertionError("bad kind must fail")
+    except ValueError:
+        pass
+    _judge.ask_json = lambda s, u, model=None: {"relation": "contradicts", "confidence": 0.8}
+    assert _judge.relate("touch it", "never touch")["relation"] == "contradicts"
+    _judge.ask_json = lambda s, u, model=None: {"ratings": [{"id": "a", "relevant": True,
+                                                              "confidence": 0.9}]}
+    assert _judge.rate_relevance("t", [{"id": "a", "lesson": "l"}])[0]["relevant"] is True
+    _judge.ask_json = lambda s, u, model=None: ["not", "a", "dict"]
+    try:
+        _judge.classify("x"); raise AssertionError("non-dict must fail")
+    except ValueError:
+        pass
+    try:
+        _judge.rate_relevance("t", [{"id": "a", "lesson": "l"}])
+        raise AssertionError("non-dict ratings must fail")
+    except ValueError:
+        pass
+    _judge.ask_json = lambda s, u, model=None: {"kind": "restriction", "confidence": float("nan")}
+    try:
+        _judge.classify("x"); raise AssertionError("NaN must fail")
+    except ValueError:
+        pass
+    cands = [{"id": "a", "lesson": "la"}, {"id": "b", "lesson": "lb"}]
+    _judge.ask_json = lambda s, u, model=None: {"ratings": [
+        {"id": "b", "relevant": False, "confidence": 0.9},
+        {"id": "a", "relevant": True, "confidence": 0.9}]}
+    got = _judge.rate_relevance("t", cands)  # full id set: paired by id, not position
+    assert [(g["id"], g["relevant"]) for g in got] == [("a", True), ("b", False)]
+    _judge.ask_json = lambda s, u, model=None: {"ratings": [
+        {"id": 1, "relevant": True, "confidence": 0.9},
+        {"id": 2, "relevant": False, "confidence": 0.9}]}
+    got2 = _judge.rate_relevance("t", cands)  # mangled ids: positional fallback
+    assert [(g["id"], g["relevant"]) for g in got2] == [("a", True), ("b", False)]
+finally:
+    _judge.ask_json = _real_ask
+print("ok")
+
+# experience: secrets redacted; retrieve ranks by relevance x outcome x recency.
+_o.environ["PENGUPOOL_MUSE_HOME"] = _tf.mkdtemp()
+_saved_exp_home = _o.environ["PENGUPOOL_MUSE_HOME"]
+# empty HOME falls back to ~/.pengupool-muse, never the cwd.
+_o.environ["PENGUPOOL_MUSE_HOME"] = ""
+assert str(_sess.home()).endswith(".pengupool-muse") and _sess.home().is_absolute()
+_o.environ["PENGUPOOL_MUSE_HOME"] = _saved_exp_home
+_e1 = _exp.save("h", "tmux socket", "keep a session across shells", "pin tmux to a fixed -S socket",
+                "worked", "s1")
+assert _e1["lesson"] and _e1["uses"] == 0
+_e2 = _exp.save("h", "token leak", "store keys", "set api_key = sk-live-12345678 in env", "failed", "s2")
+assert "sk-live" not in _e2["lesson"] and "REDACTED" in _e2["lesson"]
+_e3 = _exp.save("h", "t", "task", 'set "password": "hunter2" now', "worked", "s")
+assert "hunter2" not in _e3["lesson"]
+_e4 = _exp.save("h", "t", "task", "deploy with ghp_abc123XYZDEF now", "worked", "s")
+assert "ghp_abc123XYZDEF" not in _e4["lesson"] and "REDACTED" in _e4["lesson"]
+_e5 = _exp.save("h", "t", "task", 'password = "my secret phrase" ok', "worked", "s")
+assert "my secret" not in _e5["lesson"]
+_e6 = _exp.save("h", "title openai_api_key = abc", "task client_secret = s3cr3t here",
+                "see openai_api_key = abc", "worked", "s")
+assert "abc" not in _e6["title"] and "s3cr3t" not in _e6["task"] and "abc" not in _e6["lesson"]
+try:
+    _exp.save("h", "t", "task", "lesson", "maybe", "s"); raise AssertionError("bad outcome")
+except ValueError:
+    pass
+# no usable terms: newest entries come back.
+assert [e["id"] for e in _exp._candidates(_exp.load("h"), "!!!")] == \
+    [e["id"] for e in _exp.load("h")][-20:]
+# without FTS the fallback is also newest-first.
+_real_sqlite = _exp.sqlite3
+class _NoFts:
+    Error = _real_sqlite.Error
+    def connect(self, *a, **k):
+        raise _real_sqlite.OperationalError("no fts")
+_exp.sqlite3 = _NoFts()
+try:
+    assert [e["id"] for e in _exp._candidates(_exp.load("h"), "tmux socket")] == \
+        [e["id"] for e in _exp.load("h")][-20:]
+finally:
+    _exp.sqlite3 = _real_sqlite
+# multi-line lessons ride one line per candidate in the judge prompt.
+_seen_prompt = {}
+_real_ask2 = _judge.ask_json
+def _fake_oneline(s, u, model=None):
+    _seen_prompt["u"] = u
+    return {"ratings": [{"id": "x", "relevant": True, "confidence": 0.9}]}
+_judge.ask_json = _fake_oneline
+try:
+    _judge.rate_relevance("t", [{"id": "x", "title": "t", "lesson": "line1\nline2\nline3"}])
+    assert "line1\nline2" not in _seen_prompt["u"]
+finally:
+    _judge.ask_json = _real_ask2
+    pass
+_real_rate = _judge.rate_relevance
+_exp.judge.rate_relevance = lambda task, cands, model=None: [
+    {"id": c["id"], "relevant": "socket" in c["lesson"], "confidence": 0.9} for c in cands]
+try:
+    got = _exp.for_task("h", "my tmux session dies across shells")
+    assert [g["id"] for g in got] == [_e1["id"]]
+    assert got[0]["uses"] == 1 and got[0]["last_used"] > 0  # stamped rows returned
+    assert _exp.load("h")[0]["uses"] == 1  # ...and stored
+    assert _exp.path("H") != _exp.path("h!")  # lossy names still separate files
+    blob = _exp.redact("key " + "QUJD" * 20 + "== end")
+    assert "QUJD" not in blob
+    assert _exp.redact('the password is "hunter2" ok') == 'the [REDACTED] ok'
+    # ranking: relevance x outcome x recency; k=0 never calls the model.
+    _exp.judge.rate_relevance = lambda task, cands, model=None: (_ for _ in ()).throw(
+        AssertionError("k=0 must not judge"))
+    assert _exp.for_task("h", "anything", k=0) == []
+    _exp.judge.rate_relevance = lambda task, cands, model=None: [
+        {"id": c["id"], "relevant": True, "confidence": 0.9} for c in cands]
+    _e7 = _exp.save("h", "old fail", "tmux socket pain", "old lesson here", "failed", "s")
+    _e8 = _exp.save("h", "new win", "tmux socket pain", "new lesson here", "worked", "s")
+    got2 = _exp.for_task("h", "tmux socket pain", k=5)
+    assert got2 and got2[0]["id"] == _e8["id"]  # worked+recent outranks failed+old
+    assert _e7["id"] in [g["id"] for g in got2]
+    # below-threshold confidence is filtered even when relevant.
+    _exp.judge.rate_relevance = lambda task, cands, model=None: [
+        {"id": c["id"], "relevant": True, "confidence": 0.1} for c in cands]
+    assert _exp.for_task("h", "tmux socket pain", k=5) == []
+    # an empty store never calls the model.
+    _exp.judge.rate_relevance = lambda task, cands, model=None: (_ for _ in ()).throw(
+        AssertionError("empty store must not judge"))
+    assert _exp.for_task("nobody-here", "anything") == []
+    _exp.judge.rate_relevance = lambda task, cands, model=None: [
+        {"id": c["id"], "relevant": True, "confidence": 0.9} for c in cands]
+    with open(_exp.path("h"), "a", encoding="utf-8") as f:
+        f.write(json.dumps({"id": "bad1", "lesson": "tmux socket lesson",
+                            "evidence": "junk"}) + "\n")
+        f.write(json.dumps({"id": "bad2", "lesson": "tmux socket lesson",
+                            "evidence": [{"at": 1e308, "outcome": "worked"}]}) + "\n")
+    got3 = _exp.for_task("h", "tmux socket")
+    assert {g["id"] for g in got3} >= {_e1["id"], _e8["id"]}
+finally:
+    _exp.judge.rate_relevance = _real_rate
     if _real_home is None:
         del _o.environ["PENGUPOOL_MUSE_HOME"]
     else:

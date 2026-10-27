@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def path():
-    return Path(os.environ.get("PENGUPOOL_MUSE_HOME", Path.home() / ".pengupool-muse")) / "compass.jsonl"
+    return Path(os.environ.get("PENGUPOOL_MUSE_HOME") or Path.home() / ".pengupool-muse") / "compass.jsonl"
 
 
 def load():
@@ -34,7 +34,7 @@ def format_lines(lines):
 
 
 def add(rule, source):
-    line = {"id": uuid.uuid4().hex[:8], "rule": rule, "source": source,
+    line = {"id": uuid.uuid4().hex[:12], "rule": rule, "source": source,
             "created": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     p = path()
     p.parent.mkdir(parents=True, exist_ok=True)
