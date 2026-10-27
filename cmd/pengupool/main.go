@@ -14,6 +14,7 @@ import (
 
 	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/node"
+	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
 // Version of the prototype. It is not the protocol version; that is protocol.Version.
@@ -153,14 +154,7 @@ func storeDir(override string) string {
 	if override != "" {
 		return override
 	}
-	if home := os.Getenv("PENGUPOOL_HOME"); home != "" {
-		return filepath.Join(home, "v2")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(".", ".pengupool-ai", "v2")
-	}
-	return filepath.Join(home, ".pengupool-ai", "v2")
+	return store.DefaultDir()
 }
 
 // hubSocket is the daemon's unix socket, derived from the store directory.

@@ -1,6 +1,8 @@
 package harness
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -43,7 +45,7 @@ func TestMuseSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{filepath.Join(dir, "muse"), "--workspace", "/repo", "--model", "m1", "--reasoning-effort", "low"}
+	want := []string{filepath.Join(dir, "muse"), "--workspace", "/repo", "--trust-workspace", "--model", "m1", "--reasoning-effort", "low"}
 	if !slices.Equal(cmd, want) {
 		t.Fatalf("muse spec: %v", cmd)
 	}
@@ -52,7 +54,7 @@ func TestMuseSpec(t *testing.T) {
 	}
 	p.Resume = "ref1"
 	cmd, _, err = Spec(Muse, p)
-	if err != nil || !slices.Equal(cmd, []string{filepath.Join(dir, "muse"), "resume", "ref1"}) {
+	if err != nil || !slices.Equal(cmd, []string{filepath.Join(dir, "muse"), "resume", "ref1", "--trust-workspace"}) {
 		t.Fatalf("muse resume: %v %v", cmd, err)
 	}
 	if _, ok := Find(Muse); !ok {
@@ -159,5 +161,67 @@ func TestSubagentLists(t *testing.T) {
 	}
 	if k, m, e := Subagents(Pi); k != nil || m != nil || e != nil {
 		t.Fatalf("pi has no subagents: %v %v %v", k, m, e)
+	}
+}
+
+// The Muse bundle bakes the hook identity in: the scrubbed hook
+// environment carries nothing, so --store and the harness ride in argv.
+func TestMusePluginBakesHookIdentity(t *testing.T) {
+	dir := t.TempDir()
+	sum, err := writeMusePlugin(dir, "/x/pengupool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum == "" {
+		t.Fatal("empty bundle hash")
+	}
+	b, err := os.ReadFile(filepath.Join(musePluginDir(dir), ".muse-plugin", "plugin.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw struct {
+		Name         string `json:"name"`
+		Capabilities struct {
+			Hooks []struct {
+				ID      string   `json:"id"`
+				Event   string   `json:"event"`
+				Command []string `json:"command"`
+			} `json:"hooks"`
+		} `json:"capabilities"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw.Name != "pengupool" || len(raw.Capabilities.Hooks) != len(museHookEvents) {
+		t.Fatalf("manifest: %+v", raw.Name)
+	}
+	for _, h := range raw.Capabilities.Hooks {
+		want := []string{"/x/pengupool", "hook", "--store", dir, "muse", h.Event}
+		if !slices.Equal(h.Command, want) {
+			t.Fatalf("hook %s: %v", h.ID, h.Command)
+		}
+	}
+	// Deterministic: same inputs, same hash.
+	sum2, err := writeMusePlugin(dir, "/x/pengupool")
+	if err != nil || sum2 != sum {
+		t.Fatalf("rewrite changed the hash: %q vs %q (%v)", sum, sum2, err)
+	}
+}
+
+// A non-default store never reaches the installer: the exec entry points
+// stay untouched, so no test can install into the owner's muse home.
+func TestEnsureMusePluginSkipsTempStore(t *testing.T) {
+	oldLook, oldRun := museLookPath, museRun
+	museLookPath = func(string) (string, error) { t.Error("lookpath called for a temp store"); return "", nil }
+	museRun = func(_ context.Context, _ ...string) error { t.Error("installer ran for a temp store"); return nil }
+	defer func() { museLookPath, museRun = oldLook, oldRun }()
+	var logged []string
+	dir := t.TempDir()
+	EnsureMusePlugin(dir, "/x/pengupool", func(f string, a ...any) { logged = append(logged, f) })
+	if len(logged) != 1 || !strings.Contains(logged[0], "skipped (not the default store)") {
+		t.Fatalf("log = %q", logged)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "harness")); !os.IsNotExist(err) {
+		t.Fatal("bundle written for a skipped store")
 	}
 }

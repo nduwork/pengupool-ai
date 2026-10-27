@@ -99,12 +99,13 @@ type Pool struct {
 	// testScreen stands in for the hub's followed screens in tests.
 	testScreen func(id string) (string, bool)
 	// testSend stands in for delivering text to a session in tests, testKeys for typing into one.
-	testSend func(id, text string) error
-	testKeys func(id, keys string) error
-	journal  map[string]*pendingEntry // helper session id → its done report waiting for the compaction (guarded by mu)
-	db       *agentdb.DB              // agents.db: the Compass and logs; nil if it could not open
-	formMu   sync.Mutex               // formation changes apply one at a time
-	revoker  Revoker
+	testSend       func(id, text string) error
+	testKeys       func(id, keys string) error
+	journal        map[string]*pendingEntry // helper session id → its done report waiting for the compaction (guarded by mu)
+	museToolWarned bool                     // a Muse PreToolUse without tool_name was allowed and noted (under mu)
+	db             *agentdb.DB              // agents.db: the Compass and logs; nil if it could not open
+	formMu         sync.Mutex               // formation changes apply one at a time
+	revoker        Revoker
 
 	reposCache atomic.Pointer[ghRepos] // the GitHub account's repositories
 	// backupFor is the backup repository checked this run (private, writable) and the account's
@@ -147,6 +148,7 @@ func New(o Options) *Pool {
 	p.loadInboxes()
 	p.expireStaleApprovals()
 	p.retireRemovedHarnesses()
+	harness.EnsureMusePlugin(o.Store.Dir(), o.Exe, logf)
 	p.dropRetiredProviders()
 	if db, err := agentdb.Open(filepath.Join(o.Store.Dir(), "agents.db")); err != nil {
 		logf("agent db: %v", err)

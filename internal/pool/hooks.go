@@ -22,6 +22,64 @@ import (
 // block agent work: the CLI gives up quickly and exits 0 when the daemon is not answering. Checked
 // operations (a SendMessage to a peer) fail closed only on an explicit refusal.
 
+// resolveMuseSession maps a Muse hook payload to its pool session. A live
+// pool session whose ConvID is the Muse session id wins; otherwise the
+// newest live, unbound Muse session with the same working directory is
+// bound to it. Anything else (an exited session, the owner's own Muse
+// sessions outside PenguPool, a payload with no identity) resolves to
+// nothing: the hook is a silent no-op, fast, with no error and no log.
+func (p *Pool) resolveMuseSession(pl map[string]any) (store.Session, bool) {
+	msid, _ := pl["session_id"].(string)
+	cwd, _ := pl["cwd"].(string)
+	if msid == "" {
+		return store.Session{}, false
+	}
+	st := p.st.State()
+	for _, s := range st.Sessions {
+		if s.ConvID == msid && museLive(s) {
+			return s, true
+		}
+	}
+	if cwd == "" {
+		return store.Session{}, false
+	}
+	var best *store.Session
+	for i, s := range st.Sessions {
+		if s.Harness != harness.Muse || s.ConvID != "" || !museLive(s) || !sameDir(s.Cwd, cwd) {
+			continue
+		}
+		if best == nil || s.StartedAt.After(best.StartedAt) {
+			best = &st.Sessions[i]
+		}
+	}
+	if best == nil {
+		return store.Session{}, false
+	}
+	p.setSession(best.ID, func(x *store.Session) { x.ConvID = msid })
+	if s, ok := p.session(best.ID); ok {
+		return s, true
+	}
+	return store.Session{}, false
+}
+
+// museLive reports whether a pool session may take a Muse hook: still
+// running and not marked ended or unsupported. An exited session never
+// binds again.
+func museLive(s store.Session) bool {
+	return s.State != "exited" && s.Status != "ended" && s.Status != "harness no longer supported"
+}
+
+// sameDir reports whether two working directories are the same folder,
+// through symlinks (/tmp vs /private/tmp) as well as literally.
+func sameDir(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && ra == rb
+}
+
 type hookIn struct {
 	SessionID string            `json:"session_id"`
 	Harness   string            `json:"harness"`
@@ -39,12 +97,21 @@ type HookOut struct {
 
 func (p *Pool) hookEvent(ctx context.Context, in hookIn) (any, error) {
 	entered := time.Now() // a Stop's whole answer is due by entered + StopDeadline
+	var pl map[string]any
+	_ = json.Unmarshal(in.Payload, &pl)
+	if in.Harness == harness.Muse {
+		// Muse scrubs the hook environment, so the session is resolved
+		// from the payload, for every event, in this one place.
+		s, ok := p.resolveMuseSession(pl)
+		if !ok {
+			return HookOut{}, nil // outside PenguPool, or the daemon just started: untouched
+		}
+		in.SessionID = s.ID
+	}
 	s, ok := p.session(in.SessionID)
 	if !ok {
 		return HookOut{}, nil // not a pool session: say nothing
 	}
-	var pl map[string]any
-	_ = json.Unmarshal(in.Payload, &pl)
 	str := func(k string) string { v, _ := pl[k].(string); return v }
 	// Activity time drives the map's Stale state; written at most every 30 s.
 	if time.Since(s.ActiveAt) > 30*time.Second && in.Event != "Status" {
@@ -118,6 +185,20 @@ func (p *Pool) hookEvent(ctx context.Context, in hookIn) (any, error) {
 		}
 		return p.contextOut(s.ID, "UserPromptSubmit", p.journalForPrompt(s, t.Prompt), p.nextStepNote(s, t.Prompt), p.subagentPlan(s, t.Prompt), p.wordingNote(s.ID)), nil
 	case "PreToolUse":
+		if in.Harness == harness.Muse {
+			if _, ok := pl["tool_name"].(string); !ok {
+				// The Muse tool payload shape is still unknown: never
+				// block on it, allow and note it once.
+				p.mu.Lock()
+				warned := p.museToolWarned
+				p.museToolWarned = true
+				p.mu.Unlock()
+				if !warned {
+					p.logf("pool: muse PreToolUse without tool_name; allowed")
+				}
+				return HookOut{}, nil
+			}
+		}
 		p.setStatus(s.ID, "working")
 		p.turnOpen(s.ID, "")
 		p.asking(s.ID, str("tool_name"), true)

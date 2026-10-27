@@ -161,9 +161,11 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 			return nil, nil, err
 		}
 		if p.Resume != "" {
-			return []string{bin, "resume", p.Resume}, env, nil
+			// Owner-approved (H2): PenguPool-launched sessions trust their
+			// workspace for the run, so project hooks load without a dialog.
+			return []string{bin, "resume", p.Resume, "--trust-workspace"}, env, nil
 		}
-		cmd := []string{bin, "--workspace", p.Cwd}
+		cmd := []string{bin, "--workspace", p.Cwd, "--trust-workspace"}
 		if p.Model != "" {
 			cmd = append(cmd, "--model", p.Model)
 		}

@@ -26,7 +26,19 @@ func (e *ErrCorrupt) Error() string {
 
 func (e *ErrCorrupt) Unwrap() error { return e.Err }
 
-// Store is the single writer of one PenguPool home directory.
+// DefaultDir is the store directory with no override: $PENGUPOOL_HOME/v2,
+// else ~/.pengupool-ai/v2. The Muse plugin installs only for this store.
+func DefaultDir() string {
+	if home := os.Getenv("PENGUPOOL_HOME"); home != "" {
+		return filepath.Join(home, "v2")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".", ".pengupool-ai", "v2")
+	}
+	return filepath.Join(home, ".pengupool-ai", "v2")
+}
+
 type Store struct {
 	dir string
 
