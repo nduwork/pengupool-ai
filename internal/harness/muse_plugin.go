@@ -1,7 +1,6 @@
 package harness
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -74,15 +73,11 @@ func writeMusePlugin(storeDir, exe string) (string, error) {
 
 // museLookPath and museRun are exec entry points, stubbed in tests so no
 // test ever touches the owner's muse home.
-var museLookPath = exec.LookPath
+var museLookPath = func(env []string) (string, error) { return Lookup(Muse, env) }
 
-var museRun = func(ctx context.Context, args ...string) error {
-	if out, err := exec.CommandContext(ctx, Muse, args...).CombinedOutput(); err != nil {
-		line := string(out)
-		if i := bytes.IndexByte(out, '\n'); i >= 0 {
-			line = string(out[:i])
-		}
-		return fmt.Errorf("muse %s: %v: %s", args[0], err, line)
+var museRun = func(ctx context.Context, bin string, args ...string) error {
+	if out, err := exec.CommandContext(ctx, bin, args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("muse %s: %v: %s", args[0], err, firstLine(out))
 	}
 	return nil
 }
@@ -92,10 +87,14 @@ var museRun = func(ctx context.Context, args ...string) error {
 // home (store.IsHomeDefault): any other store logs one line and installs
 // nothing, so a throwaway daemon never touches the owner's muse home.
 // One log line when it installs; silence otherwise.
-func EnsureMusePlugin(storeDir, exe string, logf func(string, ...any)) {
+func EnsureMusePlugin(storeDir, exe string, env []string, logf func(string, ...any)) {
 	if !store.IsHomeDefault(storeDir) {
 		logf("muse plugin: skipped (not the owner's home)")
 		return
+	}
+	bin, err := museLookPath(env) // the user's PATH: a Dock-launched daemon's own lacks ~/.local/bin
+	if err != nil {
+		return // muse is not here: nothing to wire
 	}
 	sum, err := writeMusePlugin(storeDir, exe)
 	if err != nil {
@@ -106,16 +105,13 @@ func EnsureMusePlugin(storeDir, exe string, logf func(string, ...any)) {
 	if old, err := os.ReadFile(marker); err == nil && string(old) == sum {
 		return // installed and approved for this bundle
 	}
-	if _, err := museLookPath(Muse); err != nil {
-		return // muse is not here: nothing to wire
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if err := museRun(ctx, "plugins", "install", musePluginDir(storeDir), "--json"); err != nil {
+	if err := museRun(ctx, bin, "plugins", "install", musePluginDir(storeDir), "--json"); err != nil {
 		logf("muse plugin: %v", err)
 		return
 	}
-	if err := museRun(ctx, "plugins", "approve", musePluginID, "--json"); err != nil {
+	if err := museRun(ctx, bin, "plugins", "approve", musePluginID, "--json"); err != nil {
 		logf("muse plugin: %v", err)
 		return
 	}

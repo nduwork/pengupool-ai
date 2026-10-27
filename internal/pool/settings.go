@@ -146,10 +146,15 @@ var Restarter func()
 // HTTPAddr reports the gateway's bound address.
 var HTTPAddr func() string
 
+// settingsTailscale is the Tailscale checklist, on its own: it runs the CLI and a probe (seconds when
+// Tailscale is slow), so only the Phone connections panel asks for it, never every settings read.
+func (p *Pool) settingsTailscale(_ context.Context, _ struct{}) (any, error) {
+	return p.tailscaleChecks(), nil
+}
+
 func (p *Pool) settingsGet(_ context.Context, _ struct{}) (any, error) {
 	cfg := p.st.Config()
 	out := map[string]any{"network": cfg.Network, "store": p.st.Dir(), "executable": p.exe, "agent_models": cfg.AgentModels, "agent_bins": cfg.AgentBins, "agents": harness.Agents, "version": p.version}
-	out["tailscale_checks"] = p.tailscaleChecks()
 	if HTTPAddr != nil {
 		out["bound"] = HTTPAddr()
 	}
@@ -175,42 +180,45 @@ type settingsIn struct {
 }
 
 func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
-	cfg := p.st.Config()
-	if in.LAN != nil {
-		cfg.Network.LAN = *in.LAN
-	}
-	if in.LANAddr != nil {
-		cfg.Network.LANAddr = strings.TrimSpace(*in.LANAddr)
-	}
-	if in.Tailscale != nil {
-		cfg.Network.Tailscale = strings.TrimRight(strings.TrimSpace(*in.Tailscale), "/")
-	}
-	if am := in.AgentModels; am != nil {
-		for _, id := range am.Ollama {
-			if a, ok := harness.Find(id); !ok || !a.Ollama {
-				return nil, invalid("%s cannot run on Ollama", id)
-			}
+	// One locked read-modify-write: a Muse device revoked meanwhile stays revoked.
+	err := p.st.UpdateConfig(func(cfg *store.Config) error {
+		if in.LAN != nil {
+			cfg.Network.LAN = *in.LAN
 		}
-		am.OllamaURL, am.OllamaModel = strings.TrimSpace(am.OllamaURL), strings.TrimSpace(am.OllamaModel)
-		cfg.AgentModels = *am
-	}
-	if in.AgentBins != nil {
-		bins := map[string]string{}
-		for id, path := range in.AgentBins {
-			if _, ok := harness.Find(id); !ok {
-				return nil, invalid("unknown agent %q", id)
-			}
-			if path = strings.TrimSpace(path); path == "" {
-				continue // empty clears the override
-			}
-			if err := harness.ValidateBin(path); err != nil {
-				return nil, invalid("%s: %v", id, err)
-			}
-			bins[id] = path
+		if in.LANAddr != nil {
+			cfg.Network.LANAddr = strings.TrimSpace(*in.LANAddr)
 		}
-		cfg.AgentBins = bins
-	}
-	if err := p.st.SaveConfig(cfg); err != nil {
+		if in.Tailscale != nil {
+			cfg.Network.Tailscale = strings.TrimRight(strings.TrimSpace(*in.Tailscale), "/")
+		}
+		if am := in.AgentModels; am != nil {
+			for _, id := range am.Ollama {
+				if a, ok := harness.Find(id); !ok || !a.Ollama {
+					return invalid("%s cannot run on Ollama", id)
+				}
+			}
+			am.OllamaURL, am.OllamaModel = strings.TrimSpace(am.OllamaURL), strings.TrimSpace(am.OllamaModel)
+			cfg.AgentModels = *am
+		}
+		if in.AgentBins != nil {
+			bins := map[string]string{}
+			for id, path := range in.AgentBins {
+				if id != harness.OMP && id != harness.Pi { // the only launches that take a set binary
+					return invalid("a binary path can be set for OMP and pi only, not %q", id)
+				}
+				if path = strings.TrimSpace(path); path == "" {
+					continue // empty clears the override
+				}
+				if err := harness.ValidateBin(path); err != nil {
+					return invalid("%s: %v", id, err)
+				}
+				bins[id] = path
+			}
+			cfg.AgentBins = bins
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	res := map[string]any{"saved": true}
@@ -944,4 +952,3 @@ func (p *Pool) ollamaStatus(ctx context.Context, in ollamaStatusIn) (any, error)
 	return out, nil
 }
 
-// rebuilt 1793133665

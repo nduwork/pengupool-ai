@@ -35,7 +35,7 @@ func codexRulesFile() string {
 }
 
 // codexLookPath and codexRun are exec entry points, stubbed in tests.
-var codexLookPath = exec.LookPath
+var codexLookPath = func(env []string) (string, error) { return Lookup("codex", env) }
 
 var codexRun = func(ctx context.Context, args ...string) error {
 	if out, err := exec.CommandContext(ctx, "codex", args...).CombinedOutput(); err != nil {
@@ -109,12 +109,12 @@ func firstLine(b []byte) string {
 // (store.IsHomeDefault): any other store logs one line and installs
 // nothing. It runs at daemon start, only when codex is found. One log
 // line when it writes; silence otherwise.
-func EnsureCodexRules(storeDir, exe string, logf func(string, ...any)) {
+func EnsureCodexRules(storeDir, exe string, env []string, logf func(string, ...any)) {
 	if !store.IsHomeDefault(storeDir) {
 		logf("codex rules: skipped (not the owner's home)")
 		return
 	}
-	if _, err := codexLookPath("codex"); err != nil {
+	if _, err := codexLookPath(env); err != nil {
 		return // codex is not here: nothing to wire
 	}
 	path := codexRulesFile()

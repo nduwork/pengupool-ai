@@ -70,6 +70,7 @@ type Pool struct {
 	musePairFails     int                          // wrong codes since the last success: throttles guessing
 	musePairBlocked   time.Time                    // pairing refused until then, after too many wrong codes
 	museAnswered      map[string]museAnswerDone    // device\x00key -> first answer: replays return it
+	museInflight      map[string]bool              // device\x00key -> an answer still running
 	achvLocks         map[string]*sync.Mutex       // one achievement job per skill, under mu
 	achvAgain         map[string]bool              // a job was asked while one ran, under mu
 	msgSock           map[string]claudeInbox       // session id → Claude inbox socket
@@ -149,13 +150,14 @@ func New(o Options) *Pool {
 		unlocks: map[string]map[string]bool{}, failures: map[string][]time.Time{},
 		lastInput: map[string]time.Time{}, pending: map[string][]protocol.TeamMessage{},
 		ownerEnter: map[string][]credit{}, requireOwnerInput: o.RequireOwnerInput,
-		museCodes: map[string]*musePairCode{}, museAnswered: map[string]museAnswerDone{},
+		museCodes: map[string]*musePairCode{}, museAnswered: map[string]museAnswerDone{}, museInflight: map[string]bool{},
 	}
 	p.loadInboxes()
 	p.expireStaleApprovals()
 	p.retireRemovedHarnesses()
-	harness.EnsureMusePlugin(o.Store.Dir(), o.Exe, logf)
-	harness.EnsureCodexRules(o.Store.Dir(), o.Exe, logf)
+	// Off the start path: a slow `muse plugins install` must not hold the daemon up.
+	go harness.EnsureMusePlugin(o.Store.Dir(), o.Exe, env, logf)
+	go harness.EnsureCodexRules(o.Store.Dir(), o.Exe, env, logf)
 	p.dropRetiredProviders()
 	if db, err := agentdb.Open(filepath.Join(o.Store.Dir(), "agents.db")); err != nil {
 		logf("agent db: %v", err)
@@ -393,7 +395,7 @@ func (p *Pool) handlers() map[string]handler {
 		"team.unlock":           p.teamUnlock,
 		"team.lock":             p.teamLock,
 		"message.send":          bind(p.messageSend),
-		"hook.event":            bind(p.hookEvent),
+		"hook.event":            bindCaller(p.hookEventFrom),
 		"decision.providers":    bind(p.providers),
 		"decision.ask":          bindCaller(p.decisionAsk),
 		"provider.save":         bind(p.providerSave),
@@ -402,7 +404,9 @@ func (p *Pool) handlers() map[string]handler {
 		"ollama.status":         bind(p.ollamaStatus),
 		"provider.activate":     bind(p.providerActivate),
 		"settings.get":          bind(p.settingsGet),
+		"settings.tailscale":    bind(p.settingsTailscale),
 		"settings.save":         bind(p.settingsSave),
+		"backup.get":            bind(p.backupGet),
 		"muse.next":             p.museNext,
 		"muse.answer":           p.museAnswer,
 		"muse.say":              p.museSay,

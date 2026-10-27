@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/experiment"
@@ -32,7 +33,7 @@ func runExperiment(args []string) error {
 			}
 		case "--only":
 			i++
-			for ; i < len(args) && len(args[i]) > 0 && args[i][:2] != "--"; i++ {
+			for ; i < len(args) && !strings.HasPrefix(args[i], "--"); i++ {
 				only = append(only, args[i])
 			}
 			i--

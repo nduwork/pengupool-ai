@@ -227,12 +227,15 @@ func withUnsetEnv(t *testing.T, key string) {
 // stay untouched, so no test can install into the owner's muse home.
 func TestEnsureMusePluginSkipsTempStore(t *testing.T) {
 	oldLook, oldRun := museLookPath, museRun
-	museLookPath = func(string) (string, error) { t.Error("lookpath called for a temp store"); return "", nil }
-	museRun = func(_ context.Context, _ ...string) error { t.Error("installer ran for a temp store"); return nil }
+	museLookPath = func([]string) (string, error) { t.Error("lookpath called for a temp store"); return "", nil }
+	museRun = func(_ context.Context, _ string, _ ...string) error {
+		t.Error("installer ran for a temp store")
+		return nil
+	}
 	defer func() { museLookPath, museRun = oldLook, oldRun }()
 	var logged []string
 	dir := t.TempDir()
-	EnsureMusePlugin(dir, "/x/pengupool", func(f string, a ...any) { logged = append(logged, f) })
+	EnsureMusePlugin(dir, "/x/pengupool", nil, func(f string, a ...any) { logged = append(logged, f) })
 	if len(logged) != 1 || !strings.Contains(logged[0], "skipped (not the owner's home)") {
 		t.Fatalf("log = %q", logged)
 	}
@@ -247,10 +250,10 @@ func TestEnsureMusePluginSkipsTempStore(t *testing.T) {
 func TestInstallersGateOnRealHome(t *testing.T) {
 	oldLook, oldRun := museLookPath, museRun
 	oldCLook := codexLookPath
-	museLookPath = func(string) (string, error) { return "/bin/muse", nil }
+	museLookPath = func([]string) (string, error) { return "/bin/muse", nil }
 	called := map[string]bool{}
-	museRun = func(_ context.Context, args ...string) error { called["muse:"+args[0]] = true; return nil }
-	codexLookPath = func(string) (string, error) { called["codex:lookpath"] = true; return "/bin/codex", nil }
+	museRun = func(_ context.Context, _ string, args ...string) error { called["muse:"+args[0]] = true; return nil }
+	codexLookPath = func([]string) (string, error) { called["codex:lookpath"] = true; return "/bin/codex", nil }
 	defer func() { museLookPath, museRun, codexLookPath = oldLook, oldRun, oldCLook }()
 	var logged []string
 	logf := func(f string, a ...any) { logged = append(logged, fmt.Sprintf(f, a...)) }
@@ -260,8 +263,8 @@ func TestInstallersGateOnRealHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
-	EnsureMusePlugin(store.DefaultDir(), "/x/pengupool", logf)
-	EnsureCodexRules(store.DefaultDir(), "/x/pengupool", logf)
+	EnsureMusePlugin(store.DefaultDir(), "/x/pengupool", nil, logf)
+	EnsureCodexRules(store.DefaultDir(), "/x/pengupool", nil, logf)
 	if len(called) != 0 {
 		t.Fatalf("installer ran under PENGUPOOL_HOME: %v", called)
 	}
@@ -280,8 +283,8 @@ func TestInstallersGateOnRealHome(t *testing.T) {
 	t.Setenv("HOME", home2)
 	t.Setenv("CODEX_HOME", filepath.Join(home2, ".codex"))
 	def := store.DefaultDir()
-	EnsureMusePlugin(def, "/x/pengupool", logf)
-	EnsureCodexRules(def, "/x/pengupool", logf)
+	EnsureMusePlugin(def, "/x/pengupool", nil, logf)
+	EnsureCodexRules(def, "/x/pengupool", nil, logf)
 	if !called["muse:plugins"] {
 		t.Fatalf("muse installer did not run for the real home: %v", called)
 	}
@@ -297,7 +300,7 @@ func TestInstallersGateOnRealHome(t *testing.T) {
 // exact taught prefixes, and is rewritten only when the content changes.
 func TestEnsureCodexRules(t *testing.T) {
 	oldLook := codexLookPath
-	codexLookPath = func(string) (string, error) { return "/bin/codex", nil }
+	codexLookPath = func([]string) (string, error) { return "/bin/codex", nil }
 	defer func() { codexLookPath = oldLook }()
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", home)
@@ -305,7 +308,7 @@ func TestEnsureCodexRules(t *testing.T) {
 	logf := func(f string, a ...any) { logged = append(logged, f) }
 
 	// A temp store writes nothing.
-	EnsureCodexRules(t.TempDir(), "/x/pengupool", logf)
+	EnsureCodexRules(t.TempDir(), "/x/pengupool", nil, logf)
 	if len(logged) != 1 || !strings.Contains(logged[0], "skipped (not the owner's home)") {
 		t.Fatalf("log = %q", logged)
 	}
@@ -318,7 +321,7 @@ func TestEnsureCodexRules(t *testing.T) {
 	withUnsetEnv(t, "PENGUPOOL_HOME")
 	t.Setenv("HOME", t.TempDir())
 	def := store.DefaultDir()
-	EnsureCodexRules(def, "/x/pengupool", logf)
+	EnsureCodexRules(def, "/x/pengupool", nil, logf)
 	raw, err := os.ReadFile(filepath.Join(home, "rules", "pengupool.rules"))
 	if err != nil {
 		t.Fatal(err)
@@ -340,20 +343,20 @@ func TestEnsureCodexRules(t *testing.T) {
 
 	// A second run with the same exe is silent (no rewrite).
 	logged = nil
-	EnsureCodexRules(def, "/x/pengupool", logf)
+	EnsureCodexRules(def, "/x/pengupool", nil, logf)
 	if len(logged) != 0 {
 		t.Fatalf("rewrote identical content: %q", logged)
 	}
 
 	// A moved exe rewrites.
-	EnsureCodexRules(def, "/y/pengupool", logf)
+	EnsureCodexRules(def, "/y/pengupool", nil, logf)
 	raw, _ = os.ReadFile(filepath.Join(home, "rules", "pengupool.rules"))
 	if !strings.Contains(string(raw), `"/y/pengupool", "send"`) {
 		t.Fatal("moved exe did not rewrite the rules")
 	}
 
 	// An exe path with a space stays one argv element.
-	EnsureCodexRules(def, "/Applications/PenguPool AI.app/pengupool", logf)
+	EnsureCodexRules(def, "/Applications/PenguPool AI.app/pengupool", nil, logf)
 	raw, _ = os.ReadFile(filepath.Join(home, "rules", "pengupool.rules"))
 	if !strings.Contains(string(raw), `pattern = ["/Applications/PenguPool AI.app/pengupool", "experience", "search"]`) {
 		t.Fatal("spaced exe path was split")

@@ -3,11 +3,14 @@ package pool
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/nduwork/pengupool-ai/internal/gateway"
 	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
@@ -108,5 +111,36 @@ func TestResolveMuseSession(t *testing.T) {
 	}
 	if got := out.(HookOut); got.Stdout != "" {
 		t.Fatalf("unknown tool shape was not allowed empty: %+v", got)
+	}
+}
+
+// With a known calling process, the hook's session is the Muse session it runs under, whatever the
+// payload names: another session's ConvID or folder is never enough.
+func TestResolveMuseSessionByProcess(t *testing.T) {
+	if !procTreeReadable {
+		t.Skip("no readable process tree here")
+	}
+	p, st := helperPool(t)
+	dir := t.TempDir()
+	other := exec.Command("sleep", "30")
+	if err := other.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = other.Process.Kill(); _ = other.Wait() })
+	_ = st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions,
+			store.Session{ID: "muse-mine", Name: "muse-mine", State: "running", Harness: harness.Muse, Cwd: "/somewhere", Pid: os.Getpid()},
+			store.Session{ID: "muse-theirs", Name: "muse-theirs", State: "running", Harness: harness.Muse, Cwd: dir, Pid: other.Process.Pid, ConvID: "their-uuid"})
+		return nil
+	})
+	me := gateway.Caller{Unix: true, PeerPID: os.Getpid()}
+	got, ok := p.resolveMuseSession(me, map[string]any{"session_id": "their-uuid", "cwd": dir})
+	if !ok || got.ID != "muse-mine" {
+		t.Fatalf("resolved %q %v, want muse-mine (the caller's own)", got.ID, ok)
+	}
+	// The test's parent runs under neither session (the owner's own Muse, say).
+	stranger := gateway.Caller{Unix: true, PeerPID: os.Getppid()}
+	if got, ok := p.resolveMuseSession(stranger, map[string]any{"session_id": "x", "cwd": dir}); ok {
+		t.Fatalf("a process under no Muse session resolved to %q", got.ID)
 	}
 }

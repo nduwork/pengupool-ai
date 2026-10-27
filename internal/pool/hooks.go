@@ -22,21 +22,36 @@ import (
 // block agent work: the CLI gives up quickly and exits 0 when the daemon is not answering. Checked
 // operations (a SendMessage to a peer) fail closed only on an explicit refusal.
 
-// resolveMuseSession maps a Muse hook payload to its pool session. A live
-// pool session whose ConvID is the Muse session id wins; otherwise the
-// newest live, unbound Muse session with the same working directory is
-// bound to it. Anything else (an exited session, the owner's own Muse
-// sessions outside PenguPool, a payload with no identity) resolves to
-// nothing: the hook is a silent no-op, fast, with no error and no log.
-func (p *Pool) resolveMuseSession(pl map[string]any) (store.Session, bool) {
+// resolveMuseSession maps a Muse hook to its pool session. Muse scrubs the hook environment, so the
+// hook names no session. When the calling process is known, the session is the live Muse session whose
+// process it runs under: nothing else, so an agent in another session cannot speak as it, and two Muse
+// sessions in one folder (or the owner's own Muse, outside PenguPool) never take each other's identity.
+// Without a process to go by (a platform with no readable process tree, tests), a live Muse session
+// whose ConvID is the payload's session id wins, else the newest live, unbound Muse session in the same
+// folder is bound. Anything else resolves to nothing: the hook is a silent, fast no-op.
+func (p *Pool) resolveMuseSession(c gateway.Caller, pl map[string]any) (store.Session, bool) {
 	msid, _ := pl["session_id"].(string)
+	st := p.st.State()
+	if c.PeerPID > 0 && procTreeReadable {
+		for _, s := range st.Sessions {
+			if s.Harness != harness.Muse || !museLive(s) || s.Pid <= 0 || !p.onThisHost(s.NodeID) {
+				continue
+			}
+			if yes, _ := descendsFrom(c.PeerPID, s.Pid); yes {
+				if msid != "" && s.ConvID != msid {
+					p.setSession(s.ID, func(x *store.Session) { x.ConvID = msid })
+				}
+				return s, true
+			}
+		}
+		return store.Session{}, false
+	}
 	cwd, _ := pl["cwd"].(string)
 	if msid == "" {
 		return store.Session{}, false
 	}
-	st := p.st.State()
 	for _, s := range st.Sessions {
-		if s.ConvID == msid && museLive(s) {
+		if s.Harness == harness.Muse && s.ConvID == msid && museLive(s) {
 			return s, true
 		}
 	}
@@ -95,14 +110,20 @@ type HookOut struct {
 	Exit   int    `json:"exit"`
 }
 
+// hookEvent is a hook with no known calling process (tests): see hookEventFrom.
 func (p *Pool) hookEvent(ctx context.Context, in hookIn) (any, error) {
+	return p.hookEventFrom(ctx, gateway.Caller{}, in)
+}
+
+// hookEventFrom is hook.event, with the calling process that resolves a Muse hook's session.
+func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (any, error) {
 	entered := time.Now() // a Stop's whole answer is due by entered + StopDeadline
 	var pl map[string]any
 	_ = json.Unmarshal(in.Payload, &pl)
 	if in.Harness == harness.Muse {
 		// Muse scrubs the hook environment, so the session is resolved
-		// from the payload, for every event, in this one place.
-		s, ok := p.resolveMuseSession(pl)
+		// for every event, in this one place.
+		s, ok := p.resolveMuseSession(c, pl)
 		if !ok {
 			return HookOut{}, nil // outside PenguPool, or the daemon just started: untouched
 		}

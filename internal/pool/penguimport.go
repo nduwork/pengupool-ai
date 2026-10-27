@@ -40,46 +40,27 @@ type penguLesson struct {
 	} `json:"evidence"`
 }
 
-func readPenguLines(path string) ([]penguCompassLine, error) {
+// readJSONLines reads one JSON value per non-empty line. A line that does not parse (hand-edited,
+// truncated) is skipped and counted, so one bad row never blocks the rest of the import.
+func readJSONLines[T any](path string) (out []T, bad int, err error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer f.Close()
-	var out []penguCompassLine
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 8<<20)
 	for sc.Scan() {
 		if b := strings.TrimSpace(sc.Text()); b != "" {
-			var l penguCompassLine
-			if err := json.Unmarshal([]byte(b), &l); err != nil {
-				return nil, err
+			var v T
+			if json.Unmarshal([]byte(b), &v) != nil {
+				bad++
+				continue
 			}
-			out = append(out, l)
+			out = append(out, v)
 		}
 	}
-	return out, sc.Err()
-}
-
-func readPenguLessons(path string) ([]penguLesson, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	var out []penguLesson
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64*1024), 8<<20)
-	for sc.Scan() {
-		if b := strings.TrimSpace(sc.Text()); b != "" {
-			var e penguLesson
-			if err := json.Unmarshal([]byte(b), &e); err != nil {
-				return nil, err
-			}
-			out = append(out, e)
-		}
-	}
-	return out, sc.Err()
+	return out, bad, sc.Err()
 }
 
 // checkPenguLine is the Compass bar for an imported line: text, a known
@@ -145,11 +126,12 @@ func (p *Pool) importPengu(home string) {
 
 	for _, f := range files {
 		if strings.HasSuffix(f, "compass.jsonl") {
-			lines, err := readPenguLines(f)
+			lines, bad, err := readJSONLines[penguCompassLine](f)
 			if err != nil {
 				p.logf("pool: pengu import: %s: %v", f, err)
 				return
 			}
+			linesSkipped += bad
 			for _, l := range lines {
 				body, kind, err := checkPenguLine(l.Rule, l.Kind)
 				if err != nil {
@@ -174,11 +156,12 @@ func (p *Pool) importPengu(home string) {
 			done = append(done, f)
 			continue
 		}
-		lessons, err := readPenguLessons(f)
+		lessons, bad, err := readJSONLines[penguLesson](f)
 		if err != nil {
 			p.logf("pool: pengu import: %s: %v", f, err)
 			return
 		}
+		entriesSkipped += bad
 		for _, e := range lessons {
 			title := clipRunes(oneLine(redactSecrets(e.Title)), journalTitle)
 			task := strings.TrimSpace(redactSecrets(e.Task))
@@ -232,9 +215,10 @@ func (p *Pool) importPengu(home string) {
 	p.logf("pool: pengu import: %d compass lines (%d skipped), %d journal entries (%d skipped)", linesIn, linesSkipped, entriesAdded, entriesSkipped)
 }
 
-// maybeImportPengu runs the one-time import for the app's real store only.
+// maybeImportPengu runs the one-time import for the app's real store only: the owner's own home, never a
+// store moved by PENGUPOOL_HOME (a throwaway daemon would otherwise import and rename the real files).
 func (p *Pool) maybeImportPengu(storeDir string) {
-	if storeDir != store.DefaultDir() {
+	if !store.IsHomeDefault(storeDir) {
 		return
 	}
 	p.importPengu(pengustore.Home())

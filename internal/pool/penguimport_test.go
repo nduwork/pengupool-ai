@@ -20,9 +20,13 @@ func TestPenguImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PENGUPOOL_AI_HOME", ai)
-	t.Setenv("PENGUPOOL_HOME", filepath.Join(root, "home"))
+	// The real store is the owner's own home with no PENGUPOOL_HOME; muse and codex stay out of reach.
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	t.Setenv("PENGUPOOL_HOME", "")
+	t.Setenv("PATH", "/usr/bin:/bin")
 	compass := `{"id":"a1","rule":"Always run the tests before committing","source":"app","created":"2026-10-27T08:32:56-0700","evidence":[],"confidence":1}` + "\n" +
 		`{"id":"b2","rule":"Never touch prod","kind":"restriction","source":"app","created":"2026-10-27T08:32:56-0700","evidence":[],"confidence":1}` + "\n" +
+		"{a truncated row\n" +
 		`{"id":"c3","rule":"use password=hunter22! always","source":"app","created":"2026-10-27T08:32:56-0700","evidence":[],"confidence":1}` + "\n"
 	if err := os.WriteFile(filepath.Join(ai, "compass.jsonl"), []byte(compass), 0o600); err != nil {
 		t.Fatal(err)
@@ -127,5 +131,19 @@ func TestPenguImport(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(ai2, "compass.jsonl")); err != nil {
 		t.Fatal("non-default store renamed the file")
+	}
+
+	// A store moved by PENGUPOOL_HOME is a throwaway, even at DefaultDir(): it never touches the real files.
+	t.Setenv("PENGUPOOL_HOME", filepath.Join(root, "moved"))
+	moved, err := store.Open(store.DefaultDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(Options{Store: moved, Exe: "pengupool"})
+	if ls, _ := m.db.Lines(m.owner(), "", "", 0); len(ls) != 0 {
+		t.Fatalf("PENGUPOOL_HOME store imported: %+v", ls)
+	}
+	if _, err := os.Stat(filepath.Join(ai2, "compass.jsonl")); err != nil {
+		t.Fatal("PENGUPOOL_HOME store renamed the file")
 	}
 }

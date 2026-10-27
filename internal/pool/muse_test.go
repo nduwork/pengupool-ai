@@ -290,3 +290,25 @@ func TestMuseSeesOnlyIOSTeams(t *testing.T) {
 		t.Fatalf("device sees wrong sessions: %+v", sessions)
 	}
 }
+
+// A waiting ask on a team without iOS access cannot be answered by posting its id.
+func TestMuseAnswerRespectsVisibility(t *testing.T) {
+	p, st := musePool(t)
+	_ = st.Update(func(s *store.State) error {
+		for i := range s.Domain.Teams {
+			s.Domain.Teams[i].IOSAccess = false
+		}
+		s.Domain.Approvals = append(s.Domain.Approvals, protocol.Approval{
+			ID: "h1", Kind: "formation", TeamID: "team1", SessionID: "leadaaaaaaaa",
+			State: "pending", Detail: "add helper", CreatedAt: "2026-10-27T10:00:00Z",
+		})
+		return nil
+	})
+	in := map[string]any{"ask_id": "approval:h1", "action": "allow", "payload_hash": "x", "idempotency_key": "kv"}
+	if _, err := p.RPC(context.Background(), museCaller(), "muse.answer", toJSON(t, in)); err == nil || !strings.Contains(err.Error(), "no ask") {
+		t.Fatalf("hidden team's ask answered: %v", err)
+	}
+	if a := st.State().Domain.Approvals; a[len(a)-1].State != "pending" {
+		t.Fatalf("hidden approval changed: %+v", a[len(a)-1])
+	}
+}

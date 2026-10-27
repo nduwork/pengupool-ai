@@ -12,3 +12,4 @@ desktop/dist/
 web/node_modules/
 .step-status/
 .DS_Store
+/pengupool

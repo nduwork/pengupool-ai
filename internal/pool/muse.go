@@ -252,6 +252,8 @@ func (p *Pool) museAnswer(ctx context.Context, c gateway.Caller, raw json.RawMes
 	// The key is the device plus its key: another device, or another tap,
 	// reusing it is a conflict, not a free copy of the first answer.
 	key := c.Device + "\x00" + in.IdempotencyKey
+	// Check and claim the key in one step: a retry that arrives while the
+	// first tap is still launching a team waits, never answers a second time.
 	p.museMu.Lock()
 	if done, ok := p.museAnswered[key]; ok {
 		p.museMu.Unlock()
@@ -260,7 +262,24 @@ func (p *Pool) museAnswer(ctx context.Context, c gateway.Caller, raw json.RawMes
 		}
 		return done.res, nil
 	}
+	if p.museInflight[key] {
+		p.museMu.Unlock()
+		return nil, protocol.Errorf(protocol.CodeUnavailable, "the ask is already being answered")
+	}
+	p.museInflight[key] = true
 	p.museMu.Unlock()
+	defer func() {
+		p.museMu.Lock()
+		delete(p.museInflight, key)
+		p.museMu.Unlock()
+	}()
+	// A waiting ask this device may not see (a team without iOS access) stays
+	// out of reach, whatever id is posted. A settled one falls through to its
+	// handler, which says 409.
+	asks := p.museAsks()
+	if i := slices.IndexFunc(asks, func(a museAsk) bool { return a.id == in.AskID }); i >= 0 && !p.museVisible(asks[i].sessionID) {
+		return nil, notFound("no ask %s", in.AskID)
+	}
 	kind, id, _ := strings.Cut(in.AskID, ":")
 	var res any
 	var err error
@@ -309,8 +328,9 @@ func (p *Pool) sweepMuseAnswered() {
 }
 
 // museAnswerApproval answers a launch/formation approval the way the app's
-// buttons do. A changed hash or version, or an already settled approval,
-// is a 409.
+// buttons do: the owner chose (2026-10-27) that their paired Muse device may
+// approve these, unlike the iPhone web path, which stays desktop-only. A
+// changed hash or version, or an already settled approval, is a 409.
 func (p *Pool) museAnswerApproval(ctx context.Context, c gateway.Caller, id string, in museAnswerIn) (any, error) {
 	st := p.st.State()
 	var a *protocol.Approval

@@ -8,6 +8,7 @@ set -eu
 APP="$HOME/Applications/PenguPool AI.app"
 [ -d "$APP" ] || APP="/Applications/PenguPool AI.app"
 LINK="$HOME/.local/bin/pengupool-ai"
+PENGU_LINK="$HOME/.local/bin/pengu" # left by v0.2–v0.3, which shipped the pengu CLI
 DATA="${PENGUPOOL_HOME:-$HOME/.pengupool-ai}/v2"
 CLI="$APP/Contents/Resources/bin/pengupool"
 
@@ -25,6 +26,7 @@ OLD=$(pgrep -f "PenguPool AI.app/Contents/Resources/bin/pengupool daemon|\.local
 
 [ -d "$APP" ] && rm -rf "$APP" && echo "removed $APP"
 [ -L "$LINK" ] && rm "$LINK" && echo "removed $LINK"
+[ -L "$PENGU_LINK" ] && rm "$PENGU_LINK" && echo "removed $PENGU_LINK"
 if [ "${1:-}" = "--purge" ]; then
   rm -rf "${PENGUPOOL_HOME:-$HOME/.pengupool-ai}" && echo "removed ${PENGUPOOL_HOME:-$HOME/.pengupool-ai}"
 else

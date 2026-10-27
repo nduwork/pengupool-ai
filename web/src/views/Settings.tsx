@@ -414,7 +414,6 @@ interface SettingsResp {
   agent_models?: AgentModels;
   agents?: { id: string; label: string; ollama: boolean; experimental?: boolean }[];
   agent_bins?: Record<string, string>;
-  tailscale_checks?: TailscaleCheck[];
   version?: string;
 }
 
@@ -519,18 +518,25 @@ function Connections(): ReactElement {
           </Button>
         </Row>
       </Card>
-      <TailscaleChecklist s={s} onChanged={() => setN(n + 1)} />
+      <TailscaleChecklist rev={n} onChanged={() => setN(n + 1)} />
       <MuseDevices onChanged={() => setN(n + 1)} />
+      <p className="mt-3 rounded-md bg-warning/10 p-3 text-caption text-warning">
+        A group password does not encrypt plain HTTP. Use the local network only when you trust it; new teams get iOS access off while it is on.
+      </p>
     </div>
   );
 }
 
 type TailscaleCheck = { id: string; label: string; ok: boolean; detail: string; fix?: { kind: "link" | "button"; label: string; url?: string; action?: string } };
 
-function TailscaleChecklist({ s, onChanged }: { s: SettingsResp; onChanged: () => void }): ReactElement {
+function TailscaleChecklist({ rev, onChanged }: { rev: number; onChanged: () => void }): ReactElement {
   const app = useApp();
   const [approveUrl, setApproveUrl] = useState<string | null>(null);
-  const checks = s.tailscale_checks ?? [];
+  const [checks, setChecks] = useState<TailscaleCheck[]>([]);
+  // Its own request: the checks run the Tailscale CLI, which must not slow every settings read.
+  useEffect(() => {
+    void app.call<TailscaleCheck[]>("settings.tailscale").then((r) => setChecks(r ?? []));
+  }, [rev]);
   if (checks.length === 0) return <></>;
   return (
     <Card className="mb-4 px-4">
