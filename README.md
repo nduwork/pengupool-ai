@@ -119,6 +119,10 @@ v0.8.4: the Helper agent hub from PenguPool 0.23: the owner can set the hub's
 repository in the Helper agents page; an install still on the old
 pengupool-marketplace hub moves to pengupool-agent-hub once (helpers, keys and
 journals follow); a bad catalog entry is skipped and named, not fatal.
+v0.8.5: `pengupool doctor` checks the machine and only reads: PenguPool v1
+leftovers, the agent CLIs, a leftover PenguPool MCP server, a Muse plugin that is
+off or calls a missing binary or another store, and a host that is doubled, runs
+from a disk image, or does not answer.
 
 ## Credits
 
