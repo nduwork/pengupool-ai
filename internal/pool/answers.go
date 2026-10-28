@@ -66,7 +66,7 @@ func (p *Pool) answerCandidates(teamID, question string) []answerCand {
 		out = append(out, answerCand{UID: l.UID, Rule: rule, Evidence: answerEvidence(es), Belief: b, Guides: agentdb.AnswerGuides(agentdb.PriorChose, es, p.at())})
 	}
 	slices.SortStableFunc(out, func(a, b answerCand) int {
-		return cmp.Or(-cmp.Compare(a.Belief.Mu, b.Belief.Mu), -cmp.Compare(a.Belief.Alpha, b.Belief.Alpha))
+		return cmp.Or(-cmp.Compare(a.Belief.Mu, b.Belief.Mu), -cmp.Compare(a.Belief.N, b.Belief.N))
 	})
 	return out[:min(len(out), maxAnswerCandidates)]
 }
@@ -205,7 +205,7 @@ func (p *Pool) answerReplay() (AnswerReplay, error) {
 		r.Choices++
 		at, _ := time.Parse(time.RFC3339, s.At)
 		var best *agentdb.Effect
-		bestAlpha := -1.0
+		bestN := -1.0
 		for _, e := range bySignal[s.UID] {
 			var before []agentdb.Effect
 			for _, x := range byKey[key{s.TeamID, e.LineUID}] {
@@ -216,9 +216,9 @@ func (p *Pool) answerReplay() (AnswerReplay, error) {
 			if !agentdb.AnswerGuides(agentdb.PriorChose, before, at) {
 				continue
 			}
-			if a := agentdb.Replay(agentdb.PriorChose, before, at).Alpha; a > bestAlpha {
+			if n := agentdb.Replay(agentdb.PriorChose, before, at).N; n > bestN {
 				e := e
-				best, bestAlpha = &e, a
+				best, bestN = &e, n
 			}
 		}
 		switch {

@@ -165,3 +165,33 @@ func TestGaussDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func withEngine(t *testing.T, e string) {
+	old := Engine
+	Engine = e
+	t.Cleanup(func() { Engine = old })
+}
+
+func TestEngineSeam(t *testing.T) {
+	said := []Effect{eff(t0, "a", "said", 3, 1)}
+	if b := Replay(PriorStated, said, t0); b.S2 != 0 || !near(b.Mu, ReplayBeta(PriorStated.Beta, said, t0).Mu) {
+		t.Errorf("beta is the default: %+v", b)
+	}
+	withEngine(t, "gauss")
+	th := DefaultThresholds
+	if b := Replay(PriorStated, nil, t0); !b.Guides(th) || !b.Shown(th) || b.Dropped(th) {
+		t.Errorf("a stated line guides at once: %+v", b)
+	}
+	if b := (Belief{Mu: 0.19, S2: 1}); !b.Dropped(th) {
+		t.Error("gauss drops below DropP whatever sigma")
+	}
+	day := func(d int) time.Time { return t0.AddDate(0, 0, d) }
+	one := []Effect{eff(day(0), "s0", "chose", 1, 1)}
+	two := append(slices.Clone(one), eff(day(1), "s1", "chose", 1, 1))
+	if AnswerGuides(PriorChose, one, day(1)) || !AnswerGuides(PriorChose, two, day(2)) {
+		t.Error("answering needs two consistent answers")
+	}
+	if AnswerGuides(PriorChose, append(slices.Clone(two), eff(day(3), "s2", "chose", 1, 0)), day(3)) {
+		t.Error("the newest answer against takes answering away")
+	}
+}

@@ -16,12 +16,23 @@ const (
 	WeightSpotCheck = 2
 )
 
+// Prior is a new line's prior under each engine.
+type Prior struct {
+	Beta  [2]float64
+	Gauss Gauss
+}
+
 // Priors of a new line: stated by the owner, or created from a choice (which then also gets its
 // creating signal as a normal effect).
 var (
-	PriorStated = [2]float64{8, 2}
-	PriorChose  = [2]float64{1, 1}
+	PriorStated = Prior{[2]float64{8, 2}, GaussStated}
+	PriorChose  = Prior{[2]float64{1, 1}, GaussChose}
 )
+
+// Engine is the belief Replay returns: "beta", or "gauss" in shadow. It is a code default, never a
+// per-machine setting: every machine must replay a line the same way, since sweepDropped deletes
+// lines everywhere.
+var Engine = "beta"
 
 // Outcome is how a go-ahead turned out, on the signal that judged it: the owner's verdict right or
 // wrong, or missed (the owner answered a check-in that triage could have answered). The learned
@@ -136,7 +147,8 @@ const answerFresh = 180 * 24 * time.Hour
 // enough of it (α ≥ AnswerAlpha,
 // counted as it stood at the last answer, so a day of forgetting does not take it below 3) and it is
 // recent.
-func AnswerGuides(prior [2]float64, es []Effect, now time.Time) bool {
+// Under the Gaussian, enough evidence is P ≥ AnswerP at the last answer.
+func AnswerGuides(prior Prior, es []Effect, now time.Time) bool {
 	b := Replay(prior, es, now)
 	if b.Last.IsZero() || now.Sub(b.Last) > answerFresh {
 		return false
@@ -153,7 +165,12 @@ func AnswerGuides(prior [2]float64, es []Effect, now time.Time) bool {
 	if last.PCon > last.PSup {
 		return false
 	}
-	return b.Confirmed && b.Mu >= AnswerMu && Replay(prior, es, b.Last).Alpha >= AnswerAlpha
+	at := Replay(prior, es, b.Last)
+	enough := at.Alpha >= AnswerAlpha
+	if at.S2 > 0 {
+		enough = at.Mu >= AnswerP
+	}
+	return b.Confirmed && b.Mu >= AnswerMu && enough
 }
 
 // TeamEffects are the effects of the signals one team's work produced (the owner's answers to its
@@ -396,11 +413,19 @@ func lastAndConfirmed(es []timed) (last time.Time, confirmed bool) {
 	return
 }
 
-// Replay computes a line's belief from its prior and effects, a pure function so every machine
+// Replay is a line's belief under Engine.
+func Replay(prior Prior, effects []Effect, now time.Time) Belief {
+	if Engine == "gauss" {
+		return ReplayGauss(prior.Gauss, effects, now)
+	}
+	return ReplayBeta(prior.Beta, effects, now)
+}
+
+// ReplayBeta computes a line's Beta belief from its prior and effects, a pure function so every machine
 // agrees. Signals of one session within an hour are one judgement, not independent evidence, so a
 // burst counts its heaviest member; a line gains at most dailyCap a day. Forgetting is applied
 // here, at read time, and never stored, so a merge can't apply it twice.
-func Replay(prior [2]float64, effects []Effect, now time.Time) Belief {
+func ReplayBeta(prior [2]float64, effects []Effect, now time.Time) Belief {
 	es, bursts := replayBursts(effects)
 	bl := Belief{Alpha: prior[0], Beta: prior[1]}
 	day, spent := "", 0.0
@@ -439,8 +464,12 @@ func finite(xs ...float64) bool {
 	return true
 }
 
-// Guides: the line may steer autonomous decisions, once belief is high and settled.
+// Guides: the line may steer autonomous decisions, once belief is high and settled. A Gaussian's
+// P already holds its doubt, so it needs no Sigma test.
 func (b Belief) Guides(t Thresholds) bool {
+	if b.S2 > 0 {
+		return b.Mu >= t.Guide
+	}
 	return b.Mu >= t.Guide && b.Sigma <= t.SigmaMax
 }
 
@@ -448,4 +477,9 @@ func (b Belief) Guides(t Thresholds) bool {
 func (b Belief) Shown(t Thresholds) bool { return b.Mu >= t.Show }
 
 // Dropped: the owner clearly doesn't want it.
-func (b Belief) Dropped(t Thresholds) bool { return b.Mu < 0.3 && b.Sigma <= t.SigmaMax }
+func (b Belief) Dropped(t Thresholds) bool {
+	if b.S2 > 0 {
+		return b.Mu < DropP
+	}
+	return b.Mu < 0.3 && b.Sigma <= t.SigmaMax
+}

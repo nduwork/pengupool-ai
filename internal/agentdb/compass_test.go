@@ -49,7 +49,7 @@ func TestReplayDailyCap(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		e = append(e, eff(t0.Add(time.Duration(i)*2*time.Hour), fmt.Sprint("s", i), "said", 3, 1))
 	}
-	if b := Replay([2]float64{1, 1}, e, t0); !near(b.Alpha+b.Beta, 2+3) {
+	if b := Replay(Prior{Beta: [2]float64{1, 1}}, e, t0); !near(b.Alpha+b.Beta, 2+3) {
 		t.Errorf("%+v", b)
 	}
 }
