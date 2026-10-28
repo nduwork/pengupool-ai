@@ -782,6 +782,39 @@ type lineUIDIn struct {
 	UID string `json:"uid"`
 }
 
+type compassRestateIn struct {
+	UID  string `json:"uid"`
+	Body string `json:"body"`
+}
+
+// compassRestate replaces a line with the owner's new wording of it: a fresh stated line with the old
+// one's kind and condition, so its belief starts over. Either both happen or neither: the new line is
+// removed again when the old one cannot be.
+func (p *Pool) compassRestate(_ context.Context, in compassRestateIn) (any, error) {
+	db, err := p.agentDB()
+	if err != nil {
+		return nil, err
+	}
+	defer p.lockKey("compass")()
+	old, err := db.Line(in.UID)
+	if err != nil {
+		return nil, notFound("no line %s", in.UID)
+	}
+	l := agentdb.Line{Owner: p.owner(), Kind: old.Kind, Body: in.Body, Condition: old.Condition, Source: "owner"}
+	if err := checkLine(&l); err != nil {
+		return nil, err
+	}
+	uid, err := db.PutLine(l)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.DeleteLine(old.UID); err != nil {
+		_ = db.DeleteLine(uid)
+		return nil, err
+	}
+	return map[string]string{"uid": uid}, nil
+}
+
 func (p *Pool) compassDelete(_ context.Context, in lineUIDIn) (any, error) {
 	db, err := p.agentDB()
 	if err != nil {

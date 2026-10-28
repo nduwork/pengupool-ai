@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -164,5 +165,22 @@ func TestCompassReviewListsConflicted(t *testing.T) {
 	}
 	if !slices.Equal(got, []string{"Use pnpm"}) {
 		t.Fatalf("conflicted = %v (items %+v)", got, items)
+	}
+}
+
+// Restating keeps the line's kind and condition, and replaces the old line.
+func TestCompassRestateKeepsKindAndCondition(t *testing.T) {
+	p, _ := twoTeams(t)
+	old, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Kind: "restriction", Body: "No force-push", Condition: "on main"})
+	res, err := p.compassRestate(context.Background(), compassRestateIn{UID: old, Body: "Never force-push"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := p.db.Line(res.(map[string]string)["uid"])
+	if err != nil || l.Kind != "restriction" || l.Condition != "on main" || l.Body != "Never force-push" {
+		t.Fatalf("restated = %+v %v", l, err)
+	}
+	if _, err := p.db.Line(old); err == nil {
+		t.Fatal("the old line is still there")
 	}
 }

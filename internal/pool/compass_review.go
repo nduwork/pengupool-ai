@@ -172,7 +172,9 @@ func (p *Pool) conflicted(lines []agentdb.Line) []reviewItem {
 		}
 		var up, down bool
 		for _, e := range effects[v.UID] {
-			up, down = up || e.PSup > e.PCon, down || e.PCon > e.PSup
+			if e.Weight > 0 { // a stated line's creating effect is not a pull
+				up, down = up || e.PSup > e.PCon, down || e.PCon > e.PSup
+			}
 		}
 		if up && down {
 			out = append(out, reviewItem{Kind: "conflicted", Why: "your signals pulled it both ways", Lines: []reviewLine{{v.UID, v.Body}}})

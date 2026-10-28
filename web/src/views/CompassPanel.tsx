@@ -267,7 +267,7 @@ function ReviewSheet({ items, onChange }: { items: ReviewItem[]; onChange: () =>
   );
 }
 
-/** Restate a line pulled both ways: a new line in the owner's words replaces it, so it starts as stated. */
+/** Restate a line pulled both ways: a new line in the owner's words replaces it (same kind and condition), so it starts as stated. */
 function Restate({ it, onDone }: { it: ReviewItem; onDone: () => void }): ReactElement {
   const app = useApp();
   const [body, setBody] = useState(it.lines[0].body);
@@ -276,8 +276,7 @@ function Restate({ it, onDone }: { it: ReviewItem; onDone: () => void }): ReactE
       className="flex gap-2"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (body.trim() === "" || (await app.call("compass.save", { kind: "preference", body: body.trim() })) === undefined) return;
-        if ((await app.call("compass.delete", { uid: it.lines[0].uid })) !== undefined) onDone();
+        if (body.trim() !== "" && (await app.call("compass.restate", { uid: it.lines[0].uid, body: body.trim() })) !== undefined) onDone();
       }}
     >
       <Input value={body} onChange={(e) => setBody(e.target.value)} aria-label="Restate the line" />

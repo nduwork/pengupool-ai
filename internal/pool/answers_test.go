@@ -228,6 +228,7 @@ func TestAnswerReplayShadow(t *testing.T) {
 	fired, agreed := 0, 0
 	old := agentdb.Engine
 	agentdb.Engine = "gauss"
+	t.Cleanup(func() { agentdb.Engine = old })
 	for i, e := range es {
 		at, _ := time.Parse(time.RFC3339, e.At)
 		if agentdb.AnswerGuides(agentdb.PriorChose, es[:i], at) {

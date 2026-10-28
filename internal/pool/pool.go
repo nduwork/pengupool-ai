@@ -354,6 +354,7 @@ func (p *Pool) handlers() map[string]handler {
 		"compass.list":          bind(p.compassList),
 		"compass.save":          bind(p.compassSave),
 		"compass.delete":        bind(p.compassDelete),
+		"compass.restate":       bind(p.compassRestate),
 		"compass.merge":         bind(p.compassMerge),
 		"compass.review":        bind(p.compassReview),
 		"compass.apply_merge":   bind(p.compassApplyMerge),
