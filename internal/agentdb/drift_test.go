@@ -16,9 +16,10 @@ import (
 //
 // The "pahf" scenario takes its drift from PAHF's shopping personas (github.com/facebookresearch/PAHF,
 // MIT License, Copyright (c) Meta Platforms, Inc. and affiliates): of 1200 preference lines (300
-// favourite options, 900 dislikes) 682 change between persona_info.json and updated_persona_info.json,
+// favourite options, 900 dislikes, not counting like_second) 682 change between persona_info.json and updated_persona_info.json,
 // all at once, between its learning phases; here at month 18.
 func TestDriftBenchmark(t *testing.T) {
+	pahfLine := 0
 	scenarios := []struct {
 		name  string
 		lines int
@@ -26,7 +27,7 @@ func TestDriftBenchmark(t *testing.T) {
 	}{
 		{"simulated", 300, func(r *rand.Rand) (int, int) { return r.IntN(3), 3 + r.IntN(16) }},
 		{"pahf", 1200, func(r *rand.Rand) (int, int) {
-			if r.IntN(1200) < 682 {
+			if pahfLine++; pahfLine <= 682 {
 				return 1, 18
 			}
 			return 0, 0

@@ -639,6 +639,14 @@ func TestMixedMessageStatesPreference(t *testing.T) {
 	if err := wordWith(t, p, lead.ID, word); err != nil || len(signalKinds(t, st)) != 2 {
 		t.Fatalf("the quoted message: %v", signalKinds(t, st))
 	}
+	// A correction that sets a rule for a narrower situation changes nothing but adds a line.
+	place(fakeTriage{signal: "correction", changes: "no", states: "yes"}, "no, when the tests are slow run them in the background")
+	if err := wordWith(t, p, lead.ID, word); err != nil {
+		t.Fatal(err)
+	}
+	if ks := signalKinds(t, st); len(ks) != 3 || ks[2] != "said" {
+		t.Fatalf("a narrower rule in a correction: %v", ks)
+	}
 }
 
 // Without a decision model every owner prompt reaches the session's own agent, with the lines it may
