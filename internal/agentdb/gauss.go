@@ -1,6 +1,9 @@
 package agentdb
 
-import "math"
+import (
+	"math"
+	"time"
+)
 
 // Gauss is a line's belief as N(M, S2) on a latent "the owner wants this" strength, read as
 // P = Φ(M/√S2). It runs in shadow beside the Beta belief (docs/research/2026-10-27-bayesian-memory).
@@ -57,3 +60,44 @@ func (g Gauss) forget(months float64) Gauss {
 	g.S2 = max(g.S2, min(g.S2+Tau2*months, c))
 	return g
 }
+
+// ReplayGauss is Replay with a Gaussian belief: the same bursts and daily cap, each burst a probit
+// update after the silence before it has added doubt, and forgetting again up to now.
+func ReplayGauss(prior Gauss, effects []Effect, now time.Time) Belief {
+	es, bursts := replayBursts(effects)
+	g := prior
+	var last time.Time
+	day, spent := "", 0.0
+	for i, b := range bursts {
+		if i > 0 {
+			g = g.forget(months(last, b.start))
+		}
+		last = b.start
+		e := b.best
+		w, r := e.Weight, e.PSup+e.PCon
+		if w <= 0 || r <= 0 {
+			continue
+		}
+		if d := b.start.UTC().Format(time.DateOnly); d != day {
+			day, spent = d, 0
+		}
+		k := min(1, max(dailyCap-spent, 0)/(w*r))
+		spent += w * r * k
+		if k <= 0 {
+			continue
+		}
+		if e.Kind == "correction" && e.PCon > e.PSup {
+			g.S2 = max(g.S2, S0Sq) // a correction says things changed: re-open the line first
+		}
+		g = g.update(e.PSup-e.PCon, Beta0/(w*k))
+	}
+	var bl Belief
+	bl.Last, bl.Confirmed = lastAndConfirmed(es)
+	if len(es) > 0 {
+		g = g.forget(months(bl.Last, now))
+	}
+	bl.M, bl.S2, bl.Mu, bl.N, bl.Sigma = g.M, g.S2, g.P(), 1/g.S2, math.Sqrt(g.S2)
+	return bl
+}
+
+func months(from, to time.Time) float64 { return to.Sub(from).Hours() / 24 / 30 }

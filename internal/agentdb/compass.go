@@ -244,9 +244,11 @@ func (d *DB) UndoSignal(uid string) error {
 }
 
 // Belief is a line's Beta(Alpha, Beta) estimate as read at one moment: Mu = α/(α+β), N the evidence
-// left after forgetting, Sigma the uncertainty.
+// left after forgetting, Sigma the uncertainty. A Gaussian belief (ReplayGauss) sets M and S2
+// instead of Alpha and Beta, and Mu = P, N = 1/S2, Sigma = √S2.
 type Belief struct {
 	Alpha, Beta, Mu, N, Sigma float64
+	M, S2                     float64
 	Last                      time.Time // the latest signal's time
 	Confirmed                 bool      // the owner has chosen or spot-checked in its favour
 }
@@ -341,15 +343,19 @@ func LearnThresholds(outcomes []Outcome, base Thresholds) Thresholds {
 // HardCountSigmaMax is SigmaMax when the decision model is not calibrated (updates are hard counts).
 const HardCountSigmaMax = 0.14
 
-// Replay computes a line's belief from its prior and effects, a pure function so every machine
-// agrees. Signals of one session within an hour are one judgement, not independent evidence, so a
-// burst counts its heaviest member; a line gains at most dailyCap a day. Forgetting is applied
-// here, at read time, and never stored, so a merge can't apply it twice.
-func Replay(prior [2]float64, effects []Effect, now time.Time) Belief {
-	type timed struct {
-		Effect
-		t time.Time
-	}
+type timed struct {
+	Effect
+	t time.Time
+}
+
+type burst struct {
+	start time.Time
+	best  Effect
+}
+
+// replayBursts are the finite effects in a fixed order and the bursts they make: signals of one
+// session within burstWindow count as their heaviest member.
+func replayBursts(effects []Effect) ([]timed, []*burst) {
 	var es []timed
 	for _, e := range effects {
 		if finite(e.Weight, e.PSup, e.PCon) { // a foreign file may hold anything
@@ -361,10 +367,6 @@ func Replay(prior [2]float64, effects []Effect, now time.Time) Belief {
 	slices.SortFunc(es, func(a, b timed) int {
 		return cmp.Or(a.t.Compare(b.t), cmp.Compare(a.Weight, b.Weight), cmp.Compare(a.SignalUID, b.SignalUID))
 	})
-	type burst struct {
-		start time.Time
-		best  Effect
-	}
 	var bursts []*burst
 	open := map[string]*burst{} // by session
 	for _, e := range es {
@@ -377,6 +379,29 @@ func Replay(prior [2]float64, effects []Effect, now time.Time) Belief {
 			b.best = e.Effect
 		}
 	}
+	return es, bursts
+}
+
+// lastAndConfirmed are the latest effect's time and whether the owner has chosen or spot-checked in
+// the line's favour.
+func lastAndConfirmed(es []timed) (last time.Time, confirmed bool) {
+	for _, e := range es {
+		if e.t.After(last) {
+			last = e.t
+		}
+		if (e.Kind == "chose" || e.Kind == "spot_check") && e.PSup > e.PCon {
+			confirmed = true
+		}
+	}
+	return
+}
+
+// Replay computes a line's belief from its prior and effects, a pure function so every machine
+// agrees. Signals of one session within an hour are one judgement, not independent evidence, so a
+// burst counts its heaviest member; a line gains at most dailyCap a day. Forgetting is applied
+// here, at read time, and never stored, so a merge can't apply it twice.
+func Replay(prior [2]float64, effects []Effect, now time.Time) Belief {
+	es, bursts := replayBursts(effects)
 	bl := Belief{Alpha: prior[0], Beta: prior[1]}
 	day, spent := "", 0.0
 	for _, b := range bursts {
@@ -392,14 +417,7 @@ func Replay(prior [2]float64, effects []Effect, now time.Time) Belief {
 		bl.Alpha += da
 		bl.Beta += db
 	}
-	for _, e := range es {
-		if e.t.After(bl.Last) {
-			bl.Last = e.t
-		}
-		if (e.Kind == "chose" || e.Kind == "spot_check") && e.PSup > e.PCon {
-			bl.Confirmed = true
-		}
-	}
+	bl.Last, bl.Confirmed = lastAndConfirmed(es)
 	n := bl.Alpha + bl.Beta
 	bl.Mu = bl.Alpha / n
 	months := 0.0
