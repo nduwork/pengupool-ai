@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 )
@@ -303,7 +302,7 @@ func TestMergeSharedFile(t *testing.T) {
 			t.Errorf("%s entries = %+v", name, l)
 		}
 	}
-	if ts, _ := fileTables(t, file); !slices.Equal(ts, []string{"compass", "experience", "signal_effects", "signals", "tombstones"}) {
+	if ts, _ := fileTables(t, file); !slices.Equal(ts, []string{"compass", "experience", "removed_entries", "signal_effects", "signals", "tombstones"}) {
 		t.Fatalf("the file holds %v", ts)
 	}
 	m, _ := a.Line(ma)
@@ -523,53 +522,25 @@ func TestOpenDropsTeamRecords(t *testing.T) {
 	}
 }
 
-// Full-text search stems words, so a paraphrase finds its line.
-func TestCompassSearchStems(t *testing.T) {
-	d := open(t)
-	uid, _ := d.PutLine(Line{Owner: "me", Body: "The owner prefers pnpm"})
-	if ls, _ := d.Lines("me", "preferred", "", 10); len(ls) != 1 || ls[0].UID != uid {
-		t.Fatalf("preferred found %+v", ls)
-	}
-}
-
-// An index made before stemming is made again with the stemmer when the database opens.
-func TestOldFTSIndexIsRebuiltStemmed(t *testing.T) {
+// A file written by 0.4–0.8 (stemmed indexes, a lesson column and an index over it) opens: the
+// indexes are made again in this version's shape and the entries are kept and found.
+func TestOpensFileWithLessonIndex(t *testing.T) {
 	d, p := openRaw(t)
-	uid, _ := d.PutLine(Line{Owner: "me", Body: "The owner prefers pnpm"})
-	if _, err := d.db.Exec(`DROP TABLE compass_fts; CREATE VIRTUAL TABLE compass_fts USING fts5(body, condition, content='compass', content_rowid='id'); INSERT INTO compass_fts(compass_fts) VALUES ('rebuild');`); err != nil {
-		t.Fatal(err)
-	}
-	d.Close()
-	d2, err := Open(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer d2.Close()
-	var def string
-	_ = d2.db.QueryRow(`SELECT sql FROM sqlite_master WHERE name = 'compass_fts'`).Scan(&def)
-	if !strings.Contains(def, "porter") {
-		t.Fatalf("compass_fts = %s", def)
-	}
-	if ls, _ := d2.Lines("me", "preferred", "", 10); len(ls) != 1 || ls[0].UID != uid {
-		t.Fatalf("preferred found %+v", ls)
-	}
-}
-
-// A journal made before lessons gets the lesson column and an index over it, with its old
-// triggers replaced, so an entry's lesson is found by search.
-func TestJournalBeforeLessonsIsUpgraded(t *testing.T) {
-	d, p := openRaw(t)
-	if _, err := d.AddExperience(Entry{Helper: "h", Title: "old job", Body: "the old body"}); err != nil {
-		t.Fatal(err)
+	if ok, err := d.AddExperience(Entry{Helper: "github.com/o/gcp", At: "2026-01-01T00:00:00Z", Title: "Deploy the API", Body: "Pass --region"}); err != nil || !ok {
+		t.Fatal(ok, err)
 	}
 	for _, q := range []string{
-		`DROP TRIGGER experience_ai`, `DROP TRIGGER experience_ad`, `DROP TRIGGER experience_au`, `DROP TABLE experience_fts`,
-		`CREATE VIRTUAL TABLE experience_fts USING fts5(title, body, content='experience', content_rowid='id', tokenize='porter unicode61')`,
-		`CREATE TRIGGER experience_ai AFTER INSERT ON experience BEGIN INSERT INTO experience_fts(rowid, title, body) VALUES (new.id, new.title, new.body); END`,
-		`INSERT INTO experience_fts(experience_fts) VALUES ('rebuild')`,
+		`ALTER TABLE experience ADD COLUMN lesson TEXT NOT NULL DEFAULT ''`,
+		`DROP TABLE experience_fts`, `DROP TRIGGER experience_ai`, `DROP TRIGGER experience_ad`, `DROP TRIGGER experience_au`,
+		`CREATE VIRTUAL TABLE experience_fts USING fts5(title, lesson, body, content='experience', content_rowid='id', tokenize='porter unicode61')`,
+		`CREATE TRIGGER experience_au AFTER UPDATE ON experience BEGIN
+  INSERT INTO experience_fts(experience_fts, rowid, title, lesson, body) VALUES ('delete', old.id, old.title, old.lesson, old.body);
+  INSERT INTO experience_fts(rowid, title, lesson, body) VALUES (new.id, new.title, new.lesson, new.body); END`,
+		`DROP TABLE compass_fts`,
+		`CREATE VIRTUAL TABLE compass_fts USING fts5(body, condition, content='compass', content_rowid='id', tokenize='porter unicode61')`,
 	} {
 		if _, err := d.db.Exec(q); err != nil {
-			t.Fatal(q, err)
+			t.Fatalf("%s: %v", q, err)
 		}
 	}
 	d.Close()
@@ -578,13 +549,7 @@ func TestJournalBeforeLessonsIsUpgraded(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d2.Close()
-	if _, err := d2.AddExperience(Entry{Helper: "h", Title: "new job", Lesson: "migrations need a dry run", Body: "the new body"}); err != nil {
-		t.Fatal(err)
-	}
-	if es, _, _ := d2.SearchExperience("h", "", "dry run", 10); len(es) != 1 || es[0].Lesson != "migrations need a dry run" {
-		t.Fatalf("lesson search: %+v", es)
-	}
-	if es, _, _ := d2.SearchExperience("h", "", "old", 10); len(es) != 1 || es[0].Title != "old job" {
-		t.Fatalf("old entry search: %+v", es)
+	if hits, total, err := d2.SearchExperience("github.com/o/gcp", "", "deploy", 5); err != nil || total != 1 || len(hits) != 1 {
+		t.Fatalf("search after open: %+v %d %v", hits, total, err)
 	}
 }

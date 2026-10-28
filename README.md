@@ -68,7 +68,7 @@ DESIGN.md, spec at `/api/muse/v1/openapi.json`).
 
 ## Status
 
-v0.2.0: PenguPool2 app base (host daemon/gateway/PTY workers, Electron shell,
+v0.2.0: app base (host daemon/gateway/PTY workers, Electron shell,
 full web terminal UI) rebranded as PenguPool AI, with the owner-confirmed
 Compass integrated into session context and shipped as the `pengu` CLI + MCP
 server in the same DMG.
@@ -84,7 +84,7 @@ v0.5.0: the Helper agent hub is `pengupool-agent-hub` (reads its
 `.pengupool/catalog.json`); the agent picker lists only installed agents plus
 a Terminal option for any other; Settings lists detected agents and drops the
 OMP/pi binary-path fields.
-v0.6.0: from PenguPool2 0.23.0, terminal scrollback kept across session
+v0.6.0: terminal scrollback kept across session
 switches, flexible teams (no size cap, drop on a group, split a subtree) and
 backup renamed to sync; agent sessions are resumed automatically after a
 power off or crash.
@@ -115,7 +115,7 @@ sharing one store (a dev app and a release app) restart each other's host at
 each launch; the app's log says so.
 v0.8.3: a host that holds the store but no longer answers (run from a disk
 image since ejected) is stopped, killed if it must be, and replaced.
-v0.8.4: the Helper agent hub from PenguPool 0.23: the owner can set the hub's
+v0.8.4: the Helper agent hub: the owner can set the hub's
 repository in the Helper agents page; an install still on the old
 pengupool-marketplace hub moves to pengupool-agent-hub once (helpers, keys and
 journals follow); a bad catalog entry is skipped and named, not fatal.
@@ -123,6 +123,13 @@ v0.8.5: `pengupool doctor` checks the machine and only reads: PenguPool v1
 leftovers, the agent CLIs, a leftover PenguPool MCP server, a Muse plugin that is
 off or calls a missing binary or another store, and a host that is doubled, runs
 from a disk image, or does not answer.
+v0.9.0: updated host and app. Muse Code is an agent (plugin hooks, the hook answer
+cap, Muse's read tools, the Muse app API and device pairing). No Teams page: group
+settings and close are on the map's group frame, closed groups in the map's
+background menu. Copilot, Gemini CLI and OpenCode are experimental agents;
+`pengupool doctor` can clean PenguPool v1 out of Claude's settings. A record
+written by 0.4–0.8 opens: its search indexes are remade and the experience lessons
+column is not kept; update every machine that shares the record together.
 
 ## Credits
 

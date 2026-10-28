@@ -202,7 +202,7 @@ func (p *Pool) deliver(m protocol.TeamMessage) {
 		if err == nil {
 			p.setMessage(m.ID, "delivered", "")
 		}
-	case harness.OMP, harness.Pi:
+	case harness.OMP, harness.Pi, harness.OpenCode:
 		err = p.deliverOMP(to.ID, m.ID, body) // delivered when the extension confirms
 	default:
 		if a, ok := harness.Find(to.Harness); ok && a.Typed {

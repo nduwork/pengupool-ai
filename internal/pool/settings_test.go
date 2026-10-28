@@ -5,8 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 
@@ -65,58 +63,5 @@ func TestProviderModelsKeepsTheKeyToItsAddress(t *testing.T) {
 	}
 	if want := []string{"Bearer saved-key", "Bearer saved-key", "", "Bearer typed"}; !slices.Equal(auths, want) {
 		t.Fatalf("auth headers %q, want %q", auths, want)
-	}
-}
-
-// AgentBins validation on save: absolute path to an existing regular
-// executable, a known agent id; empty clears.
-func TestAgentBinsValidation(t *testing.T) {
-	st, err := store.Open(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := New(Options{Store: st, Exe: "pengupool"})
-	dir := t.TempDir()
-	exe := filepath.Join(dir, "pi")
-	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	sub := filepath.Join(dir, "sub")
-	if err := os.Mkdir(sub, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	plain := filepath.Join(dir, "plain")
-	if err := os.WriteFile(plain, []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	bad := map[string]map[string]string{
-		"relative":  {"pi": "rel/pi"},
-		"missing":   {"pi": filepath.Join(dir, "nope")},
-		"directory": {"pi": sub},
-		"nonexec":   {"pi": plain},
-	}
-	for name, bins := range bad {
-		if _, err := call(t, p, true, "settings.save", map[string]any{"agent_bins": bins}); err == nil {
-			t.Fatalf("%s accepted: %v", name, bins)
-		}
-	}
-	if _, err := call(t, p, true, "settings.save", map[string]any{"agent_bins": map[string]string{"pi": exe, "omp": ""}}); err != nil {
-		t.Fatal(err)
-	}
-	if got := st.Config().AgentBins; len(got) != 1 || got["pi"] != exe {
-		t.Fatalf("bins = %v", got)
-	}
-	// An id other than OMP/pi (an older save sent back by the UI) is dropped, never fails the save.
-	if _, err := call(t, p, true, "settings.save", map[string]any{"agent_bins": map[string]string{"pi": exe, "claude": exe, "wat": exe}}); err != nil {
-		t.Fatal(err)
-	}
-	if got := st.Config().AgentBins; len(got) != 1 || got["pi"] != exe {
-		t.Fatalf("other ids kept: %v", got)
-	}
-	if _, err := call(t, p, true, "settings.save", map[string]any{"agent_bins": map[string]string{}}); err != nil {
-		t.Fatal(err)
-	}
-	if got := st.Config().AgentBins; len(got) != 0 {
-		t.Fatalf("clear: %v", got)
 	}
 }

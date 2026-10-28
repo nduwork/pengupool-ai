@@ -27,16 +27,11 @@ export function groupLines(lines: Line[]): Array<{ title: string; lines: Line[] 
     .filter((g) => g.lines.length > 0);
 }
 
-/** One thing compass.review asks the owner to tidy: a broad line (remove it or keep it), lines to merge into patterns, or a line pulled both ways (restate or remove it). */
+/** One thing compass.review asks the owner to tidy: a broad line (remove it or keep it), or lines to merge into patterns. */
 export interface ReviewItem {
-  kind: "broad" | "merge" | "conflicted";
-  way?: "allow" | "deny";
+  kind: "broad" | "merge";
+  way: "allow" | "deny";
   why: string;
   lines: { uid: string; body: string }[];
   patterns?: string[];
-}
-
-/** The heading of a review item. */
-export function reviewTitle(it: ReviewItem): string {
-  return { broad: "Broad", merge: "Merge", conflicted: "Pulled both ways" }[it.kind] + ": " + it.why;
 }

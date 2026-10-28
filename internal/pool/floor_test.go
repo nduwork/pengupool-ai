@@ -139,6 +139,14 @@ func TestToolFloorWritesAndMCP(t *testing.T) {
 	}
 }
 
+func TestCopilotPayloadIsNormalised(t *testing.T) {
+	pl := map[string]any{"toolName": "bash", "toolArgs": `{"command":"git push --force"}`}
+	copilotTool(pl)
+	if got := toolFloor(pl["tool_name"].(string), pl["tool_input"]); got == "" {
+		t.Errorf("copilot's call passed the floor: %v", pl)
+	}
+}
+
 // A variable the command itself sets to a literal, in a statement that always runs, is read as its
 // value: setting a tool's path once and reusing it is no indirection. Anything else is still judged
 // unseen, and a literal that names a floor command still hits that command's item.

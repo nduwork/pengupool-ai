@@ -39,12 +39,12 @@ type launchIn struct {
 // launch starts a main session from a local directory, a clone, or a registered repository.
 // The session is not part of a team; a team is formed from a task or by adding sessions.
 func (p *Pool) launch(ctx context.Context, in launchIn) (any, error) {
-	// A session runs a supported agent, or a plain terminal for any other (no hooks, so no status or journal).
+	// A PenguPool session is always an agent runtime; plain terminals belong in the user's terminal app.
 	if in.Harness == "" {
 		in.Harness = harness.Claude
 	}
-	if !harness.IsAgent(in.Harness) && in.Harness != harness.Shell {
-		return nil, invalid("a PenguPool session runs an agent (%s) or a terminal, not %q", agentIDs(), in.Harness)
+	if !harness.IsAgent(in.Harness) {
+		return nil, invalid("a PenguPool session runs an agent (%s), not %q", agentIDs(), in.Harness)
 	}
 	repo, err := p.resolveSource(ctx, in.Source)
 	if err != nil {
@@ -97,16 +97,17 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 			p.logf("pool: trust %s for %s: %v", r.Cwd, r.Harness, err)
 		}
 	}
+	plain := r.Harness == harness.Shell
 	ollama := p.ollamaFor(r.Harness, r.Model)
 	if ollama == nil && strings.HasPrefix(r.Model, ollamaPrefix) {
-		return store.Session{}, invalid("name the Ollama model to run %s on, or set one in Settings → Agents", r.Harness)
+		return store.Session{}, invalid("name the Ollama model to run %s on, or set one in Settings → Agents on this machine", r.Harness)
 	}
 	cmd, env, err := harness.Spec(r.Harness, harness.Params{
 		SessionID: r.ID, Name: r.Name, Cwd: r.Cwd, Exe: p.exe, StoreDir: p.st.Dir(),
 		Model: r.Model, Effort: r.Effort, Resume: r.Resume, Command: r.Command, Env: p.env, Ollama: ollama,
-		SkillRepo: p.skillRepo(r.SkillID), ReadDirs: r.ReadDirs, Bin: p.binFor(r.Harness),
+		SkillRepo: p.skillRepo(r.SkillID), ReadDirs: r.ReadDirs,
 	})
-	if r.Harness == harness.Shell {
+	if plain {
 		env = append([]string(nil), p.env...) // a plain shell is no session: none of the session markers
 	}
 	if err != nil {
@@ -121,14 +122,12 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 		Cols: r.Cols, Rows: r.Rows,
 		Decorate: func(s *store.Session) {
 			s.RunLog = runlog
-			s.LaunchModel, s.LaunchEffort = r.Model, r.Effort
 			// Starting until the agent's SessionStart hook says it is up: a first-run dialog (folder
 			// trust, login) must never receive a typed team message.
-			// A terminal has no hook to clear it, so it never starts.
-			if harness.IsAgent(r.Harness) {
+			if !plain {
 				s.Status = "starting"
+				s.Branch = gitBranch(r.Cwd)
 			}
-			s.Branch = gitBranch(r.Cwd)
 			if r.Decorate != nil {
 				r.Decorate(s)
 			}
@@ -320,7 +319,6 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	keep := s
 	ns, err := p.spawn(ctx, spawnReq{
 		ID: s.ID, Name: s.Name, Harness: s.Harness, Cwd: s.Cwd, Resume: resumeID, Cols: s.Cols, Rows: s.Rows, SkillID: keep.SkillID,
-		Model: s.LaunchModel, Effort: s.LaunchEffort,
 		Decorate: func(n *store.Session) {
 			n.TeamID, n.Role, n.SkillID, n.ConvID, n.Transcript = keep.TeamID, keep.Role, keep.SkillID, keep.ConvID, keep.Transcript
 			if keep.RunLog != "" {
@@ -335,44 +333,8 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	return ns.View(), nil
 }
 
-// restoreGap spaces the sessions RestoreLost resumes.
-var restoreGap = 3 * time.Second
-
-// RestoreLost resumes the agent sessions that were running before this host started and whose
-// workers did not survive (the machine powered off or crashed): the hub marked them lost. A session
-// the owner stopped, or one that exited on its own, is not touched; a terminal cannot be resumed.
-func (p *Pool) RestoreLost(ctx context.Context, wasRunning []string) {
-	n := 0
-	for _, id := range wasRunning {
-		s, ok := p.session(id)
-		if !ok || s.State != "lost" || !harness.IsAgent(s.Harness) || !p.onThisHost(s.NodeID) {
-			continue
-		}
-		// ponytail: one at a time, a few seconds apart, so a reboot does not start every agent at once;
-		// a Settings switch or a cap when someone keeps many sessions.
-		if n > 0 {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(restoreGap):
-			}
-		}
-		n++
-		if _, err := p.resume(ctx, sessionIn{SessionID: id}); err != nil {
-			p.logf("pool: restore %s after the host restarted: %v", s.Name, err)
-			continue
-		}
-		p.logf("pool: restored %s after the host restarted", s.Name)
-	}
-}
-
 // forget drops an ended session's record. A running session must be stopped first.
 func (p *Pool) forget(_ context.Context, in sessionIn) (any, error) {
-	defer func() {
-		p.mu.Lock()
-		delete(p.journalShown, in.SessionID)
-		p.mu.Unlock()
-	}()
 	return nil, p.update(func(st *store.State) error {
 		i := sessionIndex(st, in.SessionID)
 		if i < 0 {
@@ -424,7 +386,7 @@ func (p *Pool) harnessProbe(_ context.Context, _ struct{}) (any, error) {
 	out := map[string]map[string]string{}
 	for _, a := range harness.Agents {
 		k := a.ID
-		v, err := harness.Probe(k, p.env, p.binFor(k))
+		v, err := harness.Probe(k, p.env)
 		r := map[string]string{"version": v}
 		if err != nil {
 			r["error"] = err.Error()
@@ -441,14 +403,6 @@ func agentIDs() string {
 		ids[i] = a.ID
 	}
 	return strings.Join(ids, ", ")
-}
-
-// binFor returns the configured binary override for an agent, or "".
-func (p *Pool) binFor(kind string) string {
-	if b, ok := p.st.Config().AgentBins[kind]; ok {
-		return strings.TrimSpace(b)
-	}
-	return ""
 }
 
 // ollamaPrefix marks a session's model as an Ollama model: "ollama/qwen3-coder".

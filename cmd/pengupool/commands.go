@@ -29,19 +29,6 @@ func logf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "pengupool: "+format+"\n", args...)
 }
 
-// hostVersionFile, under the store directory, is the version line the running daemon wrote at
-// startup. The desktop app compares it with its bundled host and restarts one that is not its
-// own build.
-const hostVersionFile = "run/host.version"
-
-// writeHostVersion records the running host's build for the desktop app.
-func writeHostVersion(dir, line string) error {
-	if err := os.MkdirAll(filepath.Join(dir, "run"), 0o700); err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, hostVersionFile), []byte(line+"\n"), 0o600)
-}
-
 // hubSessions adapts *hub.Hub to the gateway's session interface. The adapter lives here, in the
 // one package that is allowed to know about both, which keeps the two packages independent.
 type hubSessions struct {
@@ -124,13 +111,6 @@ func cmdDaemon(args []string) error {
 		return err
 	}
 	defer lock.Release()
-	// The desktop app restarts a host that is not its own build: after an update installed by
-	// hand the old daemon still runs, and the new renderer asks it for requests it does not
-	// know. The version line the app compares against lives here, next to the address and the
-	// token; a daemon that predates this file reads as another build.
-	if err := writeHostVersion(dir, versionLine()); err != nil {
-		logf("host version: %v", err)
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -138,14 +118,6 @@ func cmdDaemon(args []string) error {
 	h, err := hub.New(hub.Options{Store: st, Executable: selfPath(), Logf: logf})
 	if err != nil {
 		return err
-	}
-	// The sessions running when the host last stopped: any whose worker is gone now (power off, crash)
-	// are resumed once the host listens, so their hooks reach it.
-	var wasRunning []string
-	for _, s := range st.State().Sessions {
-		if s.State == "running" {
-			wasRunning = append(wasRunning, s.ID)
-		}
 	}
 	if err := h.Start(ctx); err != nil {
 		return err
@@ -180,7 +152,6 @@ func cmdDaemon(args []string) error {
 	}
 	pl.SetRevoker(srv.Revoke)
 	pool.HTTPAddr = srv.HTTPAddr
-	go pl.HealTailscaleServe() // re-serve after a port change; owner's home only
 	pool.Restarter = func() {
 		logf("restarting to apply listener settings; sessions keep running")
 		lock.Release()
@@ -200,7 +171,6 @@ func cmdDaemon(args []string) error {
 				logf("host listening on %s", bound)
 				logf("unix socket %s", srv.SocketPath())
 				logf("browser app: %s", browserURL(dir, bound))
-				pl.RestoreLost(ctx, wasRunning)
 				return
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -266,7 +236,7 @@ func cmdNew(args []string) error {
 	storeFlag := fs.String("store", "", "store directory")
 	name := fs.String("name", "", "session name (default: <folder>-<harness>)")
 	cwd := fs.String("cwd", "", "working directory (default: the current directory)")
-	harnessFlag := fs.String("harness", "claude", "agent runtime: claude, muse, omp, pi or codex")
+	harnessFlag := fs.String("harness", "claude", "agent runtime: claude, omp, pi, codex or copilot")
 	model := fs.String("model", "", "model (default: the harness default)")
 	raw := fs.Bool("raw", false, "tests only: run the command after -- as a plain, non-agent session")
 	if err := fs.Parse(args); err != nil {
@@ -284,7 +254,7 @@ func cmdNew(args []string) error {
 		}
 	}
 	if len(rest) > 0 {
-		return fmt.Errorf("a PenguPool session runs an agent (--harness claude|muse|omp|pi|codex), not a command")
+		return fmt.Errorf("a PenguPool session runs an agent (--harness claude|omp|pi|codex|copilot), not a command")
 	}
 	if *cwd == "" {
 		wd, err := os.Getwd()

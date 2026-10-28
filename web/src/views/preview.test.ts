@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { shortTime } from "../lib/utils";
-import { frameDoc, previewKind, withDiagrams } from "./Editors";
+import { frameDoc, previewKind } from "./Editors";
 
 describe("file previews", () => {
   it("picks a preview by extension", () => {
     expect(previewKind("docs/README.md")).toBe("markdown");
     expect(previewKind("site/Index.HTML")).toBe("html");
     expect(previewKind("logo.svg")).toBe("image");
-    expect(previewKind("spec.PDF")).toBe("pdf");
     expect(previewKind("main.go")).toBeNull();
   });
 
@@ -18,11 +17,6 @@ describe("file previews", () => {
     expect(md).toContain('<base href="http://h/api/raw/s/c/docs/">');
     expect(frameDoc("html", "<html><head><title>t</title></head></html>", "http://h/x/")).toContain('<head><base href="http://h/x/">');
     expect(frameDoc("html", "<p>hi</p>", undefined)).toBe("<p>hi</p>");
-  });
-
-  it("leaves a document without Mermaid blocks as it is", async () => {
-    const md = frameDoc("markdown", "```go\nx := 1\n```", undefined);
-    expect(await withDiagrams(md, false)).toBe(md);
   });
 
   it("shows a modification time as ls long-iso does", () => {

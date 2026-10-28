@@ -22,6 +22,21 @@ import (
 // block agent work: the CLI gives up quickly and exits 0 when the daemon is not answering. Checked
 // operations (a SendMessage to a peer) fail closed only on an explicit refusal.
 
+type hookIn struct {
+	SessionID string            `json:"session_id"`
+	Harness   string            `json:"harness"`
+	Event     string            `json:"event"`
+	Payload   json.RawMessage   `json:"payload,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+}
+
+// HookOut is what the CLI prints and how it exits.
+type HookOut struct {
+	Stdout string `json:"stdout,omitempty"`
+	Stderr string `json:"stderr,omitempty"`
+	Exit   int    `json:"exit"`
+}
+
 // resolveMuseSession maps a Muse hook to its pool session. Muse scrubs the hook environment, so the
 // hook names no session. When the calling process is known, the session is the live Muse session whose
 // process it runs under: nothing else, so an agent in another session cannot speak as it, and two Muse
@@ -86,6 +101,7 @@ func museLive(s store.Session) bool {
 }
 
 // sameDir reports whether two working directories are the same folder,
+// sameDir reports whether two working directories are the same folder,
 // through symlinks (/tmp vs /private/tmp) as well as literally.
 func sameDir(a, b string) bool {
 	if a == b {
@@ -94,21 +110,6 @@ func sameDir(a, b string) bool {
 	ra, errA := filepath.EvalSymlinks(a)
 	rb, errB := filepath.EvalSymlinks(b)
 	return errA == nil && errB == nil && ra == rb
-}
-
-type hookIn struct {
-	SessionID string            `json:"session_id"`
-	Harness   string            `json:"harness"`
-	Event     string            `json:"event"`
-	Payload   json.RawMessage   `json:"payload,omitempty"`
-	Env       map[string]string `json:"env,omitempty"`
-}
-
-// HookOut is what the CLI prints and how it exits.
-type HookOut struct {
-	Stdout string `json:"stdout,omitempty"`
-	Stderr string `json:"stderr,omitempty"`
-	Exit   int    `json:"exit"`
 }
 
 // hookEvent is a hook with no known calling process (tests): see hookEventFrom.
@@ -122,8 +123,8 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	var pl map[string]any
 	_ = json.Unmarshal(in.Payload, &pl)
 	if in.Harness == harness.Muse {
-		// Muse scrubs the hook environment, so the session is resolved
-		// for every event, in this one place.
+		// Muse scrubs the hook environment, so the session is resolved for every event, in this
+		// one place.
 		s, ok := p.resolveMuseSession(c, pl)
 		if !ok {
 			return HookOut{}, nil // outside PenguPool, or the daemon just started: untouched
@@ -133,6 +134,9 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	s, ok := p.session(in.SessionID)
 	if !ok {
 		return HookOut{}, nil // not a pool session: say nothing
+	}
+	if pl != nil {
+		copilotTool(pl)
 	}
 	str := func(k string) string { v, _ := pl[k].(string); return v }
 	// Activity time drives the map's Stale state; written at most every 30 s.
@@ -161,11 +165,14 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	switch in.Event {
 	case "SessionStart":
 		conv, transcript := firstNonEmpty(str("session_id"), str("sessionId")), firstNonEmpty(str("transcript_path"), str("transcriptPath"))
+		a, _ := harness.Find(s.Harness)
 		if sock := in.Env["CLAUDE_CODE_MESSAGING_SOCKET"]; sock != "" {
 			p.setInbox(s.ID, claudeInbox{Socket: sock, Token: in.Env["CLAUDE_CODE_MESSAGING_TOKEN"]})
 		}
 		p.setSession(s.ID, func(x *store.Session) {
-			x.Status = "idle"
+			if !a.EarlyStart || x.Status != "starting" {
+				x.Status = "idle"
+			}
 			if conv != "" {
 				x.ConvID = conv
 			}
@@ -176,7 +183,6 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		p.logLine(s.ID, fmt.Sprintf("session: %s started (%s)", s.Harness, firstNonEmpty(str("source"), "startup")))
 		p.mu.Lock()
 		delete(p.injected, s.ID)
-		delete(p.journalShown, s.ID)
 		p.mu.Unlock()
 		return p.contextOut(s.ID, "SessionStart", p.journalAtStart(s)), nil
 	case "UserPromptSubmit":
@@ -270,7 +276,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 				p.logLine(s.ID, "permission: declined for the owner, who declined "+why+" before")
 				return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 					"hookEventName": "PermissionRequest",
-					"decision":      map[string]any{"behavior": "deny", "message": "PenguPool: the owner declined " + why + " before."},
+					"decision":      map[string]any{"behavior": "deny", "message": "PenguPool: the owner declined " + why + " before. Ask them if it is needed now."},
 				}}), nil
 			}
 		}
@@ -373,6 +379,26 @@ func (p *Pool) expireStaleApprovals() {
 		}
 		return nil
 	})
+}
+
+// copilotTool gives a Copilot tool hook's camelCase payload (toolName, toolArgs as a JSON string)
+// the names the other harnesses use (tool_name, tool_input).
+func copilotTool(pl map[string]any) {
+	if n, _ := pl["toolName"].(string); n != "" && pl["tool_name"] == nil {
+		pl["tool_name"] = n
+	}
+	if pl["tool_input"] != nil {
+		return
+	}
+	switch a := pl["toolArgs"].(type) {
+	case string:
+		var m map[string]any
+		if json.Unmarshal([]byte(a), &m) == nil {
+			pl["tool_input"] = m
+		}
+	case map[string]any:
+		pl["tool_input"] = a
+	}
 }
 
 // guardSendMessage checks a Claude SendMessage to another session: only its parent or a child on
@@ -556,20 +582,11 @@ func (p *Pool) contextOut(id, event string, extra ...string) HookOut {
 	if text == "" {
 		return HookOut{}
 	}
+	if s, _ := p.session(id); s.Harness == harness.Copilot {
+		return hookJSON(map[string]any{"additionalContext": text})
+	}
 	return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 		"hookEventName": event, "additionalContext": text}})
-}
-
-// hookOutCap is the hook answer budget for id's harness in bytes, 0 for uncapped.
-func (p *Pool) hookOutCap(id string) int {
-	s, ok := p.session(id)
-	if !ok {
-		return 0
-	}
-	if a, ok := harness.Find(s.Harness); ok {
-		return a.HookOutCap
-	}
-	return 0
 }
 
 // contextSections splits rendered context at its "## " headings; the text before the first one is
@@ -640,4 +657,16 @@ func (p *Pool) loadInboxes() {
 			p.msgSock[id] = ib
 		}
 	}
+}
+
+// hookOutCap is the hook answer budget for id's harness in bytes, 0 for uncapped.
+func (p *Pool) hookOutCap(id string) int {
+	s, ok := p.session(id)
+	if !ok {
+		return 0
+	}
+	if a, ok := harness.Find(s.Harness); ok {
+		return a.HookOutCap
+	}
+	return 0
 }

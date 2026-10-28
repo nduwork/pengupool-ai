@@ -1,7 +1,7 @@
 import { FolderOpen, GitBranch } from "lucide-react";
 import { useEffect, useState, type ReactElement } from "react";
 
-import { AGENTS, CLAUDE_OLLAMA, TERMINAL, agentOptions, harnessLabel, launchAgent, useApp, usePersisted } from "../app/ctx";
+import { AGENTS, CLAUDE_OLLAMA, agentOptions, harnessLabel, launchAgent, useApp, usePersisted } from "../app/ctx";
 import { localDesktop } from "../app/desktop";
 import { FolderBrowser } from "../components/FolderBrowser";
 import { Button } from "../components/ui/button";
@@ -11,7 +11,7 @@ import { cn } from "../lib/utils";
 import type { SessionView } from "../protocol/control";
 import { GitHubRepoPicker } from "./GitHub";
 
-// New session: an agent runtime (Claude Code, Muse Code, OMP, pi or Codex) in a folder. Two paths, as the plan defines
+// New session: an agent runtime (Claude Code, OMP, pi, Codex or Copilot) in a folder. Two paths, as the plan defines
 // them: use a local repository, folder or existing worktree as it is, or clone a Git repository into
 // a new destination. A parent puts the new session under that session on the map; it may run a
 // different agent, since team messages go through PenguPool.
@@ -31,11 +31,11 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
   const [savedHarness, setSavedHarness] = usePersisted("new.harness", "claude");
   // A child starts on its parent's agent unless another is picked.
   const [harness, setHarnessState] = useState<string>(
-    AGENTS.some((a) => a.id === parent?.harness) ? (parent?.harness ?? "claude") : AGENTS.some((a) => a.id === savedHarness) || savedHarness === CLAUDE_OLLAMA || savedHarness === TERMINAL ? savedHarness : "claude",
+    AGENTS.some((a) => a.id === parent?.harness) ? (parent?.harness ?? "claude") : AGENTS.some((a) => a.id === savedHarness) || savedHarness === CLAUDE_OLLAMA ? savedHarness : "claude",
   );
   const setHarness = (h: string): void => {
     setHarnessState(h);
-    if (h !== TERMINAL) setSavedHarness(h); // a one-off terminal never becomes the default
+    setSavedHarness(h);
   };
   // Which agents are installed on this machine (version, or why not).
   const [found, setFound] = useState<Record<string, { version: string; error?: string }> | null>(null);
@@ -43,7 +43,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
     void app.conn.request<Record<string, { version: string; error?: string }>>("harness.probe").then(setFound, () => setFound({}));
   }, []);
   const [model, setModel] = useState("");
-  // Which agents run on a local Ollama model (Settings → Models & agents → Agents).
+  // Which agents run on a local Ollama model (Settings → Models & agents → Agents on this machine).
   const [models, setModels] = useState<{ ollama_model?: string; ollama?: string[] | null } | null>(null);
   useEffect(() => {
     void app.conn.request<{ agent_models?: { ollama_model?: string; ollama?: string[] | null } }>("settings.get").then(
@@ -53,11 +53,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
   }, []);
   const onOllama =
     harness === CLAUDE_OLLAMA ? model.trim() || models?.ollama_model || "name a model below" : (models?.ollama ?? []).includes(harness) ? model.trim() || models?.ollama_model || "" : "";
-  const missing = (id: string): boolean => (id === TERMINAL ? false : id === CLAUDE_OLLAMA ? missing("claude") : found !== null && found[id] !== undefined && found[id].error !== undefined);
-  // The remembered or parent's agent may not be installed here: fall back to a terminal (or, under a parent, an installed agent).
-  useEffect(() => {
-    if (found !== null && missing(harness)) setHarnessState(parentId === undefined ? TERMINAL : (AGENTS.find((a) => !missing(a.id))?.id ?? "claude"));
-  }, [found]);
+  const missing = (id: string): boolean => (id === CLAUDE_OLLAMA ? missing("claude") : found !== null && found[id] !== undefined && found[id].error !== undefined);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const recent = [...new Set([...app.domain.repos.map((r) => r.path), ...app.sessions.map((s) => s.cwd)])];
@@ -108,7 +104,6 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
 
   const valid =
     (kind === "local" ? path.trim() !== "" : url.trim() !== "" && dest.trim() !== "") &&
-    found !== null &&
     !missing(harness) &&
     (harness !== CLAUDE_OLLAMA || model.trim() !== "" || (models?.ollama_model ?? "") !== "");
 
@@ -139,9 +134,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
       >
         <Label
           hint={
-            harness === TERMINAL
-              ? "A plain shell in the folder: run any agent by hand. PenguPool adds no hooks, so no status or journal."
-              : found === null
+            found === null
               ? "Checking which agents are installed…"
               : (found[launchAgent(harness, "").harness]?.error ??
                 `${AGENTS.find((a) => a.id === launchAgent(harness, "").harness)?.hint ?? ""} · ${found[launchAgent(harness, "").harness]?.version ?? ""}${onOllama !== "" ? ` · runs on Ollama: ${onOllama}` : ""}`)
@@ -149,7 +142,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
         >
           Agent
           <Select value={harness} onChange={(e) => setHarness(e.target.value)} aria-label="Agent runtime" autoFocus>
-            {agentOptions(AGENTS, missing, (id) => (parent !== undefined && parent.harness === id ? " (same as parent)" : ""), parentId === undefined)}
+            {agentOptions(AGENTS, missing, (id) => (parent !== undefined && parent.harness === id ? " (same as parent)" : ""))}
           </Select>
         </Label>
 
@@ -238,10 +231,10 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
             Name
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={valid ? defaultName() : "defaults to the folder"} />
           </Label>
-          {harness === TERMINAL ? null : <Label>
+          <Label>
             Model <span className="font-normal text-faint">{harness === CLAUDE_OLLAMA && (models?.ollama_model ?? "") === "" ? "required" : "optional"}</span>
             <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder={harness === CLAUDE_OLLAMA ? (models?.ollama_model ?? "an Ollama model, e.g. qwen3-coder") : "harness default"} />
-          </Label>}
+          </Label>
         </div>
         {launchAgent(harness, "").harness === "claude" ? (
           <p className="rounded-md bg-muted p-2.5 text-caption text-muted-foreground">The first time Claude Code opens a folder it asks whether you trust it. Answer in the terminal below.</p>

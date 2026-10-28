@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -120,4 +121,12 @@ func EnsureMusePlugin(storeDir, exe string, env []string, logf func(string, ...a
 	}
 	_ = os.WriteFile(marker, []byte(sum), 0o600)
 	logf("muse plugin: installed and approved")
+}
+
+// firstLine is the first line of a command's output, for a one-line error.
+func firstLine(b []byte) string {
+	if i := bytes.IndexByte(b, '\n'); i >= 0 {
+		return string(b[:i])
+	}
+	return string(b)
 }

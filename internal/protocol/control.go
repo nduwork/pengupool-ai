@@ -174,7 +174,7 @@ func ErrorMessage(requestID string, err error) *Message {
 	return &Message{ID: requestID, Type: TypeError, Code: CodeOf(err), Message: err.Error()}
 }
 
-// NewID returns a UUIDv7, the record id and request id format used across PenguPool 2.0.
+// NewID returns a UUIDv7, the record id and request id format used across PenguPool AI.
 func NewID() string {
 	id, err := uuid.NewV7()
 	if err != nil {

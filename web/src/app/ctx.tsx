@@ -115,13 +115,13 @@ const STALE_MS = 10 * 60 * 1000;
 export const AGENTS = [
   { id: "claude", label: "Claude Code", hint: "Anthropic's coding agent", clear: "/clear", experimental: false },
   { id: "muse", label: "Muse Code", hint: "Meta's coding agent", clear: "", experimental: false },
-  { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", experimental: false },
-  { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", experimental: false },
-  { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", experimental: false },
+  { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", experimental: true },
+  { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", experimental: true },
+  { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", experimental: true },
+  { id: "copilot", label: "GitHub Copilot", hint: "GitHub Copilot CLI", clear: "/clear", experimental: true },
+  { id: "opencode", label: "OpenCode", hint: "open-source coding agent", clear: "/new", experimental: true },
+  { id: "gemini", label: "Gemini CLI", hint: "Google's agent (Google login)", clear: "/clear", experimental: true },
 ] as const;
-
-/** The picker's choice for a plain terminal: any agent PenguPool has no integration for, started by hand. */
-export const TERMINAL = "shell";
 
 /** The picker's choice for Claude Code on an Ollama model, launched with `ollama launch claude`. */
 export const CLAUDE_OLLAMA = "claude-ollama";
@@ -129,31 +129,29 @@ export const CLAUDE_OLLAMA = "claude-ollama";
 /** What a picked agent launches: Claude on Ollama is Claude with the model "ollama/<model>" ("ollama/" for the configured one). */
 export function launchAgent(choice: string, model: string): { harness: string; model?: string } {
   const m = model.trim();
-  if (choice === TERMINAL) return { harness: choice };
   if (choice === CLAUDE_OLLAMA) return { harness: "claude", model: `ollama/${m}` };
   return { harness: choice, model: m === "" ? undefined : m };
 }
 
-/** The agent picker's options: the agents installed here (Claude Code on Ollama right after Claude Code), then a plain terminal. */
-export function agentOptions(agents: readonly { id: string; label: string; experimental: boolean }[], missing: (id: string) => boolean, note: (id: string) => string = () => "", terminal = true): ReactElement[] {
+/** The agent picker's options, Claude Code on Ollama right after Claude Code. */
+export function agentOptions(agents: readonly { id: string; label: string; experimental: boolean }[], missing: (id: string) => boolean, note: (id: string) => string = () => ""): ReactElement[] {
   const out: ReactElement[] = [];
   for (const a of agents) {
-    if (missing(a.id)) continue;
     out.push(
-      <option key={a.id} value={a.id}>
+      <option key={a.id} value={a.id} disabled={missing(a.id)}>
         {a.label}
         {a.experimental ? " (experimental)" : ""}
+        {missing(a.id) ? " — not installed" : ""}
         {note(a.id)}
       </option>,
     );
     if (a.id === "claude")
       out.push(
-        <option key={CLAUDE_OLLAMA} value={CLAUDE_OLLAMA}>
-          Claude Code (Ollama)
+        <option key={CLAUDE_OLLAMA} value={CLAUDE_OLLAMA} disabled={missing("claude")}>
+          Claude Code (Ollama){missing("claude") ? " — not installed" : ""}
         </option>,
       );
   }
-  if (terminal) out.push(<option key={TERMINAL} value={TERMINAL}>Terminal (any other agent)</option>);
   return out;
 }
 

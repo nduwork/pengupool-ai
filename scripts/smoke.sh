@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end acceptance for the PenguPool 2.0 M1 slice. It is the executable form of the exit
+# End-to-end acceptance for the PenguPool AI M1 slice. It is the executable form of the exit
 # conditions in docs/design/m1-contract.md: a real daemon, a real PTY, a real attach over a pty, and
 # a worker that outlives its daemon.
 #

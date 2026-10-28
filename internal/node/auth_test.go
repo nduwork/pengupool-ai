@@ -39,7 +39,7 @@ const testPassword = `p"a ss\wörd`
 const fakePenguPool = "#!/bin/sh\ncase \"$1\" in version) echo 'pengupool test (protocol v1)';; bridge) [ \"$2\" = --claim ] || exit 1;; ls) [ -f \"$HOME/.daemon\" ];; daemon) touch \"$HOME/.daemon\";; web) cat \"$HOME/.webaddr\";; workspace) printf '200\\n{\"route\":\"%s\",\"cwd\":\"%s\",\"q\":\"%s\"}' \"$2\" \"$4\" \"$5\";; *) echo \"pengupool: unknown command \\\"$1\\\"\" >&2; exit 2;; esac\n"
 
 // sshHost runs an SSH server that takes testPassword or a key in its home's authorized_keys, and
-// runs commands with sh in that home, where a fake pengupool2 answers version and the claim. The
+// runs commands with sh in that home, where a fake pengupool-ai answers version and the claim. The
 // real ssh client reaches it as "testhost" through a wrapper that adds a private ssh config, so
 // the user's own config and known_hosts are never read or written.
 func sshHost(t *testing.T) (home string) {
@@ -69,7 +69,7 @@ func sshHostWith(t *testing.T, installed bool) (home string) {
 		if err := os.MkdirAll(filepath.Join(home, ".local", "bin"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		write(filepath.Join(home, ".local", "bin", "pengupool2"), fakePenguPool)
+		write(filepath.Join(home, ".local", "bin", "pengupool-ai"), fakePenguPool)
 	}
 
 	_, hostKey, _ := ed25519.GenerateKey(rand.Reader)
@@ -252,7 +252,7 @@ func TestPasswordLoginAndKeySetup(t *testing.T) {
 		t.Fatalf("add view = %+v", v)
 	}
 	n, _ := m.node(v.ID)
-	if n.Command != filepath.Join(home, ".local", "bin", "pengupool2") {
+	if n.Command != filepath.Join(home, ".local", "bin", "pengupool-ai") {
 		t.Fatalf("remote command = %q", n.Command)
 	}
 	if !m.masterUp(ctx, n) {
@@ -400,7 +400,7 @@ func TestConnectInstallsStartsAndForwards(t *testing.T) {
 	if c.Token != "tok" || !strings.HasPrefix(c.URL, "http://127.0.0.1:") {
 		t.Fatalf("connection = %+v", c)
 	}
-	if b, err := os.ReadFile(filepath.Join(home, ".local", "bin", "pengupool2")); err != nil || string(b) != fakePenguPool {
+	if b, err := os.ReadFile(filepath.Join(home, ".local", "bin", "pengupool-ai")); err != nil || string(b) != fakePenguPool {
 		t.Fatalf("installed = %q %v", b, err)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".daemon")); err != nil {
@@ -457,7 +457,7 @@ func TestConnectUpdatesOutdatedHost(t *testing.T) {
 	if _, err := m.Connect(ctx, v.ID); err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(home, ".local", "bin", "pengupool2")); string(b) != newer {
+	if b, _ := os.ReadFile(filepath.Join(home, ".local", "bin", "pengupool-ai")); string(b) != newer {
 		t.Fatal("the outdated PenguPool was not replaced")
 	}
 	if got := m.Check(ctx, v.ID); got.Outdated || got.Status != "up" {

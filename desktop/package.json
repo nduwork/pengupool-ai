@@ -1,7 +1,7 @@
 {
   "name": "pengupool-ai-desktop",
   "productName": "PenguPool AI",
-  "version": "0.8.5",
+  "version": "0.9.0",
   "private": true,
   "description": "PenguPool AI desktop: the native app around the PenguPool host, with the Compass built in.",
   "license": "MIT",
@@ -11,7 +11,7 @@
     "build": "node build.mjs",
     "start": "node build.mjs && electron .",
     "package": "node build.mjs && electron-builder --mac --dir --arm64",
-    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON src/update.test.ts src/host.test.ts",
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON src/update.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

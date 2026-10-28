@@ -5,13 +5,13 @@
 // The app works in one environment at a time: this machine's host, or the host on one SSH host,
 // reached through a port this machine's host forwards over SSH. The UI is then entirely that host's.
 import { BrowserWindow, Menu, Notification, app, dialog, ipcMain, net, protocol, screen, shell } from "electron";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { accessSync, constants, existsSync, lstatSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, normalize } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { Host, storeDir, type Environment, type HostConnection } from "./host";
+import { Host, storeDir, userEnv, type Environment, type HostConnection } from "./host";
 import { bundleOf, installScript, isUpdateImage } from "./update";
 
 app.setName("PenguPool AI");
@@ -72,6 +72,45 @@ async function connect(): Promise<HostConnection | null> {
   }
 }
 
+// ---- first launch: pengupool doctor -------------------------------------------------------------
+
+/** On the first launch of an install, runs `pengupool doctor`. Only its warnings are shown; if Claude's settings hold
+ * PenguPool v1 hooks the owner can have them removed (the CLI keeps what it removes in PenguPool's record). Asked once per machine and user. */
+async function firstRunDoctor(): Promise<void> {
+  const marker = join(app.getPath("userData"), "doctor-ran");
+  if (existsSync(marker)) return;
+  const env = await userEnv();
+  const run = (args: string[]): Promise<{ out: string; ok: boolean }> =>
+    new Promise((resolve) => execFile(host.cli, ["doctor", ...args], { env, timeout: 90_000 }, (e, out) => resolve({ out: String(out ?? ""), ok: e === null })));
+  const first = await run([]);
+  if (first.ok) {
+    try {
+      writeFileSync(marker, new Date().toISOString()); // a timed-out run asks again next launch
+    } catch {
+      /* it asks again next launch */
+    }
+  }
+  const warns = first.out.split("\n").filter((l) => l.startsWith("warn"));
+  if (warns.length === 0) return;
+  const v1 = warns.some((l) => l.includes("holds PenguPool v1 entries"));
+  const r = await dialog.showMessageBox({
+    type: "warning",
+    message: "PenguPool found things to fix on this machine",
+    detail: `${warns.join("\n")}\n\nRun \`pengupool doctor\` in a terminal to see this again.`,
+    buttons: v1 ? ["Clean Claude's settings", "Later"] : ["OK"],
+    defaultId: 0,
+  });
+  if (v1 && r.response === 0) {
+    const fixed = await run(["--fix", "--yes"]);
+    const done = fixed.out.split("\n").filter((l) => l.startsWith("done"));
+    void dialog.showMessageBox(
+      done.length > 0
+        ? { type: "info", message: "Claude's settings cleaned", detail: done.join("\n") }
+        : { type: "warning", message: "Claude's settings were not changed", detail: fixed.out },
+    );
+  }
+}
+
 // ---- window state -------------------------------------------------------------------------------
 
 interface WinState {
@@ -109,7 +148,7 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 620,
     show: false,
-    title: "PenguPool",
+    title: "PenguPool AI",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 15 },
     backgroundColor: "#111318",
@@ -119,7 +158,6 @@ function createWindow(): void {
       sandbox: true,
       nodeIntegration: false,
       spellcheck: false,
-      plugins: true, // Chromium's PDF viewer, for the file preview
     },
   });
   if (s.maximized === true) win.maximize();
@@ -229,7 +267,7 @@ function ipc(): void {
 /** Replaces this app with the disk image the host downloaded, and restarts into it (./update.ts). */
 function installUpdate(dmg: string): void {
   const bundle = bundleOf(process.execPath);
-  if (!packaged || bundle === null) throw new Error("only an installed PenguPool.app can update itself");
+  if (!packaged || bundle === null) throw new Error("only an installed PenguPool AI.app can update itself");
   if (process.arch !== "arm64") throw new Error("PenguPool now runs on Apple Silicon Macs only; this Mac can't install the update. Keep using this version.");
   if (envId !== null) throw new Error("switch to This machine to update");
   if (!isUpdateImage(storeDir(), dmg)) throw new Error(`not a downloaded update: ${dmg}`);
@@ -313,6 +351,7 @@ if (!single) {
     ipc();
     menu();
     createWindow();
+    void firstRunDoctor();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });

@@ -117,42 +117,52 @@ func hookWait(event string) time.Duration {
 }
 
 // hookUnjudged notes on stderr that a PreToolUse the daemon could not judge (no answer, an error, a
-// payload too big or unreadable) goes to the harness's own permissions: PenguPool adds no question
-// of its own beyond the harness's. Any other hook says nothing.
+// payload too big to read whole) goes to the harness's own permission system unchecked, as every
+// status hook does: PenguPool adds no check of its own beyond the harness's, and the Compass is what
+// reduces the checks the owner makes. While the daemon is down its deny guards do not apply either.
 func hookUnjudged(event, why string) {
 	if event == "PreToolUse" {
 		fmt.Fprintf(os.Stderr, "pengupool: a tool call was not checked by PenguPool (%s); the harness's own permissions apply\n", why)
 	}
 }
 
+// tooLarge is the PreToolUse answer for a payload too big to judge: the owner is asked (Claude) or
+// the call refused (the harnesses that cannot ask).
+func tooLarge(h string) string {
+	decision := "deny"
+	if h == "claude" {
+		decision = "ask"
+	}
+	b, _ := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{
+		"hookEventName": "PreToolUse", "permissionDecision": decision,
+		"permissionDecisionReason": "PenguPool could not check this call against the floor (the call is too large): the owner decides it."}})
+	return string(b)
+}
+
 // cmdHook forwards a harness hook to the daemon. A status hook never blocks agent work: when the
 // daemon does not answer it exits 0 and prints nothing, and so does a PreToolUse (hookUnjudged).
 func cmdHook(args []string) error {
-	// usage: pengupool hook [--store DIR] <harness> <event>. Muse scrubs
-	// the hook environment, so its hook command bakes --store in and the
-	// pool resolves the session from the payload's Muse session id.
-	storeOverride := ""
-	rest := args
-	if len(rest) >= 3 && rest[0] == "--store" {
-		storeOverride, rest = rest[1], rest[2:]
+	// usage: pengupool hook [--store DIR] <harness> <event>. Muse scrubs the hook environment, so
+	// its hook command bakes --store in and the pool resolves the session from the payload.
+	dir := poolStore()
+	if len(args) >= 3 && args[0] == "--store" {
+		dir, args = args[1], args[2:]
 	}
-	if len(rest) < 2 {
+	if len(args) < 2 {
 		return errors.New("usage: pengupool hook [--store DIR] <harness> <event>")
 	}
-	harness, event := rest[0], rest[1]
+	h, event := args[0], args[1]
+	silent := h == "muse" // unknown sessions and a down daemon are silent no-ops
 	sid := os.Getenv("PENGUPOOL_SESSION_ID")
 	payload, _ := io.ReadAll(io.LimitReader(os.Stdin, 1<<20+1))
-	if sid == "" && harness != "muse" {
+	if sid == "" && !silent {
 		return nil
 	}
-	store := poolStore()
-	if storeOverride != "" {
-		store = storeOverride
-	}
-	silent := harness == "muse" // unknown sessions and a down daemon are silent no-ops
 	if len(payload) > 1<<20 {
-		if !silent {
-			hookUnjudged(event, "the call is too large")
+		// The size is the agent's to choose, so this is not "the daemon is down": fail closed, or an
+		// agent could pad a call past every guard.
+		if event == "PreToolUse" && !silent {
+			fmt.Println(tooLarge(h))
 		}
 		return nil
 	}
@@ -173,8 +183,8 @@ func cmdHook(args []string) error {
 			env[k] = v
 		}
 	}
-	res, err := rpc(ctx, store, "hook.event", map[string]any{
-		"session_id": sid, "harness": harness, "event": event, "payload": json.RawMessage(payload), "env": env,
+	res, err := rpc(ctx, dir, "hook.event", map[string]any{
+		"session_id": sid, "harness": h, "event": event, "payload": json.RawMessage(payload), "env": env,
 	})
 	if err != nil {
 		if !silent {
@@ -441,16 +451,13 @@ func search(ctx context.Context, words string) error {
 }
 
 type journalEntry struct {
-	ID                               int64
-	At, Title, Lesson, Snippet, Body string
+	ID                       int64
+	At, Title, Snippet, Body string
 }
 
 func printEntries(es []journalEntry) {
 	for _, e := range es {
 		fmt.Printf("[%d] %s · %s\n", e.ID, e.At[:min(10, len(e.At))], e.Title)
-		if e.Lesson != "" {
-			fmt.Printf("    Lesson: %s\n", e.Lesson)
-		}
 		if e.Snippet != "" {
 			fmt.Printf("    %s\n", e.Snippet)
 		}

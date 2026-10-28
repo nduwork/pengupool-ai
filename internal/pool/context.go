@@ -39,7 +39,7 @@ func (p *Pool) buildContextCap(id string, compassCap int) string {
 	d := st.Domain
 	t := teamOf(&d, id)
 	if t == nil {
-		return p.renderCompass() + p.renderNotes(id)
+		return p.renderCompassCap(compassCap) + p.renderNotes(id)
 	}
 	var me protocol.Member
 	for _, m := range t.Members {
@@ -116,7 +116,7 @@ func (p *Pool) buildContextCap(id string, compassCap int) string {
 			p.renderSkill(&b, sk)
 		}
 		if reportsTo(&d, t, id) != "" && p.helperOf(id) != nil {
-			b.WriteString("\nWhen your job is finished, start your report to your parent with `Done:` and a one-line title (`Done: fixed the login redirect`), then the details, and a line `Lesson: …`: one sentence you would want to know before the next job like this (what worked, what to avoid, where things are), not what you did; leave it out when nothing carries over. PenguPool keeps a report like that as an entry of your past work, and may type your agent's compact command once you are idle. A question or a progress note does not start with `Done:`.\n")
+			b.WriteString("\nWhen your job is finished, start your report to your parent with `Done:` and a one-line title (`Done: fixed the login redirect`), then the details. PenguPool keeps a report like that as an entry of your past work, and may type your agent's compact command once you are idle. A question or a progress note does not start with `Done:`.\n")
 		}
 	}
 	b.WriteString(p.renderNotes(id))
@@ -178,7 +178,7 @@ func (p *Pool) renderCompassCap(n int) string {
 		out.WriteString("No preferences yet.\n")
 	}
 	for _, v := range shown {
-		l := "- " + strings.ReplaceAll(v.text(), "\n", "\n  ") + v.sureness()
+		l := "- " + strings.ReplaceAll(v.text(), "\n", "\n  ")
 		if out.Len()+len(l) > n {
 			out.WriteString("… more: search with the command below\n")
 			break
@@ -186,15 +186,6 @@ func (p *Pool) renderCompassCap(n int) string {
 		out.WriteString(l + "\n")
 	}
 	return out.String()
-}
-
-// sureness says how sure a line is in words agents act on: a passive tag is ignored, phrasing is not.
-// A line guides as the owner's rule only when the owner had a say in it (trusted).
-func (v lineView) sureness() string {
-	if v.guides() && v.trusted() {
-		return " (the owner's rule)"
-	}
-	return " (likely; check if it matters)"
 }
 
 // renderNotes is the hint every agent gets: the record is PenguPool's, the compass is searchable.
@@ -213,27 +204,6 @@ func (p *Pool) renderNotes(id string) string {
 }
 
 const maxCompassContext = 32 << 10
-
-// fitContext re-renders id's context to fit limit bytes for a harness that drops a hook answer
-// past its stdout ceiling: the team sections and extras stay whole and the compass takes what is
-// left, so the roster and the triage note survive. A final clip guards a pathological goal.
-func (p *Pool) fitContext(id string, extra []string, limit int) string {
-	extras := strings.Join(extra, "")
-	compass := decision.SecretRe.ReplaceAllString(p.renderCompass(), "[left out: looked like a secret]")
-	room := limit - (len(p.renderContext(id)) - len(compass)) - len(extras) - 256
-	if room < 0 {
-		room = 0
-	}
-	text := p.renderContextCap(id, room) + extras
-	if len(text) > limit {
-		cut := strings.LastIndex(text[:limit-64], "\n")
-		if cut < 0 {
-			cut = limit - 64
-		}
-		text = text[:cut] + "\n…trimmed to this harness's hook answer limit\n"
-	}
-	return text
-}
 
 var wordRe = regexp.MustCompile(`[\pL\pN_]+`)
 
@@ -256,4 +226,25 @@ func harnessKinds(name string) []string { k, _, _ := harness.Subagents(name); re
 func isAnchorSkill(d *protocol.Domain, id string) bool {
 	sk := findSkill(d, id)
 	return sk != nil && anchorSkill(*sk)
+}
+
+// fitContext re-renders id's context to fit limit bytes for a harness that drops a hook answer
+// past its stdout ceiling: the team sections and extras stay whole and the compass takes what is
+// left, so the roster and the triage note survive. A final clip guards a pathological goal.
+func (p *Pool) fitContext(id string, extra []string, limit int) string {
+	extras := strings.Join(extra, "")
+	compass := decision.SecretRe.ReplaceAllString(p.renderCompass(), "[left out: looked like a secret]")
+	room := limit - (len(p.renderContext(id)) - len(compass)) - len(extras) - 256
+	if room < 0 {
+		room = 0
+	}
+	text := p.renderContextCap(id, room) + extras
+	if len(text) > limit {
+		cut := strings.LastIndex(text[:limit-64], "\n")
+		if cut < 0 {
+			cut = limit - 64
+		}
+		text = text[:cut] + "\n…trimmed to this harness's hook answer limit\n"
+	}
+	return text
 }
