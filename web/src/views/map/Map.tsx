@@ -1,4 +1,4 @@
-import { BookOpen, FoldVertical, History, UnfoldVertical, Layers, ListTree, Minus, Pencil, Plus, RefreshCw, Rocket, Scan, Users } from "lucide-react";
+import { Archive, BookOpen, FoldVertical, History, UnfoldVertical, Layers, ListTree, Minus, Pencil, Plus, RefreshCw, Rocket, Scan, Settings2, Users, X } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
@@ -18,6 +18,7 @@ import { Item, MenuContent, PreviousSheet, RenameSheet, SessionMenu, Sep } from 
 import { olderThan, type RecordedMessage } from "./olderMessages";
 import { layout, rounded, type Block, type LayoutKind, type TreeNode } from "./layout";
 import { AgentPool, DND } from "./Pool";
+import { ClosedTeamsSheet, CloseTeamSheet, TeamSettingsSheet } from "./TeamSheets";
 
 // The live map, as v1 drew it: each team laid out as a tree in its own frame (Org chart, Outline or
 // Tree →), right-angled lines that light green when a parent messages a child and milky blue for
@@ -402,6 +403,26 @@ export function TeamMap(): ReactElement {
                               <Pencil className="size-3" />
                             </button>
                           </Tip>
+                          <Tip label="Group settings">
+                            <button
+                              type="button"
+                              aria-label={`Group settings ${g.team.name}`}
+                              onClick={() => app.showDialog(<TeamSettingsSheet team={g.team} />)}
+                              className="rounded p-0.5 text-faint opacity-0 hover:bg-hover hover:text-foreground focus-visible:opacity-100 group-hover/title:opacity-100"
+                            >
+                              <Settings2 className="size-3" />
+                            </button>
+                          </Tip>
+                          <Tip label="Close group">
+                            <button
+                              type="button"
+                              aria-label={`Close group ${g.team.name}`}
+                              onClick={() => app.showDialog(<CloseTeamSheet team={g.team} />)}
+                              className="rounded p-0.5 text-faint opacity-0 hover:bg-hover hover:text-foreground focus-visible:opacity-100 group-hover/title:opacity-100"
+                            >
+                              <X className="size-3" />
+                            </button>
+                          </Tip>
                         </div>
                         <div className="relative" style={{ width: g.block.w, height: g.block.h }}>
                           <svg className="pointer-events-none absolute inset-0 overflow-visible" width={g.block.w} height={g.block.h}>
@@ -483,6 +504,11 @@ export function TeamMap(): ReactElement {
             <Item icon={<BookOpen />} onSelect={() => setDrawer(!drawer)}>
               {drawer ? "Hide Helper agent pool" : "Show Helper agent pool"}
             </Item>
+            {domain.teams.some((t) => t.state !== "active") ? (
+              <Item icon={<Archive />} onSelect={() => app.showDialog(<ClosedTeamsSheet />)}>
+                Closed groups…
+              </Item>
+            ) : null}
           </MenuContent>
         </ContextMenu.Root>
         <AgentPool open={drawer} setOpen={setDrawer} width={drawerW} setWidth={setDrawerW} flash={flash} />

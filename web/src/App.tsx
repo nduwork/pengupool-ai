@@ -25,7 +25,6 @@ import { Sidebar } from "./views/Sidebar";
 import { SkillLibrary } from "./views/SkillLibrary";
 import { isUnread, markViewed, type Viewed } from "./views/lanes";
 import { sessionNeeds, type OpenGate } from "./views/inbox";
-import { Teams } from "./views/Teams";
 import { Handle } from "./views/Page";
 import { Workbench, usePanelRefs } from "./views/Workspace";
 
@@ -57,7 +56,7 @@ function channelFor(sessionId: string): number {
   return channel;
 }
 
-const NAV_TITLE: Record<Nav, string> = { workspace: "Workspace", skills: "Helper agents", teams: "Teams", settings: "Settings" };
+const NAV_TITLE: Record<Nav, string> = { workspace: "Workspace", skills: "Helper agents", settings: "Settings" };
 
 export function App(): ReactElement {
   // In the desktop app the page is loaded from the app bundle, so the host's address and token
@@ -214,16 +213,16 @@ export function App(): ReactElement {
     else p.collapse();
   };
 
-  // Keyboard: ⌘N new session, ⌘1–4 pages, ⌘B sidebar, ⌘J terminal, ⌘\ Agent messages.
+  // Keyboard: ⌘N new session, ⌘1–3 pages, ⌘B sidebar, ⌘J terminal, ⌘\ Agent messages.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
       const k = e.key.toLowerCase();
-      const pages: Nav[] = ["workspace", "skills", "teams", "settings"];
+      const pages: Nav[] = ["workspace", "skills", "settings"];
       if (k === "n" && !e.shiftKey) {
         e.preventDefault();
         setDialog(<NewSessionDialog onClose={() => setDialog(null)} />);
-      } else if (["1", "2", "3", "4"].includes(k)) {
+      } else if (["1", "2", "3"].includes(k)) {
         e.preventDefault();
         setNav(pages[Number(k) - 1]);
       } else if (k === "b") {
@@ -386,7 +385,7 @@ export function App(): ReactElement {
                   )}
                 </div>
                 {nav !== "workspace" ? (
-                  <div className="absolute inset-0 bg-background">{nav === "skills" ? <SkillLibrary /> : nav === "teams" ? <Teams /> : <Settings />}</div>
+                  <div className="absolute inset-0 bg-background">{nav === "skills" ? <SkillLibrary /> : <Settings />}</div>
                 ) : null}
               </main>
             </div>
