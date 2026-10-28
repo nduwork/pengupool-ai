@@ -90,3 +90,6 @@ backup renamed to sync; agent sessions are resumed automatically after a
 power off or crash.
 v0.6.1: messages the owner queues while an agent is busy, joined by the
 agent into one prompt, still count as the owner's.
+v0.6.2: PenguPool adds no questions beyond the agent's own: a tool call the
+host cannot check goes to the agent's permissions, and agents check the
+Compass before asking the owner anything else.
