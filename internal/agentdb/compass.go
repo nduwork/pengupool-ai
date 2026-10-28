@@ -46,6 +46,9 @@ type Signal struct {
 	SessionID string  `json:"session_id,omitempty"`
 	At        string  `json:"at"`
 	Outcome   Outcome `json:"outcome,omitempty"`
+	// Tentative is P(the owner was tentative, not sure): it scales the signal's effects down by up to
+	// half when they are recorded, and is not stored itself.
+	Tentative float64 `json:"-"`
 }
 
 // Effect is what a signal did to one line: the probabilities that it supports and contradicts the

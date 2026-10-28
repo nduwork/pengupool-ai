@@ -238,6 +238,21 @@ func stated(t *testing.T, p *Pool, body string) string {
 	return uid
 }
 
+// Hedged words ("maybe…") weigh less: a sure tentative signal records half the support.
+func TestTentativeSignalWeighsLess(t *testing.T) {
+	p, _ := twoTeams(t)
+	ui := stated(t, p, "Keep the UI simple")
+	p.testDecider = &lineDecider{calibrated: true, answers: []decision.Answer{prob(0.9, 0, 0)}}
+	p.match(agentdb.Signal{Kind: "said", Words: "maybe keep the UI simple", SessionID: "leadaaaaaaaa", TeamID: "team1", Tentative: 1}, "", "")
+	es, _ := p.db.Effects(ui)
+	if e := es[ui]; len(e) != 1 || e[0].PSup != 0.45 {
+		t.Fatalf("effects: %+v", e)
+	}
+	if !slices.ContainsFunc(ownerSignalQuestions, func(q decision.Question) bool { return q.Name == "tentative" }) {
+		t.Fatal("triage does not ask whether the owner is tentative")
+	}
+}
+
 func TestMatch(t *testing.T) {
 	p, st := twoTeams(t)
 	ui, logs := stated(t, p, "Keep the UI simple"), stated(t, p, "Use SQL for logs")

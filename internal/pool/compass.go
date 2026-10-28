@@ -271,6 +271,9 @@ func (p *Pool) matchLines(sig agentdb.Signal, offered, line string, mk bool) str
 			} else if a.Choice == "contradicts" {
 				con = 1
 			}
+			// After the noise filters: hedged words are weaker evidence, not noise.
+			k := 1 - 0.5*min(max(sig.Tentative, 0), 1)
+			sup, con = sup*k, con*k
 			if sup > 0 || con > 0 {
 				on = append(on, effectOn{l.UID, sup, con})
 			}

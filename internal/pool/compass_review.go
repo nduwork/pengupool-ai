@@ -41,8 +41,8 @@ type reviewLine struct {
 }
 
 type reviewItem struct {
-	Kind     string       `json:"kind"` // broad | merge
-	Way      string       `json:"way"`  // allow | deny
+	Kind     string       `json:"kind"`          // broad | merge | conflicted
+	Way      string       `json:"way,omitempty"` // allow | deny (broad and merge)
 	Why      string       `json:"why"`
 	Lines    []reviewLine `json:"lines"`
 	Patterns []string     `json:"patterns,omitempty"` // merge: the patterns the lines become
@@ -156,7 +156,29 @@ func (p *Pool) compassReviewItems() ([]reviewItem, error) {
 	}
 	slices.SortFunc(bare, byPattern)
 	slices.SortFunc(pairs, byPattern)
-	return append(append(bare, pairs...), merges...), nil
+	return append(append(append(bare, pairs...), merges...), p.conflicted(lines)...), nil
+}
+
+// conflicted are the preference lines the owner's signals pull both ways, sitting between dropped and
+// shown: nothing asks about them, so the review does, for the owner to restate or remove. Agents are
+// never told to ask.
+func (p *Pool) conflicted(lines []agentdb.Line) []reviewItem {
+	lines = slices.DeleteFunc(slices.Clone(lines), func(l agentdb.Line) bool { return l.Tag != "" })
+	effects, _ := p.db.Effects()
+	var out []reviewItem
+	for _, v := range p.beliefs(lines) {
+		if v.Mu < 0.2 || v.Mu >= v.th.Show {
+			continue
+		}
+		var up, down bool
+		for _, e := range effects[v.UID] {
+			up, down = up || e.PSup > e.PCon, down || e.PCon > e.PSup
+		}
+		if up && down {
+			out = append(out, reviewItem{Kind: "conflicted", Why: "your signals pulled it both ways", Lines: []reviewLine{{v.UID, v.Body}}})
+		}
+	}
+	return out
 }
 
 func (p *Pool) compassReview(_ context.Context, _ struct{}) (any, error) {

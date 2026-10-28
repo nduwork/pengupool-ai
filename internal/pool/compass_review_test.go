@@ -1,8 +1,10 @@
 package pool
 
 import (
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/agentdb"
 )
@@ -137,5 +139,30 @@ func TestCompassReviewFloorToolsAndPins(t *testing.T) {
 	r, _ := p.compassReview(nil, struct{}{})
 	if got := r.(map[string]any)["items"].([]reviewItem); len(got) != 0 {
 		t.Fatalf("the owner's merged `kill` line was flagged: %+v", got)
+	}
+}
+
+// A preference line the owner's choices pull both ways goes to review; one they only agree with doesn't.
+func TestCompassReviewListsConflicted(t *testing.T) {
+	p, _ := twoTeams(t)
+	torn, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Use pnpm", Origin: "chose"})
+	confirm(t, p, torn, 1, 1, 0)
+	at := time.Now().AddDate(0, 0, -3).UTC().Format(time.RFC3339)
+	sig, _ := p.db.AddSignal(agentdb.Signal{Owner: p.owner(), Kind: "chose", At: at})
+	_ = p.db.AddEffects([]agentdb.Effect{{SignalUID: sig, LineUID: torn, PCon: 1, Weight: 1, At: at, Kind: "chose"}})
+	agreed, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Use Go", Origin: "chose"})
+	confirm(t, p, agreed, 1, 1, 0)
+	items, err := p.compassReviewItems()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, it := range items {
+		if it.Kind == "conflicted" {
+			got = append(got, it.Lines[0].Body)
+		}
+	}
+	if !slices.Equal(got, []string{"Use pnpm"}) {
+		t.Fatalf("conflicted = %v (items %+v)", got, items)
 	}
 }
