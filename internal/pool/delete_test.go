@@ -264,3 +264,25 @@ func TestDeletedHelperNotRevived(t *testing.T) {
 		t.Fatal("a deleted helper's session still records as it")
 	}
 }
+
+// A session opened by hand inside a helper's folder is that helper, also when the helper lives in a
+// subfolder of its repository and the session is deeper still.
+func TestHelperOfByCwd(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(Options{Store: st, Exe: "pengupool"})
+	_ = st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions,
+			store.Session{ID: "inside", Name: "a", Cwd: "/r/agents/x"}, store.Session{ID: "deeper", Name: "b", Cwd: "/r/agents/x/sub"},
+			store.Session{ID: "sibling", Name: "c", Cwd: "/r/agents/xy"}, store.Session{ID: "root", Name: "d", Cwd: "/r"})
+		s.Domain.Skills = append(s.Domain.Skills, protocol.Skill{ID: "sx", Name: "x", Path: "/r/agents/x"})
+		return nil
+	})
+	for id, want := range map[string]bool{"inside": true, "deeper": true, "sibling": false, "root": false} {
+		if got := p.helperOf(id) != nil; got != want {
+			t.Errorf("helperOf(%s) = %v, want %v", id, got, want)
+		}
+	}
+}

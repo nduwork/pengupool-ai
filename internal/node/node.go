@@ -206,7 +206,7 @@ func (m *Manager) probe(ctx context.Context, np *store.Node) protocol.NodeView {
 			return v
 		}
 	}
-	out, err := exec.CommandContext(ctx, "ssh", m.args(n, cmdOf(n), "version")...).CombinedOutput()
+	out, err := exec.CommandContext(ctx, "ssh", m.args(n, shellQuote(cmdOf(n)), "version")...).CombinedOutput()
 	if err != nil && cmdOf(n) == DefaultCommand && notFound(string(out)) {
 		// ssh runs commands in a non-login shell, whose PATH rarely has ~/.local/bin.
 		path, rerr := m.locate(ctx, n)
@@ -216,7 +216,7 @@ func (m *Manager) probe(ctx context.Context, np *store.Node) protocol.NodeView {
 		}
 		n.Command, np.Command = path, path
 		m.setCommand(n.ID, path)
-		out, err = exec.CommandContext(ctx, "ssh", m.args(n, cmdOf(n), "version")...).CombinedOutput()
+		out, err = exec.CommandContext(ctx, "ssh", m.args(n, shellQuote(cmdOf(n)), "version")...).CombinedOutput()
 	}
 	if err != nil {
 		v.Status, v.Reason = "down", firstLine(string(out), err)
@@ -291,7 +291,7 @@ func notFound(out string) bool {
 
 // locateScript prints the first PenguPool executable on the host: the login shell's PATH, then
 // where `make install` and the app put it.
-const locateScript = `for p in "$($SHELL -lc 'command -v pengupool-ai' 2>/dev/null)" "$HOME/.local/bin/pengupool-ai" ` +
+var locateScript = `for p in "$($SHELL -lc 'command -v pengupool-ai' 2>/dev/null)" "$HOME/.local/bin/pengupool-ai" ` +
 	`"$HOME/Applications/PenguPool AI.app/Contents/Resources/bin/pengupool" "/Applications/PenguPool AI.app/Contents/Resources/bin/pengupool" ` +
 	`/opt/homebrew/bin/pengupool-ai /usr/local/bin/pengupool-ai; do [ -n "$p" ] && [ -x "$p" ] && { echo "$p"; exit 0; }; done; exit 1`
 
@@ -389,7 +389,7 @@ func (m *Manager) Connect(ctx context.Context, id string) (protocol.HostConnecti
 	if err := m.startDaemon(ctx, n); err != nil {
 		return unavailable("%v", err)
 	}
-	out, err := exec.CommandContext(ctx, "ssh", m.args(n, cmdOf(n), "web")...).Output()
+	out, err := exec.CommandContext(ctx, "ssh", m.args(n, shellQuote(cmdOf(n)), "web")...).Output()
 	if err != nil {
 		return unavailable("reading its host address: %v", err)
 	}

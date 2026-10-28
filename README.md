@@ -130,6 +130,11 @@ background menu. Copilot, Gemini CLI and OpenCode are experimental agents;
 `pengupool doctor` can clean PenguPool v1 out of Claude's settings. A record
 written by 0.4–0.8 opens: its search indexes are remade and the experience lessons
 column is not kept; update every machine that shares the record together.
+v0.9.1: a session opened by hand in a helper's folder works as that helper again
+when the helper lives in a subfolder of its repository, so `experience search`
+reaches its journal. Update checks look at this repository's releases (they
+answered 404). A remote host whose PenguPool sits in the app, in a folder with a
+space, is reached again.
 
 ## Credits
 
