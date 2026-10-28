@@ -6,9 +6,10 @@ import { Button } from "../components/ui/button";
 import { cn, fullTime } from "../lib/utils";
 
 // Read-only file previews and diffs in the upper-centre pane. Opening one never touches the
-// terminal or the PTY size. Markdown, HTML and images open rendered, as in VS Code's preview, with a
-// switch to the source. Rendered documents live in a sandboxed frame: no scripts (HTML can opt in,
-// and then gets no access to other workspace files), no access to the app.
+// terminal or the PTY size. Markdown (with Mermaid diagrams), HTML, PDF and images open rendered, as in
+// VS Code's preview, with a switch to the source, and follow the file as it changes. Rendered documents
+// live in a sandboxed frame: no scripts (HTML can opt in: it then runs from its own URL in an opaque
+// origin, so its relative assets load but it cannot read the host's answers), no access to the app.
 
 interface FileResp {
   content?: string;
@@ -20,12 +21,13 @@ interface FileResp {
   raw?: string;
 }
 
-type PreviewKind = "markdown" | "html" | "image";
+type PreviewKind = "markdown" | "html" | "image" | "pdf";
 
 export function previewKind(path: string): PreviewKind | null {
   const ext = path.toLowerCase().split(".").pop() ?? "";
   if (["md", "markdown", "mdown", "mkd"].includes(ext)) return "markdown";
   if (["html", "htm", "xhtml"].includes(ext)) return "html";
+  if (ext === "pdf") return "pdf";
   if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"].includes(ext)) return "image";
   return null;
 }
@@ -42,7 +44,7 @@ h1,h2,h3,h4{line-height:1.25;margin:1.4em 0 .6em}code,pre{font-family:${v("--fon
 pre{background:${v("--muted")};padding:12px 14px;border-radius:6px;overflow:auto}
 blockquote{margin:0;padding:0 1em;color:${v("--muted-foreground")};border-left:3px solid ${v("--border")}}
 table{border-collapse:collapse}th,td{border:1px solid ${v("--border")};padding:6px 12px}th{background:${v("--muted")}}
-img{max-width:100%}hr{border:0;border-top:1px solid ${v("--border")}}li+li{margin-top:.2em}`;
+img{max-width:100%}.mermaid{margin:1em 0;text-align:center}.mermaid-error{color:${v("--danger")}}hr{border:0;border-top:1px solid ${v("--border")}}li+li{margin-top:.2em}`;
 }
 
 const escapeAttr = (s: string): string => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -58,36 +60,74 @@ export function frameDoc(kind: "markdown" | "html", content: string, base: strin
   return /<head[^>]*>/i.test(content) ? content.replace(/<head[^>]*>/i, (h) => h + baseTag) : baseTag + content;
 }
 
+const MERMAID = /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g;
+const unescapeHTML = (s: string): string => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+let diagrams = 0;
+
+/** Draws a rendered Markdown document's Mermaid blocks as SVG here, with the bundled Mermaid (no
+ *  network), so the frame still runs no scripts. A block that does not parse stays code, under its error. */
+export async function withDiagrams(doc: string, dark: boolean): Promise<string> {
+  const blocks = [...doc.matchAll(MERMAID)];
+  if (blocks.length === 0) return doc;
+  const { default: mermaid } = await import("mermaid");
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "default" });
+  for (const [whole, src] of blocks) {
+    let html: string;
+    try {
+      html = `<div class="mermaid">${(await mermaid.render(`pp-mermaid-${++diagrams}`, unescapeHTML(src))).svg}</div>`;
+    } catch (e) {
+      html = `<p class="mermaid-error">Mermaid: ${escapeAttr(e instanceof Error ? e.message : String(e))}</p>${whole}`;
+    }
+    doc = doc.replace(whole, () => html);
+  }
+  return doc;
+}
+
 function Preview({ kind, f, path, scripts }: { kind: PreviewKind; f: FileResp; path: string; scripts: boolean }): ReactElement {
   const app = useApp();
   const raw = f.raw !== undefined ? new URL(f.raw, app.conn.baseURL).toString() : undefined;
   const folder = raw?.slice(0, raw.lastIndexOf("/") + 1);
-  const doc = useMemo(
-    // With scripts on, the page gets no base: its code must not reach other workspace files.
-    () => (kind === "image" ? "" : frameDoc(kind, f.content ?? "", scripts ? undefined : folder)),
-    [kind, f.content, folder, scripts],
-  );
+  const plain = useMemo(() => (kind === "markdown" || kind === "html" ? frameDoc(kind, f.content ?? "", folder) : ""), [kind, f.content, folder]);
+  const [doc, setDoc] = useState(plain);
+  useEffect(() => {
+    let live = true;
+    setDoc(plain);
+    if (kind === "markdown") void withDiagrams(plain, document.documentElement.classList.contains("dark")).then((d) => live && setDoc(d));
+    return () => {
+      live = false;
+    };
+  }, [kind, plain]);
   if (kind === "image")
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-[repeating-conic-gradient(var(--muted)_0_25%,transparent_0_50%)] bg-[length:16px_16px] p-6">
         {raw !== undefined ? <img src={raw} alt={path} className="max-h-full max-w-full object-contain shadow-sm" /> : null}
       </div>
     );
-  return <iframe title={`Preview of ${path}`} className="min-h-0 w-full flex-1 border-0 bg-panel" sandbox={scripts ? "allow-scripts" : ""} srcDoc={doc} />;
+  const frame = "min-h-0 w-full flex-1 border-0 bg-panel";
+  // The viewer of a PDF cannot run sandboxed; the file is served from the host's origin, not the app's.
+  if (kind === "pdf") return raw !== undefined ? <iframe key={f.mtime} title={`Preview of ${path}`} className={frame} src={raw} /> : <p className="p-4 text-label text-faint">No preview.</p>;
+  if (kind === "html" && scripts && raw !== undefined) return <iframe key={f.mtime} title={`Preview of ${path}`} className={frame} sandbox="allow-scripts" src={`${raw}?run=1`} />;
+  return <iframe title={`Preview of ${path}`} className={frame} sandbox="" srcDoc={doc} />;
 }
 
 export function FileView({ tab }: { tab: EditorTab }): ReactElement {
   const app = useApp();
   const [f, setF] = useState<FileResp | string | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    // Follow the file: an agent may be writing it. A read with nothing new changes nothing.
+    const t = setInterval(() => document.hidden || setTick((n) => n + 1), 2000);
+    return () => clearInterval(t);
+  }, []);
   useEffect(() => {
     let live = true;
     getJSON<FileResp>(app.conn, "/api/files", { session: tab.sessionId, path: tab.path })
-      .then((r) => live && setF(r))
-      .catch((e: Error) => live && setF(e.message));
+      .then((r) => live && setF((old) => (typeof old === "object" && old !== null && old.mtime === r.mtime && old.content === r.content ? old : r)))
+      .catch((e: Error) => live && setF((old) => (typeof old === "object" && old !== null ? old : e.message)));
     return () => {
       live = false;
     };
-  }, [app.conn, tab.sessionId, tab.path]);
+  }, [app.conn, tab.sessionId, tab.path, tick]);
   const kind = previewKind(tab.path);
   const [mode, setMode] = usePersisted<"preview" | "source">(`file.mode.${kind ?? "text"}`, "preview");
   const [scripts, setScripts] = useState(false);
@@ -98,7 +138,7 @@ export function FileView({ tab }: { tab: EditorTab }): ReactElement {
   const bar = (
     <PathBar path={tab.path} note={note}>
       {kind === "html" && previewing ? (
-        <Button size="sm" variant={scripts ? "default" : "ghost"} onClick={() => setScripts(!scripts)} title="Run the page's scripts in an isolated frame (relative assets then don't load)">
+        <Button size="sm" variant={scripts ? "default" : "ghost"} onClick={() => setScripts(!scripts)} title="Run the page's scripts in an isolated frame that cannot read other workspace files">
           {scripts ? "Scripts on" : "Scripts off"}
         </Button>
       ) : null}
