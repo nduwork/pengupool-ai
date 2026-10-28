@@ -252,7 +252,12 @@ func TestInstallersGateOnRealHome(t *testing.T) {
 	oldCLook := codexLookPath
 	museLookPath = func([]string) (string, error) { return "/bin/muse", nil }
 	called := map[string]bool{}
-	museRun = func(_ context.Context, _ string, args ...string) error { called["muse:"+args[0]] = true; return nil }
+	var museCalls []string
+	museRun = func(_ context.Context, _ string, args ...string) error {
+		called["muse:"+args[0]] = true
+		museCalls = append(museCalls, args[1])
+		return nil
+	}
 	codexLookPath = func([]string) (string, error) { called["codex:lookpath"] = true; return "/bin/codex", nil }
 	defer func() { museLookPath, museRun, codexLookPath = oldLook, oldRun, oldCLook }()
 	var logged []string
@@ -287,6 +292,11 @@ func TestInstallersGateOnRealHome(t *testing.T) {
 	EnsureCodexRules(def, "/x/pengupool", nil, logf)
 	if !called["muse:plugins"] {
 		t.Fatalf("muse installer did not run for the real home: %v", called)
+	}
+	// A plugin from another source (an old build, a test bundle) is removed first: Muse refuses
+	// to install over it, which left its hooks pointing at a dead binary.
+	if strings.Join(museCalls, ",") != "remove,install,approve" {
+		t.Fatalf("muse calls = %v", museCalls)
 	}
 	if !called["codex:lookpath"] {
 		t.Fatalf("codex installer did not run for the real home: %v", called)

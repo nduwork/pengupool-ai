@@ -107,6 +107,9 @@ func EnsureMusePlugin(storeDir, exe string, env []string, logf func(string, ...a
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	// Muse refuses an install over a plugin of the same id from another source (another build or
+	// store, a test bundle), so the old one goes first; "not installed" is fine.
+	_ = museRun(ctx, bin, "plugins", "remove", musePluginID, "--json")
 	if err := museRun(ctx, bin, "plugins", "install", musePluginDir(storeDir), "--json"); err != nil {
 		logf("muse plugin: %v", err)
 		return
