@@ -111,6 +111,12 @@ func Open(dir string) (*Store, error) {
 		if err := json.Unmarshal(raw, &s.cfg); err != nil {
 			return nil, &ErrCorrupt{Path: s.path(ConfigFile), Err: err}
 		}
+		if s.cfg.Backup != nil { // a config of before the rename: its backup settings are the sync's
+			if s.cfg.Sync == (Sync{}) {
+				s.cfg.Sync = *s.cfg.Backup
+			}
+			s.cfg.Backup = nil
+		}
 		if s.cfg.Version == 0 || s.cfg.Version > Version {
 			return nil, &ErrCorrupt{Path: s.path(ConfigFile), Err: fmt.Errorf("schema version %d is not %d", s.cfg.Version, Version)}
 		}
@@ -251,7 +257,10 @@ func (s *Store) SaveConfig(cfg Config) error {
 	cfg.MuseDevices = s.cfg.MuseDevices
 	cfg.Version = Version
 	cfg.UpdatedAt = time.Now().UTC()
-	if err := s.saveLocked(ConfigFile, cfg); err != nil {
+	// For the release of the rename the settings are written under both keys, so a downgrade keeps them.
+	disk := cfg
+	disk.Backup = &cfg.Sync
+	if err := s.saveLocked(ConfigFile, disk); err != nil {
 		return err
 	}
 	s.cfg = cfg

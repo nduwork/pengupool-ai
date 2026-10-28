@@ -3,7 +3,7 @@ import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
-import { URGENCY, ctxClass, harnessLabel, sessionStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
+import { URGENCY, ctxClass, harnessLabel, isShell, sessionStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
 import { Button } from "../../components/ui/button";
 import { Badge, Empty, Select, Tip } from "../../components/ui/controls";
 import { cn } from "../../lib/utils";
@@ -105,7 +105,7 @@ export function TeamMap(): ReactElement {
   }, [domain.teams, sessions.length, kind, roomy, folded, sizeKey]);
 
   const inTeam = new Set(domain.teams.filter((t) => t.state === "active").flatMap((t) => t.members.filter((m) => m.state === "active").map((m) => m.session_id)));
-  const ungrouped = sessions.filter((s) => !inTeam.has(s.id));
+  const ungrouped = sessions.filter((s) => !inTeam.has(s.id) && !isShell(s));
   const parentOf = (teamId: string, id: string): string | undefined => domain.teams.find((t) => t.id === teamId)?.members.find((m) => m.session_id === id)?.parent;
 
   // Lit edges: the latest message on a tree line within 90 s, green down, milky blue up.
@@ -138,6 +138,27 @@ export function TeamMap(): ReactElement {
     else if (skill !== "") {
       const sk = domain.skills.find((x) => x.id === skill);
       if (sk !== undefined) app.showDialog(<NewSessionDialog initialPath={sk.path} onClose={() => app.showDialog(null)} />);
+    }
+  };
+
+  // A session dropped on a group's frame or title joins that group under its anchor; dropped on the
+  // Ungrouped column it leaves its group and keeps running. Both stop here, so the canvas drop (which
+  // splits a session off as a group of its own) does not also run.
+  const frameDrop = (e: React.DragEvent, team: Team | undefined): void => {
+    const sid = e.dataTransfer.getData(DND.session);
+    if (sid === "") return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (team === undefined) void app.call("team.group", { session_id: sid, ungroup: true });
+    else {
+      const anchor = anchorOf(domain, team);
+      if (anchor !== undefined && anchor !== sid) void app.call("team.group", { session_id: sid, parent_id: anchor });
+    }
+  };
+  const frameOver = (e: React.DragEvent): void => {
+    if (e.dataTransfer.types.includes(DND.session)) {
+      e.preventDefault();
+      e.stopPropagation();
     }
   };
 
@@ -362,6 +383,8 @@ export function TeamMap(): ReactElement {
                         aria-label={`Team ${g.team.name}`}
                         className={cn("relative rounded-[10px]", roomy ? "border border-border bg-panel/35" : "bg-foreground/[0.04]")}
                         style={{ padding: pad, paddingTop: pad + 22 }}
+                        onDragOver={frameOver}
+                        onDrop={(e) => frameDrop(e, g.team)}
                       >
                         <div className="group/title absolute left-3 right-3 top-2 flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground">
                           <ListTree className="size-3" />
@@ -428,7 +451,12 @@ export function TeamMap(): ReactElement {
                     ))}
                   </div>
                   {ungrouped.length > 0 ? (
-                    <section aria-label="Ungrouped sessions" className={cn("shrink-0", groups.length > 0 && "self-stretch border-l border-border pl-6")}>
+                    <section
+                      aria-label="Ungrouped sessions"
+                      className={cn("shrink-0", groups.length > 0 && "self-stretch border-l border-border pl-6")}
+                      onDragOver={frameOver}
+                      onDrop={(e) => frameDrop(e, undefined)}
+                    >
                       <p className="mb-2 text-[10px] tracking-[0.14em] text-muted-foreground">
                         UNGROUPED <span className="tabular-nums text-faint">{ungrouped.length}</span>
                       </p>

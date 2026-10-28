@@ -1,10 +1,11 @@
-import { Bot, Check, DatabaseBackup, KeyRound, Loader2, Lock, MonitorUp, Network, RefreshCw, Server, Settings2, Sparkles, X } from "lucide-react";
+import { Bot, Check, KeyRound, Loader2, Lock, MonitorUp, Network, RefreshCw, Server, Settings2, Sparkles, X } from "lucide-react";
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useApp, usePersisted } from "../app/ctx";
 import { desktop, localDesktop } from "../app/desktop";
 import { Button } from "../components/ui/button";
+import { SCROLLBACK_DEFAULT, clampScrollback } from "../components/termCache";
 import { Badge, Card, Input, Label, Select, Switch } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
 import type { NodeView, Update } from "../protocol/domain";
@@ -15,7 +16,7 @@ import { PageHeader } from "./Page";
 
 // Settings: General (agent options, the optional GitHub account, the host, updates),
 // Models & agents (decision model), phone connections (LAN, Tailscale Serve), SSH
-// hosts and backup.
+// hosts and sync.
 
 // [id, label, icon]
 const SECTIONS: Array<[string, string, ReactElement]> = [
@@ -23,7 +24,7 @@ const SECTIONS: Array<[string, string, ReactElement]> = [
   ["models", "Models & agents", <Sparkles key="p" />],
   ["connections", "Phone connections", <Network key="c" />],
   ["nodes", "SSH hosts", <Server key="n" />],
-  ["backup", "Backup", <DatabaseBackup key="b" />],
+  ["sync", "Sync", <RefreshCw key="b" />],
 ];
 
 export function Settings(): ReactElement {
@@ -54,10 +55,11 @@ export function Settings(): ReactElement {
         <div className="min-w-0 flex-1 overflow-auto">
           <div className="mx-auto max-w-3xl p-6">
             {section === "general" ? <Harnesses /> : null}
+            {section === "general" ? <TerminalHistory /> : null}
             {section === "models" ? <Providers /> : null}
             {section === "connections" ? <Connections /> : null}
             {section === "nodes" ? <Nodes /> : null}
-            {section === "backup" ? <Backup /> : null}
+            {section === "sync" ? <Sync /> : null}
           </div>
         </div>
       </div>
@@ -448,6 +450,30 @@ function Row({ title, hint, children }: { title: string; hint?: ReactNode; child
         {hint !== undefined ? <p className="text-caption text-muted-foreground">{hint}</p> : null}
       </div>
       <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+const SCROLLBACK_CHOICES = [5000, 10000, 20000, 50000];
+
+/** How far back a terminal scrolls. Per viewer: it lives in this browser or app window, not in the host. */
+function TerminalHistory(): ReactElement {
+  const [lines, setLines] = usePersisted<number>("terminal.scrollback", SCROLLBACK_DEFAULT);
+  const value = SCROLLBACK_CHOICES.includes(lines) ? lines : SCROLLBACK_DEFAULT;
+  return (
+    <div className="mb-4 rounded-lg border border-border px-4">
+      <Row
+        title="Terminal history"
+        hint="Lines each terminal keeps to scroll back through. A line costs about 12 bytes per column (about 30 MB for 20,000 lines of 120 columns); the last 4 sessions you left keep theirs, so up to five terminals at once. Applies when a terminal next opens."
+      >
+        <Select value={value} onChange={(e) => setLines(clampScrollback(Number(e.target.value)))} aria-label="Terminal history">
+          {SCROLLBACK_CHOICES.map((n) => (
+            <option key={n} value={n}>
+              {n.toLocaleString("en-US")} lines
+            </option>
+          ))}
+        </Select>
+      </Row>
     </div>
   );
 }
@@ -1185,7 +1211,7 @@ function About({ version }: { version?: string }): ReactElement {
   );
 }
 
-interface BackupView {
+interface SyncView {
   github: boolean;
   interval_min: number;
   repo?: string;
@@ -1194,18 +1220,18 @@ interface BackupView {
 }
 
 /** The Compass, helper experience and the team records: a daily snapshot here, and a private GitHub repository. */
-function Backup(): ReactElement {
+function Sync(): ReactElement {
   const app = useApp();
-  const [b, setB] = useState<BackupView | null>(null);
+  const [b, setB] = useState<SyncView | null>(null);
   const [busy, setBusy] = useState(false);
   const [repo, setRepo] = useState<string>("");
   const [repoError, setRepoError] = useState("");
   const [repos, setRepos] = useState<{ full_name: string; private: boolean; description: string }[] | null>(null);
   useEffect(() => {
-    void app.call<BackupView>("backup.get").then((r) => r !== undefined && setRepo(r.repo ?? ""));
+    void app.call<SyncView>("sync.get").then((r) => r !== undefined && setRepo(r.repo ?? ""));
   }, []);
   useEffect(() => {
-    const load = (): void => void app.call<BackupView>("backup.get").then((r) => r !== undefined && setB(r));
+    const load = (): void => void app.call<SyncView>("sync.get").then((r) => r !== undefined && setB(r));
     load();
     const t = window.setInterval(load, 5000);
     return () => window.clearInterval(t);
@@ -1214,16 +1240,16 @@ function Backup(): ReactElement {
   const st = b.status;
   return (
     <div>
-      <H title="Backup">
-        The Compass and helpers&apos; experience. PenguPool keeps a snapshot a day on this machine and, with GitHub on, pushes the record to a private repository
-        your account can push to, created on the first backup when it is new.
+      <H title="Sync">
+        The Compass and helpers&apos; experience. With GitHub on, PenguPool syncs the record through a private repository your account can push to, created on the first sync
+        when it is new. Apart from that it always keeps a backup: a snapshot a day on this machine.
       </H>
       <Card className="px-4">
-        <Row title="Daily snapshot" hint={`The last 14 days, in ${b.local_dir}. Always on.`}>
+        <Row title="Daily backup" hint={`The last 14 days, in ${b.local_dir}. Always on.`}>
           <span className="text-label text-muted-foreground">{st.last_snapshot !== undefined ? shortTime(st.last_snapshot) : "Not yet"}</span>
         </Row>
         <Row
-          title="Back up to GitHub"
+          title="Sync with GitHub"
           hint={
             b.repo !== undefined
               ? `To github.com/${b.repo} (private), only when something changed.`
@@ -1232,9 +1258,9 @@ function Backup(): ReactElement {
         >
           <Switch
             checked={b.github}
-            label="Back up to GitHub"
+            label="Sync with GitHub"
             onCheckedChange={async (v) => {
-              const r = await app.call<BackupView>("backup.set", { github: v });
+              const r = await app.call<SyncView>("sync.set", { github: v });
               if (r !== undefined) setB(r);
             }}
           />
@@ -1243,7 +1269,7 @@ function Backup(): ReactElement {
           title="Repository"
           hint={
             <>
-              Any private repository your GitHub account can push to, or a new name to create one. Every machine and account that backs up to the same repository shares one
+              Any private repository your GitHub account can push to, or a new name to create one. Every machine and account that syncs with the same repository shares one
               file, pengupool-agents.db (SQLite, merged row by row): the Compass, experience and team records written on one reach the others. PenguPool writes nothing else there but a README in a repository it creates.
               {repoError !== "" ? <span className="block text-danger">{repoError}</span> : null}
             </>
@@ -1255,7 +1281,7 @@ function Backup(): ReactElement {
               e.preventDefault();
               setRepoError("");
               try {
-                setB(await app.conn.request<BackupView>("backup.set", { repo: repo.trim() }));
+                setB(await app.conn.request<SyncView>("sync.set", { repo: repo.trim() }));
                 toast.success("Saved");
               } catch (err) {
                 setRepoError((err as Error).message);
@@ -1265,11 +1291,11 @@ function Backup(): ReactElement {
             <Input
               className="w-56 font-mono"
               value={repo}
-              list="backup-repos"
+              list="sync-repos"
               onFocus={() => {
                 // Not cached on failure: the next focus tries again (after signing in, say).
                 if (repos === null)
-                  void app.conn.request<{ full_name: string; private: boolean; description: string }[]>("backup.repos").then(
+                  void app.conn.request<{ full_name: string; private: boolean; description: string }[]>("sync.repos").then(
                     (r) => {
                       setRepos(r);
                       setRepoError("");
@@ -1279,9 +1305,9 @@ function Backup(): ReactElement {
               }}
               onChange={(e) => setRepo(e.target.value)}
               placeholder="pengupool-memory"
-              aria-label="Backup repository"
+              aria-label="Sync repository"
             />
-            <datalist id="backup-repos">
+            <datalist id="sync-repos">
               {(repos ?? []).map((r) => (
                 <option key={r.full_name} value={r.full_name}>
                   {r.description}
@@ -1297,7 +1323,7 @@ function Backup(): ReactElement {
           <Select
             value={String(b.interval_min)}
             onChange={async (e) => {
-              const r = await app.call<BackupView>("backup.set", { interval_min: Number(e.target.value) });
+              const r = await app.call<SyncView>("sync.set", { interval_min: Number(e.target.value) });
               if (r !== undefined) setB(r);
             }}
           >
@@ -1309,7 +1335,7 @@ function Backup(): ReactElement {
           </Select>
         </Row>
         <Row
-          title="Last backup"
+          title="Last sync"
           hint={
             st.last_error !== undefined ? (
               <span className="text-danger">Failed: {st.last_error}</span>
@@ -1324,7 +1350,7 @@ function Backup(): ReactElement {
             disabled={busy || st.running}
             onClick={async () => {
               setBusy(true);
-              const r = await app.call<BackupView>("backup.now");
+              const r = await app.call<SyncView>("sync.now");
               setBusy(false);
               if (r !== undefined) {
                 setB(r);
@@ -1337,15 +1363,15 @@ function Backup(): ReactElement {
         </Row>
         {st.compact_suggested === true ? (
           <Row
-            title="Backup history is large: compact it"
+            title="Sync history is large: compact it"
             hint={`${st.compact_reason ?? ""}. Keeps the last 30 days of commits and replaces the rest with one base commit; other machines carry on as they are.`}
           >
             <Button
               disabled={busy || st.running}
               onClick={async () => {
-                if (!window.confirm("Rewrite the backup repository's history? The commits older than 30 days are replaced by one base commit.")) return;
+                if (!window.confirm("Rewrite the sync repository's history? The commits older than 30 days are replaced by one base commit.")) return;
                 setBusy(true);
-                const r = await app.call<BackupView>("backup.compact");
+                const r = await app.call<SyncView>("sync.compact");
                 setBusy(false);
                 if (r !== undefined) {
                   setB(r);

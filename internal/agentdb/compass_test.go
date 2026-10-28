@@ -229,7 +229,7 @@ func TestLearnThresholds(t *testing.T) {
 	}
 }
 
-// syncFile merges d with the backup file the way a round does: the union replaces the file when it differs.
+// syncFile merges d with the shared file the way a round does: the union replaces the file when it differs.
 func syncFile(d *DB, file string) error {
 	res, err := d.Merge(file, file+".out")
 	if err == nil && res.Changes != "" {
@@ -251,7 +251,7 @@ func fileCount(t *testing.T, file, q string) (n int) {
 	return n
 }
 
-// fileTables are the tables of a backup file, sorted.
+// fileTables are the tables of a shared file, sorted.
 func fileTables(t *testing.T, file string) ([]string, error) {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:"+file+"?mode=ro")

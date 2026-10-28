@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-// Shared record: one SQLite file (pengupool-agents.db) in a Git clone every machine and account
+// Shared record (the sync): one SQLite file (pengupool-agents.db) in a Git clone every machine and account
 // writes holds the lasting record: the Compass with the owner's signals and their effects, helper
 // experience entries, and the tombstones of those rows. No team has a record. The gates stay on
 // their machine.
@@ -46,18 +46,18 @@ var syncTables = []syncTable{
 
 type row = map[string]any
 
-// DamagedError is a backup file SQLite can't read or whose integrity check fails.
+// DamagedError is a shared file SQLite can't read or whose integrity check fails.
 type DamagedError struct{ Reason string }
 
 func (e *DamagedError) Error() string { return "damaged: " + e.Reason }
 
 // MergeResult is what a Merge found.
 type MergeResult struct {
-	Changes string // what the outgoing file adds to the backup file, by table ("compass +1 ~2, signals +5"); empty: nothing to push
-	Newer   bool   // the backup file is from a newer PenguPool: merged in, no outgoing file
+	Changes string // what the outgoing file adds to the shared file, by table ("compass +1 ~2, signals +5"); empty: nothing to push
+	Newer   bool   // the shared file is from a newer PenguPool: merged in, no outgoing file
 }
 
-// Merge merges the backup file's rows into the database and writes the union to out (a path this
+// Merge merges the shared file's rows into the database and writes the union to out (a path this
 // call makes), which holds the shared tables only. A missing file is an empty one. The change
 // count is by row content, not bytes: the out file's pages need not be byte-stable.
 func (d *DB) Merge(file, out string) (res MergeResult, err error) {
@@ -206,7 +206,7 @@ func quoteList(cols []string) []string {
 func quoteAll(cols []string) string { return strings.Join(quoteList(cols), ", ") }
 
 // applyTombstones deletes what the tombstones name. A signal's or a line's effects go with it, with no tombstones of their own. First the effects of a merged line (its
-// tombstone "merged:<drop>:<keep>") move to the line it was merged into, here and in the backup
+// tombstone "merged:<drop>:<keep>") move to the line it was merged into, here and in the shared
 // file, so an effect recorded on the dropped line before its merge arrived is kept.
 func applyTombstones(tx *sql.Tx) error {
 	merged, err := txStrings(tx, `SELECT substr(key, 8) FROM tombstones WHERE key LIKE 'merged:%'`)
@@ -294,7 +294,7 @@ func (t syncTable) live(r string) string {
 	return c
 }
 
-// mergeTable brings the backup file's rows of one table into the database: rows the database
+// mergeTable brings the shared file's rows of one table into the database: rows the database
 // lacks come in, and a row the file has newer (updated_at, then the larger row, so every machine
 // picks the same one) replaces it. A table with no updated_at is append-only, but for the heavier of
 // two effects of one key.
@@ -333,7 +333,7 @@ func mergeTable(tx *sql.Tx, t syncTable) error {
 	return err
 }
 
-// countChanges counts what the out file's table has against the backup file's: "+added ~changed
+// countChanges counts what the out file's table has against the shared file's: "+added ~changed
 // -removed", only the non-zero ones.
 func countChanges(tx *sql.Tx, t syncTable) (string, error) {
 	cols, err := t.shared(tx, "out", "repo")
@@ -366,7 +366,7 @@ func countChanges(tx *sql.Tx, t syncTable) (string, error) {
 	return strings.Join(s, " "), nil
 }
 
-// ImportShared reads the JSONL folder a 0.10 machine wrote (shared/) into a backup file at path, for
+// ImportShared reads the JSONL folder a 0.10 machine wrote (shared/) into a shared file at path, for
 // Merge to bring in once. Its memories that Upgrade carries over become Compass lines of owner, with
 // the same uids Upgrade makes, so a machine that upgraded its own copy of them gains no second line.
 func ImportShared(dir, path, owner string) error {

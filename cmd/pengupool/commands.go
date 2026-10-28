@@ -119,6 +119,14 @@ func cmdDaemon(args []string) error {
 	if err != nil {
 		return err
 	}
+	// The sessions running when the host last stopped: any whose worker is gone now (power off, crash)
+	// are resumed once the host listens, so their hooks reach it.
+	var wasRunning []string
+	for _, s := range st.State().Sessions {
+		if s.State == "running" {
+			wasRunning = append(wasRunning, s.ID)
+		}
+	}
 	if err := h.Start(ctx); err != nil {
 		return err
 	}
@@ -172,6 +180,7 @@ func cmdDaemon(args []string) error {
 				logf("host listening on %s", bound)
 				logf("unix socket %s", srv.SocketPath())
 				logf("browser app: %s", browserURL(dir, bound))
+				pl.RestoreLost(ctx, wasRunning)
 				return
 			}
 			time.Sleep(10 * time.Millisecond)

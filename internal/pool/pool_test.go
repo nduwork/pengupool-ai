@@ -261,9 +261,6 @@ func TestTeamGroupMovesWorktreeHelpers(t *testing.T) {
 		s.Sessions[0].TeamID, s.Sessions[1].TeamID = "t1", "t1"
 		return nil
 	})
-	if _, err := p.teamGroup(nil, groupIn{SessionID: "w"}); err == nil {
-		t.Fatal("a worktree helper left for the canvas alone")
-	}
 	if _, err := p.teamGroup(nil, groupIn{SessionID: "m1", ParentID: "m2"}); err != nil {
 		t.Fatal(err)
 	}
@@ -302,9 +299,6 @@ func TestTeamGroupEdges(t *testing.T) {
 		}
 		return nil
 	})
-	if _, err := p.teamGroup(nil, groupIn{SessionID: "w"}); err == nil {
-		t.Fatal("a worktree helper with a child rooted a new team")
-	}
 	if _, err := p.teamGroup(nil, groupIn{SessionID: "m", ParentID: "x"}); err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +306,7 @@ func TestTeamGroupEdges(t *testing.T) {
 	if tm := teamOf(&d, "h"); tm == nil || anchorOf(&d, tm) != "x" || parentOf(tm, "h") != "m" {
 		t.Fatalf("the helper under a closed member was left behind: %+v", d.Teams)
 	}
-	// x's team is 5; seven more sessions make it 8, and then a ninth is refused.
+	// x's team is 5; three more make 8, and a team of 8 takes more: a team has no size limit.
 	_ = st.Update(func(s *store.State) error {
 		for _, id := range []string{"a1", "a2", "a3"} {
 			s.Sessions = append(s.Sessions, store.Session{ID: id, Name: id, Harness: "claude", State: "running"})
@@ -324,8 +318,16 @@ func TestTeamGroupEdges(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := p.teamGroup(nil, groupIn{SessionID: "x", ParentID: "y"}); err == nil {
-		t.Fatal("an 8-member team made 9 on a loose session")
+	_ = st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions, store.Session{ID: "a4", Name: "a4", Harness: "claude", State: "running"})
+		return nil
+	})
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "a4", ParentID: "x"}); err != nil {
+		t.Fatalf("a ninth member was refused: %v", err)
+	}
+	d = st.State().Domain
+	if tm := teamOf(&d, "a4"); tm == nil || activeMembers(tm) != 9 {
+		t.Fatalf("the team did not grow to 9: %+v", tm)
 	}
 }
 
@@ -996,14 +998,14 @@ func TestBackupSnapshotAndPush(t *testing.T) {
 	}
 	origin := filepath.Join(gh, "me", "pengupool-memory.git")
 	cfg := st.Config()
-	cfg.Backup.GitHub = true
+	cfg.Sync.GitHub = true
 	_ = st.SaveConfig(cfg)
 	ctx := context.Background()
-	if err := p.backupOnce(ctx); err != nil {
+	if err := p.syncOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if st.Config().Backup.Repo != "me/pengupool-memory" {
-		t.Fatalf("repo %q", st.Config().Backup.Repo)
+	if st.Config().Sync.Repo != "me/pengupool-memory" {
+		t.Fatalf("repo %q", st.Config().Sync.Repo)
 	}
 	day := time.Now().Format("2006-01-02")
 	if _, err := os.Stat(filepath.Join(st.Dir(), store.BackupsDir, "agents-"+day+".db")); err != nil {
@@ -1022,13 +1024,13 @@ func TestBackupSnapshotAndPush(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 	before := count()
-	if err := p.backupOnce(ctx); err != nil {
+	if err := p.syncOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if after := count(); after != before {
 		t.Fatalf("an unchanged record was pushed again: %s → %s commits", before, after)
 	}
-	if v := p.backupView()["status"].(backupStatus); v.LastPush == "" || v.LastSnapshot == "" || v.LastError != "" {
+	if v := p.syncView()["status"].(syncStatus); v.LastPush == "" || v.LastSnapshot == "" || v.LastError != "" {
 		t.Fatalf("status %+v", v)
 	}
 }
@@ -1036,7 +1038,7 @@ func TestBackupSnapshotAndPush(t *testing.T) {
 // The owner picks any private repository the account can push to: one it can't push to, or a
 // public one, is refused at once; switching moves the old clone aside and PenguPool touches only
 // pengupool-agents.db of the repository, on that repository's default branch.
-func TestBackupSharedRepository(t *testing.T) {
+func TestSyncSharedRepository(t *testing.T) {
 	gh, env := fakeGitHub(t)
 	st, err := store.Open(t.TempDir())
 	if err != nil {
@@ -1069,28 +1071,28 @@ func TestBackupSharedRepository(t *testing.T) {
 		os.WriteFile(filepath.Join(gh, repo+".json"), []byte(view), 0o644)
 	}
 	cfg := st.Config()
-	cfg.Backup.Repo = "me/old"
+	cfg.Sync.Repo = "me/old"
 	_ = st.SaveConfig(cfg)
-	if err := p.pushBackup(ctx); err != nil { // creates me/old
+	if err := p.pushSync(ctx); err != nil { // creates me/old
 		t.Fatal(err)
 	}
 	for repo, want := range map[string]string{"not a repo!": "name or owner/name", "org/public": "not private", "org/readonly": "can't push to it"} {
-		if _, err := p.backupSet(ctx, backupSetIn{Repo: &repo}); err == nil || !strings.Contains(err.Error(), want) {
+		if _, err := p.syncSet(ctx, syncSetIn{Repo: &repo}); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: want %q, got %v", repo, want, err)
 		}
 	}
-	if st.Config().Backup.Repo != "me/old" {
-		t.Fatalf("a refused repository was saved: %q", st.Config().Backup.Repo)
+	if st.Config().Sync.Repo != "me/old" {
+		t.Fatalf("a refused repository was saved: %q", st.Config().Sync.Repo)
 	}
 	fresh := "fresh" // a new name in the account: created on the next push
-	if _, err := p.backupSet(ctx, backupSetIn{Repo: &fresh}); err != nil || st.Config().Backup.Repo != "me/fresh" {
-		t.Fatalf("new name: %v, saved %q", err, st.Config().Backup.Repo)
+	if _, err := p.syncSet(ctx, syncSetIn{Repo: &fresh}); err != nil || st.Config().Sync.Repo != "me/fresh" {
+		t.Fatalf("new name: %v, saved %q", err, st.Config().Sync.Repo)
 	}
 	to := "https://github.com/org/shared.git"
-	if _, err := p.backupSet(ctx, backupSetIn{Repo: &to}); err != nil || st.Config().Backup.Repo != "org/shared" {
-		t.Fatalf("shared: %v, saved %q", err, st.Config().Backup.Repo)
+	if _, err := p.syncSet(ctx, syncSetIn{Repo: &to}); err != nil || st.Config().Sync.Repo != "org/shared" {
+		t.Fatalf("shared: %v, saved %q", err, st.Config().Sync.Repo)
 	}
-	if err := p.pushBackup(ctx); err != nil {
+	if err := p.pushSync(ctx); err != nil {
 		t.Fatal(err)
 	}
 	aside, _ := filepath.Glob(filepath.Join(st.Dir(), "sync", "repo-me-old-*"))
@@ -1100,12 +1102,12 @@ func TestBackupSharedRepository(t *testing.T) {
 	out, _ := exec.Command("git", "--git-dir", shared, "ls-tree", "-r", "--name-only", "trunk").Output()
 	files := strings.Fields(string(out))
 	readme, _ := exec.Command("git", "--git-dir", shared, "show", "trunk:README.md").Output()
-	if !slices.Contains(files, "notes.txt") || string(readme) != "shared readme\n" || !slices.Contains(files, backupFile) {
+	if !slices.Contains(files, "notes.txt") || string(readme) != "shared readme\n" || !slices.Contains(files, syncFile) {
 		t.Fatalf("shared repository after the push: %v, README %q", files, readme)
 	}
 	for _, f := range files {
-		if f != "notes.txt" && f != "README.md" && f != backupFile {
-			t.Errorf("PenguPool wrote %s, outside %s", f, backupFile)
+		if f != "notes.txt" && f != "README.md" && f != syncFile {
+			t.Errorf("PenguPool wrote %s, outside %s", f, syncFile)
 		}
 	}
 	if err := exec.Command("git", "--git-dir", shared, "rev-parse", "--verify", "-q", "main").Run(); err == nil {
@@ -1117,12 +1119,12 @@ func TestBackupSharedRepository(t *testing.T) {
 {"full_name":"org/shared","private":true,"push":true,"description":"team"}
 {"full_name":"b/priv","private":true,"push":true}
 `), 0o644)
-	res, err := p.backupRepos(ctx, refreshIn{Refresh: true})
+	res, err := p.syncRepos(ctx, refreshIn{Refresh: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var names []string
-	for _, r := range res.([]backupRepo) {
+	for _, r := range res.([]syncRepo) {
 		names = append(names, r.FullName)
 	}
 	if !slices.Equal(names, []string{"b/priv", "org/shared"}) {
@@ -1130,7 +1132,7 @@ func TestBackupSharedRepository(t *testing.T) {
 	}
 	// A repository that turned public is refused before the next run's first push.
 	os.WriteFile(filepath.Join(gh, "org", "shared.json"), []byte(`{"viewerPermission":"WRITE","visibility":"PUBLIC"}`), 0o644)
-	if err := New(Options{Store: st, Exe: "pengupool", Env: env}).pushBackup(ctx); err == nil || !strings.Contains(err.Error(), "not private") {
+	if err := New(Options{Store: st, Exe: "pengupool", Env: env}).pushSync(ctx); err == nil || !strings.Contains(err.Error(), "not private") {
 		t.Fatalf("a repository that turned public: %v", err)
 	}
 }
@@ -1146,7 +1148,7 @@ func TestSharedMemoryAcrossMachines(t *testing.T) {
 			t.Fatal(err)
 		}
 		cfg := st.Config()
-		cfg.Backup.GitHub, cfg.Backup.Repo = true, "me/pengupool-memory"
+		cfg.Sync.GitHub, cfg.Sync.Repo = true, "me/pengupool-memory"
 		_ = st.SaveConfig(cfg)
 		_ = st.Update(func(s *store.State) error {
 			s.Domain.Skills = []protocol.Skill{{ID: skillID, Name: "gcp", Key: "github.com/o/gcp"}}
@@ -1158,7 +1160,7 @@ func TestSharedMemoryAcrossMachines(t *testing.T) {
 	sync := func(ps ...*Pool) {
 		t.Helper()
 		for _, p := range ps {
-			if err := p.pushBackup(ctx); err != nil {
+			if err := p.pushSync(ctx); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -1900,5 +1902,201 @@ func TestAddMessageKeepsQueued(t *testing.T) {
 	ms := st.Domain.Messages
 	if len(ms) != keepMessages || ms[0].ID != "q" || ms[len(ms)-1].ID != fmt.Sprint(keepMessages+4) {
 		t.Fatalf("%d kept, first %s, last %s", len(ms), ms[0].ID, ms[len(ms)-1].ID)
+	}
+}
+
+// The owner's rule for team assembly: no limit, and only the rules that keep the roster whole. A
+// session joins under the anchor (the group frame's drop), a subtree splits off as a team of its own
+// with its worktree, a worktree session leaves for ungrouped, and a refused move says why in the log.
+func TestTeamAssemblyIsFlexible(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logged []string
+	p := New(Options{Store: st, Exe: "pengupool", Logf: func(f string, a ...any) { logged = append(logged, fmt.Sprintf(f, a...)) }})
+	_ = st.Update(func(s *store.State) error {
+		for _, id := range []string{"m", "w", "c", "x", "y"} {
+			s.Sessions = append(s.Sessions, store.Session{ID: id, Name: id, Harness: "claude", State: "running"})
+		}
+		s.Sessions = append(s.Sessions, store.Session{ID: "sh", Name: "sh", State: "running"})
+		for i := 0; i < 12; i++ { // a team of 14: no cap
+			id := fmt.Sprintf("h%d", i)
+			s.Sessions = append(s.Sessions, store.Session{ID: id, Name: id, Harness: "claude", State: "running", TeamID: "t1", Role: "helper"})
+		}
+		ms := []protocol.Member{
+			{SessionID: "m", Name: "m", Role: "main", State: "active"},
+			{SessionID: "w", Name: "w", Role: "helper", State: "active", Worktree: "/wt/w", Branch: "b", RepoID: "r1"},
+			{SessionID: "c", Name: "c", Role: "helper", State: "active", Parent: "w"}}
+		for i := 0; i < 12; i++ {
+			ms = append(ms, protocol.Member{SessionID: fmt.Sprintf("h%d", i), Name: fmt.Sprintf("h%d", i), Role: "helper", State: "active"})
+		}
+		s.Domain.Teams = append(s.Domain.Teams, protocol.Team{ID: "t1", Name: "one", RepoID: "r1", State: "active", Members: ms})
+		for i := range s.Sessions {
+			if s.Sessions[i].ID == "m" || s.Sessions[i].ID == "w" || s.Sessions[i].ID == "c" {
+				s.Sessions[i].TeamID = "t1"
+			}
+		}
+		return nil
+	})
+	// No cap, and the group frame's drop: x joins under the anchor.
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "x", ParentID: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	d := st.State().Domain
+	if tm := teamOf(&d, "x"); tm == nil || tm.ID != "t1" || activeMembers(tm) != 16 || parentOf(tm, "x") != "m" {
+		t.Fatalf("x did not join under the anchor of a 15-member team: %+v", tm)
+	}
+	// Split a worktree session with its subtree into a team of its own: it keeps its worktree.
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w"}); err != nil {
+		t.Fatalf("a worktree session could not split off: %v", err)
+	}
+	d = st.State().Domain
+	nt := teamOf(&d, "w")
+	if nt == nil || nt.ID == "t1" || activeMembers(nt) != 2 || anchorOf(&d, nt) != "w" || parentOf(nt, "c") != "w" {
+		t.Fatalf("the subtree did not become a team: %+v", nt)
+	}
+	if r := nt.Members[0]; r.SessionID != "w" || r.Role != "main" || r.Worktree != "/wt/w" || r.Branch != "b" || r.RepoID != "r1" {
+		t.Fatalf("the new team's root lost its worktree: %+v", r)
+	}
+	// A worktree session moves between teams, and back to ungrouped; the worktree stays on the record.
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w", ParentID: "y"}); err != nil {
+		t.Fatal(err)
+	}
+	d = st.State().Domain
+	if tm := teamOf(&d, "w"); tm == nil || tm.ID == "t1" || teamOf(&d, "c") == nil || teamOf(&d, "c").ID != tm.ID {
+		t.Fatalf("w and c did not move onto y: %+v", d.Teams)
+	}
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w", Ungroup: true}); err != nil {
+		t.Fatal(err)
+	}
+	d = st.State().Domain
+	if teamOf(&d, "w") != nil || teamOf(&d, "c") == nil {
+		t.Fatalf("w left, c stays: %+v", d.Teams)
+	}
+	kept := false
+	for _, tm := range d.Teams {
+		for _, m := range tm.Members {
+			kept = kept || m.SessionID == "w" && m.Worktree == "/wt/w" && m.State == "closed"
+		}
+	}
+	if !kept {
+		t.Fatal("the worktree session's worktree is no longer on any roster")
+	}
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "h1", ParentID: "h0"}); err != nil {
+		t.Fatal(err)
+	}
+	// What still refuses, with its reason in the error and in the log.
+	for name, c := range map[string]struct {
+		in   groupIn
+		want string
+	}{
+		"shell":     {groupIn{SessionID: "sh", ParentID: "m"}, "only agent sessions"},
+		"itself":    {groupIn{SessionID: "m", ParentID: "m"}, "under itself"},
+		"main":      {groupIn{SessionID: "m", Ungroup: true}, "main worker"},
+		"loop":      {groupIn{SessionID: "h0", ParentID: "h1"}, "its own descendant"},
+		"nosession": {groupIn{SessionID: "nope", ParentID: "m"}, "no session"},
+	} {
+		logged = nil
+		_, err := p.teamGroup(nil, c.in)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Fatalf("%s: err = %v, want it to say %q", name, err, c.want)
+		}
+		if len(logged) != 1 || !strings.Contains(logged[0], c.want) {
+			t.Fatalf("%s: log = %v", name, logged)
+		}
+	}
+}
+
+// Review of #75: a worktree session that leaves a team, or whose split team ends, keeps its worktree
+// for the next team; the team it roots works in its repository; closing finds the live record.
+func TestWorktreeSessionKeepsItsWorktreeOffTeam(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(Options{Store: st, Exe: "pengupool"})
+	_ = st.Update(func(s *store.State) error {
+		for _, id := range []string{"m", "w", "c", "sh"} {
+			h := "claude"
+			if id == "sh" {
+				h = ""
+			}
+			s.Sessions = append(s.Sessions, store.Session{ID: id, Name: id, Harness: h, State: "running"})
+		}
+		s.Domain.Repos = append(s.Domain.Repos, protocol.Repo{ID: "r1", Path: "/repo"})
+		s.Domain.Teams = append(s.Domain.Teams, protocol.Team{ID: "t1", Name: "one", RepoID: "r1", State: "active", Members: []protocol.Member{
+			{SessionID: "m", Name: "m", Role: "main", State: "active"},
+			{SessionID: "w", Name: "w", Role: "helper", State: "active", Worktree: "/wt/w", Branch: "b", BaseCommit: "abc", RepoID: "r1"},
+			{SessionID: "c", Name: "c", Role: "helper", State: "active", Parent: "w"}}})
+		for i := range s.Sessions {
+			if s.Sessions[i].ID != "sh" {
+				s.Sessions[i].TeamID = "t1"
+			}
+		}
+		return nil
+	})
+	live := func(team, id string) protocol.Member {
+		_, m, _, err := p.member(team, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	// Ungroup, then regroup into the same team: one live record with the worktree, and it closes as a helper.
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w", Ungroup: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w", ParentID: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	if m := live("t1", "w"); m.State != "active" || m.Worktree != "/wt/w" || m.Branch != "b" || m.BaseCommit != "abc" || m.RepoID != "r1" {
+		t.Fatalf("w lost its worktree on regroup: %+v", m)
+	}
+	n := 0
+	for _, m := range st.State().Domain.Teams[0].Members {
+		if m.SessionID == "w" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("t1 holds %d records of w", n)
+	}
+	// A split worktree root whose last child leaves is teamless; it still brings the worktree back.
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "c", ParentID: "w"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w"}); err != nil {
+		t.Fatal(err)
+	}
+	d := st.State().Domain
+	nt := teamOf(&d, "w")
+	if nt == nil || nt.RepoID != "r1" {
+		t.Fatalf("the split team has no repository: %+v", nt)
+	}
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "c", Ungroup: true}); err != nil {
+		t.Fatal(err)
+	}
+	d = st.State().Domain
+	if teamOf(&d, "w") != nil {
+		t.Fatal("the one-member team did not end")
+	}
+	if _, err := p.teamGroup(nil, groupIn{SessionID: "w", ParentID: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	d = st.State().Domain
+	tm := teamOf(&d, "w")
+	if tm == nil || teamOf(&d, "m") == nil || teamOf(&d, "m").ID != tm.ID { // t1 ended with its last helper; m's team is new
+		t.Fatalf("w did not join m: %+v", tm)
+	}
+	if tm.RepoID != "r1" && !slices.Contains(tm.Repos, "r1") {
+		t.Fatalf("the team's context leaves out the repository w works in: repo %q repos %v", tm.RepoID, tm.Repos)
+	}
+	if m := live(tm.ID, "w"); m.Worktree != "/wt/w" || m.State != "active" {
+		t.Fatalf("w lost its worktree after its team ended: %+v", m)
+	}
+	// A plain terminal does not join a team by any request.
+	if _, err := p.teamAddSession(nil, addSessionIn{TeamID: tm.ID, SessionID: "sh"}); err == nil || !strings.Contains(err.Error(), "only agent sessions") {
+		t.Fatalf("a shell joined through team.add_session: %v", err)
 	}
 }

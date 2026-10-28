@@ -157,6 +157,11 @@ export function agentOptions(agents: readonly { id: string; label: string; exper
   return out;
 }
 
+/** A raw terminal tab: the owner's login shell, on no team and with no agent (shell.open). */
+export function isShell(s: { harness?: string }): boolean {
+  return s.harness === "shell";
+}
+
 export function isAgent(s: { harness?: string }): boolean {
   return AGENTS.some((a) => a.id === s.harness);
 }

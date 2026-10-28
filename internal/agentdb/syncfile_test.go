@@ -97,7 +97,7 @@ func TestImportShared(t *testing.T) {
 	}
 }
 
-// A backup of version 1 still holding each team's epics, milestones and tickets merges without
+// A shared file of version 1 still holding each team's epics, milestones and tickets merges without
 // them (nor the helpers' old notes): its tombstones for them are dropped too, and the file written
 // back holds the v3 layout only.
 func TestMergeIgnoresTeamTables(t *testing.T) {

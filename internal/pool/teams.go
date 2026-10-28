@@ -28,7 +28,8 @@ import (
 // (formation.go). A team outlives its task: a new task for the same team starts its next cycle. Only
 // the owner completes or cancels a task; nothing is merged automatically.
 
-const maxMembers = 8
+// proposedHelpers caps how many helpers the formation rules propose; a team itself has no size limit.
+const proposedHelpers = 7
 const maxCandidates = 20
 
 type taskIn struct {
@@ -312,7 +313,7 @@ func rankCandidates(d *protocol.Domain, t protocol.Task, required []string) []ca
 func rulesHelpers(cands []candidate) []candidate {
 	var out []candidate
 	for _, c := range cands {
-		if len(c.covered) > 0 && len(out) < maxMembers-1 {
+		if len(c.covered) > 0 && len(out) < proposedHelpers {
 			out = append(out, c)
 		}
 	}
@@ -381,8 +382,8 @@ func (p *Pool) proposalEdit(_ context.Context, in proposalEditIn) (any, error) {
 				return invalid("%s can only run on %s", m.Name, strings.Join(sk.Requires, " or "))
 			}
 		}
-		if mains != 1 || len(in.Members) > maxMembers {
-			return invalid("a team has exactly one main worker and at most %d members", maxMembers)
+		if mains != 1 {
+			return invalid("a team has exactly one main worker")
 		}
 		out = cur
 		out.ID, out.Version, out.Members, out.CreatedAt = protocol.NewID(), cur.Version+1, in.Members, now()
@@ -678,9 +679,6 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 			return nil, conflict("%s already assists this team", sk.Name)
 		}
 	}
-	if activeMembers(team) >= maxMembers {
-		return nil, conflict("a team has at most %d members", maxMembers)
-	}
 	anchor := anchorSkill(*sk)
 	repo := findRepo(&d, team.RepoID)
 	if !anchor && repo == nil {
@@ -825,13 +823,18 @@ func (p *Pool) member(teamID, sessionID string) (protocol.Team, protocol.Member,
 	if r := findRepo(&d, t.RepoID); r != nil {
 		repo = *r
 	}
-	for _, m := range t.Members {
-		if m.SessionID == sessionID {
-			if r := findRepo(&d, m.RepoID); r != nil { // an SME works in its own repository
-				repo = *r
-			}
-			return *t, m, repo, nil
+	found := -1
+	for i, m := range t.Members {
+		if m.SessionID == sessionID && (found < 0 || m.State == "active" && t.Members[found].State != "active") {
+			found = i // a session may also have a closed record here: the active one wins
 		}
+	}
+	if found >= 0 {
+		m := t.Members[found]
+		if r := findRepo(&d, m.RepoID); r != nil { // an SME works in its own repository
+			repo = *r
+		}
+		return *t, m, repo, nil
 	}
 	return *t, protocol.Member{}, repo, notFound("not a member of %s", t.Name)
 }
@@ -1020,9 +1023,6 @@ func (p *Pool) teamCreate(_ context.Context, in teamCreateIn) (any, error) {
 	if strings.TrimSpace(in.Name) == "" || len(in.SessionIDs) == 0 {
 		return nil, invalid("a team needs a name and at least one session")
 	}
-	if len(in.SessionIDs) > maxMembers {
-		return nil, invalid("a team has at most %d members", maxMembers)
-	}
 	var team protocol.Team
 	lan := p.st.Config().Network.LAN // read before the update: the store's lock is not reentrant
 	err := p.update(func(st *store.State) error {
@@ -1085,17 +1085,11 @@ func (p *Pool) teamAddSession(_ context.Context, in addSessionIn) (any, error) {
 			return notFound("no session")
 		}
 		s := &st.Sessions[i]
+		if !harness.IsAgent(s.Harness) {
+			return invalid("only agent sessions join a team (%s)", firstNonEmpty(s.Harness, "shell"))
+		}
 		if teamOf(&st.Domain, s.ID) != nil {
 			return conflict("already in a team")
-		}
-		active := 0
-		for _, m := range t.Members {
-			if m.State == "active" {
-				active++
-			}
-		}
-		if active >= maxMembers {
-			return conflict("a team has at most %d members", maxMembers)
 		}
 		s.TeamID, s.Role = t.ID, "helper"
 		t.Members = append(t.Members, protocol.Member{SessionID: s.ID, Name: s.Name, Role: "helper", State: "active"})

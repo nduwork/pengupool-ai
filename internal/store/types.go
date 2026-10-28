@@ -75,13 +75,17 @@ type Session struct {
 	CostUSD float64 `json:"cost_usd,omitempty"`
 	// Model is the model it last reported; JobStart is when its current piece of work began (the
 	// first prompt after its last log entry), recorded on that entry.
-	Model      string    `json:"model,omitempty"`
-	JobStart   time.Time `json:"job_start,omitempty"`
-	Branch     string    `json:"branch,omitempty"`
-	RunLog     string    `json:"run_log,omitempty"`
-	Transcript string    `json:"transcript,omitempty"`
-	ConvID     string    `json:"conv_id,omitempty"`
-	Env        []string  `json:"env,omitempty"`
+	Model string `json:"model,omitempty"`
+	// LaunchModel and LaunchEffort are what it was started with ("ollama/<m>" on Ollama), so a resume
+	// starts it the same way.
+	LaunchModel  string    `json:"launch_model,omitempty"`
+	LaunchEffort string    `json:"launch_effort,omitempty"`
+	JobStart     time.Time `json:"job_start,omitempty"`
+	Branch       string    `json:"branch,omitempty"`
+	RunLog       string    `json:"run_log,omitempty"`
+	Transcript   string    `json:"transcript,omitempty"`
+	ConvID       string    `json:"conv_id,omitempty"`
+	Env          []string  `json:"env,omitempty"`
 	// ActiveAt is the last harness activity (hook event); Summary is the owner\'s role description.
 	ActiveAt time.Time `json:"active_at,omitempty"`
 	Summary  string    `json:"summary,omitempty"`
@@ -124,8 +128,10 @@ type Config struct {
 	// MuseDevices are paired Muse app devices: name, token hash, created
 	// and last seen. Tokens themselves are shown once and never stored.
 	MuseDevices []MuseDevice `json:"muse_devices,omitempty"`
-	// Backup pushes the Compass and the helpers' experience to a private GitHub repository.
-	Backup Backup `json:"backup"`
+	// Sync shares the Compass and the helpers' experience through a private GitHub repository.
+	Sync Sync `json:"sync"`
+	// Backup is Sync's old name: read when there is no "sync", and written beside it for one release so a downgrade keeps the settings.
+	Backup *Sync `json:"backup,omitempty"`
 }
 
 // MuseDevice is one paired Muse app device: the token lives only as a hash.
@@ -136,9 +142,9 @@ type MuseDevice struct {
 	LastSeen  string `json:"last_seen,omitempty"`
 }
 
-// Backup: a daily snapshot is always kept on this machine; GitHub adds the push to a private
-// repository in the signed-in account, created on the first push.
-type Backup struct {
+// Sync: GitHub adds the sync of the record through a private repository in the signed-in account,
+// created on the first push. (The daily snapshots on this machine, BackupsDir, are always kept.)
+type Sync struct {
 	GitHub      bool   `json:"github"`
 	IntervalMin int    `json:"interval_min,omitempty"` // minutes between pushes; 0: every 5
 	Repo        string `json:"repo,omitempty"`         // owner/name, recorded once created
