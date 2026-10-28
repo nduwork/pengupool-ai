@@ -65,12 +65,6 @@ var floorProse = []struct {
 	{"uploading data", regexp.MustCompile(`(?i)\bupload(s|ed|ing)?\b`)},
 }
 
-// floorWords is the floor in plain words, for agents and triage's go-ahead.
-const floorWords = "deleting anything outside the worktree, rm -rf, shredding or overwriting files, git reset --hard, git clean, dropping a stash, deleting a branch, force-pushing, " +
-	"any git push, merging to main or another shared branch, opening or merging a pull request, releasing, deploying, publishing or anything touching production, " +
-	"kubectl, helm, migrations, terraform, dropping tables, changing cloud resources, sending email or messages outside the team, uploading data, gh api writes, " +
-	"and anything touching credentials, secrets, tokens, API keys, payments or permission grants"
-
 // floorFold makes look-alikes plain before matching: NFKC (full-width letters, ligatures,
 // non-breaking spaces), every Unicode dash and minus to "-", every other space to " ", and
 // invisible format characters (zero-width spaces and joiners) dropped. Case is folded by the

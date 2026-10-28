@@ -86,8 +86,9 @@ func TestMemorySearchIsAnAliasOfSearch(t *testing.T) {
 	}
 }
 
-// With no daemon to answer, a PreToolUse fails closed (the floor); other hooks stay silent.
-func TestHookFailsClosedForPreToolUse(t *testing.T) {
+// With no daemon to answer, or a call it cannot judge, every hook prints nothing: the harness's own
+// permissions decide, and PenguPool adds no question of its own.
+func TestHookAddsNoQuestionWhenUnjudged(t *testing.T) {
 	t.Setenv("PENGUPOOL_SESSION_ID", "s1")
 	t.Setenv("PENGUPOOL_STORE", t.TempDir())
 	run := func(h, event, in string) string {
@@ -106,17 +107,15 @@ func TestHookFailsClosedForPreToolUse(t *testing.T) {
 		}
 		return string(b)
 	}
-	if out := run("claude", "PreToolUse", `{"tool_name":"Bash"}`); !strings.Contains(out, `"permissionDecision":"ask"`) {
-		t.Errorf("claude, no daemon: %q", out)
-	}
-	if out := run("codex", "PreToolUse", `{"tool_name":"Bash"}`); !strings.Contains(out, `"permissionDecision":"deny"`) {
-		t.Errorf("codex, no daemon: %q", out)
-	}
-	if out := run("claude", "PreToolUse", `{"x":"`+strings.Repeat("a", 1<<20)+`"}`); !strings.Contains(out, "too large") {
-		t.Errorf("an oversized payload: %.80q", out)
-	}
-	if out := run("claude", "PreToolUse", "not json"); !strings.Contains(out, "could not be read") {
-		t.Errorf("an unreadable payload: %q", out)
+	for name, c := range map[string][2]string{
+		"claude, no daemon":  {"claude", `{"tool_name":"Bash"}`},
+		"codex, no daemon":   {"codex", `{"tool_name":"Bash"}`},
+		"oversized payload":  {"claude", `{"x":"` + strings.Repeat("a", 1<<20) + `"}`},
+		"unreadable payload": {"claude", "not json"},
+	} {
+		if out := run(c[0], "PreToolUse", c[1]); out != "" {
+			t.Errorf("%s: %.80q", name, out)
+		}
 	}
 	for _, ev := range []string{"PostToolUse", "Stop", "UserPromptSubmit"} {
 		if out := run("claude", ev, `{}`); out != "" {

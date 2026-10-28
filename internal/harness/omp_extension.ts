@@ -86,7 +86,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (e: any, ctx) => {
     if (!pooled(ctx as Ctx)) return
     const out = await run("PreToolUse", { tool_name: String(e.toolName), tool_input: e.input, tool_use_id: e.toolCallId })
-    if (out === null) return { block: true, reason: "PenguPool could not check this tool call; ask the owner" }
+    if (!out) return // PenguPool did not answer: the harness's own permissions apply
     try {
       const h = JSON.parse(out)?.hookSpecificOutput
       if (h?.permissionDecision === "deny" || h?.permissionDecision === "ask") return { block: true, reason: String(h.permissionDecisionReason || "PenguPool: the owner decides this.") }
