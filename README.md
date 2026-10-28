@@ -97,6 +97,9 @@ v0.7.0: Compass lines read as the owner's rule or only likely; search
 stems words; hedged words weigh half; lines pulled both ways go to review
 (restate or remove); a Gaussian belief runs in shadow beside the Beta one,
 reported by `pengupool eval` with a drift benchmark.
+v0.7.1: a correction is read as a change of preference with PAHF's cue
+phrases, and a narrower rule in it is kept as a new line; the drift
+benchmark adds PAHF's shopping drift; PAHF credited.
 
 ## Credits
 
