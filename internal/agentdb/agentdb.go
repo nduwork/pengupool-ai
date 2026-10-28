@@ -1,5 +1,5 @@
 // Package agentdb is PenguPool's record: one SQLite database owned by the host, independent of
-// every repository, and the same on every machine and account that shares a backup repository.
+// every repository, and the same on every machine and account that shares a sync repository.
 //
 //   - compass: the owner's preference lines, one global set; signals and signal_effects: what the
 //     owner said or chose and what each did to a line, from which a line's belief is replayed;
@@ -523,7 +523,7 @@ func (d *DB) MergeLines(keep, drop, body string) error {
 	})
 }
 
-// foldEffects moves the effects of line drop to keep in an effects table (this one's or a backup
+// foldEffects moves the effects of line drop to keep in an effects table (this one's or a shared
 // file's, "repo.signal_effects"): on a clash for one signal the heavier stays.
 func foldEffects(tx *sql.Tx, table, keep, drop string) error {
 	for _, q := range []string{

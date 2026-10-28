@@ -998,14 +998,14 @@ func TestBackupSnapshotAndPush(t *testing.T) {
 	}
 	origin := filepath.Join(gh, "me", "pengupool-memory.git")
 	cfg := st.Config()
-	cfg.Backup.GitHub = true
+	cfg.Sync.GitHub = true
 	_ = st.SaveConfig(cfg)
 	ctx := context.Background()
-	if err := p.backupOnce(ctx); err != nil {
+	if err := p.syncOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if st.Config().Backup.Repo != "me/pengupool-memory" {
-		t.Fatalf("repo %q", st.Config().Backup.Repo)
+	if st.Config().Sync.Repo != "me/pengupool-memory" {
+		t.Fatalf("repo %q", st.Config().Sync.Repo)
 	}
 	day := time.Now().Format("2006-01-02")
 	if _, err := os.Stat(filepath.Join(st.Dir(), store.BackupsDir, "agents-"+day+".db")); err != nil {
@@ -1024,13 +1024,13 @@ func TestBackupSnapshotAndPush(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 	before := count()
-	if err := p.backupOnce(ctx); err != nil {
+	if err := p.syncOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if after := count(); after != before {
 		t.Fatalf("an unchanged record was pushed again: %s → %s commits", before, after)
 	}
-	if v := p.backupView()["status"].(backupStatus); v.LastPush == "" || v.LastSnapshot == "" || v.LastError != "" {
+	if v := p.syncView()["status"].(syncStatus); v.LastPush == "" || v.LastSnapshot == "" || v.LastError != "" {
 		t.Fatalf("status %+v", v)
 	}
 }
@@ -1038,7 +1038,7 @@ func TestBackupSnapshotAndPush(t *testing.T) {
 // The owner picks any private repository the account can push to: one it can't push to, or a
 // public one, is refused at once; switching moves the old clone aside and PenguPool touches only
 // pengupool-agents.db of the repository, on that repository's default branch.
-func TestBackupSharedRepository(t *testing.T) {
+func TestSyncSharedRepository(t *testing.T) {
 	gh, env := fakeGitHub(t)
 	st, err := store.Open(t.TempDir())
 	if err != nil {
@@ -1071,28 +1071,28 @@ func TestBackupSharedRepository(t *testing.T) {
 		os.WriteFile(filepath.Join(gh, repo+".json"), []byte(view), 0o644)
 	}
 	cfg := st.Config()
-	cfg.Backup.Repo = "me/old"
+	cfg.Sync.Repo = "me/old"
 	_ = st.SaveConfig(cfg)
-	if err := p.pushBackup(ctx); err != nil { // creates me/old
+	if err := p.pushSync(ctx); err != nil { // creates me/old
 		t.Fatal(err)
 	}
 	for repo, want := range map[string]string{"not a repo!": "name or owner/name", "org/public": "not private", "org/readonly": "can't push to it"} {
-		if _, err := p.backupSet(ctx, backupSetIn{Repo: &repo}); err == nil || !strings.Contains(err.Error(), want) {
+		if _, err := p.syncSet(ctx, syncSetIn{Repo: &repo}); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: want %q, got %v", repo, want, err)
 		}
 	}
-	if st.Config().Backup.Repo != "me/old" {
-		t.Fatalf("a refused repository was saved: %q", st.Config().Backup.Repo)
+	if st.Config().Sync.Repo != "me/old" {
+		t.Fatalf("a refused repository was saved: %q", st.Config().Sync.Repo)
 	}
 	fresh := "fresh" // a new name in the account: created on the next push
-	if _, err := p.backupSet(ctx, backupSetIn{Repo: &fresh}); err != nil || st.Config().Backup.Repo != "me/fresh" {
-		t.Fatalf("new name: %v, saved %q", err, st.Config().Backup.Repo)
+	if _, err := p.syncSet(ctx, syncSetIn{Repo: &fresh}); err != nil || st.Config().Sync.Repo != "me/fresh" {
+		t.Fatalf("new name: %v, saved %q", err, st.Config().Sync.Repo)
 	}
 	to := "https://github.com/org/shared.git"
-	if _, err := p.backupSet(ctx, backupSetIn{Repo: &to}); err != nil || st.Config().Backup.Repo != "org/shared" {
-		t.Fatalf("shared: %v, saved %q", err, st.Config().Backup.Repo)
+	if _, err := p.syncSet(ctx, syncSetIn{Repo: &to}); err != nil || st.Config().Sync.Repo != "org/shared" {
+		t.Fatalf("shared: %v, saved %q", err, st.Config().Sync.Repo)
 	}
-	if err := p.pushBackup(ctx); err != nil {
+	if err := p.pushSync(ctx); err != nil {
 		t.Fatal(err)
 	}
 	aside, _ := filepath.Glob(filepath.Join(st.Dir(), "sync", "repo-me-old-*"))
@@ -1102,12 +1102,12 @@ func TestBackupSharedRepository(t *testing.T) {
 	out, _ := exec.Command("git", "--git-dir", shared, "ls-tree", "-r", "--name-only", "trunk").Output()
 	files := strings.Fields(string(out))
 	readme, _ := exec.Command("git", "--git-dir", shared, "show", "trunk:README.md").Output()
-	if !slices.Contains(files, "notes.txt") || string(readme) != "shared readme\n" || !slices.Contains(files, backupFile) {
+	if !slices.Contains(files, "notes.txt") || string(readme) != "shared readme\n" || !slices.Contains(files, syncFile) {
 		t.Fatalf("shared repository after the push: %v, README %q", files, readme)
 	}
 	for _, f := range files {
-		if f != "notes.txt" && f != "README.md" && f != backupFile {
-			t.Errorf("PenguPool wrote %s, outside %s", f, backupFile)
+		if f != "notes.txt" && f != "README.md" && f != syncFile {
+			t.Errorf("PenguPool wrote %s, outside %s", f, syncFile)
 		}
 	}
 	if err := exec.Command("git", "--git-dir", shared, "rev-parse", "--verify", "-q", "main").Run(); err == nil {
@@ -1119,12 +1119,12 @@ func TestBackupSharedRepository(t *testing.T) {
 {"full_name":"org/shared","private":true,"push":true,"description":"team"}
 {"full_name":"b/priv","private":true,"push":true}
 `), 0o644)
-	res, err := p.backupRepos(ctx, refreshIn{Refresh: true})
+	res, err := p.syncRepos(ctx, refreshIn{Refresh: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var names []string
-	for _, r := range res.([]backupRepo) {
+	for _, r := range res.([]syncRepo) {
 		names = append(names, r.FullName)
 	}
 	if !slices.Equal(names, []string{"b/priv", "org/shared"}) {
@@ -1132,7 +1132,7 @@ func TestBackupSharedRepository(t *testing.T) {
 	}
 	// A repository that turned public is refused before the next run's first push.
 	os.WriteFile(filepath.Join(gh, "org", "shared.json"), []byte(`{"viewerPermission":"WRITE","visibility":"PUBLIC"}`), 0o644)
-	if err := New(Options{Store: st, Exe: "pengupool", Env: env}).pushBackup(ctx); err == nil || !strings.Contains(err.Error(), "not private") {
+	if err := New(Options{Store: st, Exe: "pengupool", Env: env}).pushSync(ctx); err == nil || !strings.Contains(err.Error(), "not private") {
 		t.Fatalf("a repository that turned public: %v", err)
 	}
 }
@@ -1148,7 +1148,7 @@ func TestSharedMemoryAcrossMachines(t *testing.T) {
 			t.Fatal(err)
 		}
 		cfg := st.Config()
-		cfg.Backup.GitHub, cfg.Backup.Repo = true, "me/pengupool-memory"
+		cfg.Sync.GitHub, cfg.Sync.Repo = true, "me/pengupool-memory"
 		_ = st.SaveConfig(cfg)
 		_ = st.Update(func(s *store.State) error {
 			s.Domain.Skills = []protocol.Skill{{ID: skillID, Name: "gcp", Key: "github.com/o/gcp"}}
@@ -1160,7 +1160,7 @@ func TestSharedMemoryAcrossMachines(t *testing.T) {
 	sync := func(ps ...*Pool) {
 		t.Helper()
 		for _, p := range ps {
-			if err := p.pushBackup(ctx); err != nil {
+			if err := p.pushSync(ctx); err != nil {
 				t.Fatal(err)
 			}
 		}

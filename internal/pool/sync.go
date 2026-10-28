@@ -19,12 +19,12 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
-// Backup keeps the record safe in two places:
+// The record is kept safe in two places, a daily backup and a sync:
 //
-//   - on this machine, a snapshot a day in <store>/backups: agents-<day>.db (SQLite's own copy of
+//   - backup, on this machine: a snapshot a day in <store>/backups: agents-<day>.db (SQLite's own copy of
 //     agents.db, its WAL included) and state-<day>.json (the teams, tasks and messages), the last
 //     14 days kept;
-//   - with GitHub on, a private repository (default <login>/pengupool-memory; the owner can pick
+//   - sync, with GitHub on: a private repository (default <login>/pengupool-memory; the owner can pick
 //     any private repository the account can push to, or name a new one), created on the first
 //     push. Every machine and account shares its one file, pengupool-agents.db: the Compass and its
 //     signals, helper experience (its journal entries; no team has a record), and the tombstones
@@ -33,19 +33,19 @@ import (
 //     gates stay on their machine. Nothing else is written there but the README of
 //     a repository PenguPool created. Run when PenguPool starts and every few minutes.
 
-// backupReadme is the README of a backup repository PenguPool created.
-const backupReadme = "# PenguPool record\n\nShared by every machine and account that backs up here; written by PenguPool, do not edit. `pengupool-agents.db` is one SQLite file (open it read-only with any SQLite tool) of the owner's Compass (`compass`) with the signals behind it (`signals`, `signal_effects`), each helper's journal, one entry per finished job (`experience`), and the tombstones of deleted rows (`tombstones`). Gates stay on the machine that recorded them.\n"
+// syncReadme is the README of a sync repository PenguPool created.
+const syncReadme = "# PenguPool record\n\nShared by every machine and account that syncs here; written by PenguPool, do not edit. `pengupool-agents.db` is one SQLite file (open it read-only with any SQLite tool) of the owner's Compass (`compass`) with the signals behind it (`signals`, `signal_effects`), each helper's journal, one entry per finished job (`experience`), and the tombstones of deleted rows (`tombstones`). Gates stay on the machine that recorded them.\n"
 
 const (
-	backupKeep     = 14
-	backupRepoName = "pengupool-memory"
-	backupFile     = "pengupool-agents.db"
-	compactSize    = 50 << 20             // the repository this big, or ...
-	compactAge     = 180 * 24 * time.Hour // ... this long since its base commit, asks to be compacted
-	compactKeep    = 30                   // days of commits a compaction keeps
+	backupKeep   = 14
+	syncRepoName = "pengupool-memory"
+	syncFile     = "pengupool-agents.db"
+	compactSize  = 50 << 20             // the repository this big, or ...
+	compactAge   = 180 * 24 * time.Hour // ... this long since its base commit, asks to be compacted
+	compactKeep  = 30                   // days of commits a compaction keeps
 )
 
-type backupStatus struct {
+type syncStatus struct {
 	LastSnapshot string `json:"last_snapshot,omitempty"`
 	LastPush     string `json:"last_push,omitempty"`
 	LastChecked  string `json:"last_checked,omitempty"`
@@ -56,31 +56,31 @@ type backupStatus struct {
 	CompactReason    string `json:"compact_reason,omitempty"`
 }
 
-func (p *Pool) backupView() map[string]any {
+func (p *Pool) syncView() map[string]any {
 	p.mu.Lock()
-	st := p.bstat
+	st := p.sstat
 	p.mu.Unlock()
-	cfg := p.st.Config().Backup
-	return map[string]any{"github": cfg.GitHub, "interval_min": backupInterval(cfg) / time.Minute, "repo": cfg.Repo,
+	cfg := p.st.Config().Sync
+	return map[string]any{"github": cfg.GitHub, "interval_min": syncInterval(cfg) / time.Minute, "repo": cfg.Repo,
 		"local_dir": filepath.Join(p.st.Dir(), store.BackupsDir), "status": st}
 }
 
-func backupInterval(c store.Backup) time.Duration {
+func syncInterval(c store.Sync) time.Duration {
 	if c.IntervalMin < 1 || c.IntervalMin > 60 {
 		return 5 * time.Minute
 	}
 	return time.Duration(c.IntervalMin) * time.Minute
 }
 
-func (p *Pool) setBackup(fn func(*backupStatus)) {
+func (p *Pool) setSync(fn func(*syncStatus)) {
 	p.mu.Lock()
-	fn(&p.bstat)
+	fn(&p.sstat)
 	p.mu.Unlock()
 }
 
-// backupLoop runs the backups in the background: shortly after start, then on the interval. It
+// syncLoop runs the rounds in the background: shortly after start, then on the interval. It
 // never blocks an agent; a failure is kept for Settings and retried on the next round.
-func (p *Pool) backupLoop(ctx context.Context) {
+func (p *Pool) syncLoop(ctx context.Context) {
 	wait := 30 * time.Second
 	for {
 		select {
@@ -88,30 +88,30 @@ func (p *Pool) backupLoop(ctx context.Context) {
 			return
 		case <-time.After(wait):
 		}
-		_ = p.backupOnce(ctx)
-		wait = backupInterval(p.st.Config().Backup)
+		_ = p.syncOnce(ctx)
+		wait = syncInterval(p.st.Config().Sync)
 	}
 }
 
-// backupOnce takes today's snapshot if it is missing and, with GitHub on, pushes the record.
-func (p *Pool) backupOnce(ctx context.Context) error {
-	if !p.backupMu.TryLock() {
-		return conflict("a backup is already running")
+// syncOnce takes today's snapshot if it is missing and, with GitHub on, pushes the record.
+func (p *Pool) syncOnce(ctx context.Context) error {
+	if !p.syncMu.TryLock() {
+		return conflict("a sync is already running")
 	}
-	defer p.backupMu.Unlock()
-	p.setBackup(func(s *backupStatus) { s.Running = true })
+	defer p.syncMu.Unlock()
+	p.setSync(func(s *syncStatus) { s.Running = true })
 	err := p.snapshotDaily()
-	if err == nil && p.st.Config().Backup.GitHub {
-		err = p.pushBackup(ctx)
+	if err == nil && p.st.Config().Sync.GitHub {
+		err = p.pushSync(ctx)
 	}
-	p.setBackup(func(s *backupStatus) {
+	p.setSync(func(s *syncStatus) {
 		s.Running, s.LastChecked, s.LastError = false, now(), ""
 		if err != nil {
 			s.LastError = err.Error()
 		}
 	})
 	if err != nil {
-		p.logf("pool: backup: %v", err)
+		p.logf("pool: sync: %v", err)
 	}
 	return err
 }
@@ -148,18 +148,18 @@ func (p *Pool) snapshotDaily() error {
 			old = old[1:]
 		}
 	}
-	p.setBackup(func(s *backupStatus) { s.LastSnapshot = now() })
+	p.setSync(func(s *syncStatus) { s.LastSnapshot = now() })
 	return nil
 }
 
 var hostSafe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
-// pushBackup syncs the backup repository's file (syncShared). The repository is created
+// pushSync syncs the sync repository's file (syncShared). The repository is created
 // private on the first push. A clone of another repository (the owner chose a new one) is moved
 // aside, never deleted: it may hold unpushed rows.
-func (p *Pool) pushBackup(ctx context.Context) error {
+func (p *Pool) pushSync(ctx context.Context) error {
 	repoDir := filepath.Join(p.st.Dir(), "sync", "repo")
-	want, err := p.backupRepoSlug(ctx)
+	want, err := p.syncRepoSlug(ctx)
 	if err != nil {
 		return err
 	}
@@ -171,13 +171,13 @@ func (p *Pool) pushBackup(ctx context.Context) error {
 			if err := os.Rename(repoDir, aside); err != nil {
 				return err
 			}
-			p.logf("pool: backup: moved the clone of %s aside to %s", firstNonEmpty(slug, origin), aside)
+			p.logf("pool: sync: moved the clone of %s aside to %s", firstNonEmpty(slug, origin), aside)
 			cloneErr = os.ErrNotExist
 		}
 	}
-	if p.backupFor != want { // once a run: the repository may have turned public or dropped the account
+	if p.syncFor != want { // once a run: the repository may have turned public or dropped the account
 		if cloneErr == nil {
-			if exists, err := p.checkBackupRepo(ctx, want); err != nil {
+			if exists, err := p.checkSyncRepo(ctx, want); err != nil {
 				return err
 			} else if !exists {
 				return fmt.Errorf("%s is no longer on GitHub; pick another repository in Settings", want)
@@ -187,11 +187,11 @@ func (p *Pool) pushBackup(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		p.backupFor, p.backupLogin = want, login
+		p.syncFor, p.syncLogin = want, login
 		p.claimOwner(login)
 	}
 	if cloneErr != nil {
-		if err := p.createBackupRepo(ctx, repoDir, want); err != nil {
+		if err := p.createSyncRepo(ctx, repoDir, want); err != nil {
 			return err
 		}
 	}
@@ -204,7 +204,7 @@ func (p *Pool) pushBackup(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	p.setBackup(func(s *backupStatus) { s.LastPush = now() })
+	p.setSync(func(s *syncStatus) { s.LastPush = now() })
 	return nil
 }
 
@@ -225,12 +225,12 @@ func (p *Pool) syncShared(ctx context.Context, repoDir string) error {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	file, out := filepath.Join(repoDir, backupFile), filepath.Join(tmp, backupFile)
+	file, out := filepath.Join(repoDir, syncFile), filepath.Join(tmp, syncFile)
 	// A 0.10 machine writes shared/*.jsonl: merged once when it is newer than the file, and removed
 	// in the commit that writes the file.
 	shared := filepath.Join(repoDir, "shared")
 	legacy, _ := filepath.Glob(filepath.Join(shared, "*.jsonl"))
-	if len(legacy) > 0 && p.commitTime(ctx, repoDir, "shared") > p.commitTime(ctx, repoDir, backupFile) {
+	if len(legacy) > 0 && p.commitTime(ctx, repoDir, "shared") > p.commitTime(ctx, repoDir, syncFile) {
 		old := filepath.Join(tmp, "shared.db")
 		if err := agentdb.ImportShared(shared, old, p.owner()); err != nil {
 			return err
@@ -244,18 +244,18 @@ func (p *Pool) syncShared(ctx context.Context, repoDir string) error {
 	switch {
 	case errors.As(err, &bad):
 		aside, _ := p.keepDamaged(file)
-		return fmt.Errorf("%s in the backup repository is %s; nothing was pushed (a copy is in %s)", backupFile, bad, aside)
+		return fmt.Errorf("%s in the sync repository is %s; nothing was pushed (a copy is in %s)", syncFile, bad, aside)
 	case err != nil:
 		return err
 	case res.Newer:
-		return fmt.Errorf("%s in the backup repository is from a newer PenguPool; update PenguPool to back up", backupFile)
+		return fmt.Errorf("%s in the sync repository is from a newer PenguPool; update PenguPool to sync", syncFile)
 	}
 	if res.Changes != "" {
 		if err := os.Rename(out, file); err != nil {
 			return err
 		}
 	}
-	paths := []string{backupFile}
+	paths := []string{syncFile}
 	if len(legacy) > 0 {
 		if err := os.RemoveAll(shared); err != nil {
 			return err
@@ -270,8 +270,8 @@ func (p *Pool) syncShared(ctx context.Context, repoDir string) error {
 		paths = append(paths, "envs")
 	}
 	if b, err := os.ReadFile(filepath.Join(repoDir, "README.md")); err == nil {
-		if strings.HasPrefix(string(b), "# PenguPool") && string(b) != backupReadme { // PenguPool's own: kept current
-			_ = os.WriteFile(filepath.Join(repoDir, "README.md"), []byte(backupReadme), 0o644)
+		if strings.HasPrefix(string(b), "# PenguPool") && string(b) != syncReadme { // PenguPool's own: kept current
+			_ = os.WriteFile(filepath.Join(repoDir, "README.md"), []byte(syncReadme), 0o644)
 		}
 		paths = append(paths, "README.md")
 	}
@@ -281,7 +281,7 @@ func (p *Pool) syncShared(ctx context.Context, repoDir string) error {
 	if out, _ := p.gitIn(ctx, repoDir, "diff", "--cached", "--name-only"); out == "" {
 		return nil
 	}
-	if _, err := p.gitIn(ctx, repoDir, "-c", "user.name=PenguPool", "-c", "user.email=pengupool@localhost", "commit", "-q", "-m", firstNonEmpty(res.Changes, "Move shared/ into "+backupFile)); err != nil {
+	if _, err := p.gitIn(ctx, repoDir, "-c", "user.name=PenguPool", "-c", "user.email=pengupool@localhost", "commit", "-q", "-m", firstNonEmpty(res.Changes, "Move shared/ into "+syncFile)); err != nil {
 		return err
 	}
 	_, err = p.ghGit(ctx, repoDir, "push", "-q", "origin", "HEAD:"+branch)
@@ -313,7 +313,7 @@ func (p *Pool) commitTime(ctx context.Context, repoDir, path string) int64 {
 	return n
 }
 
-// keepDamaged copies a damaged backup file into the store's backups folder, stamped and keyed by
+// keepDamaged copies a damaged file of the sync repository into the store's backups folder, stamped and keyed by
 // its content so the same file is kept once, and says where.
 func (p *Pool) keepDamaged(file string) (string, error) {
 	b, err := os.ReadFile(file)
@@ -360,22 +360,22 @@ func (p *Pool) noteHistory(ctx context.Context, repoDir string) {
 		sec, _ := strconv.ParseInt(f[0], 10, 64)
 		reason = compactReason(kib<<10, time.Since(time.Unix(sec, 0)))
 	}
-	p.setBackup(func(s *backupStatus) { s.CompactSuggested, s.CompactReason = reason != "", reason })
+	p.setSync(func(s *syncStatus) { s.CompactSuggested, s.CompactReason = reason != "", reason })
 }
 
-// backupCompact rewrites the backup repository's history, on the owner's click: a new first commit
+// syncCompact rewrites the sync repository's history, on the owner's click: a new first commit
 // holding the repository as it was 30 days ago (or the oldest commit when none is older), the
 // last 30 days of commits replayed on top with their messages and dates, pushed with
 // --force-with-lease so a push that landed meanwhile is not lost. Other machines need nothing:
 // every round fetches and resets, and merges from its own database.
-func (p *Pool) backupCompact(ctx context.Context, _ struct{}) (any, error) {
-	if !p.backupMu.TryLock() {
-		return nil, conflict("a backup is running; try again in a moment")
+func (p *Pool) syncCompact(ctx context.Context, _ struct{}) (any, error) {
+	if !p.syncMu.TryLock() {
+		return nil, conflict("a sync is running; try again in a moment")
 	}
-	defer p.backupMu.Unlock()
+	defer p.syncMu.Unlock()
 	repoDir := filepath.Join(p.st.Dir(), "sync", "repo")
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil {
-		return nil, invalid("nothing to compact: no backup has been made yet")
+		return nil, invalid("nothing to compact: nothing has been synced yet")
 	}
 	branch, err := p.fetchReset(ctx, repoDir)
 	if err != nil {
@@ -429,13 +429,13 @@ func (p *Pool) backupCompact(ctx context.Context, _ struct{}) (any, error) {
 		}
 	}
 	p.noteHistory(ctx, repoDir)
-	return p.backupView(), nil
+	return p.syncView(), nil
 }
 
-// backupRepoSlug is the configured backup repository as owner/name: the owner's choice ("name" in
+// syncRepoSlug is the configured sync repository as owner/name: the owner's choice ("name" in
 // the signed-in account, or "owner/name"), else <login>/pengupool-memory.
-func (p *Pool) backupRepoSlug(ctx context.Context) (string, error) {
-	return p.repoInAccount(ctx, firstNonEmpty(p.st.Config().Backup.Repo, backupRepoName))
+func (p *Pool) syncRepoSlug(ctx context.Context) (string, error) {
+	return p.repoInAccount(ctx, firstNonEmpty(p.st.Config().Sync.Repo, syncRepoName))
 }
 
 // repoInAccount names repo as owner/name, a bare name being in the signed-in account.
@@ -459,9 +459,9 @@ func (p *Pool) ghLogin(ctx context.Context) (string, error) {
 	return login, nil
 }
 
-// checkBackupRepo tells whether repo (owner/name) exists and, when it does, that PenguPool may back
+// checkSyncRepo tells whether repo (owner/name) exists and, when it does, that PenguPool may back
 // up there: the account can push to it and it is private (memory can hold sensitive text).
-func (p *Pool) checkBackupRepo(ctx context.Context, repo string) (bool, error) {
+func (p *Pool) checkSyncRepo(ctx context.Context, repo string) (bool, error) {
 	out, err := p.ghRun(ctx, "", "repo", "view", repo, "--json", "viewerPermission,visibility")
 	if err != nil {
 		if strings.Contains(err.Error(), "Could not resolve to a Repository") {
@@ -485,16 +485,16 @@ func (p *Pool) checkBackupRepo(ctx context.Context, repo string) (bool, error) {
 	return true, nil
 }
 
-// createBackupRepo clones the backup repository repo (owner/name) into dir, creating it private
+// createSyncRepo clones the sync repository repo (owner/name) into dir, creating it private
 // when it does not exist yet (in the account or an organization it may create repositories in),
 // and records it in the config. Only a repository PenguPool created gets its README.
-func (p *Pool) createBackupRepo(ctx context.Context, dir, repo string) error {
-	exists, err := p.checkBackupRepo(ctx, repo)
+func (p *Pool) createSyncRepo(ctx context.Context, dir, repo string) error {
+	exists, err := p.checkSyncRepo(ctx, repo)
 	if err != nil {
 		return err
 	}
 	if !exists {
-		if _, err := p.ghRun(ctx, "", "repo", "create", repo, "--private", "--description", "PenguPool backup: the Compass and helper experience"); err != nil {
+		if _, err := p.ghRun(ctx, "", "repo", "create", repo, "--private", "--description", "PenguPool sync: the Compass and helper experience"); err != nil {
 			return fmt.Errorf("create %s: %w", repo, err)
 		}
 	}
@@ -506,89 +506,89 @@ func (p *Pool) createBackupRepo(ctx context.Context, dir, repo string) error {
 		return fmt.Errorf("clone %s: %w", repo, err)
 	}
 	if created := !exists; created {
-		_ = os.WriteFile(filepath.Join(dir, "README.md"), []byte(backupReadme), 0o644)
+		_ = os.WriteFile(filepath.Join(dir, "README.md"), []byte(syncReadme), 0o644)
 	}
 	cfg := p.st.Config()
-	cfg.Backup.Repo = repo
+	cfg.Sync.Repo = repo
 	return p.st.SaveConfig(cfg)
 }
 
-type backupSetIn struct {
+type syncSetIn struct {
 	GitHub      *bool   `json:"github,omitempty"`
 	IntervalMin *int    `json:"interval_min,omitempty"`
 	Repo        *string `json:"repo,omitempty"` // "name" or "owner/name"; "" for the default
 }
 
-var backupRepoRe = regexp.MustCompile(`^([A-Za-z0-9-]+/)?[A-Za-z0-9._-]+$`)
+var syncRepoRe = regexp.MustCompile(`^([A-Za-z0-9-]+/)?[A-Za-z0-9._-]+$`)
 
-func (p *Pool) backupGet(_ context.Context, _ struct{}) (any, error) { return p.backupView(), nil }
+func (p *Pool) syncGet(_ context.Context, _ struct{}) (any, error) { return p.syncView(), nil }
 
-// backupSet turns the GitHub backup on or off and sets its interval; turning it on pushes at once.
-func (p *Pool) backupSet(ctx context.Context, in backupSetIn) (any, error) {
+// syncSet turns the GitHub sync on or off and sets its interval; turning it on pushes at once.
+func (p *Pool) syncSet(ctx context.Context, in syncSetIn) (any, error) {
 	cfg := p.st.Config()
 	if in.GitHub != nil {
-		cfg.Backup.GitHub = *in.GitHub
+		cfg.Sync.GitHub = *in.GitHub
 	}
 	if in.IntervalMin != nil {
 		if *in.IntervalMin < 1 || *in.IntervalMin > 60 {
 			return nil, invalid("the interval is 1 to 60 minutes")
 		}
-		cfg.Backup.IntervalMin = *in.IntervalMin
+		cfg.Sync.IntervalMin = *in.IntervalMin
 	}
 	moved := false
 	if in.Repo != nil {
 		r := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(*in.Repo), "https://github.com/"), ".git")
-		if r != "" && !backupRepoRe.MatchString(r) {
+		if r != "" && !syncRepoRe.MatchString(r) {
 			return nil, invalid("name the repository as name or owner/name")
 		}
-		if r != "" && r != cfg.Backup.Repo { // checked now so Settings shows why, not the next push
+		if r != "" && r != cfg.Sync.Repo { // checked now so Settings shows why, not the next push
 			var err error
 			if r, err = p.repoInAccount(ctx, r); err != nil {
 				return nil, err
 			}
-			if _, err := p.checkBackupRepo(ctx, r); err != nil {
+			if _, err := p.checkSyncRepo(ctx, r); err != nil {
 				return nil, err
 			}
 		}
-		moved = r != cfg.Backup.Repo
-		cfg.Backup.Repo = r
+		moved = r != cfg.Sync.Repo
+		cfg.Sync.Repo = r
 	}
 	// The next push clones the new repository; the old clone is moved aside then, and the old
 	// repository is left as it is on GitHub.
-	if !p.backupMu.TryLock() {
-		return nil, conflict("a backup is running; try again in a moment")
+	if !p.syncMu.TryLock() {
+		return nil, conflict("a sync is running; try again in a moment")
 	}
 	err := p.st.SaveConfig(cfg)
-	p.backupMu.Unlock()
+	p.syncMu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	if (in.GitHub != nil && *in.GitHub) || (moved && cfg.Backup.GitHub) {
-		go func() { _ = p.backupOnce(context.Background()) }()
+	if (in.GitHub != nil && *in.GitHub) || (moved && cfg.Sync.GitHub) {
+		go func() { _ = p.syncOnce(context.Background()) }()
 	}
-	return p.backupView(), nil
+	return p.syncView(), nil
 }
 
-type backupRepo struct {
+type syncRepo struct {
 	FullName    string `json:"full_name"`
 	Private     bool   `json:"private"`
 	Description string `json:"description"`
 }
 
-// backupRepos lists the private repositories the GitHub account can push to, for Settings'
+// syncRepos lists the private repositories the GitHub account can push to, for Settings'
 // repository picker.
-func (p *Pool) backupRepos(ctx context.Context, in refreshIn) (any, error) {
+func (p *Pool) syncRepos(ctx context.Context, in refreshIn) (any, error) {
 	all, err := p.githubRepos(ctx, in)
 	if err != nil {
 		return nil, protocol.Errorf(protocol.CodeUnavailable, "can't list your GitHub repositories; sign in to GitHub in Settings first (%v)", err)
 	}
-	out := []backupRepo{}
+	out := []syncRepo{}
 	for _, r := range all.([]ghRepo) {
 		if r.Push && r.Private {
-			out = append(out, backupRepo{FullName: r.FullName, Private: r.Private, Description: r.Description})
+			out = append(out, syncRepo{FullName: r.FullName, Private: r.Private, Description: r.Description})
 		}
 	}
-	slices.SortFunc(out, func(a, b backupRepo) int {
+	slices.SortFunc(out, func(a, b syncRepo) int {
 		if a.Private != b.Private {
 			if a.Private {
 				return -1
@@ -600,10 +600,10 @@ func (p *Pool) backupRepos(ctx context.Context, in refreshIn) (any, error) {
 	return out, nil
 }
 
-// backupNow runs a backup and answers when it is done.
-func (p *Pool) backupNow(ctx context.Context, _ struct{}) (any, error) {
-	if err := p.backupOnce(ctx); err != nil {
+// syncNow runs a sync round and answers when it is done.
+func (p *Pool) syncNow(ctx context.Context, _ struct{}) (any, error) {
+	if err := p.syncOnce(ctx); err != nil {
 		return nil, err
 	}
-	return p.backupView(), nil
+	return p.syncView(), nil
 }

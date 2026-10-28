@@ -88,8 +88,8 @@ type Pool struct {
 	turns             map[string]*turn    // session id → its open turn (guarded by mu)
 	wording           map[string]*wording // session id → the owner's words it is asked to word for the Compass (under mu)
 	prevReply         map[string]string   // session id → the reply of its last placed turn: the options a choice is made from (guarded by mu)
-	bstat             backupStatus        // the last backup round (guarded by mu)
-	backupMu          sync.Mutex          // one backup at a time
+	sstat             syncStatus          // the last sync round (guarded by mu)
+	roundMu           sync.Mutex          // one sync at a time
 	renames           map[string]string   // session id → a name to type into Claude at its next idle point (guarded by mu)
 	syncMu            sync.Mutex          // one Skill library sync at a time
 	// cloneMu: clones being registered hold it shared; the orphan clean-up takes it alone, so it
@@ -114,9 +114,9 @@ type Pool struct {
 	revoker        Revoker
 
 	reposCache atomic.Pointer[ghRepos] // the GitHub account's repositories
-	// backupFor is the backup repository checked this run (private, writable) and the account's
-	// login, which names this environment's folder in a shared repository (guarded by backupMu).
-	backupFor, backupLogin string
+	// syncFor is the sync repository checked this run (private, writable) and the account's
+	// login, which names this environment's folder in a shared repository (guarded by syncMu).
+	syncFor, syncLogin string
 
 	ownerName atomic.Value // string: the owner the Compass belongs to (compass.go)
 
@@ -407,7 +407,8 @@ func (p *Pool) handlers() map[string]handler {
 		"settings.get":          bind(p.settingsGet),
 		"settings.tailscale":    bind(p.settingsTailscale),
 		"settings.save":         bind(p.settingsSave),
-		"backup.get":            bind(p.backupGet),
+		"sync.get":              bind(p.syncGet),
+		"backup.get":            bind(p.syncGet), // the name before sync, kept one release
 		"muse.next":             p.museNext,
 		"muse.answer":           p.museAnswer,
 		"muse.say":              p.museSay,
@@ -417,10 +418,14 @@ func (p *Pool) handlers() map[string]handler {
 		"muse.pairCode":         p.musePairCode,
 		"muse.devices":          p.museDevices,
 		"muse.revoke":           p.museRevoke,
-		"backup.set":            bind(p.backupSet),
-		"backup.now":            bind(p.backupNow),
-		"backup.repos":          bind(p.backupRepos),
-		"backup.compact":        bind(p.backupCompact),
+		"sync.set":              bind(p.syncSet),
+		"backup.set":            bind(p.syncSet), // the name before sync, kept one release
+		"sync.now":              bind(p.syncNow),
+		"backup.now":            bind(p.syncNow), // the name before sync, kept one release
+		"sync.repos":            bind(p.syncRepos),
+		"backup.repos":          bind(p.syncRepos), // the name before sync, kept one release
+		"sync.compact":          bind(p.syncCompact),
+		"backup.compact":        bind(p.syncCompact), // the name before sync, kept one release
 		"update.check":          bind(p.updateCheck),
 		"update.download":       bind(p.updateDownload),
 		"harness.probe":         bind(p.harnessProbe),

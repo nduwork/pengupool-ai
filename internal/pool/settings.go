@@ -165,7 +165,8 @@ func (p *Pool) settingsGet(_ context.Context, _ struct{}) (any, error) {
 		out["tailscale_error"] = err.Error()
 	}
 	out["github"] = p.githubStatus()
-	out["backup"] = p.backupView()
+	out["sync"] = p.syncView()
+	out["backup"] = out["sync"] // the name before 0.23, kept one release
 	return out, nil
 }
 
@@ -755,14 +756,14 @@ func (p *Pool) endScribes(ctx context.Context) {
 	}
 }
 
-// Run keeps node status fresh in the domain and runs the backups.
+// Run keeps node status fresh in the domain and runs the daily backup and the sync.
 func (p *Pool) Run(ctx context.Context) {
 	p.endScribes(ctx)
 	go func() { // a helper's waiting done reports end with the pool
 		<-ctx.Done()
 		p.stopJournal()
 	}()
-	go p.backupLoop(ctx)
+	go p.syncLoop(ctx)
 	go p.updateLoop(ctx)
 	go p.codexLoop(ctx)
 	go func() { // the Skill library follows the marketplace: a minute after start, then every 6 hours

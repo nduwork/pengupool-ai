@@ -124,8 +124,10 @@ type Config struct {
 	// MuseDevices are paired Muse app devices: name, token hash, created
 	// and last seen. Tokens themselves are shown once and never stored.
 	MuseDevices []MuseDevice `json:"muse_devices,omitempty"`
-	// Backup pushes the Compass and the helpers' experience to a private GitHub repository.
-	Backup Backup `json:"backup"`
+	// Sync shares the Compass and the helpers' experience through a private GitHub repository.
+	Sync Sync `json:"sync"`
+	// Backup is Sync's name before 0.23: read when there is no "sync", never written back.
+	Backup *Sync `json:"backup,omitempty"`
 }
 
 // MuseDevice is one paired Muse app device: the token lives only as a hash.
@@ -136,9 +138,9 @@ type MuseDevice struct {
 	LastSeen  string `json:"last_seen,omitempty"`
 }
 
-// Backup: a daily snapshot is always kept on this machine; GitHub adds the push to a private
-// repository in the signed-in account, created on the first push.
-type Backup struct {
+// Sync: GitHub adds the sync of the record through a private repository in the signed-in account,
+// created on the first push. (The daily snapshots on this machine, BackupsDir, are always kept.)
+type Sync struct {
 	GitHub      bool   `json:"github"`
 	IntervalMin int    `json:"interval_min,omitempty"` // minutes between pushes; 0: every 5
 	Repo        string `json:"repo,omitempty"`         // owner/name, recorded once created

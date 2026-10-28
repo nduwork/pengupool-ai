@@ -151,7 +151,7 @@ func TestExperienceBodyHashAndTeam(t *testing.T) {
 	}
 }
 
-// A backup from before body_hash and team_id still merges: the hash is made, the team is empty.
+// A shared file from before body_hash and team_id still merges: the hash is made, the team is empty.
 func TestMergeOldExperience(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "old.db")
 	old, err := sql.Open("sqlite", "file:"+file)
@@ -281,7 +281,7 @@ func TestTablesAreHostOnly(t *testing.T) {
 	}
 }
 
-// Two machines merging through one backup file end up with the same Compass lines, notes;  a delete reaches both, the newer edit wins, and the file holds the shared tables only.
+// Two machines merging through one shared file end up with the same Compass lines, notes;  a delete reaches both, the newer edit wins, and the file holds the shared tables only.
 func TestMergeSharedFile(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "pengupool-agents.db")
 	a, _ := openRaw(t)

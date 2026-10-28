@@ -26,11 +26,11 @@ func gitOut(t *testing.T, dir string, args ...string) string {
 // originFile writes the backup file as of rev in the bare repository to a temp file.
 func originFile(t *testing.T, origin, rev string) string {
 	t.Helper()
-	b, err := exec.Command("git", "--git-dir", origin, "show", rev+":"+backupFile).Output()
+	b, err := exec.Command("git", "--git-dir", origin, "show", rev+":"+syncFile).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := filepath.Join(t.TempDir(), backupFile)
+	f := filepath.Join(t.TempDir(), syncFile)
 	if err := os.WriteFile(f, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func backupMachine(t *testing.T, env []string) *Pool {
 		t.Fatal(err)
 	}
 	cfg := st.Config()
-	cfg.Backup.GitHub, cfg.Backup.Repo = true, "me/pengupool-memory"
+	cfg.Sync.GitHub, cfg.Sync.Repo = true, "me/pengupool-memory"
 	_ = st.SaveConfig(cfg)
 	return New(Options{Store: st, Exe: "pengupool", Env: env})
 }
@@ -72,7 +72,7 @@ func addLine(t *testing.T, p *Pool, body string) {
 
 // Two machines share one file: both machines' rows survive, the file holds the shared tables only,
 // a commit counts its changes by table, and a round with nothing new commits nothing.
-func TestBackupFileTwoMachines(t *testing.T) {
+func TestSyncFileTwoMachines(t *testing.T) {
 	gh, env := fakeGitHub(t)
 	origin := filepath.Join(gh, "me", "pengupool-memory.git")
 	ctx := context.Background()
@@ -81,7 +81,7 @@ func TestBackupFileTwoMachines(t *testing.T) {
 	addLine(t, b, "from b")
 	_, _ = a.db.AddExperience(agentdb.Entry{Helper: "k", Title: "t", Body: "b"})
 	for _, p := range []*Pool{a, b, a} {
-		if err := p.pushBackup(ctx); err != nil {
+		if err := p.pushSync(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -101,7 +101,7 @@ func TestBackupFileTwoMachines(t *testing.T) {
 	}
 	before := gitOut(t, origin, "rev-list", "--count", "main")
 	for _, p := range []*Pool{b, a} {
-		if err := p.pushBackup(ctx); err != nil {
+		if err := p.pushSync(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -112,13 +112,13 @@ func TestBackupFileTwoMachines(t *testing.T) {
 
 // A damaged file stops the round: nothing is pushed, the file is kept aside and Settings says why.
 // A file from a newer PenguPool is merged but not written over.
-func TestBackupDamagedAndNewerFile(t *testing.T) {
+func TestSyncDamagedAndNewerFile(t *testing.T) {
 	gh, env := fakeGitHub(t)
 	origin := filepath.Join(gh, "me", "pengupool-memory.git")
 	ctx := context.Background()
 	p := backupMachine(t, env)
 	addLine(t, p, "mine")
-	if err := p.pushBackup(ctx); err != nil {
+	if err := p.pushSync(ctx); err != nil {
 		t.Fatal(err)
 	}
 	work := filepath.Join(gh, "work")
@@ -128,10 +128,10 @@ func TestBackupDamagedAndNewerFile(t *testing.T) {
 		gitOut(t, work, "push", "-q", "origin", "HEAD:main")
 		return gitOut(t, origin, "rev-parse", "main")
 	}
-	good, _ := os.ReadFile(filepath.Join(work, backupFile))
-	_ = os.WriteFile(filepath.Join(work, backupFile), append([]byte("garbage"), good[7:]...), 0o644)
+	good, _ := os.ReadFile(filepath.Join(work, syncFile))
+	_ = os.WriteFile(filepath.Join(work, syncFile), append([]byte("garbage"), good[7:]...), 0o644)
 	head := push("break it")
-	if err := p.backupOnce(ctx); err == nil || !strings.Contains(err.Error(), "damaged") {
+	if err := p.syncOnce(ctx); err == nil || !strings.Contains(err.Error(), "damaged") {
 		t.Fatalf("damaged file: %v", err)
 	}
 	if got := gitOut(t, origin, "rev-parse", "main"); got != head {
@@ -140,16 +140,16 @@ func TestBackupDamagedAndNewerFile(t *testing.T) {
 	if kept, _ := filepath.Glob(filepath.Join(p.st.Dir(), store.BackupsDir, "pengupool-agents-*.db")); len(kept) != 1 {
 		t.Fatalf("kept aside: %v", kept)
 	}
-	if st := p.backupView()["status"].(backupStatus); !strings.Contains(st.LastError, "damaged") {
+	if st := p.syncView()["status"].(syncStatus); !strings.Contains(st.LastError, "damaged") {
 		t.Fatalf("status %+v", st)
 	}
-	_ = p.backupOnce(ctx) // the same file is kept once
+	_ = p.syncOnce(ctx) // the same file is kept once
 	if kept, _ := filepath.Glob(filepath.Join(p.st.Dir(), store.BackupsDir, "pengupool-agents-*.db")); len(kept) != 1 {
 		t.Fatalf("kept again: %v", kept)
 	}
 	// Restored, then made newer than this PenguPool.
-	_ = os.WriteFile(filepath.Join(work, backupFile), good, 0o644)
-	db, _ := sql.Open("sqlite", "file:"+filepath.Join(work, backupFile))
+	_ = os.WriteFile(filepath.Join(work, syncFile), good, 0o644)
+	db, _ := sql.Open("sqlite", "file:"+filepath.Join(work, syncFile))
 	_, err := db.Exec(`PRAGMA user_version = 99`)
 	db.Close()
 	if err != nil {
@@ -157,7 +157,7 @@ func TestBackupDamagedAndNewerFile(t *testing.T) {
 	}
 	head = push("newer")
 	addLine(t, p, "never pushed")
-	if err := p.backupOnce(ctx); err == nil || !strings.Contains(err.Error(), "update PenguPool") {
+	if err := p.syncOnce(ctx); err == nil || !strings.Contains(err.Error(), "update PenguPool") {
 		t.Fatalf("newer file: %v", err)
 	}
 	if got := gitOut(t, origin, "rev-parse", "main"); got != head {
@@ -166,7 +166,7 @@ func TestBackupDamagedAndNewerFile(t *testing.T) {
 }
 
 // A 0.10 machine's shared/ is merged once and removed in the commit that writes the file.
-func TestBackupMigratesShared(t *testing.T) {
+func TestSyncMigratesShared(t *testing.T) {
 	gh, env := fakeGitHub(t)
 	origin := filepath.Join(gh, "me", "pengupool-memory.git")
 	ctx := context.Background()
@@ -182,14 +182,14 @@ func TestBackupMigratesShared(t *testing.T) {
 	gitOut(t, work, "commit", "-qm", "0.10")
 	gitOut(t, work, "push", "-q", "origin", "HEAD:main")
 	before := gitOut(t, origin, "rev-list", "--count", "main")
-	if err := p.pushBackup(ctx); err != nil {
+	if err := p.pushSync(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if ls, _ := p.db.Lines(p.owner(), "", "", 0); len(ls) != 1 {
 		t.Fatalf("shared/ rows did not come in: %+v", ls)
 	}
 	files := gitOut(t, origin, "ls-tree", "-r", "--name-only", "main")
-	if strings.Contains(files, "shared/") || !strings.Contains(files, backupFile) {
+	if strings.Contains(files, "shared/") || !strings.Contains(files, syncFile) {
 		t.Fatalf("after the migration:\n%s", files)
 	}
 	if got := gitOut(t, origin, "rev-list", "--count", "main"); got != "2" || before != "1" {
@@ -201,18 +201,18 @@ func TestBackupMigratesShared(t *testing.T) {
 }
 
 // A push another machine beat is fetched, merged and pushed again once.
-func TestBackupPushRace(t *testing.T) {
+func TestSyncPushRace(t *testing.T) {
 	gh, env := fakeGitHub(t)
 	origin := filepath.Join(gh, "me", "pengupool-memory.git")
 	p := backupMachine(t, env)
-	if err := p.pushBackup(context.Background()); err != nil {
+	if err := p.pushSync(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	hook := filepath.Join(origin, "hooks", "pre-receive") // refuses the first push, as a lost race does
 	marker := filepath.Join(gh, "refused")
 	_ = os.WriteFile(hook, []byte("#!/bin/sh\nif [ ! -f "+marker+" ]; then touch "+marker+"; echo raced >&2; exit 1; fi\n"), 0o755)
 	addLine(t, p, "after the race")
-	if err := p.pushBackup(context.Background()); err != nil {
+	if err := p.pushSync(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(marker); err != nil {
@@ -225,7 +225,7 @@ func TestBackupPushRace(t *testing.T) {
 
 // Compacting makes a new first commit holding the file as of 30 days ago, replays the last 30 days
 // on top and force-pushes; every row survives, another machine carries on, and the prompt clears.
-func TestBackupCompact(t *testing.T) {
+func TestSyncCompact(t *testing.T) {
 	gh, env := fakeGitHub(t)
 	origin := filepath.Join(gh, "me", "pengupool-memory.git")
 	ctx := context.Background()
@@ -237,17 +237,17 @@ func TestBackupCompact(t *testing.T) {
 		d := time.Now().AddDate(0, 0, -c.days).Format(time.RFC3339)
 		a.env = append(a.env, "GIT_AUTHOR_DATE="+d, "GIT_COMMITTER_DATE="+d)
 		addLine(t, a, c.body)
-		if err := a.pushBackup(ctx); err != nil {
+		if err := a.pushSync(ctx); err != nil {
 			t.Fatal(err)
 		}
 		if i == 1 { // a base 200 days old: the next round asks
-			if st := a.backupView()["status"].(backupStatus); !st.CompactSuggested || !strings.Contains(st.CompactReason, "200 days") {
+			if st := a.syncView()["status"].(syncStatus); !st.CompactSuggested || !strings.Contains(st.CompactReason, "200 days") {
 				t.Fatalf("status %+v", st)
 			}
 		}
 	}
 	old := gitOut(t, origin, "rev-parse", "main")
-	if _, err := a.backupCompact(ctx, struct{}{}); err != nil {
+	if _, err := a.syncCompact(ctx, struct{}{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := gitOut(t, origin, "rev-list", "--count", "main"); got != "3" {
@@ -266,16 +266,16 @@ func TestBackupCompact(t *testing.T) {
 	if gitOut(t, origin, "rev-parse", "main") == old {
 		t.Fatal("history not rewritten")
 	}
-	if st := a.backupView()["status"].(backupStatus); st.CompactSuggested {
+	if st := a.syncView()["status"].(syncStatus); st.CompactSuggested {
 		t.Fatalf("still suggested: %+v", st)
 	}
-	if err := b.pushBackup(ctx); err != nil { // another machine's first round, on the rewritten history
+	if err := b.pushSync(ctx); err != nil { // another machine's first round, on the rewritten history
 		t.Fatal(err)
 	}
 	if ls, _ := b.db.Lines(b.owner(), "", "", 0); len(ls) != 5 {
 		t.Fatalf("b has %d lines", len(ls))
 	}
-	if _, err := a.backupCompact(ctx, struct{}{}); err == nil {
+	if _, err := a.syncCompact(ctx, struct{}{}); err == nil {
 		t.Fatal("compacted a history with nothing older than 30 days")
 	}
 }
@@ -289,6 +289,17 @@ func TestCompactReason(t *testing.T) {
 	}{{compactSize - 1, compactAge - day, ""}, {compactSize, day, "the repository is 50 MB"}, {1 << 20, compactAge, "its history starts 180 days ago"}} {
 		if got := compactReason(c.size, c.age); got != c.want {
 			t.Errorf("%d bytes, %v: %q, want %q", c.size, c.age, got, c.want)
+		}
+	}
+}
+
+// The requests keep their names before the rename for one release: both answer the same.
+func TestSyncRequestsKeepTheirOldNames(t *testing.T) {
+	p, _ := twoTeams(t)
+	h := p.handlers()
+	for _, op := range []string{"get", "set", "now", "repos", "compact"} {
+		if h["sync."+op] == nil || h["backup."+op] == nil {
+			t.Errorf("%s: sync.%s or backup.%s is not a request", op, op, op)
 		}
 	}
 }

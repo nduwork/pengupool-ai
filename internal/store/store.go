@@ -111,6 +111,12 @@ func Open(dir string) (*Store, error) {
 		if err := json.Unmarshal(raw, &s.cfg); err != nil {
 			return nil, &ErrCorrupt{Path: s.path(ConfigFile), Err: err}
 		}
+		if s.cfg.Backup != nil { // a config of before the rename: its backup settings are the sync's
+			if s.cfg.Sync == (Sync{}) {
+				s.cfg.Sync = *s.cfg.Backup
+			}
+			s.cfg.Backup = nil
+		}
 		if s.cfg.Version == 0 || s.cfg.Version > Version {
 			return nil, &ErrCorrupt{Path: s.path(ConfigFile), Err: fmt.Errorf("schema version %d is not %d", s.cfg.Version, Version)}
 		}
