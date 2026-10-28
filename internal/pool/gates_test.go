@@ -1610,7 +1610,7 @@ func TestGitThatRunsCodeIsNeverPlain(t *testing.T) {
 func TestAutonomySectionIsAlwaysGiven(t *testing.T) {
 	p, _, _ := gateTeam(t)
 	out := p.renderContext("leadaaaaaaaa")
-	if !strings.Contains(out, "## Working autonomously") || !strings.Contains(out, "force-pushing") || !strings.Contains(out, "unless a confirmed Compass line") {
+	if !strings.Contains(out, "## Working autonomously") || !strings.Contains(out, "your own permissions allow") || strings.Contains(out, "force-pushing") {
 		t.Fatalf("context lacks the autonomy section: %s", out)
 	}
 }

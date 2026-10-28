@@ -47,8 +47,7 @@ var spotRoll = rand.Float64
 var OwnerWait = 40 * time.Second
 
 // autoProceed is triage's go-ahead; the [PenguPool prefix keeps it from counting as the owner's words.
-const autoProceed = "[PenguPool triage] The owner's decisions cover this: proceed as you proposed. Ask the owner only before " + floorWords +
-	", unless a confirmed Compass line of the owner's allows that action."
+const autoProceed = "[PenguPool triage] The owner's decisions cover this: proceed as you proposed."
 
 // StopBudget caps the go-ahead decided inside an agent's Stop hook: the CLI gives a hook 3 s
 // (cmd/pengupool/pool.go), so this leaves a margin. Tests change it.
@@ -1637,5 +1636,7 @@ func (p *Pool) compassWrong(_ context.Context, in gateIn) (any, error) {
 
 // autonomySection tells a team member how to work.
 func (p *Pool) autonomySection() string {
-	return fmt.Sprintf("\n\n## Working autonomously\nProceed on reversible, in-scope steps without asking. Ask the owner only to clarify the goal at the start, or before %s.\nPenguPool triage may answer your check-ins at the end of a turn from the owner's recorded decisions; treat a [PenguPool triage] go-ahead as the owner's standing instruction for reversible, in-scope steps, and still ask before anything on the floor list unless a confirmed Compass line of the owner's allows that action.\n", floorWords)
+	return "\n\n## Working autonomously\nProceed without asking on what your own permissions allow (when your harness has them, it asks the owner what it must). " +
+		"Before you stop to ask the owner anything else, check the compass above and search it: when it answers, follow it. Ask only what neither settles.\n" +
+		"PenguPool triage may answer your check-ins at the end of a turn from the owner's recorded decisions; treat a [PenguPool triage] go-ahead as the owner's standing instruction.\n"
 }

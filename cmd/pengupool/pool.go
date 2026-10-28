@@ -116,25 +116,17 @@ func hookWait(event string) time.Duration {
 	return 3 * time.Second
 }
 
-// hookUnjudged is what a PreToolUse prints when the daemon could not judge the call (no answer, an
-// error, a payload too big to read whole): the floor fails closed, so the owner is asked (Claude)
-// or the call refused (the harnesses that cannot ask). Any other hook says nothing.
-func hookUnjudged(h, event, why string) string {
-	if event != "PreToolUse" {
-		return ""
+// hookUnjudged notes on stderr that a PreToolUse the daemon could not judge (no answer, an error, a
+// payload too big or unreadable) goes to the harness's own permissions: PenguPool adds no question
+// of its own beyond the harness's. Any other hook says nothing.
+func hookUnjudged(event, why string) {
+	if event == "PreToolUse" {
+		fmt.Fprintf(os.Stderr, "pengupool: a tool call was not checked by PenguPool (%s); the harness's own permissions apply\n", why)
 	}
-	decision := "deny"
-	if h == "claude" {
-		decision = "ask"
-	}
-	b, _ := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{
-		"hookEventName": "PreToolUse", "permissionDecision": decision,
-		"permissionDecisionReason": "PenguPool could not check this call against the floor (" + why + "): the owner decides it."}})
-	return string(b)
 }
 
 // cmdHook forwards a harness hook to the daemon. A status hook never blocks agent work: when the
-// daemon does not answer it exits 0 and prints nothing; a PreToolUse fails closed (hookUnjudged).
+// daemon does not answer it exits 0 and prints nothing, and so does a PreToolUse (hookUnjudged).
 func cmdHook(args []string) error {
 	// usage: pengupool hook [--store DIR] <harness> <event>. Muse scrubs
 	// the hook environment, so its hook command bakes --store in and the
@@ -159,16 +151,18 @@ func cmdHook(args []string) error {
 	}
 	silent := harness == "muse" // unknown sessions and a down daemon are silent no-ops
 	if len(payload) > 1<<20 {
-		if msg := hookUnjudged(harness, event, "the call is too large"); msg != "" && !silent {
-			fmt.Println(msg)
+		if !silent {
+			hookUnjudged(event, "the call is too large")
 		}
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), hookWait(event))
 	defer cancel()
 	if !json.Valid(payload) {
-		if msg := hookUnjudged(harness, event, "the call could not be read"); msg != "" && !silent {
-			fmt.Println(msg)
+		if event == "PreToolUse" {
+			if !silent {
+				hookUnjudged(event, "the call could not be read")
+			}
 			return nil
 		}
 		payload = []byte("{}")
@@ -183,8 +177,8 @@ func cmdHook(args []string) error {
 		"session_id": sid, "harness": harness, "event": event, "payload": json.RawMessage(payload), "env": env,
 	})
 	if err != nil {
-		if msg := hookUnjudged(harness, event, "the host did not answer"); msg != "" && !silent {
-			fmt.Println(msg)
+		if !silent {
+			hookUnjudged(event, "the host did not answer")
 		}
 		return nil
 	}

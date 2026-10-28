@@ -10,14 +10,14 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// The floor: what waits for the owner, whatever the team's autonomy, the agent or memory says,
-// unless a confirmed (confident) Compass line of the owner's allows that exact action, which triage
-// checks with the decision model before it lets one pass (floorWaiver). A fixed list. It is enforced where the tool is called (guardFloor matches the actual
-// command or path); the same list matched against the agent's whole reply, before any go-ahead, is
-// the early warning, since an agent's text can describe a push innocently. A false
-// positive costs one owner question; a false negative lets triage wave through something on it, so
-// the patterns lean wide. A match whose "prose" group is set is a noun in passing ("release notes"),
-// not the act. Text is folded first (floorFold), so look-alike dashes and spaces match too.
+// The floor: what PenguPool never answers for the owner, whatever the team's autonomy, the agent or
+// memory says, unless a confirmed (confident) Compass line of the owner's allows that exact action,
+// which triage checks with the decision model (floorWaiver). A fixed list. It only limits triage's
+// go-ahead and auto-answers (matched against the agent's reply and the harness's permission prompt);
+// it never adds a question of PenguPool's own. A false positive leaves one question to the owner; a
+// false negative lets triage wave through something on it, so the patterns lean wide. A match whose
+// "prose" group is set is a noun in passing ("release notes"), not the act. Text is folded first
+// (floorFold), so look-alike dashes and spaces match too.
 
 // gitCmd is "git", any global options (-C <dir>, -c k=v, --no-pager) and the subcommand's leading space.
 const gitCmd = `\bgit(\s+(-[cC]\s+\S+|--?[a-z][\w-]*(=\S+)?))*\s+`
@@ -64,12 +64,6 @@ var floorProse = []struct {
 	{"release, deploy or publish", regexp.MustCompile(`(?i)\b(releas(e|es|ed|ing)|deploy(s|ed|ing)?|publish(es|ed|ing)?)\b(?P<prose>\s+notes?\b)?|\bgh\s+release\b|\b(npm|yarn|pnpm|cargo|twine|gem)\s+(publish|push|upload)\b|\b(docker|podman)\s+(image\s+)?push\b|\bdocker\s+buildx\s+build\b[^\n]*\s--push\b|\bship(ping|s)?\s+(it|this|that|them)\b|\broll(s|ed|ing)?\s+(\S+\s+)?out\b|\bgo(es|ing)?\s+live\b|\b(prod|production)\b`)},
 	{"uploading data", regexp.MustCompile(`(?i)\bupload(s|ed|ing)?\b`)},
 }
-
-// floorWords is the floor in plain words, for agents and triage's go-ahead.
-const floorWords = "deleting anything outside the worktree, rm -rf, shredding or overwriting files, git reset --hard, git clean, dropping a stash, deleting a branch, force-pushing, " +
-	"any git push, merging to main or another shared branch, opening or merging a pull request, releasing, deploying, publishing or anything touching production, " +
-	"kubectl, helm, migrations, terraform, dropping tables, changing cloud resources, sending email or messages outside the team, uploading data, gh api writes, " +
-	"and anything touching credentials, secrets, tokens, API keys, payments or permission grants"
 
 // floorFold makes look-alikes plain before matching: NFKC (full-width letters, ligatures,
 // non-breaking spaces), every Unicode dash and minus to "-", every other space to " ", and
