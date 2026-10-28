@@ -84,3 +84,7 @@ v0.5.0: the Helper agent hub is `pengupool-agent-hub` (reads its
 `.pengupool/catalog.json`); the agent picker lists only installed agents plus
 a Terminal option for any other; Settings lists detected agents and drops the
 OMP/pi binary-path fields.
+v0.6.0: from PenguPool2 0.23.0, terminal scrollback kept across session
+switches, flexible teams (no size cap, drop on a group, split a subtree) and
+backup renamed to sync; agent sessions are resumed automatically after a
+power off or crash.
