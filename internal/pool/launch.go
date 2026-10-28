@@ -333,6 +333,23 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	return ns.View(), nil
 }
 
+// RestoreLost resumes the agent sessions that were running before this host started and whose
+// workers did not survive (the machine powered off or crashed): the hub marked them lost. A session
+// the owner stopped, or one that exited on its own, is not touched; a terminal cannot be resumed.
+func (p *Pool) RestoreLost(ctx context.Context, wasRunning []string) {
+	for _, id := range wasRunning {
+		s, ok := p.session(id)
+		if !ok || s.State != "lost" || !harness.IsAgent(s.Harness) {
+			continue
+		}
+		if _, err := p.resume(ctx, sessionIn{SessionID: id}); err != nil {
+			p.logf("pool: restore %s after the host restarted: %v", s.Name, err)
+			continue
+		}
+		p.logf("pool: restored %s after the host restarted", s.Name)
+	}
+}
+
 // forget drops an ended session's record. A running session must be stopped first.
 func (p *Pool) forget(_ context.Context, in sessionIn) (any, error) {
 	return nil, p.update(func(st *store.State) error {
