@@ -113,6 +113,8 @@ older or ejected disk image could not start sessions); a Muse session's hook
 answer fits Muse's 16 KiB limit, and Muse's read tools pass a triage hold. Two builds
 sharing one store (a dev app and a release app) restart each other's host at
 each launch; the app's log says so.
+v0.8.3: a host that holds the store but no longer answers (run from a disk
+image since ejected) is stopped, killed if it must be, and replaced.
 
 ## Credits
 

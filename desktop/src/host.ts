@@ -102,12 +102,15 @@ export class Host {
   /**
    * Finds the host or starts it, waiting up to 20 s for its health check. A running host that is
    * not this build is restarted once, so the renderer never talks to requests the host does not
-   * know; sessions keep running across the restart.
+   * know; sessions keep running across the restart. A host of this store that holds its lock but
+   * does not answer (one run from a disk image since ejected cannot load its own code) is stopped
+   * first, or the new one could never take the lock.
    */
   async ensure(retried = false): Promise<HostConnection | null> {
     let found = await this.probe();
     if (found === null) {
       if (!existsSync(this.binary)) throw new Error(`the bundled host is missing at ${this.binary}`);
+      if ((await this.stop()) > 0) console.error("local host did not answer; stopped it (sessions keep running)");
       await this.start();
       for (let i = 0; i < 100 && found === null; i++) {
         await new Promise((r) => setTimeout(r, 200));
@@ -133,8 +136,9 @@ export class Host {
 
   /** Stops this store's host: the lock file's pid and any process pgrep finds for this binary's
    * daemon, each only when ps shows a PenguPool daemon of this store (a reused pid, a wrapper or an
-   * editor whose command line merely names one are left alone). */
-  private async stop(): Promise<void> {
+   * editor whose command line merely names one are left alone). One that has not exited after 5 s
+   * is killed: a host whose code is gone cannot handle SIGTERM. Returns how many it stopped. */
+  private async stop(): Promise<number> {
     const pids = new Set<number>();
     const found = await run("/usr/bin/pgrep", ["-f", `${this.binary} daemon`], process.env, 3000);
     for (const pid of (found ?? "").split("\n").filter(Boolean)) pids.add(Number(pid));
@@ -144,15 +148,15 @@ export class Host {
     } catch {
       /* no lock file: nothing was ever started here */
     }
+    const hosts: number[] = [];
     for (const pid of pids) {
       const cmd = await run("/bin/ps", ["-o", "command=", "-p", String(pid)], process.env, 3000);
       if (cmd === null || !isStoreDaemon(cmd.trim(), storeDir())) continue;
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch {
-        /* already gone */
-      }
+      if (signal(pid, "SIGTERM")) hosts.push(pid);
     }
+    for (let i = 0; i < 50 && hosts.some((pid) => signal(pid, 0)); i++) await new Promise((r) => setTimeout(r, 100));
+    for (const pid of hosts) if (signal(pid, 0)) signal(pid, "SIGKILL");
+    return hosts.length;
   }
 
   private async waitDown(): Promise<void> {
@@ -181,5 +185,15 @@ export class Host {
     await this.stop();
     await this.waitDown();
     return this.ensure();
+  }
+}
+
+/** Sends sig to pid (0 only tests it is alive); false when there is no such process. */
+function signal(pid: number, sig: NodeJS.Signals | 0): boolean {
+  try {
+    process.kill(pid, sig);
+    return true;
+  } catch {
+    return false;
   }
 }
