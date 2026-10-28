@@ -1,5 +1,5 @@
 import { Bot, Check, DatabaseBackup, KeyRound, Loader2, Lock, MonitorUp, Network, RefreshCw, Server, Settings2, Sparkles, X } from "lucide-react";
-import { useEffect, useState, type ReactElement, type ReactNode, Fragment } from "react";
+import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useApp, usePersisted } from "../app/ctx";
@@ -11,10 +11,9 @@ import type { NodeView, Update } from "../protocol/domain";
 import { cn, shortTime } from "../lib/utils";
 import { GitHubAccount } from "./GitHub";
 import { UpdateSheet } from "./Update";
-import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
 
-// Settings: General (agents on this machine, the optional GitHub account, the host, updates),
+// Settings: General (agent options, the optional GitHub account, the host, updates),
 // Models & agents (decision model), phone connections (LAN, Tailscale Serve), SSH
 // hosts and backup.
 
@@ -993,66 +992,37 @@ function KeyChoice({ checked, onSelect, title, children }: { checked: boolean; o
 
 type Probe = Record<string, { version: string; error?: string }>;
 
-const CLAUDE_INSTALL = "curl -fsSL https://claude.ai/install.sh | bash";
-
 function Harnesses(): ReactElement {
   const app = useApp();
   const [r, setR] = useState<Probe | null>(null);
-  const [n, setN] = useState(0);
   const s = useSettings(0);
   useEffect(() => {
-    setR(null);
     void app.call<Probe>("harness.probe").then((x) => setR(x ?? null));
-  }, [n]);
-  const claude = r?.claude;
-  const others = (s?.agents ?? []).filter((a) => a.id !== "claude");
+  }, []);
+  const installed = (s?.agents ?? []).filter((a) => r?.[a.id] !== undefined && r[a.id].error === undefined);
   return (
     <div>
-      <H title="Agents on this machine">
-        PenguPool runs coding agents in your folders. Set up Claude Code on your Anthropic account, or on a model Ollama serves. PenguPool starts an agent with its own settings for each session and never changes the agent&apos;s configuration.
+      <H title="Agents">
+        PenguPool finds the coding agents installed on this machine and offers them when you start a session; use Terminal for any other. It never changes an agent&apos;s configuration.
       </H>
-      <Card className="mb-4 p-4">
-        <div className="mb-2 flex items-center gap-2">
-          <p className="flex-1 text-label font-medium">Claude Code</p>
-          {claude === undefined ? <Loader2 className="size-3.5 animate-spin text-faint" /> : <Badge tone={claude.error === undefined ? "success" : "danger"}>{claude.error === undefined ? "installed" : "not installed"}</Badge>}
-        </div>
-        {claude === undefined ? null : claude.error === undefined ? (
-          <div className="flex items-center gap-3">
-            <p className="flex-1 text-caption text-muted-foreground">{claude.version}. It asks you to sign in to your Anthropic account in its first session.</p>
-            <Button size="sm" variant="default" onClick={() => app.showDialog(<NewSessionDialog onClose={() => app.showDialog(null)} />)}>
-              New session
-            </Button>
-          </div>
+      {s !== null ? <ClaudeOnOllama s={s} claude={r?.claude} /> : null}
+      <Card className="mb-4 px-4">
+        {r === null ? (
+          <Row title="Checking…">
+            <Loader2 className="size-3.5 animate-spin text-faint" />
+          </Row>
+        ) : installed.length === 0 ? (
+          <Row title="No supported agent found">
+            <span />
+          </Row>
         ) : (
-          <div className="space-y-2 text-caption text-muted-foreground">
-            <p>Install it from a terminal with Anthropic&apos;s installer, then check again:</p>
-            <Cmd text={CLAUDE_INSTALL} />
-            <Button size="sm" onClick={() => setN(n + 1)}>
-              <RefreshCw /> Check again
-            </Button>
-          </div>
+          installed.map((a) => (
+            <Row key={a.id} title={a.label} hint={r[a.id].version}>
+              {s !== null && devMode() && a.ollama && a.id !== "claude" ? <OllamaSwitch s={s} id={a.id} label={a.label} /> : <span />}
+            </Row>
+          ))
         )}
       </Card>
-      {s !== null ? <ClaudeOnOllama s={s} claude={claude} /> : null}
-      <details className="mb-4 rounded-lg border border-border px-4 py-2">
-        <summary className="cursor-pointer py-1 text-label font-medium">
-          Other agents
-        </summary>
-        {others.map((a) => {
-          const v = r?.[a.id];
-          return (
-            <Fragment key={a.id}>
-              <Row title={a.label} hint={v === undefined ? "Checking…" : (v.error ?? v.version)}>
-                <span className="flex items-center gap-3">
-                  {s !== null && devMode() && a.ollama ? <OllamaSwitch s={s} id={a.id} label={a.label} /> : null}
-                  {v !== undefined ? <Badge tone={v.error === undefined ? "success" : "neutral"}>{v.error === undefined ? "installed" : "not installed"}</Badge> : null}
-                </span>
-              </Row>
-              {(a.id === "omp" || a.id === "pi") && s !== null ? <BinField s={s} id={a.id} label={a.label} probe={v} onSaved={() => setN(n + 1)} /> : null}
-            </Fragment>
-          );
-        })}
-      </details>
       <div className="mb-8 mt-8">
         <GitHubAccount />
       </div>
@@ -1075,27 +1045,6 @@ function Harnesses(): ReactElement {
         </Card>
       ) : null}
     </div>
-  );
-}
-
-/** A command to run in a terminal, with a copy button. */
-function Cmd({ text }: { text: string }): ReactElement {
-  return (
-    <span className="flex items-center gap-2 rounded-md bg-muted px-2 py-1.5 font-mono text-caption text-foreground">
-      <span className="min-w-0 flex-1 break-all">{text}</span>
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={() =>
-          void navigator.clipboard.writeText(text).then(
-            () => toast.success("Copied"),
-            () => toast.error("Could not copy"),
-          )
-        }
-      >
-        Copy
-      </Button>
-    </span>
   );
 }
 
@@ -1209,40 +1158,6 @@ function OllamaSwitch({ s, id, label }: { s: SettingsResp; id: string; label: st
   );
 }
 
-/** A user-set binary for an agent: absolute path, or empty to clear. The probed version or error shows underneath. */
-function BinField({ s, id, label, probe, onSaved }: { s: SettingsResp; id: string; label: string; probe?: { version: string; error?: string }; onSaved: () => void }): ReactElement {
-  const app = useApp();
-  const [path, setPath] = useState(s.agent_bins?.[id] ?? "");
-  const [err, setErr] = useState("");
-  return (
-    <div className="space-y-1 border-b border-border py-3 pl-4 last:border-0">
-      <Label>{label} binary path (optional)</Label>
-      <div className="flex items-center gap-2">
-        <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/usr/local/bin/..." spellCheck={false} />
-        <Button
-          size="sm"
-          onClick={async () => {
-            setErr("");
-            const cur = (await app.call<SettingsResp>("settings.get"))?.agent_bins ?? {};
-            const next = { ...cur };
-            if (path.trim() === "") delete next[id];
-            else next[id] = path.trim();
-            const res = await app.call<{ saved?: boolean; error?: string }>("settings.save", { agent_bins: next });
-            if (res === undefined) {
-              setErr("not saved");
-              return;
-            }
-            onSaved();
-          }}
-        >
-          Save
-        </Button>
-      </div>
-      {err !== "" ? <p className="text-caption text-danger">{err}</p> : null}
-      <p className="text-caption text-muted-foreground">{probe === undefined ? "Checking…" : (probe.error ?? probe.version)}</p>
-    </div>
-  );
-}
 /** The running version, and a check for a newer release (update.check). */
 function About({ version }: { version?: string }): ReactElement {
   const app = useApp();

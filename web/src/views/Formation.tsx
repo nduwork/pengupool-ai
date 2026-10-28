@@ -136,7 +136,7 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
             >
               Agent
               <Select value={harness} onChange={(e) => setHarness(e.target.value)} aria-label="Agent runtime" autoFocus>
-                {agentOptions(allowed, missing, (id) => (skill?.harness === id ? " (helper's default)" : ""))}
+                {agentOptions(allowed, missing, (id) => (skill?.harness === id ? " (helper's default)" : ""), false)}
               </Select>
             </Label>
             <Label>
