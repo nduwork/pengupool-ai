@@ -2,6 +2,7 @@ package pool
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/nduwork/pengupool-ai/internal/agentdb"
 	"github.com/nduwork/pengupool-ai/internal/decision"
@@ -29,13 +30,18 @@ func (p *Pool) helperOf(id string) *protocol.Skill {
 	if sk := findSkill(&d, s.SkillID); sk != nil {
 		return sk
 	}
-	root := filepath.Dir(statusDir(s.Cwd))
+	// A session started by hand in a helper's folder (a skill may live in a subfolder of its repo) is
+	// that helper; the deepest skill folder holding the cwd wins.
+	var best *protocol.Skill
+	cwd := filepath.Clean(s.Cwd)
 	for i := range d.Skills {
-		if filepath.Clean(d.Skills[i].Path) == root {
-			return &d.Skills[i]
+		sp := filepath.Clean(d.Skills[i].Path)
+		if s.Cwd != "" && d.Skills[i].Path != "" && (cwd == sp || strings.HasPrefix(cwd, sp+string(filepath.Separator))) &&
+			(best == nil || len(sp) > len(filepath.Clean(best.Path))) {
+			best = &d.Skills[i]
 		}
 	}
-	return nil
+	return best
 }
 
 // agentOf is a helper's identity in the record: its repository's key, the same on every machine

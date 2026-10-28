@@ -23,7 +23,7 @@ func fakeReleases(t *testing.T, version string) (*Pool, string) {
 case "$1 $2" in
 "auth status")
   if [ -f "$PP_GH/signed_out" ]; then echo '{"hosts":{"github.com":[]}}'; else echo '{"hosts":{"github.com":[{"login":"me","active":true,"state":"success"}]}}'; fi ;;
-"api repos/nduwork/pengupool-ai/releases?per_page=20") cat "$PP_GH/releases.json" ;;
+"api repos/nduworker/pengupool-ai/releases?per_page=20") cat "$PP_GH/releases.json" ;;
 "release download")
   echo "$@" > "$PP_GH/download.args"
   while [ $# -gt 0 ]; do [ "$1" = "-D" ] && dir="$2"; [ "$1" = "-p" ] && asset="$2"; shift; done
@@ -141,7 +141,7 @@ func TestUpdateDownload(t *testing.T) {
 		t.Fatalf("path %v, checked %q", got, checked)
 	}
 	args, _ := os.ReadFile(filepath.Join(root, "download.args"))
-	if s := strings.TrimSpace(string(args)); s != "release download v0.8.3 -R nduwork/pengupool-ai -p PenguPool-AI-0.8.3-mac-arm64.dmg -D "+filepath.Join(updates, "v0.8.3")+" --clobber" {
+	if s := strings.TrimSpace(string(args)); s != "release download v0.8.3 -R nduworker/pengupool-ai -p PenguPool-AI-0.8.3-mac-arm64.dmg -D "+filepath.Join(updates, "v0.8.3")+" --clobber" {
 		t.Fatalf("gh %s", s)
 	}
 	left, _ := os.ReadDir(updates)

@@ -31,7 +31,7 @@ echo "the PenguPool host did not start; see $logs/daemon.log"; exit 1`
 func (m *Manager) startDaemon(ctx context.Context, n store.Node) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "ssh", m.args(n, "sh", "-c", shellQuote(startScript), "pengupool", cmdOf(n))...).CombinedOutput()
+	out, err := exec.CommandContext(ctx, "ssh", m.args(n, "sh", "-c", shellQuote(startScript), "pengupool", shellQuote(cmdOf(n)))...).CombinedOutput()
 	if err != nil {
 		return errors.New(firstLine(string(out), err))
 	}

@@ -64,6 +64,10 @@ func sshHostWith(t *testing.T, installed bool) (home string) {
 			t.Fatal(err)
 		}
 	}
+	// The fake host shares this machine's /Applications: look for the app under dir instead.
+	orig := locateScript
+	locateScript = strings.ReplaceAll(orig, `"/Applications/`, `"`+dir+`/Applications/`)
+	t.Cleanup(func() { locateScript = orig })
 	// Installed where make install puts it, which a non-login shell's PATH does not include.
 	if installed {
 		if err := os.MkdirAll(filepath.Join(home, ".local", "bin"), 0o755); err != nil {
@@ -485,5 +489,25 @@ func TestOlderAppNeverDowngradesHost(t *testing.T) {
 		if outdated != c.outdated || status != c.status {
 			t.Errorf("host %q, app %q: outdated %v status %s", c.host, c.app, outdated, status)
 		}
+	}
+}
+
+// The app's executable sits in a folder with a space; ssh joins its arguments into one remote
+// command, so the path must reach the remote shell quoted.
+func TestAppPathWithSpace(t *testing.T) {
+	home := sshHostWith(t, false)
+	app := filepath.Join(filepath.Dir(home), "Applications", "PenguPool AI.app", "Contents", "Resources", "bin")
+	if err := os.MkdirAll(app, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "pengupool"), []byte(fakePenguPool), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m := testManager(t, ctx)
+	v, err := m.Add(ctx, protocol.NodeAdd{Address: "testhost", Auth: "password", Password: testPassword, TrustHostKey: true})
+	if err != nil || v.Status != "up" {
+		t.Fatalf("app in a folder with a space: %+v %v", v, err)
 	}
 }
