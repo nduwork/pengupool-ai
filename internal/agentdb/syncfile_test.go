@@ -152,3 +152,35 @@ func TestMergeDropsKeylessTombstones(t *testing.T) {
 		t.Fatalf("%d keyless tombstones went out", n)
 	}
 }
+
+// A file from before lessons (version 3, no lesson column) merges in; this machine's lessons stay,
+// and the file it writes back carries them at version 4, which a 0.7 host never writes over.
+func TestMergeFileBeforeLessons(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "shared.db")
+	old, _ := openRaw(t)
+	_, _ = old.AddExperience(Entry{Helper: "a", Title: "theirs", Body: "their body"})
+	if _, err := old.Merge(filepath.Join(t.TempDir(), "none"), file); err != nil {
+		t.Fatal(err)
+	}
+	db, _ := sql.Open("sqlite", "file:"+file)
+	for _, q := range []string{`DROP TABLE IF EXISTS experience_fts`, `ALTER TABLE experience DROP COLUMN lesson`, `PRAGMA user_version = 3`} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	db.Close()
+	d, _ := openRaw(t)
+	_, _ = d.AddExperience(Entry{Helper: "a", Title: "mine", Lesson: "check the lock file", Body: "my body"})
+	if res, err := d.Merge(file, file+".out"); err != nil || res.Newer {
+		t.Fatalf("merge: %+v %v", res, err)
+	}
+	if es, _ := d.ListExperience("a"); len(es) != 2 || !slices.ContainsFunc(es, func(e Entry) bool { return e.Lesson == "check the lock file" }) {
+		t.Fatalf("entries: %+v", es)
+	}
+	if n := fileCount(t, file+".out", `SELECT count(*) FROM experience WHERE lesson = 'check the lock file'`); n != 1 {
+		t.Fatalf("the outgoing file lacks the lesson: %d", n)
+	}
+	if n := fileCount(t, file+".out", `PRAGMA user_version`); n != 4 {
+		t.Fatalf("user_version %d", n)
+	}
+}

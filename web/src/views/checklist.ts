@@ -18,6 +18,6 @@ export interface Step {
 
 export const stepsOf = (s: Setup): Step[] => [
   { id: "agent", label: "Set up Claude Code", done: s.agent, nav: "settings", section: "general" },
-  { id: "team", label: "Create a team", done: s.teams > 0, nav: "teams" },
+  { id: "team", label: "Create a team", done: s.teams > 0, nav: "workspace" },
   { id: "decision", label: "Set a decision model", done: s.decision, nav: "settings", section: "models" },
 ];

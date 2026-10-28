@@ -18,7 +18,6 @@ import { Handle } from "./Page";
 const NAV: Array<{ id: Nav; label: string; icon: ReactElement }> = [
   { id: "workspace", label: "Workspace", icon: <SquareTerminal /> },
   { id: "skills", label: "Helper agents", icon: <BookOpen /> },
-  { id: "teams", label: "Teams", icon: <Users /> },
   { id: "settings", label: "Settings", icon: <SettingsIcon /> },
 ];
 
@@ -63,7 +62,6 @@ export function Sidebar(): ReactElement {
   const explorer = usePanelRef();
   const split = useDefaultLayout({ id: "pengupool.layout.sidebar", storage: localStorage });
   const selected = app.sessions.find((s) => s.id === app.selected);
-  const pending = app.domain.approvals.filter((a) => a.state === "pending").length;
   const running = app.sessions.filter((s) => s.state === "running").length;
   const newSession = (): void => app.showDialog(<NewSessionDialog onClose={() => app.showDialog(null)} />);
   const groups = groupSessions(app);
@@ -105,7 +103,6 @@ export function Sidebar(): ReactElement {
             {n.icon}
             {n.label}
             {n.id === "workspace" && running > 0 ? <span className="ml-auto text-micro text-faint">{running}</span> : null}
-            {n.id === "teams" && pending > 0 ? <span className="ml-auto rounded-full bg-warning px-1.5 text-micro font-semibold text-black">{pending}</span> : null}
           </button>
         ))}
       </nav>

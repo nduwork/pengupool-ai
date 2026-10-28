@@ -100,6 +100,10 @@ reported by `pengupool eval` with a drift benchmark.
 v0.7.1: a correction is read as a change of preference with PAHF's cue
 phrases, and a narrower rule in it is kept as a new line; the drift
 benchmark adds PAHF's shopping drift; PAHF credited.
+v0.8.0: the Teams page folds into the map (group settings and close on each
+group's frame, closed groups from the background menu); a helper's journal
+entries carry a one-line lesson from its Done report, and the helper sees the
+matching entries with every task, each once per session.
 
 ## Credits
 

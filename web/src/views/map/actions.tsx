@@ -154,7 +154,7 @@ export function RenameSheet({ s, team }: { s?: SessionView; team?: Team }): Reac
   return (
     <Sheet
       title={`Rename ${team !== undefined ? "group " : ""}${current}`}
-      description={team !== undefined ? "The name shown in the sidebar, the map and Teams." : "Teammates address members by name."}
+      description={team !== undefined ? "The name shown in the sidebar and the map." : "Teammates address members by name."}
       onClose={close}
       footer={
         <>

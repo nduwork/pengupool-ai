@@ -176,6 +176,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		p.logLine(s.ID, fmt.Sprintf("session: %s started (%s)", s.Harness, firstNonEmpty(str("source"), "startup")))
 		p.mu.Lock()
 		delete(p.injected, s.ID)
+		delete(p.journalShown, s.ID)
 		p.mu.Unlock()
 		return p.contextOut(s.ID, "SessionStart", p.journalAtStart(s)), nil
 	case "UserPromptSubmit":

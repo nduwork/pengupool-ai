@@ -3,7 +3,7 @@ import type { ReactElement, ReactNode } from "react";
 
 import { cn } from "../lib/utils";
 
-/** The header of a full-width page (Skill library, Teams, Settings). */
+/** The header of a full-width page (Skill library, Settings). */
 export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }): ReactElement {
   return (
     <div className="flex shrink-0 items-start gap-4 border-b border-border px-6 py-4">

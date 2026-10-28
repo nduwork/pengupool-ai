@@ -554,3 +554,37 @@ func TestOldFTSIndexIsRebuiltStemmed(t *testing.T) {
 		t.Fatalf("preferred found %+v", ls)
 	}
 }
+
+// A journal made before lessons gets the lesson column and an index over it, with its old
+// triggers replaced, so an entry's lesson is found by search.
+func TestJournalBeforeLessonsIsUpgraded(t *testing.T) {
+	d, p := openRaw(t)
+	if _, err := d.AddExperience(Entry{Helper: "h", Title: "old job", Body: "the old body"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`DROP TRIGGER experience_ai`, `DROP TRIGGER experience_ad`, `DROP TRIGGER experience_au`, `DROP TABLE experience_fts`,
+		`CREATE VIRTUAL TABLE experience_fts USING fts5(title, body, content='experience', content_rowid='id', tokenize='porter unicode61')`,
+		`CREATE TRIGGER experience_ai AFTER INSERT ON experience BEGIN INSERT INTO experience_fts(rowid, title, body) VALUES (new.id, new.title, new.body); END`,
+		`INSERT INTO experience_fts(experience_fts) VALUES ('rebuild')`,
+	} {
+		if _, err := d.db.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	d.Close()
+	d2, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d2.Close()
+	if _, err := d2.AddExperience(Entry{Helper: "h", Title: "new job", Lesson: "migrations need a dry run", Body: "the new body"}); err != nil {
+		t.Fatal(err)
+	}
+	if es, _, _ := d2.SearchExperience("h", "", "dry run", 10); len(es) != 1 || es[0].Lesson != "migrations need a dry run" {
+		t.Fatalf("lesson search: %+v", es)
+	}
+	if es, _, _ := d2.SearchExperience("h", "", "old", 10); len(es) != 1 || es[0].Title != "old job" {
+		t.Fatalf("old entry search: %+v", es)
+	}
+}

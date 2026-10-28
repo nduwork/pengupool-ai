@@ -368,6 +368,11 @@ func (p *Pool) RestoreLost(ctx context.Context, wasRunning []string) {
 
 // forget drops an ended session's record. A running session must be stopped first.
 func (p *Pool) forget(_ context.Context, in sessionIn) (any, error) {
+	defer func() {
+		p.mu.Lock()
+		delete(p.journalShown, in.SessionID)
+		p.mu.Unlock()
+	}()
 	return nil, p.update(func(st *store.State) error {
 		i := sessionIndex(st, in.SessionID)
 		if i < 0 {

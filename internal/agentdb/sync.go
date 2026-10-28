@@ -26,7 +26,8 @@ import (
 // columns both share and is never written over.
 // 2: a file of version 1 held each team's epics, milestones and tickets; the next push drops them.
 // 3: experience entries replace the helpers' notes; a file's older tables are ignored.
-const SchemaVersion = 3
+// 4: experience entries carry a lesson; an older host merges such a file in but never writes over it.
+const SchemaVersion = 4
 
 type syncTable struct {
 	name  string

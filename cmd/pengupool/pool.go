@@ -441,13 +441,16 @@ func search(ctx context.Context, words string) error {
 }
 
 type journalEntry struct {
-	ID                       int64
-	At, Title, Snippet, Body string
+	ID                               int64
+	At, Title, Lesson, Snippet, Body string
 }
 
 func printEntries(es []journalEntry) {
 	for _, e := range es {
 		fmt.Printf("[%d] %s · %s\n", e.ID, e.At[:min(10, len(e.At))], e.Title)
+		if e.Lesson != "" {
+			fmt.Printf("    Lesson: %s\n", e.Lesson)
+		}
 		if e.Snippet != "" {
 			fmt.Printf("    %s\n", e.Snippet)
 		}
