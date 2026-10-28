@@ -89,11 +89,13 @@ func TestWorkspaceFiles(t *testing.T) {
 	// Scripts run only in an HTML page asked with ?run=1, still sandboxed; a PDF goes to the viewer.
 	os.WriteFile(filepath.Join(ws, "p.html"), []byte("<p>x</p>"), 0o600)
 	os.WriteFile(filepath.Join(ws, "d.pdf"), []byte("%PDF-1.4"), 0o600)
+	os.WriteFile(filepath.Join(ws, "x.xhtml"), []byte("<html/>"), 0o600)
 	for u, want := range map[string]string{
-		base + "a.txt?run=1":  "sandbox; script-src 'none'; object-src 'none'",
-		base + "p.html":       "sandbox; script-src 'none'; object-src 'none'",
-		base + "p.html?run=1": "sandbox allow-scripts",
-		base + "d.pdf":        "",
+		base + "a.txt?run=1":   "sandbox; script-src 'none'; object-src 'none'",
+		base + "p.html":        "sandbox; script-src 'none'; object-src 'none'",
+		base + "p.html?run=1":  "sandbox allow-scripts",
+		base + "x.xhtml?run=1": "sandbox allow-scripts",
+		base + "d.pdf":         "",
 	} {
 		if code, _, h := fetch(u); code != 200 || h.Get("Content-Security-Policy") != want || h.Get("Access-Control-Allow-Origin") != "" {
 			t.Errorf("%s = %d %q", u, code, h.Get("Content-Security-Policy"))

@@ -9,7 +9,8 @@ import { cn, fullTime } from "../lib/utils";
 // terminal or the PTY size. Markdown (with Mermaid diagrams), HTML, PDF and images open rendered, as in
 // VS Code's preview, with a switch to the source, and follow the file as it changes. Rendered documents
 // live in a sandboxed frame: no scripts (HTML can opt in: it then runs from its own URL in an opaque
-// origin, so its relative assets load but it cannot read the host's answers), no access to the app.
+// origin, so its relative assets load and it cannot reach the app; it can load other files of the
+// workspace, as its own assets), no access to the app.
 
 interface FileResp {
   content?: string;
@@ -70,17 +71,19 @@ export async function withDiagrams(doc: string, dark: boolean): Promise<string> 
   const blocks = [...doc.matchAll(MERMAID)];
   if (blocks.length === 0) return doc;
   const { default: mermaid } = await import("mermaid");
-  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "default" });
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", suppressErrorRendering: true, theme: dark ? "dark" : "default" });
+  const out: string[] = [];
   for (const [whole, src] of blocks) {
-    let html: string;
+    const id = `pp-mermaid-${++diagrams}`;
     try {
-      html = `<div class="mermaid">${(await mermaid.render(`pp-mermaid-${++diagrams}`, unescapeHTML(src))).svg}</div>`;
+      out.push(`<div class="mermaid">${(await mermaid.render(id, unescapeHTML(src))).svg}</div>`);
     } catch (e) {
-      html = `<p class="mermaid-error">Mermaid: ${escapeAttr(e instanceof Error ? e.message : String(e))}</p>${whole}`;
+      document.getElementById(`d${id}`)?.remove(); // what a failed render leaves in the app's page
+      out.push(`<p class="mermaid-error">Mermaid: ${escapeAttr(e instanceof Error ? e.message : String(e))}</p>${whole}`);
     }
-    doc = doc.replace(whole, () => html);
   }
-  return doc;
+  let i = 0;
+  return doc.replace(MERMAID, () => out[i++]);
 }
 
 function Preview({ kind, f, path, scripts }: { kind: PreviewKind; f: FileResp; path: string; scripts: boolean }): ReactElement {
@@ -100,7 +103,7 @@ function Preview({ kind, f, path, scripts }: { kind: PreviewKind; f: FileResp; p
   if (kind === "image")
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-[repeating-conic-gradient(var(--muted)_0_25%,transparent_0_50%)] bg-[length:16px_16px] p-6">
-        {raw !== undefined ? <img src={raw} alt={path} className="max-h-full max-w-full object-contain shadow-sm" /> : null}
+        {raw !== undefined ? <img key={f.mtime} src={raw} alt={path} className="max-h-full max-w-full object-contain shadow-sm" /> : null}
       </div>
     );
   const frame = "min-h-0 w-full flex-1 border-0 bg-panel";
@@ -113,21 +116,25 @@ function Preview({ kind, f, path, scripts }: { kind: PreviewKind; f: FileResp; p
 export function FileView({ tab }: { tab: EditorTab }): ReactElement {
   const app = useApp();
   const [f, setF] = useState<FileResp | string | null>(null);
-  const [tick, setTick] = useState(0);
   useEffect(() => {
-    // Follow the file: an agent may be writing it. A read with nothing new changes nothing.
-    const t = setInterval(() => document.hidden || setTick((n) => n + 1), 2000);
-    return () => clearInterval(t);
-  }, []);
-  useEffect(() => {
+    // Follow the file: an agent may be writing it. A read with nothing new changes nothing; a slow
+    // read is waited for, not overtaken.
     let live = true;
-    getJSON<FileResp>(app.conn, "/api/files", { session: tab.sessionId, path: tab.path })
-      .then((r) => live && setF((old) => (typeof old === "object" && old !== null && old.mtime === r.mtime && old.content === r.content ? old : r)))
-      .catch((e: Error) => live && setF((old) => (typeof old === "object" && old !== null ? old : e.message)));
+    let busy = false;
+    const read = (): void => {
+      busy = true;
+      getJSON<FileResp>(app.conn, "/api/files", { session: tab.sessionId, path: tab.path })
+        .then((r) => live && setF((old) => (typeof old === "object" && old !== null && old.mtime === r.mtime && old.content === r.content ? old : r)))
+        .catch((e: Error) => live && setF(e.message))
+        .finally(() => (busy = false));
+    };
+    read();
+    const t = setInterval(() => busy || document.hidden || read(), 2000);
     return () => {
       live = false;
+      clearInterval(t);
     };
-  }, [app.conn, tab.sessionId, tab.path, tick]);
+  }, [app.conn, tab.sessionId, tab.path]);
   const kind = previewKind(tab.path);
   const [mode, setMode] = usePersisted<"preview" | "source">(`file.mode.${kind ?? "text"}`, "preview");
   const [scripts, setScripts] = useState(false);
@@ -138,7 +145,7 @@ export function FileView({ tab }: { tab: EditorTab }): ReactElement {
   const bar = (
     <PathBar path={tab.path} note={note}>
       {kind === "html" && previewing ? (
-        <Button size="sm" variant={scripts ? "default" : "ghost"} onClick={() => setScripts(!scripts)} title="Run the page's scripts in an isolated frame that cannot read other workspace files">
+        <Button size="sm" variant={scripts ? "default" : "ghost"} onClick={() => setScripts(!scripts)} title="Run the page's scripts in an isolated frame: it cannot reach the app, but it can load other files of this workspace and the network">
           {scripts ? "Scripts on" : "Scripts off"}
         </Button>
       ) : null}
