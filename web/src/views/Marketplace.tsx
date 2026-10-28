@@ -7,8 +7,8 @@ import { Button } from "../components/ui/button";
 import { Empty, Input } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
 
-// The Helper agent hub: a catalog of skill repositories pinned to a commit (stored in Claude Code's
-// marketplace.json format). Install clones the helper at its pin into the Skill library.
+// The Helper agent hub: a catalog of skill repositories pinned to a commit (the hub's
+// .pengupool/catalog.json). Install clones the helper at its pin into the Skill library.
 
 interface Entry {
   name: string;
@@ -26,6 +26,7 @@ interface Entry {
 
 interface MarketView {
   url: string;
+  default: string;
   name: string;
   description?: string;
   error?: string;
@@ -68,6 +69,7 @@ export function MarketplaceSheet(): ReactElement {
                 {m.description !== undefined ? <p className="text-caption text-muted-foreground">{m.description}</p> : null}
               </div>
             </header>
+            <RepoField url={m.url} fallback={m.default} onSaved={() => setRev((n) => n + 1)} />
             {m.error !== undefined ? <p className="rounded-md bg-danger/10 p-2 text-caption text-danger">{m.error}</p> : null}
             {(m.skipped ?? 0) > 0 ? (
               <p className="text-caption text-faint">
@@ -89,6 +91,30 @@ export function MarketplaceSheet(): ReactElement {
         ) : null}
       </div>
     </Sheet>
+  );
+}
+
+// The hub's repository: the default hub unless the owner sets another; the catalog is fetched from it on refresh.
+function RepoField({ url, fallback, onSaved }: { url: string; fallback: string; onSaved: () => void }): ReactElement {
+  const app = useApp();
+  const [repo, setRepo] = useState(url);
+  useEffect(() => setRepo(url), [url]);
+  const save = async (value: string): Promise<void> => {
+    if ((await app.call("marketplace.set", { repo: value.trim() })) === undefined) return;
+    await app.call("marketplace.refresh", {});
+    toast.success("Hub repository saved");
+    onSaved();
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Input className="min-w-0 flex-1 font-mono" value={repo} onChange={(e) => setRepo(e.target.value)} placeholder={fallback} aria-label="Hub repository" />
+      <Button disabled={repo.trim() === url} onClick={() => void save(repo)}>
+        Save
+      </Button>
+      <Button variant="ghost" disabled={url === fallback} onClick={() => void save("")}>
+        Use default
+      </Button>
+    </div>
   );
 }
 

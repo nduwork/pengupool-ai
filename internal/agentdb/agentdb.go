@@ -344,6 +344,23 @@ func (d *DB) Setting(key string) string {
 	return v
 }
 
+// SettingsPrefix reads every host setting whose key starts with prefix.
+func (d *DB) SettingsPrefix(prefix string) map[string]string {
+	out := map[string]string{}
+	rows, err := d.db.Query(`SELECT key, value FROM meta WHERE substr(key, 1, ?) = ?`, len(prefix), prefix)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k, v string
+		if rows.Scan(&k, &v) == nil {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 func (d *DB) SetSetting(key, value string) error {
 	_, err := d.db.Exec(`INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
 	return err

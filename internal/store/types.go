@@ -132,6 +132,8 @@ type Config struct {
 	Sync Sync `json:"sync"`
 	// Backup is Sync's old name: read when there is no "sync", and written beside it for one release so a downgrade keeps the settings.
 	Backup *Sync `json:"backup,omitempty"`
+	// CatalogRepo is the Helper agent hub's Git URL; empty means the default hub.
+	CatalogRepo string `json:"catalog_repo,omitempty"`
 }
 
 // MuseDevice is one paired Muse app device: the token lives only as a hash.

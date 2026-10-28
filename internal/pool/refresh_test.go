@@ -29,8 +29,8 @@ func TestRefreshPullsCatalog(t *testing.T) {
 	git(root, "init", "-q", "--bare", bare)
 	git(root, "clone", "-q", bare, work)
 	commit := func(desc string) string {
-		os.MkdirAll(filepath.Join(work, ".claude-plugin"), 0o755)
-		os.WriteFile(filepath.Join(work, marketFile), []byte(`{"name":"m","description":"`+desc+`","plugins":[]}`), 0o644)
+		os.MkdirAll(filepath.Join(work, ".pengupool"), 0o755)
+		os.WriteFile(filepath.Join(work, marketFile), []byte(`{"name":"m","description":"`+desc+`","agents":[]}`), 0o644)
 		git(work, "add", "-A")
 		git(work, "commit", "-qm", desc)
 		git(work, "push", "-q", "origin", "HEAD")
