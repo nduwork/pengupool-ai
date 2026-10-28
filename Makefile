@@ -1,4 +1,4 @@
-# PenguPool AI. `make install` builds PenguPool AI.app into ~/Applications and links the
+# PenguPool AI. `make install` builds PenguPool AI.app into /Applications (or ~/Applications) and links the
 # `pengupool-ai` (host) CLI into ~/.local/bin; `make uninstall` removes them.
 # `make dist` builds the app once as a disk image others install without
 # Go, Node or Xcode, and `make release` publishes it. Every target is safe to re-run.

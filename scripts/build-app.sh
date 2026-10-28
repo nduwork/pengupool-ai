@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds PenguPool AI.app — the Electron desktop app with the Go host bundled inside, for
-# Apple Silicon (arm64) only — and installs it into ~/Applications, plus the `pengupool-ai`
-# (host) command in ~/.local/bin.
+# Apple Silicon (arm64) only — and installs it where it is (/Applications, else ~/Applications),
+# plus the `pengupool-ai` (host) command in ~/.local/bin.
 #   scripts/build-app.sh               build and install
 #   scripts/build-app.sh --no-install  build only (desktop/dist/mac-arm64/PenguPool AI.app)
 set -eu
@@ -54,8 +54,11 @@ echo "built $APP"
 [ "${1:-}" = "--no-install" ] && exit 0
 
 echo "==> install"
+# Replace the app where it is installed: /Applications (the disk image's place) when it is there,
+# else ~/Applications. Two copies would leave the app the owner opens on the old build.
 DEST="$HOME/Applications/PenguPool AI.app"
-mkdir -p "$HOME/Applications" "$HOME/.local/bin"
+[ -d "/Applications/PenguPool AI.app" ] && DEST="/Applications/PenguPool AI.app"
+mkdir -p "$(dirname "$DEST")" "$HOME/.local/bin"
 STORE="${PENGUPOOL_HOME:-$HOME/.pengupool-ai}/v2"
 CLI="$DEST/Contents/Resources/bin/pengupool"
 
