@@ -276,11 +276,11 @@ func TestHelperOfByCwd(t *testing.T) {
 	_ = st.Update(func(s *store.State) error {
 		s.Sessions = append(s.Sessions,
 			store.Session{ID: "inside", Name: "a", Cwd: "/r/agents/x"}, store.Session{ID: "deeper", Name: "b", Cwd: "/r/agents/x/sub"},
-			store.Session{ID: "sibling", Name: "c", Cwd: "/r/agents/xy"}, store.Session{ID: "root", Name: "d", Cwd: "/r"})
+			store.Session{ID: "sibling", Name: "c", Cwd: "/r/agents/xy"}, store.Session{ID: "root", Name: "d", Cwd: "/r"}, store.Session{ID: "slash", Name: "e", Cwd: "/r/agents/x/"})
 		s.Domain.Skills = append(s.Domain.Skills, protocol.Skill{ID: "sx", Name: "x", Path: "/r/agents/x"})
 		return nil
 	})
-	for id, want := range map[string]bool{"inside": true, "deeper": true, "sibling": false, "root": false} {
+	for id, want := range map[string]bool{"inside": true, "deeper": true, "sibling": false, "root": false, "slash": true} {
 		if got := p.helperOf(id) != nil; got != want {
 			t.Errorf("helperOf(%s) = %v, want %v", id, got, want)
 		}

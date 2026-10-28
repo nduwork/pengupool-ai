@@ -33,9 +33,10 @@ func (p *Pool) helperOf(id string) *protocol.Skill {
 	// A session started by hand in a helper's folder (a skill may live in a subfolder of its repo) is
 	// that helper; the deepest skill folder holding the cwd wins.
 	var best *protocol.Skill
+	cwd := filepath.Clean(s.Cwd)
 	for i := range d.Skills {
 		sp := filepath.Clean(d.Skills[i].Path)
-		if s.Cwd != "" && (s.Cwd == sp || strings.HasPrefix(s.Cwd, sp+string(filepath.Separator))) &&
+		if s.Cwd != "" && d.Skills[i].Path != "" && (cwd == sp || strings.HasPrefix(cwd, sp+string(filepath.Separator))) &&
 			(best == nil || len(sp) > len(filepath.Clean(best.Path))) {
 			best = &d.Skills[i]
 		}
