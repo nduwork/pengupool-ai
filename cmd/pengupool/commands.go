@@ -29,6 +29,19 @@ func logf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "pengupool: "+format+"\n", args...)
 }
 
+// hostVersionFile, under the store directory, is the version line the running daemon wrote at
+// startup. The desktop app compares it with its bundled host and restarts one that is not its
+// own build.
+const hostVersionFile = "run/host.version"
+
+// writeHostVersion records the running host's build for the desktop app.
+func writeHostVersion(dir, line string) error {
+	if err := os.MkdirAll(filepath.Join(dir, "run"), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, hostVersionFile), []byte(line+"\n"), 0o600)
+}
+
 // hubSessions adapts *hub.Hub to the gateway's session interface. The adapter lives here, in the
 // one package that is allowed to know about both, which keeps the two packages independent.
 type hubSessions struct {
@@ -111,6 +124,13 @@ func cmdDaemon(args []string) error {
 		return err
 	}
 	defer lock.Release()
+	// The desktop app restarts a host that is not its own build: after an update installed by
+	// hand the old daemon still runs, and the new renderer asks it for requests it does not
+	// know. The version line the app compares against lives here, next to the address and the
+	// token; a daemon that predates this file reads as another build.
+	if err := writeHostVersion(dir, versionLine()); err != nil {
+		logf("host version: %v", err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
