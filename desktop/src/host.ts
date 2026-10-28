@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { hostOutdated, readHostVersion } from "./hostversion";
+import { hostOutdated, isStoreDaemon, readHostVersion } from "./hostversion";
 
 export interface HostConnection {
   url: string;
@@ -131,22 +131,22 @@ export class Host {
     return hostOutdated(readHostVersion(storeDir()), bundled.trim());
   }
 
-  /** Stops this store's host: the lock file's pid, when it is still a host, and any process whose
-   * command line is this binary's daemon (a host started through the CLI link matches only the lock). */
+  /** Stops this store's host: the lock file's pid and any process pgrep finds for this binary's
+   * daemon, each only when ps shows a PenguPool daemon of this store (a reused pid, a wrapper or an
+   * editor whose command line merely names one are left alone). */
   private async stop(): Promise<void> {
     const pids = new Set<number>();
-    const found = await run("/usr/bin/pgrep", ["-f", `${this.binary} daemon --store ${storeDir()}`], process.env, 3000);
+    const found = await run("/usr/bin/pgrep", ["-f", `${this.binary} daemon`], process.env, 3000);
     for (const pid of (found ?? "").split("\n").filter(Boolean)) pids.add(Number(pid));
     try {
       const locked = readFileSync(join(storeDir(), "daemon.lock"), "utf8").trim();
-      if (/^\d+$/.test(locked)) {
-        const cmd = await run("/bin/ps", ["-o", "command=", "-p", locked], process.env, 3000);
-        if (cmd !== null && /pengupool.* daemon/.test(cmd)) pids.add(Number(locked));
-      }
+      if (/^\d+$/.test(locked)) pids.add(Number(locked));
     } catch {
       /* no lock file: nothing was ever started here */
     }
     for (const pid of pids) {
+      const cmd = await run("/bin/ps", ["-o", "command=", "-p", String(pid)], process.env, 3000);
+      if (cmd === null || !isStoreDaemon(cmd.trim(), storeDir())) continue;
       try {
         process.kill(pid, "SIGTERM");
       } catch {

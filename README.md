@@ -110,7 +110,9 @@ file as it changes; Muse sessions get their hooks again (the app replaces a
 PenguPool plugin left from another build instead of failing on it).
 v0.8.2: the app replaces a running host that is not its own build (one from an
 older or ejected disk image could not start sessions); a Muse session's hook
-answer fits Muse's 16 KiB limit, and Muse's read tools pass a triage hold.
+answer fits Muse's 16 KiB limit, and Muse's read tools pass a triage hold. Two builds
+sharing one store (a dev app and a release app) restart each other's host at
+each launch; the app's log says so.
 
 ## Credits
 

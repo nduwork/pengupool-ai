@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { hostOutdated, readHostVersion } from "./hostversion.ts";
+import { hostOutdated, isStoreDaemon, readHostVersion } from "./hostversion.ts";
 
 test("hostOutdated: only the bundled build is current", () => {
   assert.equal(hostOutdated("pengupool 0.8.0+abc (protocol v1)", "pengupool 0.8.0+abc (protocol v1)"), false);
@@ -24,4 +24,17 @@ test("readHostVersion: the daemon's line, or null when it predates the file", ()
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("isStoreDaemon: only a PenguPool daemon of this store", () => {
+  const store = "/Users/me/.pengupool-ai/v2";
+  const app = "/Applications/PenguPool AI.app/Contents/Resources/bin/pengupool";
+  assert.equal(isStoreDaemon(`${app} daemon --store ${store}`, store), true);
+  assert.equal(isStoreDaemon("/Volumes/PenguPool-AI 4/PenguPool AI.app/Contents/Resources/bin/pengupool daemon", store), true); // the default store
+  assert.equal(isStoreDaemon(`${app} daemon --store /tmp/other/v2`, store), false);
+  assert.equal(isStoreDaemon(`${app} daemon --store ${store}-old`, store), false);
+  assert.equal(isStoreDaemon(`${app} worker --session-id x`, store), false);
+  assert.equal(isStoreDaemon(`vim '${app} daemon --store ${store}'`, store), false);
+  assert.equal(isStoreDaemon(`sh -c '${app} daemon --store ${store}'`, store), false);
+  assert.equal(isStoreDaemon(`/usr/bin/pengupool2 daemon --store ${store}`, store), false);
 });
