@@ -120,35 +120,40 @@ export const AGENTS = [
   { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", experimental: false },
 ] as const;
 
+/** The picker's choice for a plain terminal: any agent PenguPool has no integration for, started by hand. */
+export const TERMINAL = "shell";
+
 /** The picker's choice for Claude Code on an Ollama model, launched with `ollama launch claude`. */
 export const CLAUDE_OLLAMA = "claude-ollama";
 
 /** What a picked agent launches: Claude on Ollama is Claude with the model "ollama/<model>" ("ollama/" for the configured one). */
 export function launchAgent(choice: string, model: string): { harness: string; model?: string } {
   const m = model.trim();
+  if (choice === TERMINAL) return { harness: choice };
   if (choice === CLAUDE_OLLAMA) return { harness: "claude", model: `ollama/${m}` };
   return { harness: choice, model: m === "" ? undefined : m };
 }
 
-/** The agent picker's options, Claude Code on Ollama right after Claude Code. */
-export function agentOptions(agents: readonly { id: string; label: string; experimental: boolean }[], missing: (id: string) => boolean, note: (id: string) => string = () => ""): ReactElement[] {
+/** The agent picker's options: the agents installed here (Claude Code on Ollama right after Claude Code), then a plain terminal. */
+export function agentOptions(agents: readonly { id: string; label: string; experimental: boolean }[], missing: (id: string) => boolean, note: (id: string) => string = () => "", terminal = true): ReactElement[] {
   const out: ReactElement[] = [];
   for (const a of agents) {
+    if (missing(a.id)) continue;
     out.push(
-      <option key={a.id} value={a.id} disabled={missing(a.id)}>
+      <option key={a.id} value={a.id}>
         {a.label}
         {a.experimental ? " (experimental)" : ""}
-        {missing(a.id) ? " — not installed" : ""}
         {note(a.id)}
       </option>,
     );
     if (a.id === "claude")
       out.push(
-        <option key={CLAUDE_OLLAMA} value={CLAUDE_OLLAMA} disabled={missing("claude")}>
-          Claude Code (Ollama){missing("claude") ? " — not installed" : ""}
+        <option key={CLAUDE_OLLAMA} value={CLAUDE_OLLAMA}>
+          Claude Code (Ollama)
         </option>,
       );
   }
+  if (terminal) out.push(<option key={TERMINAL} value={TERMINAL}>Terminal (any other agent)</option>);
   return out;
 }
 

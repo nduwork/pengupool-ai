@@ -1673,10 +1673,10 @@ func TestOwnerGroupKeptOnSync(t *testing.T) {
 
 func TestCatalogFolder(t *testing.T) {
 	for _, c := range []struct{ origin, sub, group, want string }{
-		{"git@github.com:nduwork/pengupool-marketplace.git", "/agents/code/x", "Code", ""},
-		{"https://github.com/nduwork/pengupool-marketplace", "/agents/x", "code", "move x to agents/code/x"},
-		{"https://github.com/nduwork/pengupool-marketplace.git", "/agents/code/x", "", "give x a group"},
-		{"https://github.com/nduwork/pengupool-marketplace.git", "/agents/code review/x", "Code Review", "use a one-word group"},
+		{"git@github.com:nduwork/pengupool-agent-hub.git", "/agents/code/x", "Code", ""},
+		{"https://github.com/nduwork/pengupool-agent-hub", "/agents/x", "code", "move x to agents/code/x"},
+		{"https://github.com/nduwork/pengupool-agent-hub.git", "/agents/code/x", "", "give x a group"},
+		{"https://github.com/nduwork/pengupool-agent-hub.git", "/agents/code review/x", "Code Review", "use a one-word group"},
 		{"https://github.com/o/x.git", "", "", ""},
 	} {
 		err := catalogFolder(c.origin, c.sub, c.group, "x")

@@ -24,6 +24,30 @@ import (
 
 const marketFile = ".claude-plugin/marketplace.json"
 
+// catalogFile is the hub's own catalog ({"agents":[{name, description, group, capabilities, harness,
+// requires, repo, path, ref, sha}]}), read first; marketFile is the fallback while a hub commit lacks it.
+const catalogFile = ".pengupool/catalog.json"
+
+type catalogEntry struct {
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Group        string   `json:"group"`
+	Capabilities []string `json:"capabilities"`
+	Harness      string   `json:"harness"`
+	Requires     []string `json:"requires"`
+	Repo         string   `json:"repo"`
+	Path         string   `json:"path"`
+	Ref          string   `json:"ref"`
+	SHA          string   `json:"sha"`
+}
+
+func (c catalogEntry) entry() (MarketEntry, bool) {
+	e := MarketEntry{Name: c.Name, Description: c.Description, Category: strings.TrimSpace(c.Group), Capabilities: c.Capabilities,
+		Harness: c.Harness, Requires: c.Requires, Repo: c.Repo, Path: strings.Trim(c.Path, "/"), Ref: c.Ref, Commit: c.SHA}
+	parts := strings.Split(e.Path, "/")
+	return e, e.Commit != "" && (e.Path == "" || !slices.Contains(parts, "..") && !slices.Contains(parts, "."))
+}
+
 // Marketplace is PenguPool's reading of the catalog: only plugins with a pinned Git source.
 type Marketplace struct {
 	Name        string
@@ -154,7 +178,7 @@ func (p *Pool) gitEnv(ctx context.Context, dir string, env []string, args ...str
 }
 
 // mainMarketplace is the one catalog PenguPool reads.
-const mainMarketplace = "https://github.com/nduwork/pengupool-marketplace.git"
+const mainMarketplace = "https://github.com/nduwork/pengupool-agent-hub.git"
 
 func (p *Pool) marketDir() string {
 	return filepath.Join(p.st.Dir(), "marketplaces", strings.NewReplacer("/", "-", ":", "-").Replace(repoKey(mainMarketplace)))
@@ -174,6 +198,25 @@ func (p *Pool) ensureMarket(ctx context.Context) (string, error) {
 }
 
 func readMarketplace(dir string) (*Marketplace, error) {
+	if b, err := os.ReadFile(filepath.Join(dir, catalogFile)); err == nil {
+		var raw struct {
+			Name        string         `json:"name"`
+			Description string         `json:"description"`
+			Agents      []catalogEntry `json:"agents"`
+		}
+		if err := json.Unmarshal(b, &raw); err != nil {
+			return nil, invalid("%s: %v", catalogFile, err)
+		}
+		m := &Marketplace{Name: raw.Name, Description: raw.Description}
+		for _, c := range raw.Agents {
+			if e, ok := c.entry(); ok {
+				m.Skills = append(m.Skills, e)
+			} else {
+				m.Skipped++
+			}
+		}
+		return m, m.validate()
+	}
 	b, err := os.ReadFile(filepath.Join(dir, marketFile))
 	if err != nil {
 		return nil, invalid("the repository has no %s", marketFile)

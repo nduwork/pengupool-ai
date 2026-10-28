@@ -39,12 +39,12 @@ type launchIn struct {
 // launch starts a main session from a local directory, a clone, or a registered repository.
 // The session is not part of a team; a team is formed from a task or by adding sessions.
 func (p *Pool) launch(ctx context.Context, in launchIn) (any, error) {
-	// A PenguPool session is always an agent runtime; plain terminals belong in the user's terminal app.
+	// A session runs a supported agent, or a plain terminal for any other (no hooks, so no status or journal).
 	if in.Harness == "" {
 		in.Harness = harness.Claude
 	}
-	if !harness.IsAgent(in.Harness) {
-		return nil, invalid("a PenguPool session runs an agent (%s), not %q", agentIDs(), in.Harness)
+	if !harness.IsAgent(in.Harness) && in.Harness != harness.Shell {
+		return nil, invalid("a PenguPool session runs an agent (%s) or a terminal, not %q", agentIDs(), in.Harness)
 	}
 	repo, err := p.resolveSource(ctx, in.Source)
 	if err != nil {
@@ -99,7 +99,7 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 	}
 	ollama := p.ollamaFor(r.Harness, r.Model)
 	if ollama == nil && strings.HasPrefix(r.Model, ollamaPrefix) {
-		return store.Session{}, invalid("name the Ollama model to run %s on, or set one in Settings → Agents on this machine", r.Harness)
+		return store.Session{}, invalid("name the Ollama model to run %s on, or set one in Settings → Agents", r.Harness)
 	}
 	cmd, env, err := harness.Spec(r.Harness, harness.Params{
 		SessionID: r.ID, Name: r.Name, Cwd: r.Cwd, Exe: p.exe, StoreDir: p.st.Dir(),
@@ -120,7 +120,10 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 			s.RunLog = runlog
 			// Starting until the agent's SessionStart hook says it is up: a first-run dialog (folder
 			// trust, login) must never receive a typed team message.
-			s.Status = "starting"
+			// A terminal has no hook to clear it, so it never starts.
+			if harness.IsAgent(r.Harness) {
+				s.Status = "starting"
+			}
 			s.Branch = gitBranch(r.Cwd)
 			if r.Decorate != nil {
 				r.Decorate(s)

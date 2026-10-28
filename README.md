@@ -45,10 +45,10 @@ browser UI talk to the daemon over its gateway. Data: `~/.pengupool-ai/v2`
   context); its next session starts with the index and the matches.
 - **Harnesses.** Claude Code, Claude Code on Ollama, Muse Code (the app
   installs its PenguPool plugin), Codex (the app writes a rule so only the
-  PenguPool CLI leaves the sandbox), OMP and pi (binary path settable in
-  Settings › Models & agents).
+  PenguPool CLI leaves the sandbox), OMP and pi. Only agents found installed
+  are offered; Terminal runs any other.
 
-See DESIGN.md for the dataflows.
+Supported harnesses: docs/harnesses.md. See DESIGN.md for the dataflows.
 
 ## Verify
 
@@ -80,3 +80,7 @@ OMP and pi promoted (Codex sandbox rule; OMP/pi binary path), Copilot,
 Gemini and OpenCode removed; the separate Compass layer (`pengu` CLI, MCP,
 owner API) folded into the built-in Compass with a one-time import; a
 designated Muse app API with per-device pairing; Tailscale setup checklist.
+v0.5.0: the Helper agent hub is `pengupool-agent-hub` (reads its
+`.pengupool/catalog.json`); the agent picker lists only installed agents plus
+a Terminal option for any other; Settings lists detected agents and drops the
+OMP/pi binary-path fields.
