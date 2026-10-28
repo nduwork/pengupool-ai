@@ -102,11 +102,7 @@ func (p *Pool) beliefs(lines []agentdb.Line) []lineView {
 	t, th := p.at(), p.thresholds()
 	out := make([]lineView, len(lines))
 	for i, l := range lines {
-		prior := agentdb.PriorStated
-		if l.Origin == "chose" {
-			prior = agentdb.PriorChose
-		}
-		b := agentdb.Replay(prior, effects[l.UID], t)
+		b := agentdb.Replay(priorOf(l), effects[l.UID], t)
 		v := lineView{Line: l, Mu: b.Mu, N: b.N, Sigma: b.Sigma, Effects: len(effects[l.UID]), belief: b, th: th}
 		last := b.Last
 		if last.IsZero() {
@@ -125,6 +121,25 @@ func (p *Pool) beliefs(lines []agentdb.Line) []lineView {
 		out[i] = v
 	}
 	return out
+}
+
+// shadowBeliefs are the lines' beliefs under the engine not in use, with the same priors: eval
+// reports them beside the live ones.
+func (p *Pool) shadowBeliefs(lines []agentdb.Line) []agentdb.Belief {
+	effects, _ := p.db.Effects()
+	t := p.at()
+	out := make([]agentdb.Belief, len(lines))
+	for i, l := range lines {
+		out[i] = agentdb.ReplayShadow(priorOf(l), effects[l.UID], t)
+	}
+	return out
+}
+
+func priorOf(l agentdb.Line) agentdb.Prior {
+	if l.Origin == "chose" {
+		return agentdb.PriorChose
+	}
+	return agentdb.PriorStated
 }
 
 // lines are the owner's lines matching query (all when empty) with their beliefs.

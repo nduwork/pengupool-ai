@@ -149,7 +149,12 @@ const answerFresh = 180 * 24 * time.Hour
 // recent.
 // Under the Gaussian, enough evidence is P ≥ AnswerP at the last answer.
 func AnswerGuides(prior Prior, es []Effect, now time.Time) bool {
-	b := Replay(prior, es, now)
+	return AnswerGuidesBy(Replay, prior, es, now)
+}
+
+// AnswerGuidesBy is AnswerGuides with the given replay, so the shadow engine can be asked too.
+func AnswerGuidesBy(replay func(Prior, []Effect, time.Time) Belief, prior Prior, es []Effect, now time.Time) bool {
+	b := replay(prior, es, now)
 	if b.Last.IsZero() || now.Sub(b.Last) > answerFresh {
 		return false
 	}
@@ -165,7 +170,7 @@ func AnswerGuides(prior Prior, es []Effect, now time.Time) bool {
 	if last.PCon > last.PSup {
 		return false
 	}
-	at := Replay(prior, es, b.Last)
+	at := replay(prior, es, b.Last)
 	enough := at.Alpha >= AnswerAlpha
 	if at.S2 > 0 {
 		enough = at.Mu >= AnswerP
@@ -419,6 +424,21 @@ func Replay(prior Prior, effects []Effect, now time.Time) Belief {
 		return ReplayGauss(prior.Gauss, effects, now)
 	}
 	return ReplayBeta(prior.Beta, effects, now)
+}
+
+// ShadowEngine is the engine Replay does not use; ReplayShadow replays it, only to be reported.
+func ShadowEngine() string {
+	if Engine == "gauss" {
+		return "beta"
+	}
+	return "gauss"
+}
+
+func ReplayShadow(prior Prior, effects []Effect, now time.Time) Belief {
+	if Engine == "gauss" {
+		return ReplayBeta(prior.Beta, effects, now)
+	}
+	return ReplayGauss(prior.Gauss, effects, now)
 }
 
 // ReplayBeta computes a line's Beta belief from its prior and effects, a pure function so every machine

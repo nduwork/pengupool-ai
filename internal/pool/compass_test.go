@@ -912,3 +912,24 @@ func TestMergeSameKeepsTheOwnersLine(t *testing.T) {
 		t.Fatalf("lines = %+v", ls)
 	}
 }
+
+func TestEvalReportsTheShadowEngine(t *testing.T) {
+	p, _ := twoTeams(t)
+	stated, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Use SQL for logs"})
+	torn, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Use pnpm", Origin: "chose"})
+	answered(t, p, torn, "team1", 2, 1, "chose", agentdb.WeightChose)
+	answered(t, p, torn, "team1", 1, 0, "chose", agentdb.WeightChose)
+	var r EvalReport
+	p.compassTally(&r)
+	effects, _ := p.db.Effects()
+	th, now, disagree := p.thresholds(), p.at(), 0
+	for uid, prior := range map[string]agentdb.Prior{stated: agentdb.PriorStated, torn: agentdb.PriorChose} {
+		b, g := agentdb.ReplayBeta(prior.Beta, effects[uid], now), agentdb.ReplayGauss(prior.Gauss, effects[uid], now)
+		if b.Guides(th) != g.Guides(th) {
+			disagree++
+		}
+	}
+	if r.ShadowEngine != "gauss" || r.ShadowGuiding != 1 || r.EnginesDisagree != disagree || r.Lines != 2 {
+		t.Fatalf("%+v (disagree %d)", r, disagree)
+	}
+}
