@@ -97,3 +97,13 @@ v0.7.0: Compass lines read as the owner's rule or only likely; search
 stems words; hedged words weigh half; lines pulled both ways go to review
 (restate or remove); a Gaussian belief runs in shadow beside the Beta one,
 reported by `pengupool eval` with a drift benchmark.
+
+## Credits
+
+- **PAHF** — *Learning Personalized Agents from Human Feedback*, Kaiqu Liang, Julia Kruk,
+  Shengyi Qian, et al. (Meta Superintelligence Labs, Princeton University, Duke University),
+  [github.com/facebookresearch/PAHF](https://github.com/facebookresearch/PAHF), MIT License.
+  The Compass's memory pipeline was compared against PAHF's: its feedback loop (keep only
+  personal information, summarise it in one sentence, update after a correction) and its
+  finding that stale preferences used confidently hurt most after a change shaped how the
+  Compass weighs corrections and fades silent lines. No PAHF code is included.
