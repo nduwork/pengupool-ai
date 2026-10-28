@@ -119,8 +119,10 @@ export class Host {
     let found = await this.probe();
     if (found === null) {
       if (!existsSync(this.binary)) throw new Error(`the bundled host is missing at ${this.binary}`);
-      await new Promise((r) => setTimeout(r, 3000));
-      found = await this.probe();
+      if ((await this.hostPids()).length > 0) {
+        await new Promise((r) => setTimeout(r, 3000));
+        found = await this.probe();
+      }
     }
     if (found === null) {
       if ((await this.stop()) > 0) console.error("local host did not answer; stopped it (sessions keep running)");
@@ -152,6 +154,17 @@ export class Host {
    * editor whose command line merely names one are left alone). One that has not exited after 5 s
    * is killed: a host whose code is gone cannot handle SIGTERM. Returns how many it stopped. */
   private async stop(): Promise<number> {
+    const hosts: number[] = [];
+    for (const pid of await this.hostPids()) if (signal(pid, "SIGTERM")) hosts.push(pid);
+    for (let i = 0; i < 50 && hosts.some((pid) => signal(pid, 0)); i++) await new Promise((r) => setTimeout(r, 100));
+    for (const pid of hosts) if (signal(pid, 0)) signal(pid, "SIGKILL");
+    return hosts.length;
+  }
+
+  /** This store's running hosts: the lock file's pid and what pgrep finds for this binary's daemon,
+   * each only when ps shows a PenguPool daemon of this store (a reused pid, a wrapper or an editor
+   * whose command line merely names one are left out). */
+  private async hostPids(): Promise<number[]> {
     const pids = new Set<number>();
     const found = await run("/usr/bin/pgrep", ["-f", `${this.binary} daemon`], process.env, 3000);
     for (const pid of (found ?? "").split("\n").filter(Boolean)) pids.add(Number(pid));
@@ -161,15 +174,12 @@ export class Host {
     } catch {
       /* no lock file: nothing was ever started here */
     }
-    const hosts: number[] = [];
+    const out: number[] = [];
     for (const pid of pids) {
       const cmd = await run("/bin/ps", ["-o", "command=", "-p", String(pid)], process.env, 3000);
-      if (cmd === null || !isStoreDaemon(cmd.trim(), storeDir())) continue;
-      if (signal(pid, "SIGTERM")) hosts.push(pid);
+      if (cmd !== null && isStoreDaemon(cmd.trim(), storeDir())) out.push(pid);
     }
-    for (let i = 0; i < 50 && hosts.some((pid) => signal(pid, 0)); i++) await new Promise((r) => setTimeout(r, 100));
-    for (const pid of hosts) if (signal(pid, 0)) signal(pid, "SIGKILL");
-    return hosts.length;
+    return out;
   }
 
   private async waitDown(): Promise<void> {
