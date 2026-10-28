@@ -257,7 +257,11 @@ func (p *Pool) ownerSaid(s store.Session, team *protocol.Team, t turn, pl placem
 		}
 		if !pl.ChangesPref {
 			if !p.standing(s, &sig, t, "a one-off correction") {
-				return
+				if !pl.StatesPref { // a rule for a narrower situation adds to the compass rather than changing it
+					return
+				}
+				sig.Kind = "said"
+				p.logLine(s.ID, "compass: the owner's correction also reads as stating a preference")
 			}
 			break
 		}
@@ -381,7 +385,9 @@ var ownerSignalQuestions = []decision.Question{
 		"choice":      "Picks between options the agent offered.",
 		"correction":  "Says something the agents did, or decided for the owner, was off.",
 	}},
-	{Name: "changes_preference", Type: decision.Predicate, Instructions: "Read only the owner's message. Does this correction change how the owner wants things in general, rather than only fix this one case?"},
+	// The cue phrases and the carve-out for a narrower rule follow PAHF's check_update_prompt
+	// (github.com/facebookresearch/PAHF, MIT License, Copyright (c) Meta Platforms, Inc. and affiliates).
+	{Name: "changes_preference", Type: decision.Predicate, Instructions: `Read only the owner's message. Does this correction change how the owner wants things in general, rather than only fix this one case? A change moves from one way to another: "but now…", "now I prefer…", "I used to want X, but…", "I changed my mind about…", "instead of X, I prefer Y", "no longer…". A rule only for a narrower situation ("do X when the tests are slow") adds to what the owner wants rather than changing it: answer no.`},
 	// Asked of a rule written as a command, the earlier wording ("how the owner wants things in general")
 	// read "when X, do Y" as a task; this one separates rules from one-off tasks on the owner's model.
 	{Name: "states_preference", Type: decision.Predicate, Instructions: `Read only the owner's message. Does it set a rule for a kind of situation that will come up again, so agents should act this way every time, not only now? A rule written as a command counts: "when X, do Y", "whenever…", "if X, then Y", "always/never…", "from now on…". A task about this one piece of work (even one with a condition, like "when the tests pass, merge this PR") does not.`},

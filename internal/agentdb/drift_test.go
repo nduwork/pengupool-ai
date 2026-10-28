@@ -13,7 +13,32 @@ import (
 // TestDriftBenchmark replays simulated lines whose truth drifts under both beliefs and logs how each
 // tracks it. It asserts only that every belief is a probability; the comparison is read by a person
 // before the Gaussian becomes the default.
+//
+// The "pahf" scenario takes its drift from PAHF's shopping personas (github.com/facebookresearch/PAHF,
+// MIT License, Copyright (c) Meta Platforms, Inc. and affiliates): of 1200 preference lines (300
+// favourite options, 900 dislikes, not counting like_second) 682 change between persona_info.json and updated_persona_info.json,
+// all at once, between its learning phases; here at month 18.
 func TestDriftBenchmark(t *testing.T) {
+	pahfLine := 0
+	scenarios := []struct {
+		name  string
+		lines int
+		pick  func(r *rand.Rand) (kind, sw int) // kind: 0 stable, 1 switch at month sw, 2 recurring
+	}{
+		{"simulated", 300, func(r *rand.Rand) (int, int) { return r.IntN(3), 3 + r.IntN(16) }},
+		{"pahf", 1200, func(r *rand.Rand) (int, int) {
+			if pahfLine++; pahfLine <= 682 {
+				return 1, 18
+			}
+			return 0, 0
+		}},
+	}
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) { driftBenchmark(t, sc.lines, sc.pick) })
+	}
+}
+
+func driftBenchmark(t *testing.T, lines int, pick func(*rand.Rand) (int, int)) {
 	r := rand.New(rand.NewPCG(7, 7))
 	type engine struct {
 		name   string
@@ -35,8 +60,8 @@ func TestDriftBenchmark(t *testing.T) {
 	th := DefaultThresholds
 	const days = 36 * 30
 	at := func(d int) time.Time { return t0.AddDate(0, 0, d) }
-	for line := 0; line < 300; line++ {
-		kind, sw := r.IntN(3), 3+r.IntN(16) // stable, switch, recurring; switch month 3..18
+	for line := 0; line < lines; line++ {
+		kind, sw := pick(r)
 		truth := func(d int) bool {
 			m := d / 30
 			switch kind {
