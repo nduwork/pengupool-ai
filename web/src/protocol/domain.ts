@@ -222,7 +222,6 @@ export interface JournalEntry {
   helper: string;
   at: string;
   title: string;
-  lesson?: string;
   body?: string;
 }
 

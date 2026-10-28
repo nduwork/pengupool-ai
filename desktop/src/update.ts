@@ -1,12 +1,12 @@
 // In-app update, the desktop half: the host downloads the new disk image into <store>/updates/<tag>
 // (internal/pool/update.go); the app writes the script below, starts it detached and quits. The
-// script waits for the app to exit, copies the new PenguPool.app next to the installed one, stops
+// script waits for the app to exit, copies the new PenguPool AI.app next to the installed one, stops
 // the old host, swaps the two and opens the new app. Agent sessions keep running: their workers
 // outlive the host and the new host adopts them. Plain functions only, so node --test runs them.
 import { realpathSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 
-/** The running .app bundle, from the main executable's path (…/PenguPool.app/Contents/MacOS/PenguPool), or null. */
+/** The running .app bundle, from the main executable's path (…/PenguPool AI.app/Contents/MacOS/PenguPool AI), or null. */
 export function bundleOf(execPath: string): string | null {
   const macos = dirname(execPath);
   const bundle = dirname(dirname(macos));
@@ -30,7 +30,7 @@ export function sq(s: string): string {
 
 export interface InstallPlan {
   pid: number; // the app's main process
-  bundle: string; // the installed PenguPool.app
+  bundle: string; // the installed PenguPool AI.app
   dmg: string;
   log: string; // <store>/logs/update.log
   dir: string; // a fresh temporary directory for the script and the mount point
@@ -51,7 +51,7 @@ LOG=${sq(p.log)}
 DIR=${sq(p.dir)}
 MNT="$DIR/mnt"
 HOST="$BUNDLE/Contents/Resources/bin/pengupool daemon"
-CLI="$HOME/.local/bin/pengupool2 daemon"
+CLI="$HOME/.local/bin/pengupool-ai daemon"
 MOUNTED=
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG"; }
@@ -82,10 +82,10 @@ done
 log "the app quit"
 hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$DMG" >> "$LOG" 2>&1 || fail "could not open the disk image"
 MOUNTED=1
-[ -d "$MNT/PenguPool.app" ] || fail "the disk image has no PenguPool.app"
+[ -d "$MNT/PenguPool AI.app" ] || fail "the disk image has no PenguPool AI.app"
 rm -rf "$NEW"
 [ -e "$NEW" ] && fail "could not remove $NEW"
-ditto "$MNT/PenguPool.app" "$NEW" >> "$LOG" 2>&1 || fail "could not copy the new app"
+ditto "$MNT/PenguPool AI.app" "$NEW" >> "$LOG" 2>&1 || fail "could not copy the new app"
 find "$NEW" -xattrname com.apple.quarantine -exec xattr -d -s com.apple.quarantine {} \\; 2>/dev/null # macOS xattr has no -r
 log "copied the new app"
 detach

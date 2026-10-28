@@ -111,7 +111,7 @@ func (p *Pool) routeTurn(s store.Session, prompt string) (who, note string) {
 		return id, fmt.Sprintf("\n[PenguPool triage] Next step: %s's description covers this (p=%.2f, the owner's decision model). Hand the work to %s with SendMessage (or `%s send` on a shell harness); PenguPool holds your working tools until you do. The owner can override in their next prompt.\n", a.Choice, pr, a.Choice, p.exe)
 	}
 	p.logLine(s.ID, fmt.Sprintf("triage: route=%s p=%.2f band=hedged", a.Choice, pr))
-	return "", fmt.Sprintf("\n[PenguPool triage] Next step: this may fit %s (unsure). You decide: hand it over if it fits, otherwise do it.\n", a.Choice)
+	return "", fmt.Sprintf("\n[PenguPool triage] Next step: this may fit %s (unsure). You decide: hand it over if it fits, otherwise do it; ask the owner if you cannot tell.\n", a.Choice)
 }
 
 // ownerChose reports an owner's prompt that names a member or says "yourself". ponytail: a word

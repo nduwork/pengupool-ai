@@ -65,18 +65,11 @@ type Pool struct {
 	nodes NodeManager
 
 	mu                sync.Mutex
-	museMu            sync.Mutex                   // guards the muse pairing/answer caches below
-	museCodes         map[string]*musePairCode     // one-time pairing codes
-	musePairFails     int                          // wrong codes since the last success: throttles guessing
-	musePairBlocked   time.Time                    // pairing refused until then, after too many wrong codes
-	museAnswered      map[string]museAnswerDone    // device\x00key -> first answer: replays return it
-	museInflight      map[string]bool              // device\x00key -> an answer still running
 	achvLocks         map[string]*sync.Mutex       // one achievement job per skill, under mu
 	achvAgain         map[string]bool              // a job was asked while one ran, under mu
 	msgSock           map[string]claudeInbox       // session id → Claude inbox socket
 	crossOK           map[sessionPair]time.Time    // channels the owner opened with @, until when
 	injected          map[string]map[string]string // session id → digest → heading of each context section it was given
-	journalShown      map[string]map[int64]bool    // session id → journal entries listed to it since it started
 	unlocks           map[string]map[string]bool   // connection id → unlocked team ids
 	failures          map[string][]time.Time       // connection+team → recent wrong passwords
 	lastInput         map[string]time.Time         // session id → last desktop input (unused by native paths)
@@ -107,12 +100,19 @@ type Pool struct {
 	// testScreen stands in for the hub's followed screens in tests.
 	testScreen func(id string) (string, bool)
 	// testSend stands in for delivering text to a session in tests, testKeys for typing into one.
-	testSend       func(id, text string) error
-	testKeys       func(id, keys string) error
-	journal        map[string]*pendingEntry // helper session id → its done report waiting for the compaction (guarded by mu)
-	museToolWarned bool                     // a Muse PreToolUse without tool_name was allowed and noted (under mu)
-	db             *agentdb.DB              // agents.db: the Compass and logs; nil if it could not open
-	formMu         sync.Mutex               // formation changes apply one at a time
+	testSend        func(id, text string) error
+	testKeys        func(id, keys string) error
+	journal         map[string]*pendingEntry  // helper session id → its done report waiting for the compaction (guarded by mu)
+	museMu          sync.Mutex                // guards the muse pairing/answer caches below
+	museCodes       map[string]*musePairCode  // one-time pairing codes
+	musePairFails   int                       // wrong codes since the last success: throttles guessing
+	musePairBlocked time.Time                 // pairing refused until then, after too many wrong codes
+	museAnswered    map[string]museAnswerDone // device\x00key -> first answer: replays return it
+	museInflight    map[string]bool           // device\x00key -> an answer still running
+	// museToolWarned: a Muse PreToolUse without tool_name was allowed and noted (under mu).
+	museToolWarned bool
+	db             *agentdb.DB // agents.db: the Compass and logs; nil if it could not open
+	formMu         sync.Mutex  // formation changes apply one at a time
 	revoker        Revoker
 
 	reposCache atomic.Pointer[ghRepos] // the GitHub account's repositories
@@ -156,10 +156,8 @@ func New(o Options) *Pool {
 	}
 	p.loadInboxes()
 	p.expireStaleApprovals()
-	p.retireRemovedHarnesses()
 	// Off the start path: a slow `muse plugins install` must not hold the daemon up.
 	go harness.EnsureMusePlugin(o.Store.Dir(), o.Exe, env, logf)
-	go harness.EnsureCodexRules(o.Store.Dir(), o.Exe, env, logf)
 	p.dropRetiredProviders()
 	if db, err := agentdb.Open(filepath.Join(o.Store.Dir(), "agents.db")); err != nil {
 		logf("agent db: %v", err)
@@ -173,26 +171,9 @@ func New(o Options) *Pool {
 				dropped, agentdb.PreUpgradePath(filepath.Join(o.Store.Dir(), "agents.db")))
 		}
 		ls, _ := db.Lines(p.owner(), "", "", 0)
-		p.sweepDropped(ls)                // lines dropped before the Compass stopped keeping them
-		p.maybeImportPengu(o.Store.Dir()) // one-time import of the separate Compass layer
+		p.sweepDropped(ls) // lines dropped before the Compass stopped keeping them
 	}
 	return p
-}
-
-// retireRemovedHarnesses ends stored sessions whose harness PenguPool no
-// longer runs: they show as ended, never crash the load, and cannot resume.
-func (p *Pool) retireRemovedHarnesses() {
-	_ = p.update(func(st *store.State) error {
-		for i := range st.Sessions {
-			s := &st.Sessions[i]
-			if s.Harness == "" || s.Harness == harness.Shell || s.Harness == harness.Custom || harness.IsAgent(s.Harness) {
-				continue
-			}
-			s.State = "exited"
-			s.Status = "harness no longer supported"
-		}
-		return nil
-	})
 }
 
 // keyHelpers gives every helper registered without a repository key the key of its checkout's
@@ -222,7 +203,7 @@ func (p *Pool) keyHelpers() {
 // sessionMarkers are set by a running Claude Code for its own children. A host started from inside
 // a Claude session would pass them on, and each agent would think it is a sub-session (no
 // transcript, no resume). User settings such as CLAUDE_CODE_USE_BEDROCK pass through. CI makes
-// agents (Ink TUIs) run non-interactively, and a PenguPool session is interactive.
+// agents (Gemini CLI, Ink TUIs) run non-interactively, and a PenguPool session is interactive.
 var sessionMarkers = map[string]bool{
 	"CI": true, "CLAUDECODE": true, "CLAUDE_CODE_ENTRYPOINT": true, "CLAUDE_CODE_CHILD_SESSION": true, "CLAUDE_CODE_SSE_PORT": true,
 	"CLAUDE_CODE_MESSAGING_SOCKET": true, "CLAUDE_CODE_MESSAGING_TOKEN": true, "CLAUDE_CODE_SESSION_ID": true,
@@ -242,7 +223,7 @@ func agentEnv(env []string) []string {
 // the owner's login-shell PATH (launchd gives /usr/bin:/bin:/usr/sbin:/sbin) would find none of
 // them, so the ones that exist are added after PATH's own entries.
 // ponytail: fixed list; a version manager's bin (nvm, asdf) still needs the login shell's PATH.
-var userBins = []string{"~/.local/bin", "~/.bun/bin", "~/.npm-global/bin", "~/.cargo/bin", "~/go/bin",
+var userBins = []string{"~/.local/bin", "~/.bun/bin", "~/.npm-global/bin", "~/.opencode/bin", "~/.cargo/bin", "~/go/bin",
 	"/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin"}
 
 func withUserPath(env []string, home string) []string {
@@ -300,7 +281,8 @@ func (p *Pool) RPC(ctx context.Context, c gateway.Caller, typ string, params jso
 // host's token): `pengupool new` and the desktop app's environment menu,
 // which lists and opens the owner's SSH hosts through the CLI, and `pengupool experience import`. Never an approval, Compass or team
 // decision: those stay in the app.
-var terminalAllowed = map[string]bool{"session.launch": true, "node.list": true, "node.connect": true, "experience.import": true}
+var terminalAllowed = map[string]bool{"session.launch": true, "node.list": true, "node.connect": true, "experience.import": true,
+	"doctor.record": true, "doctor.removed": true}
 
 // agentAllowed are the requests an agent makes for itself, through the CLI. Each one checks the
 // session it acts for, and none of them decides anything for the owner: a team change is only
@@ -321,6 +303,8 @@ func (p *Pool) handlers() map[string]handler {
 	return map[string]handler{
 		"team.delete":           bind(p.teamDelete),
 		"experience.import":     bind(p.experienceImport),
+		"doctor.record":         bind(p.doctorRecord),
+		"doctor.removed":        bind(p.doctorRemoved),
 		"experience.search":     bind(p.experienceSearch),
 		"experience.show":       bind(p.experienceShow),
 		"experience.list":       bind(p.experienceList),
@@ -356,7 +340,6 @@ func (p *Pool) handlers() map[string]handler {
 		"compass.list":          bind(p.compassList),
 		"compass.save":          bind(p.compassSave),
 		"compass.delete":        bind(p.compassDelete),
-		"compass.restate":       bind(p.compassRestate),
 		"compass.merge":         bind(p.compassMerge),
 		"compass.review":        bind(p.compassReview),
 		"compass.apply_merge":   bind(p.compassApplyMerge),
@@ -377,8 +360,8 @@ func (p *Pool) handlers() map[string]handler {
 		"team.messages":         bind(p.teamMessages),
 		"marketplace.list":      bind(p.marketplaceList),
 		"marketplace.refresh":   bind(p.marketplaceRefresh),
-		"marketplace.install":   bind(p.marketplaceInstall),
 		"marketplace.set":       bind(p.marketplaceSet),
+		"marketplace.install":   bind(p.marketplaceInstall),
 		"task.create":           bind(p.taskCreate),
 		"task.repropose":        bind(p.taskRepropose),
 		"task.complete":         bind(p.taskComplete),
@@ -409,10 +392,12 @@ func (p *Pool) handlers() map[string]handler {
 		"ollama.status":         bind(p.ollamaStatus),
 		"provider.activate":     bind(p.providerActivate),
 		"settings.get":          bind(p.settingsGet),
-		"settings.tailscale":    bind(p.settingsTailscale),
 		"settings.save":         bind(p.settingsSave),
 		"sync.get":              bind(p.syncGet),
-		"backup.get":            bind(p.syncGet), // the name before sync, kept one release
+		"sync.set":              bind(p.syncSet),
+		"sync.now":              bind(p.syncNow),
+		"sync.repos":            bind(p.syncRepos),
+		"sync.compact":          bind(p.syncCompact),
 		"muse.next":             p.museNext,
 		"muse.answer":           p.museAnswer,
 		"muse.say":              p.museSay,
@@ -422,14 +407,11 @@ func (p *Pool) handlers() map[string]handler {
 		"muse.pairCode":         p.musePairCode,
 		"muse.devices":          p.museDevices,
 		"muse.revoke":           p.museRevoke,
-		"sync.set":              bind(p.syncSet),
-		"backup.set":            bind(p.syncSet), // the name before sync, kept one release
-		"sync.now":              bind(p.syncNow),
-		"backup.now":            bind(p.syncNow), // the name before sync, kept one release
-		"sync.repos":            bind(p.syncRepos),
-		"backup.repos":          bind(p.syncRepos), // the name before sync, kept one release
-		"sync.compact":          bind(p.syncCompact),
-		"backup.compact":        bind(p.syncCompact), // the name before sync, kept one release
+		"backup.get":            bind(p.syncGet), // the old names, kept one release
+		"backup.set":            bind(p.syncSet),
+		"backup.now":            bind(p.syncNow),
+		"backup.repos":          bind(p.syncRepos),
+		"backup.compact":        bind(p.syncCompact),
 		"update.check":          bind(p.updateCheck),
 		"update.download":       bind(p.updateDownload),
 		"harness.probe":         bind(p.harnessProbe),

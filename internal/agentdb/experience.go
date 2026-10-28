@@ -9,17 +9,14 @@ import (
 	"strings"
 )
 
-// Entry is one finished job of a helper: Title is the first line of its done report, Lesson its
-// "Lesson:" line (one sentence that carries over to the next job, as PAHF keeps one sentence per
-// memory), Body the harness's compaction summary of the work, else the report. Snippet is set by a
-// search only.
+// Entry is one finished job of a helper: Title is the first line of its done report, Body the
+// harness's compaction summary of the work, else the report. Snippet is set by a search only.
 type Entry struct {
 	ID      int64  `json:"id"`
 	UID     string `json:"uid,omitempty"`
 	Helper  string `json:"helper"`
 	At      string `json:"at"`
 	Title   string `json:"title"`
-	Lesson  string `json:"lesson,omitempty"`
 	Body    string `json:"body,omitempty"`
 	TeamID  string `json:"team_id,omitempty"`
 	Snippet string `json:"snippet,omitempty"`
@@ -62,7 +59,7 @@ func (d *DB) AddExperience(e Entry) (added bool, err error) {
 		if err := tx.QueryRow(`SELECT (SELECT count(*) FROM experience WHERE uid = ?1) + (SELECT count(*) FROM tombstones WHERE key = 'experience:' || ?1) + (SELECT count(*) FROM experience WHERE helper = ?2 AND body_hash = ?3)`, e.UID, e.Helper, bodyHash(e.Body)).Scan(&n); err != nil || n > 0 {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO experience(uid, helper, at, title, lesson, body, body_hash, team_id) VALUES (?,?,?,?,?,?,?,?)`, e.UID, e.Helper, e.At, e.Title, e.Lesson, e.Body, bodyHash(e.Body), e.TeamID); err != nil {
+		if _, err := tx.Exec(`INSERT INTO experience(uid, helper, at, title, body, body_hash, team_id) VALUES (?,?,?,?,?,?,?)`, e.UID, e.Helper, e.At, e.Title, e.Body, bodyHash(e.Body), e.TeamID); err != nil {
 			return err
 		}
 		added = true
@@ -71,7 +68,7 @@ func (d *DB) AddExperience(e Entry) (added bool, err error) {
 	return added, err
 }
 
-const entryCols = `e.id, e.uid, e.helper, e.at, e.title, e.lesson`
+const entryCols = `e.id, e.uid, e.helper, e.at, e.title`
 
 // SearchExperience is a helper's entries (no bodies) best matching the query's words (those of
 // team first, then bm25, then newest), at most limit, and how many matched. No words, or no match:
@@ -83,8 +80,8 @@ func (d *DB) SearchExperience(helper, team, query string, limit int) (hits []Ent
 			return nil, 0, err
 		}
 		if total > 0 {
-			hits, err = d.entries(`SELECT `+entryCols+`, snippet(experience_fts, 2, '', '', '...', 16) `+where+
-				fmt.Sprintf(` ORDER BY e.team_id = ? DESC, bm25(experience_fts, 2.0, 2.0, 1.0), e.id DESC LIMIT %d`, limit), helper, fq, team)
+			hits, err = d.entries(`SELECT `+entryCols+`, snippet(experience_fts, 1, '', '', '...', 16) `+where+
+				fmt.Sprintf(` ORDER BY e.team_id = ? DESC, bm25(experience_fts, 2.0, 1.0), e.id DESC LIMIT %d`, limit), helper, fq, team)
 			return hits, total, err
 		}
 	}
@@ -113,7 +110,7 @@ func (d *DB) entries(q string, a ...any) ([]Entry, error) {
 	var out []Entry
 	for rows.Next() {
 		var e Entry
-		if err := rows.Scan(&e.ID, &e.UID, &e.Helper, &e.At, &e.Title, &e.Lesson, &e.Snippet); err != nil {
+		if err := rows.Scan(&e.ID, &e.UID, &e.Helper, &e.At, &e.Title, &e.Snippet); err != nil {
 			return nil, err
 		}
 		e.Snippet = strings.Join(strings.Fields(e.Snippet), " ")
@@ -125,7 +122,7 @@ func (d *DB) entries(q string, a ...any) ([]Entry, error) {
 // ExperienceEntry is one entry in full.
 func (d *DB) ExperienceEntry(id int64) (Entry, error) {
 	var e Entry
-	err := d.db.QueryRow(`SELECT id, uid, helper, at, title, lesson, body FROM experience WHERE id = ?`, id).Scan(&e.ID, &e.UID, &e.Helper, &e.At, &e.Title, &e.Lesson, &e.Body)
+	err := d.db.QueryRow(`SELECT id, uid, helper, at, title, body FROM experience WHERE id = ?`, id).Scan(&e.ID, &e.UID, &e.Helper, &e.At, &e.Title, &e.Body)
 	if errors.Is(err, sql.ErrNoRows) {
 		return e, ErrNotFound
 	}
@@ -151,13 +148,13 @@ func (d *DB) RekeyAgent(from, to string) error {
 		return nil
 	}
 	return d.tx(func(tx *sql.Tx) error {
-		rows, err := txRows(tx, `SELECT at, title, lesson, body, body_hash, team_id FROM experience WHERE helper = ? ORDER BY id`, from)
+		rows, err := txRows(tx, `SELECT at, title, body, body_hash, team_id FROM experience WHERE helper = ? ORDER BY id`, from)
 		if err != nil {
 			return err
 		}
 		for _, x := range rows {
-			if _, err := tx.Exec(`INSERT OR IGNORE INTO experience(uid, helper, at, title, lesson, body, body_hash, team_id) VALUES (?,?,?,?,?,?,?,?)`,
-				EntryUID(to, str(x["at"]), str(x["title"])), to, x["at"], x["title"], x["lesson"], x["body"], x["body_hash"], x["team_id"]); err != nil {
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO experience(uid, helper, at, title, body, body_hash, team_id) VALUES (?,?,?,?,?,?,?)`,
+				EntryUID(to, str(x["at"]), str(x["title"])), to, x["at"], x["title"], x["body"], x["body_hash"], x["team_id"]); err != nil {
 				return err
 			}
 		}

@@ -74,22 +74,6 @@ func TestContextOrder(t *testing.T) {
 	}
 }
 
-// Agents read how sure each line is: a guiding line as the owner's rule, a shown one as only likely.
-func TestCompassContextSaysHowSure(t *testing.T) {
-	p, _ := twoTeams(t)
-	_, _ = p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Use SQL for logs"})
-	weak, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Prefer short names", CreatedAt: time.Now().AddDate(0, -5, 0).UTC().Format(time.RFC3339)})
-	at := time.Now().AddDate(0, 0, -100).UTC().Format(time.RFC3339)
-	sig, _ := p.db.AddSignal(agentdb.Signal{Owner: p.owner(), Kind: "chose", At: at})
-	_ = p.db.AddEffects([]agentdb.Effect{{SignalUID: sig, LineUID: weak, PCon: 1, Weight: 1, At: at, Kind: "chose"}})
-	got := p.renderCompass()
-	for _, want := range []string{"- Use SQL for logs (the owner's rule)", "- Prefer short names (likely; check if it matters)"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("compass lacks %q:\n%s", want, got)
-		}
-	}
-}
-
 func TestFadingState(t *testing.T) {
 	p, _ := twoTeams(t)
 	uid, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "old way", CreatedAt: time.Now().AddDate(0, -5, 0).UTC().Format(time.RFC3339)})
@@ -236,21 +220,6 @@ func stated(t *testing.T, p *Pool, body string) string {
 		t.Fatal(err)
 	}
 	return uid
-}
-
-// Hedged words ("maybe…") weigh less: a sure tentative signal records half the support.
-func TestTentativeSignalWeighsLess(t *testing.T) {
-	p, _ := twoTeams(t)
-	ui := stated(t, p, "Keep the UI simple")
-	p.testDecider = &lineDecider{calibrated: true, answers: []decision.Answer{prob(0.9, 0, 0)}}
-	p.match(agentdb.Signal{Kind: "said", Words: "maybe keep the UI simple", SessionID: "leadaaaaaaaa", TeamID: "team1", Tentative: 1}, "", "")
-	es, _ := p.db.Effects(ui)
-	if e := es[ui]; len(e) != 1 || e[0].PSup != 0.45 {
-		t.Fatalf("effects: %+v", e)
-	}
-	if !slices.ContainsFunc(ownerSignalQuestions, func(q decision.Question) bool { return q.Name == "tentative" }) {
-		t.Fatal("triage does not ask whether the owner is tentative")
-	}
 }
 
 func TestMatch(t *testing.T) {
@@ -639,14 +608,6 @@ func TestMixedMessageStatesPreference(t *testing.T) {
 	if err := wordWith(t, p, lead.ID, word); err != nil || len(signalKinds(t, st)) != 2 {
 		t.Fatalf("the quoted message: %v", signalKinds(t, st))
 	}
-	// A correction that sets a rule for a narrower situation changes nothing but adds a line.
-	place(fakeTriage{signal: "correction", changes: "no", states: "yes"}, "no, when the tests are slow run them in the background")
-	if err := wordWith(t, p, lead.ID, word); err != nil {
-		t.Fatal(err)
-	}
-	if ks := signalKinds(t, st); len(ks) != 3 || ks[2] != "said" {
-		t.Fatalf("a narrower rule in a correction: %v", ks)
-	}
 }
 
 // Without a decision model every owner prompt reaches the session's own agent, with the lines it may
@@ -918,26 +879,5 @@ func TestMergeSameKeepsTheOwnersLine(t *testing.T) {
 	ls, _ := p.db.Lines(p.owner(), "", "", 0)
 	if len(ls) != 1 || ls[0].UID != mine || ls[0].Body != "Prefer standard library, no third-party packages" || ls[0].Source != "owner" {
 		t.Fatalf("lines = %+v", ls)
-	}
-}
-
-func TestEvalReportsTheShadowEngine(t *testing.T) {
-	p, _ := twoTeams(t)
-	stated, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Use SQL for logs"})
-	torn, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Use pnpm", Origin: "chose"})
-	answered(t, p, torn, "team1", 2, 1, "chose", agentdb.WeightChose)
-	answered(t, p, torn, "team1", 1, 0, "chose", agentdb.WeightChose)
-	var r EvalReport
-	p.compassTally(&r)
-	effects, _ := p.db.Effects()
-	th, now, disagree := p.thresholds(), p.at(), 0
-	for uid, prior := range map[string]agentdb.Prior{stated: agentdb.PriorStated, torn: agentdb.PriorChose} {
-		b, g := agentdb.ReplayBeta(prior.Beta, effects[uid], now), agentdb.ReplayGauss(prior.Gauss, effects[uid], now)
-		if b.Guides(th) != g.Guides(th) {
-			disagree++
-		}
-	}
-	if r.ShadowEngine != "gauss" || r.ShadowGuiding != 1 || r.EnginesDisagree != disagree || r.Lines != 2 {
-		t.Fatalf("%+v (disagree %d)", r, disagree)
 	}
 }

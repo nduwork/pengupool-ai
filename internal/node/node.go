@@ -27,7 +27,7 @@ import (
 )
 
 // DefaultCommand is the remote executable name.
-const DefaultCommand = "pengupool2"
+const DefaultCommand = "pengupool-ai"
 
 // Manager keeps the SSH hosts' login state and their forwarded connections.
 type Manager struct {
@@ -291,9 +291,9 @@ func notFound(out string) bool {
 
 // locateScript prints the first PenguPool executable on the host: the login shell's PATH, then
 // where `make install` and the app put it.
-const locateScript = `for p in "$($SHELL -lc 'command -v pengupool2' 2>/dev/null)" "$HOME/.local/bin/pengupool2" ` +
-	`"$HOME/Applications/PenguPool.app/Contents/Resources/bin/pengupool" "/Applications/PenguPool.app/Contents/Resources/bin/pengupool" ` +
-	`/opt/homebrew/bin/pengupool2 /usr/local/bin/pengupool2; do [ -n "$p" ] && [ -x "$p" ] && { echo "$p"; exit 0; }; done; exit 1`
+const locateScript = `for p in "$($SHELL -lc 'command -v pengupool-ai' 2>/dev/null)" "$HOME/.local/bin/pengupool-ai" ` +
+	`"$HOME/Applications/PenguPool AI.app/Contents/Resources/bin/pengupool" "/Applications/PenguPool AI.app/Contents/Resources/bin/pengupool" ` +
+	`/opt/homebrew/bin/pengupool-ai /usr/local/bin/pengupool-ai; do [ -n "$p" ] && [ -x "$p" ] && { echo "$p"; exit 0; }; done; exit 1`
 
 func (m *Manager) locate(ctx context.Context, n store.Node) (string, error) {
 	out, err := exec.CommandContext(ctx, "ssh", m.args(n, "sh", "-c", shellQuote(locateScript))...).Output()

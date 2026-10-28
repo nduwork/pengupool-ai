@@ -86,9 +86,9 @@ func TestMemorySearchIsAnAliasOfSearch(t *testing.T) {
 	}
 }
 
-// With no daemon to answer, or a call it cannot judge, every hook prints nothing: the harness's own
-// permissions decide, and PenguPool adds no question of its own.
-func TestHookAddsNoQuestionWhenUnjudged(t *testing.T) {
+// With no daemon to answer, no hook prints anything: a PreToolUse goes to the harness's own
+// permission system, as the status hooks do. PenguPool adds no check beyond the harness's.
+func TestHookStaysSilentWithoutADaemon(t *testing.T) {
 	t.Setenv("PENGUPOOL_SESSION_ID", "s1")
 	t.Setenv("PENGUPOOL_STORE", t.TempDir())
 	run := func(h, event, in string) string {
@@ -107,14 +107,18 @@ func TestHookAddsNoQuestionWhenUnjudged(t *testing.T) {
 		}
 		return string(b)
 	}
-	for name, c := range map[string][2]string{
-		"claude, no daemon":  {"claude", `{"tool_name":"Bash"}`},
-		"codex, no daemon":   {"codex", `{"tool_name":"Bash"}`},
-		"oversized payload":  {"claude", `{"x":"` + strings.Repeat("a", 1<<20) + `"}`},
-		"unreadable payload": {"claude", "not json"},
-	} {
-		if out := run(c[0], "PreToolUse", c[1]); out != "" {
-			t.Errorf("%s: %.80q", name, out)
+	// An oversized call is the agent's doing, not a daemon outage: it stays fail-closed.
+	if out := run("claude", "PreToolUse", `{"x":"`+strings.Repeat("a", 1<<20)+`"}`); !strings.Contains(out, `"permissionDecision":"ask"`) {
+		t.Errorf("claude, oversized: %.80q", out)
+	}
+	if out := run("codex", "PreToolUse", `{"x":"`+strings.Repeat("a", 1<<20)+`"}`); !strings.Contains(out, `"permissionDecision":"deny"`) {
+		t.Errorf("codex, oversized: %.80q", out)
+	}
+	for _, h := range []string{"claude", "codex"} {
+		for _, in := range []string{`{"tool_name":"Bash"}`, "not json"} {
+			if out := run(h, "PreToolUse", in); out != "" {
+				t.Errorf("%s, no daemon: %.80q", h, out)
+			}
 		}
 	}
 	for _, ev := range []string{"PostToolUse", "Stop", "UserPromptSubmit"} {

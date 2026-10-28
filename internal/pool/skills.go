@@ -645,7 +645,7 @@ func checkRequires(ids []string) error {
 }
 
 // harnessFiles are one agent's own config: name → whether it is a folder.
-var harnessFiles = map[string]bool{".claude": true, ".codex": true, ".cursor": true, "CLAUDE.md": false}
+var harnessFiles = map[string]bool{".claude": true, ".codex": true, ".gemini": true, ".cursor": true, "CLAUDE.md": false, "GEMINI.md": false}
 
 // checkSkillRepo is the conforming checklist, shared by the converter and Propose.
 func checkSkillRepo(dir string) []string {

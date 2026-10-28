@@ -1,4 +1,4 @@
-// Command pengupool is the PenguPool 2.0 host: the daemon that owns state and the browser app, the
+// Command pengupool is the PenguPool AI host: the daemon that owns state and the browser app, the
 // attach client for a classic terminal, and the worker that owns one PTY.
 //
 // This is the M1 prototype. See docs/protocol/v1.md for the wire protocol and
@@ -14,17 +14,16 @@ import (
 
 	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/node"
-	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
 // Version of the prototype. It is not the protocol version; that is protocol.Version.
-const Version = "0.8.5"
+const Version = "0.9.0"
 
 const help = `usage: pengupool <command> [options]
 
   daemon [--store DIR] [--http ADDR] [--lan]
         run the host: state, sessions, browser app. Loopback only unless --lan.
-  new [--name N] [--cwd DIR] [--harness claude|muse|omp|pi|codex] [--model M]
+  new [--name N] [--cwd DIR] [--harness claude|muse|omp|pi|codex|copilot] [--model M]
         start an agent session (Claude Code by default) in that directory.
   ls [--json]
         list sessions.
@@ -60,6 +59,10 @@ const help = `usage: pengupool <command> [options]
   eval (--transcripts DIR [--since YYYY-MM-DD] [--limit N] | --sample) [--home DIR] [--json]
         replay owner exchanges through triage, the Compass and the check-in decision on a
         temporary database; prints aggregates against the plan's bars for autonomy by default.
+  doctor [--fix [--yes]] [--restore [ID]]
+        check this machine: PenguPool v1 left in Claude's settings (--fix removes it, after asking, and
+        keeps what it removed in PenguPool's record; --restore lists those and puts one back), the
+        keychain, the agent CLIs, what reaches the Compass. Changes nothing without --fix or --restore.
   rpc TYPE ['JSON']
         send one pool request to the daemon and print the result.
   bridge --stdio [--session ID] | --claim HUB
@@ -68,16 +71,9 @@ const help = `usage: pengupool <command> [options]
         internal: called by harness hooks and Claude's status line.
   worker --session-id ID
         internal: one PTY worker; the launch spec arrives on file descriptor 3.
-  review [REV]
-        Muse Code reviews the diff (commit, stdin, or worktree).
-  experiment [--tasks F] [--out D] [--only ID...] [--judge-model M] [--judge-base-url U] [--max-steps N]
-        run the with-vs-without benchmark.
-  doctor [--store DIR] [--home DIR]
-        check this machine: v1 leftovers, agent CLIs, PenguPool MCP leftovers, the Muse plugin,
-        and the host. It only reads.
   version | help
 
-Store directory: $PENGUPOOL_HOME/v2, default ~/.pengupool/v2 (override with --store or
+Store directory: $PENGUPOOL_HOME/v2, default ~/.pengupool-ai/v2 (override with --store or
 PENGUPOOL_HOME).`
 
 // Build identifies the exact build (scripts/build-app.sh sets it from the Git commit), so an SSH
@@ -136,18 +132,14 @@ func main() {
 		err = cmdDecide(args[1:])
 	case "eval":
 		err = cmdEval(args[1:])
+	case "doctor":
+		err = cmdDoctor(args[1:])
 	case "rpc":
 		err = cmdRPC(args[1:])
 	case "bridge":
 		err = cmdBridge(args[1:])
 	case "worker":
 		err = cmdWorker(args[1:])
-	case "review":
-		err = runReview(args[1:])
-	case "experiment":
-		err = runExperiment(args[1:])
-	case "doctor":
-		err = cmdDoctor(args[1:])
 	case "version", "-V", "--version":
 		fmt.Println(versionLine())
 	case "help", "-h", "--help":
@@ -167,7 +159,14 @@ func storeDir(override string) string {
 	if override != "" {
 		return override
 	}
-	return store.DefaultDir()
+	if home := os.Getenv("PENGUPOOL_HOME"); home != "" {
+		return filepath.Join(home, "v2")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".", ".pengupool-ai", "v2")
+	}
+	return filepath.Join(home, ".pengupool-ai", "v2")
 }
 
 // hubSocket is the daemon's unix socket, derived from the store directory.

@@ -12,9 +12,10 @@ import type { NodeView, Update } from "../protocol/domain";
 import { cn, shortTime } from "../lib/utils";
 import { GitHubAccount } from "./GitHub";
 import { UpdateSheet } from "./Update";
+import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
 
-// Settings: General (agent options, the optional GitHub account, the host, updates),
+// Settings: General (agents on this machine, the optional GitHub account, the host, updates),
 // Models & agents (decision model), phone connections (LAN, Tailscale Serve), SSH
 // hosts and sync.
 
@@ -414,7 +415,6 @@ interface SettingsResp {
   executable: string;
   agent_models?: AgentModels;
   agents?: { id: string; label: string; ollama: boolean; experimental?: boolean }[];
-  agent_bins?: Record<string, string>;
   version?: string;
 }
 
@@ -543,7 +543,6 @@ function Connections(): ReactElement {
           </Button>
         </Row>
       </Card>
-      <TailscaleChecklist rev={n} onChanged={() => setN(n + 1)} />
       <MuseDevices onChanged={() => setN(n + 1)} />
       <p className="mt-3 rounded-md bg-warning/10 p-3 text-caption text-warning">
         A group password does not encrypt plain HTTP. Use the local network only when you trust it; new teams get iOS access off while it is on.
@@ -552,113 +551,6 @@ function Connections(): ReactElement {
   );
 }
 
-type TailscaleCheck = { id: string; label: string; ok: boolean; detail: string; fix?: { kind: "link" | "button"; label: string; url?: string; action?: string } };
-
-function TailscaleChecklist({ rev, onChanged }: { rev: number; onChanged: () => void }): ReactElement {
-  const app = useApp();
-  const [approveUrl, setApproveUrl] = useState<string | null>(null);
-  const [checks, setChecks] = useState<TailscaleCheck[]>([]);
-  // Its own request: the checks run the Tailscale CLI, which must not slow every settings read.
-  useEffect(() => {
-    void app.call<TailscaleCheck[]>("settings.tailscale").then((r) => setChecks(r ?? []));
-  }, [rev]);
-  if (checks.length === 0) return <></>;
-  return (
-    <Card className="mb-4 px-4">
-      <div className="border-b border-border py-3">
-        <p className="text-label font-medium">Tailscale checklist</p>
-        <p className="text-caption text-muted-foreground">Each step in order. Serve points at this app over your tailnet only, never Funnel.</p>
-      </div>
-      {checks.map((c) => (
-        <Row key={c.id} title={c.label} hint={c.ok ? c.detail : c.detail}>
-          {c.ok ? (
-            <Badge tone="success">ok</Badge>
-          ) : c.fix === undefined ? null : c.fix.kind === "link" ? (
-            <Button size="sm" onClick={() => window.open(c.fix?.url, "_blank", "noopener")}>
-              {c.fix.label}
-            </Button>
-          ) : c.fix.action === "serve" ? (
-            <Button
-              size="sm"
-              onClick={async () => {
-                setApproveUrl(null);
-                const r = await app.call<{ serve?: string; serve_error?: string; serve_approve_url?: string }>("settings.save", { enable_serve: true });
-                if (r === undefined) return;
-                if (r.serve_approve_url !== undefined) setApproveUrl(r.serve_approve_url);
-                else toast(r.serve_error ?? r.serve ?? "Serve updated");
-                onChanged();
-              }}
-            >
-              {c.fix.label}
-            </Button>
-          ) : (
-            <Button size="sm" onClick={() => onChanged()}>
-              {c.fix.label}
-            </Button>
-          )}
-        </Row>
-      ))}
-      {approveUrl !== null ? (
-        <div className="py-3">
-          <Button size="sm" onClick={() => window.open(approveUrl, "_blank", "noopener")}>
-            Approve in Tailscale
-          </Button>
-        </div>
-      ) : null}
-    </Card>
-  );
-}
-
-type MuseDevice = { name: string; created_at: string; last_seen?: string };
-
-/** Pair Muse devices, one at a time, each with its own revocable token. */
-function MuseDevices({ onChanged }: { onChanged: () => void }): ReactElement {
-  const app = useApp();
-  const [devices, setDevices] = useState<MuseDevice[] | null>(null);
-  const [code, setCode] = useState<{ code: string; url: string } | null>(null);
-  useEffect(() => {
-    void app.call<MuseDevice[]>("muse.devices").then((d) => setDevices(d ?? []));
-  }, [app]);
-  return (
-    <Card className="mb-4 px-4">
-      <div className="border-b border-border py-3">
-        <p className="text-label font-medium">Muse devices</p>
-        <p className="text-caption text-muted-foreground">Pair the Muse app on each device. Each device gets its own token; revoke one any time.</p>
-      </div>
-      {(devices ?? []).map((d) => (
-        <Row key={d.name} title={d.name} hint={d.last_seen !== undefined ? `Last seen ${d.last_seen}` : `Paired ${d.created_at}`}>
-          <Button
-            size="sm"
-            onClick={async () => {
-              if ((await app.call("muse.revoke", { name: d.name })) !== undefined) {
-                setDevices((prev) => (prev ?? []).filter((x) => x.name !== d.name));
-                onChanged();
-              }
-            }}
-          >
-            Revoke
-          </Button>
-        </Row>
-      ))}
-      <div className="flex flex-wrap items-center gap-2 py-3">
-        <Button
-          size="sm"
-          onClick={async () => {
-            const r = await app.call<{ code: string; url: string }>("muse.pairCode", {});
-            if (r !== undefined) setCode({ code: r.code, url: r.url });
-          }}
-        >
-          Pair a Muse device
-        </Button>
-        {code !== null ? (
-          <p className="text-caption">
-            Enter <span className="font-mono font-semibold">{code.code}</span> in the Muse app within 5 minutes. URL: <span className="font-mono">{code.url}</span>
-          </p>
-        ) : null}
-      </div>
-    </Card>
-  );
-}
 function Nodes(): ReactElement {
   const app = useApp();
   const [keySetup, setKeySetup] = useState<NodeView | null>(null);
@@ -911,7 +803,7 @@ function KeySetupSheet({ nd, onClose }: { nd: NodeView; onClose: () => void }): 
   useEffect(() => {
     void app.call<SSHKey[]>("node.keys").then((r) => setKeys(r ?? []));
   }, []);
-  const ownKey = keys?.find((k) => k.comment?.startsWith("pengupool@") === true && k.path.includes("/.pengupool/"));
+  const ownKey = keys?.find((k) => k.comment?.startsWith("pengupool@") === true && k.path.includes("/.pengupool-ai/"));
   const userKeys = keys?.filter((k) => k !== ownKey) ?? [];
   const done = steps !== null && steps.length === KEY_STEPS.length && steps.every((s) => s.ok);
   const run = async (): Promise<void> => {
@@ -1018,37 +910,64 @@ function KeyChoice({ checked, onSelect, title, children }: { checked: boolean; o
 
 type Probe = Record<string, { version: string; error?: string }>;
 
+const CLAUDE_INSTALL = "curl -fsSL https://claude.ai/install.sh | bash";
+
 function Harnesses(): ReactElement {
   const app = useApp();
   const [r, setR] = useState<Probe | null>(null);
+  const [n, setN] = useState(0);
   const s = useSettings(0);
   useEffect(() => {
+    setR(null);
     void app.call<Probe>("harness.probe").then((x) => setR(x ?? null));
-  }, []);
-  const installed = (s?.agents ?? []).filter((a) => r?.[a.id] !== undefined && r[a.id].error === undefined);
+  }, [n]);
+  const claude = r?.claude;
+  const others = (s?.agents ?? []).filter((a) => a.experimental === true);
   return (
     <div>
-      <H title="Agents">
-        PenguPool finds the coding agents installed on this machine and offers them when you start a session; use Terminal for any other. It never changes an agent&apos;s configuration.
+      <H title="Agents on this machine">
+        PenguPool runs coding agents in your folders. Set up Claude Code on your Anthropic account, or on a model Ollama serves. PenguPool starts an agent with its own settings for each session and never changes the agent&apos;s configuration.
       </H>
-      {s !== null ? <ClaudeOnOllama s={s} claude={r?.claude} /> : null}
-      <Card className="mb-4 px-4">
-        {r === null ? (
-          <Row title="Checking…">
-            <Loader2 className="size-3.5 animate-spin text-faint" />
-          </Row>
-        ) : installed.length === 0 ? (
-          <Row title="No supported agent found">
-            <span />
-          </Row>
+      <Card className="mb-4 p-4">
+        <div className="mb-2 flex items-center gap-2">
+          <p className="flex-1 text-label font-medium">Claude Code</p>
+          {claude === undefined ? <Loader2 className="size-3.5 animate-spin text-faint" /> : <Badge tone={claude.error === undefined ? "success" : "danger"}>{claude.error === undefined ? "installed" : "not installed"}</Badge>}
+        </div>
+        {claude === undefined ? null : claude.error === undefined ? (
+          <div className="flex items-center gap-3">
+            <p className="flex-1 text-caption text-muted-foreground">{claude.version}. It asks you to sign in to your Anthropic account in its first session.</p>
+            <Button size="sm" variant="default" onClick={() => app.showDialog(<NewSessionDialog onClose={() => app.showDialog(null)} />)}>
+              New session
+            </Button>
+          </div>
         ) : (
-          installed.map((a) => (
-            <Row key={a.id} title={a.label} hint={r[a.id].version}>
-              {s !== null && devMode() && a.ollama && a.id !== "claude" ? <OllamaSwitch s={s} id={a.id} label={a.label} /> : <span />}
-            </Row>
-          ))
+          <div className="space-y-2 text-caption text-muted-foreground">
+            <p>Install it from a terminal with Anthropic&apos;s installer, then check again:</p>
+            <Cmd text={CLAUDE_INSTALL} />
+            <Button size="sm" onClick={() => setN(n + 1)}>
+              <RefreshCw /> Check again
+            </Button>
+          </div>
         )}
       </Card>
+      {s !== null ? <ClaudeOnOllama s={s} claude={claude} /> : null}
+      <details className="mb-4 rounded-lg border border-border px-4 py-2">
+        <summary className="cursor-pointer py-1 text-label font-medium">
+          Other agents <span className="font-normal text-muted-foreground">(experimental)</span>
+        </summary>
+        <p className="py-2 text-caption text-muted-foreground">Not yet tested with PenguPool: sessions, teams and approvals may not work fully. Each signs in with its own account in its first session.</p>
+        {others.map((a) => {
+          const v = r?.[a.id];
+          return (
+            <Row key={a.id} title={`${a.label} (experimental)`} hint={v === undefined ? "Checking…" : (v.error ?? v.version)}>
+              <span className="flex items-center gap-3">
+                {s !== null && devMode() && a.ollama ? <OllamaSwitch s={s} id={a.id} label={a.label} /> : null}
+                {v !== undefined ? <Badge tone={v.error === undefined ? "success" : "neutral"}>{v.error === undefined ? "installed" : "not installed"}</Badge> : null}
+              </span>
+            </Row>
+          );
+        })}
+      </details>
       <div className="mb-8 mt-8">
         <GitHubAccount />
       </div>
@@ -1071,6 +990,27 @@ function Harnesses(): ReactElement {
         </Card>
       ) : null}
     </div>
+  );
+}
+
+/** A command to run in a terminal, with a copy button. */
+function Cmd({ text }: { text: string }): ReactElement {
+  return (
+    <span className="flex items-center gap-2 rounded-md bg-muted px-2 py-1.5 font-mono text-caption text-foreground">
+      <span className="min-w-0 flex-1 break-all">{text}</span>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() =>
+          void navigator.clipboard.writeText(text).then(
+            () => toast.success("Copied"),
+            () => toast.error("Could not copy"),
+          )
+        }
+      >
+        Copy
+      </Button>
+    </span>
   );
 }
 
@@ -1385,5 +1325,56 @@ function Sync(): ReactElement {
         ) : null}
       </Card>
     </div>
+  );
+}
+
+type MuseDevice = { name: string; created_at: string; last_seen?: string };
+
+/** Pair Muse devices, one at a time, each with its own revocable token. */
+function MuseDevices({ onChanged }: { onChanged: () => void }): ReactElement {
+  const app = useApp();
+  const [devices, setDevices] = useState<MuseDevice[] | null>(null);
+  const [code, setCode] = useState<{ code: string; url: string } | null>(null);
+  useEffect(() => {
+    void app.call<MuseDevice[]>("muse.devices").then((d) => setDevices(d ?? []));
+  }, [app]);
+  return (
+    <Card className="mb-4 px-4">
+      <div className="border-b border-border py-3">
+        <p className="text-label font-medium">Muse devices</p>
+        <p className="text-caption text-muted-foreground">Pair the Muse app on each device. Each device gets its own token; revoke one any time.</p>
+      </div>
+      {(devices ?? []).map((d) => (
+        <Row key={d.name} title={d.name} hint={d.last_seen !== undefined ? `Last seen ${d.last_seen}` : `Paired ${d.created_at}`}>
+          <Button
+            size="sm"
+            onClick={async () => {
+              if ((await app.call("muse.revoke", { name: d.name })) !== undefined) {
+                setDevices((prev) => (prev ?? []).filter((x) => x.name !== d.name));
+                onChanged();
+              }
+            }}
+          >
+            Revoke
+          </Button>
+        </Row>
+      ))}
+      <div className="flex flex-wrap items-center gap-2 py-3">
+        <Button
+          size="sm"
+          onClick={async () => {
+            const r = await app.call<{ code: string; url: string }>("muse.pairCode", {});
+            if (r !== undefined) setCode({ code: r.code, url: r.url });
+          }}
+        >
+          Pair a Muse device
+        </Button>
+        {code !== null ? (
+          <p className="text-caption">
+            Enter <span className="font-mono font-semibold">{code.code}</span> in the Muse app within 5 minutes. URL: <span className="font-mono">{code.url}</span>
+          </p>
+        ) : null}
+      </div>
+    </Card>
   );
 }

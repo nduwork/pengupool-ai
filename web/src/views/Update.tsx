@@ -71,7 +71,7 @@ export function UpdateSheet({ u, onClose }: { u: Update; onClose: () => void }):
     >
       {u.notes !== undefined && u.notes !== "" ? <pre className="mb-3 whitespace-pre-wrap font-sans text-label">{u.notes}</pre> : null}
       <p className="text-label text-muted-foreground">
-        {localDesktop !== undefined ? "Running agent sessions keep running; PenguPool restarts in a few seconds." : "Download the disk image from the release page, open it and drag PenguPool.app onto Applications."}
+        {localDesktop !== undefined ? "Running agent sessions keep running; PenguPool restarts in a few seconds." : "Download the disk image from the release page, open it and drag PenguPool AI.app onto Applications."}
       </p>
     </Sheet>
   );

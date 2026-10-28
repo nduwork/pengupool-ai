@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { bundleOf, installScript, isUpdateImage, sq } from "./update.ts";
 
 test("bundleOf finds the .app around the executable", () => {
-  assert.equal(bundleOf("/Users/me/Applications/PenguPool.app/Contents/MacOS/PenguPool"), "/Users/me/Applications/PenguPool.app");
+  assert.equal(bundleOf("/Users/me/Applications/PenguPool AI.app/Contents/MacOS/PenguPool AI"), "/Users/me/Applications/PenguPool AI.app");
   assert.equal(bundleOf("/usr/local/bin/electron"), null);
   assert.equal(bundleOf("/x/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"), "/x/node_modules/electron/dist/Electron.app");
 });
@@ -37,23 +37,23 @@ test("sq quotes for sh", () => {
 test("installScript names every path, quoted", () => {
   const s = installScript({
     pid: 4242,
-    bundle: "/Users/o'neil/Applications/PenguPool.app",
-    dmg: "/Users/o'neil/.pengupool/v2/updates/v0.8.3/PenguPool-0.8.3-mac-universal.dmg",
-    log: "/Users/o'neil/.pengupool/v2/logs/update.log",
+    bundle: "/Users/o'neil/Applications/PenguPool AI.app",
+    dmg: "/Users/o'neil/.pengupool-ai/v2/updates/v0.8.3/PenguPool-0.8.3-mac-universal.dmg",
+    log: "/Users/o'neil/.pengupool-ai/v2/logs/update.log",
     dir: "/tmp/pengupool-update-abc",
   });
   assert.ok(s.startsWith("#!/bin/sh\n"));
   assert.match(s, /^PID=4242$/m);
-  assert.ok(s.includes(`BUNDLE='/Users/o'\\''neil/Applications/PenguPool.app'\n`));
-  assert.ok(s.includes(`NEW='/Users/o'\\''neil/Applications/PenguPool.app.new'\n`));
-  assert.ok(s.includes(`OLD='/Users/o'\\''neil/Applications/PenguPool.app.old'\n`));
-  assert.ok(s.includes(`DMG='/Users/o'\\''neil/.pengupool/v2/updates/v0.8.3/PenguPool-0.8.3-mac-universal.dmg'\n`));
-  assert.ok(s.includes(`LOG='/Users/o'\\''neil/.pengupool/v2/logs/update.log'\n`));
+  assert.ok(s.includes(`BUNDLE='/Users/o'\\''neil/Applications/PenguPool AI.app'\n`));
+  assert.ok(s.includes(`NEW='/Users/o'\\''neil/Applications/PenguPool AI.app.new'\n`));
+  assert.ok(s.includes(`OLD='/Users/o'\\''neil/Applications/PenguPool AI.app.old'\n`));
+  assert.ok(s.includes(`DMG='/Users/o'\\''neil/.pengupool-ai/v2/updates/v0.8.3/PenguPool-0.8.3-mac-universal.dmg'\n`));
+  assert.ok(s.includes(`LOG='/Users/o'\\''neil/.pengupool-ai/v2/logs/update.log'\n`));
   assert.ok(s.includes(`HOST="$BUNDLE/Contents/Resources/bin/pengupool daemon"`));
   // The host is found by plain text, never as a pattern: a path may hold ( + . and the like.
   assert.ok(s.includes('index($0, ENVIRON["HOST"]) == 1')); // starts with the path, so a shell that mentions it is spared
   assert.ok(!/pgrep|pkill/.test(s));
-  assert.ok(s.includes(`CLI="$HOME/.local/bin/pengupool2 daemon"`) && s.includes(`index($0, ENVIRON["CLI"])`));
+  assert.ok(s.includes(`CLI="$HOME/.local/bin/pengupool-ai daemon"`) && s.includes(`index($0, ENVIRON["CLI"])`));
   assert.match(s, /^PATH=\/usr\/bin:\/bin:\/usr\/sbin:\/sbin\nexport PATH$/m);
   assert.ok(s.includes(`hdiutil detach "$MNT" -quiet >> "$LOG" 2>&1 || hdiutil detach "$MNT" -force -quiet`));
   assert.ok(s.includes(`[ -e "$NEW" ] && fail "could not remove $NEW"`));
@@ -62,7 +62,7 @@ test("installScript names every path, quoted", () => {
   // fail() detaches (when mounted) and reopens the installed app.
   assert.match(s, /fail\(\) \{\n  log "failed: \$\*; reopening the installed app"\n  detach\n  rm -rf "\$NEW"\n  open "\$BUNDLE"/);
   assert.ok(s.includes(`hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$DMG"`));
-  assert.ok(s.includes(`ditto "$MNT/PenguPool.app" "$NEW"`));
+  assert.ok(s.includes(`ditto "$MNT/PenguPool AI.app" "$NEW"`));
   // The installed app is moved aside only after the copy, and put back if the new one can't move in.
   assert.ok(s.indexOf("ditto") < s.indexOf(`mv "$BUNDLE" "$OLD"`));
   assert.ok(s.includes(`find "$NEW" -xattrname com.apple.quarantine -exec xattr -d -s com.apple.quarantine {} \\;`));

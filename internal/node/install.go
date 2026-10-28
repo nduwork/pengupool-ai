@@ -22,7 +22,7 @@ import (
 // launches get the PATH the owner has in a terminal, and waits for it to come up. $1 is the
 // executable.
 const startScript = `"$1" ls >/dev/null 2>&1 && exit 0
-logs="${PENGUPOOL_HOME:-$HOME/.pengupool}/v2/logs"; mkdir -p "$logs"
+logs="${PENGUPOOL_HOME:-$HOME/.pengupool-ai}/v2/logs"; mkdir -p "$logs"
 nohup "${SHELL:-/bin/sh}" -lc "exec '$1' daemon" </dev/null >>"$logs/daemon.log" 2>&1 &
 i=0; while [ $i -lt 30 ]; do "$1" ls >/dev/null 2>&1 && exit 0; sleep 0.5; i=$((i+1)); done
 echo "the PenguPool host did not start; see $logs/daemon.log"; exit 1`
@@ -38,12 +38,12 @@ func (m *Manager) startDaemon(ctx context.Context, n store.Node) error {
 	return nil
 }
 
-// installScript reads an executable on stdin and puts it at ~/.local/bin/pengupool2, replacing
+// installScript reads an executable on stdin and puts it at ~/.local/bin/pengupool-ai, replacing
 // any older one only once the copy is complete, then prints its path.
-const installScript = `set -e; d="$HOME/.local/bin"; mkdir -p "$d"; t="$d/.pengupool2.$$"
-cat > "$t"; chmod 755 "$t"; mv -f "$t" "$d/pengupool2"; echo "$d/pengupool2"`
+const installScript = `set -e; d="$HOME/.local/bin"; mkdir -p "$d"; t="$d/.pengupool-ai.$$"
+cat > "$t"; chmod 755 "$t"; mv -f "$t" "$d/pengupool-ai"; echo "$d/pengupool-ai"`
 
-// install copies the PenguPool executable for the node's OS and CPU to ~/.local/bin/pengupool2
+// install copies the PenguPool executable for the node's OS and CPU to ~/.local/bin/pengupool-ai
 // over the node's connection and records it as the node's command.
 func (m *Manager) install(ctx context.Context, n *store.Node) error {
 	out, err := exec.CommandContext(ctx, "ssh", m.args(*n, "uname", "-sm")...).CombinedOutput()
@@ -74,7 +74,7 @@ func (m *Manager) install(ctx context.Context, n *store.Node) error {
 // stopScript stops the daemon of the host's store — the pid in its lock file, if that process is
 // still a PenguPool daemon — and waits for it to go. Its sessions keep running and the next
 // daemon adopts them.
-const stopScript = `pid=$(head -n1 "${PENGUPOOL_HOME:-$HOME/.pengupool}/v2/daemon.lock" 2>/dev/null)
+const stopScript = `pid=$(head -n1 "${PENGUPOOL_HOME:-$HOME/.pengupool-ai}/v2/daemon.lock" 2>/dev/null)
 [ -n "$pid" ] && ps -p "$pid" -o command= 2>/dev/null | grep -q ' daemon' || exit 0
 kill "$pid" 2>/dev/null
 i=0; while [ $i -lt 20 ]; do kill -0 "$pid" 2>/dev/null || exit 0; sleep 0.5; i=$((i+1)); done

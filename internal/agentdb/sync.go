@@ -26,7 +26,9 @@ import (
 // columns both share and is never written over.
 // 2: a file of version 1 held each team's epics, milestones and tickets; the next push drops them.
 // 3: experience entries replace the helpers' notes; a file's older tables are ignored.
-// 4: experience entries carry a lesson; an older host merges such a file in but never writes over it.
+// 4: removed_entries, what doctor took out of Claude's settings. A file of 3 or less lacks the table
+// (merged as an empty one) and is rewritten as 4 on the next push; a file of 5 or more is merged for
+// the columns both share and never written over.
 const SchemaVersion = 4
 
 type syncTable struct {
@@ -43,6 +45,7 @@ var syncTables = []syncTable{
 	{name: "experience", key: []string{"uid"}, local: "id"},
 	{name: "signals", key: []string{"uid"}},
 	{name: "signal_effects", key: []string{"signal_uid", "line_uid"}},
+	{name: "removed_entries", key: []string{"hash"}}, // append-only: a row is never edited or deleted
 }
 
 type row = map[string]any

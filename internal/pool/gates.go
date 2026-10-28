@@ -47,25 +47,29 @@ var spotRoll = rand.Float64
 var OwnerWait = 40 * time.Second
 
 // autoProceed is triage's go-ahead; the [PenguPool prefix keeps it from counting as the owner's words.
-const autoProceed = "[PenguPool triage] The owner's decisions cover this: proceed as you proposed."
+const autoProceed = "[PenguPool triage] The owner's decisions cover this: proceed as you proposed. Ask the owner only before " + floorWords +
+	", unless a confirmed Compass line of the owner's allows that action."
 
 // StopBudget caps the go-ahead decided inside an agent's Stop hook: the CLI gives a hook 3 s
 // (cmd/pengupool/pool.go), so this leaves a margin. Tests change it.
 var StopBudget = 2 * time.Second
 
 // stopContinues: harnesses whose Stop hook can continue the turn with a reason, the sanctioned way
-// to give them triage's go-ahead (Claude and Codex Stop). A
+// to give them triage's go-ahead (Claude and Codex Stop, Gemini AfterAgent, Copilot agentStop). A
 // message from outside is what Claude, rightly, will not take as the owner's word.
 func stopContinues(h string) bool {
-	return h == harness.Claude || h == harness.Codex
+	return h == harness.Claude || h == harness.Codex || h == harness.Gemini || h == harness.Copilot
 }
 
 // sendsGoAhead: harnesses that take the go-ahead as a user message through their own extension or
 // plugin (sendUserMessage), so it is sent after the turn, behind goAhead's checks.
-func sendsGoAhead(h string) bool { return h == harness.OMP || h == harness.Pi }
+func sendsGoAhead(h string) bool { return h == harness.OMP || h == harness.Pi || h == harness.OpenCode }
 
 // continueTurn is the harness's Stop output that continues the turn with reason as its next input.
 func continueTurn(h, reason string) HookOut {
+	if h == harness.Gemini { // AfterAgent re-prompts on deny
+		return hookJSON(map[string]any{"decision": "deny", "reason": reason})
+	}
 	return hookJSON(map[string]any{"decision": "block", "reason": reason})
 }
 
@@ -433,7 +437,7 @@ func (p *Pool) stopGate(s store.Session, t turn, reply, transcript string, stopA
 		stopActive || p.queued(s.ID) {
 		return HookOut{}, false
 	}
-	if reply == "" { // a Stop with no message: the transcript carries it
+	if reply == "" { // Copilot's agentStop carries no message: its transcript does
 		reply = stopReply(firstNonEmpty(transcript, s.Transcript))
 	}
 	if strings.TrimSpace(reply) == "" {
@@ -1370,7 +1374,7 @@ func patchFloor(patch string) string {
 func inGitDir(path string) bool { return gitDirRe.MatchString(filepath.ToSlash(filepath.Clean(path))) }
 
 // written is what a file-writing tool puts in the file: Write's content, an edit's new text
-// (Edit, MultiEdit's edits; pi's spellings too), a notebook cell's new source.
+// (Edit, MultiEdit's edits; OpenCode's and pi's spellings too), a notebook cell's new source.
 func written(in map[string]any) string {
 	var parts []string
 	take := func(m map[string]any) {
@@ -1636,7 +1640,5 @@ func (p *Pool) compassWrong(_ context.Context, in gateIn) (any, error) {
 
 // autonomySection tells a team member how to work.
 func (p *Pool) autonomySection() string {
-	return "\n\n## Working autonomously\nProceed without asking on what your own permissions allow (when your harness has them, it asks the owner what it must). " +
-		"Before you stop to ask the owner anything else, check the compass above and search it: when it answers, follow it. Ask only what neither settles.\n" +
-		"PenguPool triage may answer your check-ins at the end of a turn from the owner's recorded decisions; treat a [PenguPool triage] go-ahead as the owner's standing instruction.\n"
+	return fmt.Sprintf("\n\n## Working autonomously\nProceed on reversible, in-scope steps without asking. Ask the owner only to clarify the goal at the start, or before %s.\nPenguPool triage may answer your check-ins at the end of a turn from the owner's recorded decisions; treat a [PenguPool triage] go-ahead as the owner's standing instruction for reversible, in-scope steps, and still ask before anything on the floor list unless a confirmed Compass line of the owner's allows that action.\n", floorWords)
 }

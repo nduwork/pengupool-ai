@@ -80,14 +80,14 @@ func (p *Pool) turnTool(id string) {
 	}
 }
 
-// writesFiles: the tool's name says it changes files (Claude Edit, Codex apply_patch).
+// writesFiles: the tool's name says it changes files (Claude Edit, Codex apply_patch, Gemini write_file).
 func writesFiles(tool string) bool {
 	tool = strings.ToLower(tool)
 	return strings.Contains(tool, "edit") || strings.Contains(tool, "write") || strings.Contains(tool, "patch") || strings.Contains(tool, "replace")
 }
 
 // changedFile is the path a file-changing tool (name has edit, write, patch or replace, any case:
-// Claude Edit, Codex apply_patch) acts on, else "".
+// Claude Edit, Codex apply_patch, Gemini write_file) acts on, else "".
 func changedFile(pl map[string]any) string {
 	if name, _ := pl["tool_name"].(string); !writesFiles(name) {
 		return ""
@@ -158,10 +158,9 @@ func (t turn) fromNotice() bool {
 
 type placement struct {
 	Record      bool
-	Signal      string  // the owner's message: instruction | preference | choice | correction; "" when not classified
-	ChangesPref bool    // a correction that changes how the owner wants things in general
-	StatesPref  bool    // the message, whatever else it is (a task), states how the owner wants things in general
-	Tentative   float64 // P(the owner is tentative rather than sure): hedged words weigh less
+	Signal      string // the owner's message: instruction | preference | choice | correction; "" when not classified
+	ChangesPref bool   // a correction that changes how the owner wants things in general
+	StatesPref  bool   // the message, whatever else it is (a task), states how the owner wants things in general
 }
 
 const leftOut = "[left out: looked like a secret]"
@@ -231,7 +230,7 @@ func standingClause(prompt string) string {
 // is an instruction worded as a standing one (standingRE). A choice that answered a recorded
 // check-in is a signal already (learnDecision).
 func (p *Pool) ownerSaid(s store.Session, team *protocol.Team, t turn, pl placement) {
-	sig := agentdb.Signal{Words: clip(oneLine(redact(t.Prompt)), 240), SessionID: s.ID, Tentative: pl.Tentative}
+	sig := agentdb.Signal{Words: clip(oneLine(redact(t.Prompt)), 240), SessionID: s.ID}
 	if team != nil {
 		sig.TeamID = team.ID
 	}
@@ -257,11 +256,7 @@ func (p *Pool) ownerSaid(s store.Session, team *protocol.Team, t turn, pl placem
 		}
 		if !pl.ChangesPref {
 			if !p.standing(s, &sig, t, "a one-off correction") {
-				if !pl.StatesPref { // a rule for a narrower situation adds to the compass rather than changing it
-					return
-				}
-				sig.Kind = "said"
-				p.logLine(s.ID, "compass: the owner's correction also reads as stating a preference")
+				return
 			}
 			break
 		}
@@ -368,9 +363,6 @@ func (p *Pool) triage(ctx context.Context, s store.Session, t turn, reply string
 	if a, ok := res.Answers["states_preference"]; ok && sure(a) { // a task can state a rule too
 		out.StatesPref = a.Yes >= 0.5
 	}
-	if a, ok := res.Answers["tentative"]; ok && sure(a) {
-		out.Tentative = min(max(a.Yes, 0), 1)
-	}
 	if t.fromNotice() && t.Tools == 0 {
 		out.Record = false
 	}
@@ -385,13 +377,10 @@ var ownerSignalQuestions = []decision.Question{
 		"choice":      "Picks between options the agent offered.",
 		"correction":  "Says something the agents did, or decided for the owner, was off.",
 	}},
-	// The cue phrases and the carve-out for a narrower rule follow PAHF's check_update_prompt
-	// (github.com/facebookresearch/PAHF, MIT License, Copyright (c) Meta Platforms, Inc. and affiliates).
-	{Name: "changes_preference", Type: decision.Predicate, Instructions: `Read only the owner's message. Does this correction change how the owner wants things in general, rather than only fix this one case? A change moves from one way to another: "but now…", "now I prefer…", "I used to want X, but…", "I changed my mind about…", "instead of X, I prefer Y", "no longer…". A rule only for a narrower situation ("do X when the tests are slow") adds to what the owner wants rather than changing it: answer no.`},
+	{Name: "changes_preference", Type: decision.Predicate, Instructions: "Read only the owner's message. Does this correction change how the owner wants things in general, rather than only fix this one case?"},
 	// Asked of a rule written as a command, the earlier wording ("how the owner wants things in general")
 	// read "when X, do Y" as a task; this one separates rules from one-off tasks on the owner's model.
 	{Name: "states_preference", Type: decision.Predicate, Instructions: `Read only the owner's message. Does it set a rule for a kind of situation that will come up again, so agents should act this way every time, not only now? A rule written as a command counts: "when X, do Y", "whenever…", "if X, then Y", "always/never…", "from now on…". A task about this one piece of work (even one with a condition, like "when the tests pass, merge this PR") does not.`},
-	{Name: "tentative", Type: decision.Predicate, Instructions: `Read only the owner's message. Is the owner tentative about how they want this ("maybe", "I think", "let's try"), rather than sure?`},
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }

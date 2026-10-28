@@ -104,18 +104,8 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Type", ct)
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Cache-Control", "no-store")
-	// A document opened from a preview cannot reach the app and runs no scripts, except an HTML page
-	// the owner turned scripts on for (?run=1): it runs them in an opaque origin, which cannot read
-	// the host's answers (CORS allows only the app), though it can load the workspace's other files as
-	// its own assets and reach the network. A PDF is left to the browser's viewer, which a
-	// sandbox would block; nosniff keeps anything else from being read as one.
-	switch {
-	case ct == "application/pdf":
-	case r.URL.Query().Get("run") == "1" && (strings.HasPrefix(ct, "text/html") || strings.HasPrefix(ct, "application/xhtml+xml")):
-		h.Set("Content-Security-Policy", "sandbox allow-scripts")
-	default:
-		h.Set("Content-Security-Policy", "sandbox; script-src 'none'; object-src 'none'")
-	}
+	// A document opened from a preview never runs scripts and cannot reach the app.
+	h.Set("Content-Security-Policy", "sandbox; script-src 'none'; object-src 'none'")
 	http.ServeContent(w, r, "", info.ModTime(), f)
 }
 

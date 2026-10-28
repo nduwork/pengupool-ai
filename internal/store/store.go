@@ -26,26 +26,9 @@ func (e *ErrCorrupt) Error() string {
 
 func (e *ErrCorrupt) Unwrap() error { return e.Err }
 
-// DefaultDir is the store directory with no override: $PENGUPOOL_HOME/v2,
-// else ~/.pengupool-ai/v2.
-func DefaultDir() string {
-	if home := os.Getenv("PENGUPOOL_HOME"); home != "" {
-		return filepath.Join(home, "v2")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(".", ".pengupool-ai", "v2")
-	}
-	return filepath.Join(home, ".pengupool-ai", "v2")
-}
-
-// IsHomeDefault reports whether dir is the owner's real store:
-// PENGUPOOL_HOME must be unset and dir must resolve to
-// ~/.pengupool-ai/v2. Installers that write outside the store (Muse
-// plugin, Codex rules) run only then: a throwaway daemon with
-// PENGUPOOL_HOME set is never the owner's home, even when its store
-// equals DefaultDir. Temp HOME/CODEX_HOME/XDG dirs are a separate
-// rule; this one guards the installers.
+// IsHomeDefault reports whether dir is the owner's real store: PENGUPOOL_HOME must be unset and dir
+// must resolve to ~/.pengupool-ai/v2. Installers that write outside the store (the Muse plugin) run
+// only then, so a throwaway daemon never touches the owner's Muse home.
 func IsHomeDefault(dir string) bool {
 	if os.Getenv("PENGUPOOL_HOME") != "" {
 		return false
@@ -63,6 +46,7 @@ func IsHomeDefault(dir string) bool {
 	return cdir == cwant
 }
 
+// Store is the single writer of one PenguPool home directory.
 type Store struct {
 	dir string
 
@@ -160,7 +144,7 @@ func dropRetired(raw []byte, st *State) {
 	}
 }
 
-// validateState rejects a state file that parses but is not a PenguPool 2.0 state file.
+// validateState rejects a state file that parses but is not a PenguPool AI state file.
 func validateState(s State) error {
 	switch {
 	case s.Version == 0:
@@ -241,7 +225,9 @@ func (s *Store) UpdateConfig(fn func(*Config) error) error {
 	}
 	next.Version = Version
 	next.UpdatedAt = time.Now().UTC()
-	if err := s.saveLocked(ConfigFile, next); err != nil {
+	disk := next
+	disk.Backup = &next.Sync
+	if err := s.saveLocked(ConfigFile, disk); err != nil {
 		return err
 	}
 	s.cfg = next
