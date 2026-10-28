@@ -800,6 +800,9 @@ func (p *Pool) compassRestate(_ context.Context, in compassRestateIn) (any, erro
 	if err != nil {
 		return nil, notFound("no line %s", in.UID)
 	}
+	if old.Tag != "" { // a permission's line is answered by its tag; restating would make it plain
+		return nil, invalid("line %s is a permission line; edit or remove it instead", in.UID)
+	}
 	l := agentdb.Line{Owner: p.owner(), Kind: old.Kind, Body: in.Body, Condition: old.Condition, Source: "owner"}
 	if err := checkLine(&l); err != nil {
 		return nil, err
