@@ -345,40 +345,6 @@ func TestMarketplaceRepoKeyAndValidate(t *testing.T) {
 			t.Errorf("repoKey(%s) = %s", u, k)
 		}
 	}
-	sha := strings.Repeat("a", 40)
-	read := func(plugins string) (*Marketplace, error) {
-		dir := t.TempDir()
-		os.MkdirAll(filepath.Join(dir, ".claude-plugin"), 0o755)
-		os.WriteFile(filepath.Join(dir, marketFile), []byte(`{"name":"m","plugins":[`+plugins+`]}`), 0o644)
-		return readMarketplace(dir)
-	}
-	m, err := read(`{"name":"a","keywords":["x"],"tags":["harness:pi"],"source":{"source":"github","repo":"o/a","ref":"main","sha":"` + sha + `"}},
-		{"name":"b","source":{"source":"url","url":"https://x/b.git","sha":"` + sha + `"}},
-		{"name":"local","source":"./local"},
-		{"name":"unpinned","source":{"source":"github","repo":"o/c"}}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := MarketEntry{Name: "a", Capabilities: []string{"x"}, Harness: "pi", Repo: "https://github.com/o/a.git", Ref: "main", Commit: sha}
-	if m.Skipped != 2 || len(m.Skills) != 2 || !reflect.DeepEqual(m.Skills[0], a) || m.Skills[1].Repo != "https://x/b.git" {
-		t.Fatalf("read %+v", m)
-	}
-	m, err = read(`{"name":"ui","source":{"source":"git-subdir","url":"https://github.com/o/cat.git","path":"agents/ui/","sha":"` + sha + `"}},
-		{"name":"esc","source":{"source":"git-subdir","url":"https://github.com/o/cat.git","path":"agents/../x","sha":"` + sha + `"}},
-		{"name":"root","source":{"source":"git-subdir","url":"https://github.com/o/cat.git","path":"/","sha":"` + sha + `"}}`)
-	if err != nil || m.Skipped != 2 || len(m.Skills) != 1 || m.Skills[0].Path != "agents/ui" || m.Skills[0].key() != "github.com/o/cat/agents/ui" {
-		t.Fatalf("git-subdir read %+v, %v", m, err)
-	}
-	for _, bad := range []string{
-		`{"name":"a","source":{"source":"github","repo":"o/a","sha":"main"}}`,
-		`{"name":"a","source":{"source":"github","repo":"o/a","sha":"` + sha + `"}},{"name":"A","source":{"source":"github","repo":"o/b","sha":"` + sha + `"}}`,
-		`{"name":"a","source":{"source":"url","url":"--upload-pack=x","sha":"` + sha + `"}}`,
-		`{"name":"a","source":{"source":"github","repo":"-x","sha":"` + sha + `"}}`,
-	} {
-		if _, err := read(bad); err == nil {
-			t.Errorf("accepted %s", bad)
-		}
-	}
 }
 
 // Teams mix agents: a skill preferring another harness is still a candidate, and its helper
@@ -1363,16 +1329,16 @@ func installFrom(t *testing.T, plugin string) (*Pool, any, error) {
 	writableAfter(t, st)
 	p := New(Options{Store: st, Exe: "pengupool"})
 	cat := p.marketDir()
-	os.MkdirAll(filepath.Join(cat, ".claude-plugin"), 0o755)
-	os.WriteFile(filepath.Join(cat, marketFile), []byte(`{"name":"m","plugins":[`+fmt.Sprintf(plugin, "https://example.test/h.git", sha)+`]}`), 0o644)
+	os.MkdirAll(filepath.Dir(filepath.Join(cat, marketFile)), 0o755)
+	os.WriteFile(filepath.Join(cat, marketFile), []byte(`{"name":"m","agents":[`+fmt.Sprintf(plugin, "https://example.test/h.git", sha)+`]}`), 0o644)
 	res, err := p.marketplaceInstall(context.Background(), marketIn{Name: "h"})
 	return p, res, err
 }
 
 func TestCategoryReadFromCatalog(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, ".claude-plugin"), 0o755)
-	os.WriteFile(filepath.Join(dir, marketFile), []byte(`{"name":"m","plugins":[{"name":"a","category":"development","source":{"source":"url","url":"https://x/a.git","sha":"`+strings.Repeat("a", 40)+`"}}]}`), 0o644)
+	os.MkdirAll(filepath.Join(dir, ".pengupool"), 0o755)
+	os.WriteFile(filepath.Join(dir, marketFile), []byte(`{"name":"m","agents":[{"name":"a","group":"development","repo":"https://x/a.git","sha":"`+strings.Repeat("a", 40)+`"}]}`), 0o644)
 	m, err := readMarketplace(dir)
 	if err != nil || len(m.Skills) != 1 || m.Skills[0].Category != "development" {
 		t.Fatalf("%+v %v", m, err)
@@ -1380,7 +1346,7 @@ func TestCategoryReadFromCatalog(t *testing.T) {
 }
 
 func TestInstallSetsGroupFromCategory(t *testing.T) {
-	_, res, err := installFrom(t, `{"name":"h","category":"development","source":{"source":"url","url":%q,"sha":%q}}`)
+	_, res, err := installFrom(t, `{"name":"h","group":"development","repo":%q,"sha":%q}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1391,7 +1357,7 @@ func TestInstallSetsGroupFromCategory(t *testing.T) {
 }
 
 func TestPluginWithoutCategory(t *testing.T) {
-	_, res, err := installFrom(t, `{"name":"h","source":{"source":"url","url":%q,"sha":%q}}`)
+	_, res, err := installFrom(t, `{"name":"h","repo":%q,"sha":%q}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1434,7 +1400,7 @@ func TestOwnerGroups(t *testing.T) {
 }
 
 func TestInstallUsesCategoryFolder(t *testing.T) {
-	p, res, err := installFrom(t, `{"name":"h","category":"code","source":{"source":"url","url":%q,"sha":%q}}`)
+	p, res, err := installFrom(t, `{"name":"h","group":"code","repo":%q,"sha":%q}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1500,11 +1466,11 @@ func (c *testCatalog) publish(helpers map[string]string) {
 	sha := git("rev-parse", "HEAD")
 	var plugins []string
 	for folder, cat := range helpers {
-		plugins = append(plugins, fmt.Sprintf(`{"name":%q,"category":%q,"source":{"source":"git-subdir","url":%q,"path":%q,"sha":%q}}`, filepath.Base(folder), cat, c.url, folder, sha))
+		plugins = append(plugins, fmt.Sprintf(`{"name":%q,"group":%q,"repo":%q,"path":%q,"sha":%q}`, filepath.Base(folder), cat, c.url, folder, sha))
 	}
 	dir := c.p.marketDir()
-	os.MkdirAll(filepath.Join(dir, ".claude-plugin"), 0o755)
-	os.WriteFile(filepath.Join(dir, marketFile), []byte(`{"name":"m","plugins":[`+strings.Join(plugins, ",")+`]}`), 0o644)
+	os.MkdirAll(filepath.Join(dir, ".pengupool"), 0o755)
+	os.WriteFile(filepath.Join(dir, marketFile), []byte(`{"name":"m","agents":[`+strings.Join(plugins, ",")+`]}`), 0o644)
 }
 
 func (c *testCatalog) sync(want string) protocol.Skill {
@@ -2098,5 +2064,232 @@ func TestWorktreeSessionKeepsItsWorktreeOffTeam(t *testing.T) {
 	// A plain terminal does not join a team by any request.
 	if _, err := p.teamAddSession(nil, addSessionIn{TeamID: tm.ID, SessionID: "sh"}); err == nil || !strings.Contains(err.Error(), "only agent sessions") {
 		t.Fatalf("a shell joined through team.add_session: %v", err)
+	}
+}
+
+// One bad entry is skipped (and counted, and said why); the good ones around it still load.
+func TestCatalogSkipsOnlyTheBadEntry(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	good := func(name string) string {
+		return `{"name":"` + name + `","repo":"https://x/` + name + `.git","sha":"` + sha + `"}`
+	}
+	for name, bad := range map[string]string{
+		"short sha":        `{"name":"bad","repo":"https://x/bad.git","sha":"abc123"}`,
+		"branch as sha":    `{"name":"bad","repo":"https://x/bad.git","sha":"main"}`,
+		"no sha":           `{"name":"bad","repo":"https://x/bad.git"}`,
+		"no repo":          `{"name":"bad","sha":"` + sha + `"}`,
+		"option as repo":   `{"name":"bad","repo":"--upload-pack=x","sha":"` + sha + `"}`,
+		"dash github repo": `{"name":"bad","repo":"https://github.com/-x","sha":"` + sha + `"}`,
+		"no name":          `{"repo":"https://x/bad.git","sha":"` + sha + `"}`,
+		"escaping path":    `{"name":"bad","repo":"https://x/bad.git","path":"agents/../x","sha":"` + sha + `"}`,
+		"dot path":         `{"name":"bad","repo":"https://x/bad.git","path":"./x","sha":"` + sha + `"}`,
+	} {
+		dir := t.TempDir()
+		body := `{"agents":[` + good("a") + `,` + good("b") + `,` + bad + `,` + good("c") + `]}`
+		_ = os.MkdirAll(filepath.Join(dir, ".pengupool"), 0o755)
+		_ = os.WriteFile(filepath.Join(dir, marketFile), []byte(body), 0o644)
+		m, err := readMarketplace(dir)
+		if err != nil || m.Skipped != 1 || len(m.Skills) != 3 || len(m.Problems) != 1 {
+			t.Fatalf("%s: %+v %v", name, m, err)
+		}
+		for i, n := range []string{"a", "b", "c"} {
+			if m.Skills[i].Name != n {
+				t.Errorf("%s: kept %v", name, m.Skills)
+			}
+		}
+		if name != "no name" && !strings.Contains(m.Problems[0], `"bad"`) {
+			t.Errorf("%s: the log does not name the entry: %v", name, m.Problems)
+		}
+	}
+	// A name given twice (any case) is ambiguous: every entry of it is skipped, the others load.
+	dup := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(dup, ".pengupool"), 0o755)
+	_ = os.WriteFile(filepath.Join(dup, marketFile), []byte(`{"agents":[`+good("a")+`,`+good("b")+`,{"name":"B","repo":"https://x/other.git","sha":"`+sha+`"},`+good("c")+`]}`), 0o644)
+	if m, err := readMarketplace(dup); err != nil || m.Skipped != 2 || len(m.Skills) != 2 || m.Skills[0].Name != "a" || m.Skills[1].Name != "c" || len(m.Problems) != 2 {
+		t.Fatalf("duplicate: %+v %v", m, err)
+	}
+	// A file that is not JSON is refused whole; a sub-folder path is kept trimmed.
+	dir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(dir, ".pengupool"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, marketFile), []byte(`{"agents":[{"name":"ui","repo":"https://github.com/o/cat.git","path":"agents/ui/","sha":"`+sha+`"}]}`), 0o644)
+	m, err := readMarketplace(dir)
+	if err != nil || len(m.Skills) != 1 || m.Skills[0].Path != "agents/ui" || m.Skills[0].key() != "github.com/o/cat/agents/ui" {
+		t.Fatalf("path: %+v %v", m, err)
+	}
+	_ = os.WriteFile(filepath.Join(dir, marketFile), []byte(`{"agents":`), 0o644)
+	if _, err := readMarketplace(dir); err == nil {
+		t.Fatal("broken JSON accepted")
+	}
+}
+
+// The bad entry is logged once per process, with its name, however often the catalog is read; the
+// fallback line the same.
+func TestCatalogProblemsAreLoggedOnce(t *testing.T) {
+	st, _ := store.Open(t.TempDir())
+	var lines []string
+	p := New(Options{Store: st, Exe: "pengupool", Logf: func(f string, a ...any) { lines = append(lines, fmt.Sprintf(f, a...)) }})
+	dir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(dir, ".claude-plugin"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, legacyMarketFile), []byte(`{"plugins":[{"name":"short","source":{"source":"url","url":"https://x/s.git","sha":"abc"}}]}`), 0o644)
+	for i := 0; i < 3; i++ {
+		if m, err := p.readCatalog(dir); err != nil || len(m.Skills) != 0 {
+			t.Fatalf("%+v %v", m, err)
+		}
+	}
+	lines = slices.DeleteFunc(lines, func(l string) bool { return !strings.Contains(l, "library sync") }) // the installers' own lines
+	if len(lines) != 2 || !strings.Contains(strings.Join(lines, "\n"), `"short"`) || !strings.Contains(strings.Join(lines, "\n"), "instead") {
+		t.Fatalf("log: %q", lines)
+	}
+}
+
+// The hub's catalog is .pengupool/catalog.json; the old Claude-format file is read only while it is
+// missing, and the new one wins when both exist.
+func TestCatalogFile(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	write := func(dir, name, body string) {
+		t.Helper()
+		_ = os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	newBody := `{"name":"hub","agents":[
+	 {"name":"rev","description":"d","group":"development","capabilities":["review"],"harness":"claude","requires":["claude","omp"],"repo":"https://x/r.git","path":"agents/rev/","ref":"main","sha":"` + sha + `"},
+	 {"name":"unpinned","repo":"https://x/u.git"},
+	 {"name":"escape","repo":"https://x/e.git","path":"../up","sha":"` + sha + `"}]}`
+	oldBody := `{"name":"m","plugins":[{"name":"old","category":"ops","source":{"source":"url","url":"https://x/o.git","sha":"` + sha + `"}}]}`
+
+	dir := t.TempDir()
+	write(dir, legacyMarketFile, oldBody)
+	m, err := readMarketplace(dir)
+	if err != nil || !m.Legacy || len(m.Skills) != 1 || m.Skills[0].Name != "old" {
+		t.Fatalf("fallback: %+v %v", m, err)
+	}
+
+	write(dir, marketFile, newBody) // both present: the new one wins
+	m, err = readMarketplace(dir)
+	if err != nil || m.Legacy || m.Name != "hub" || len(m.Skills) != 1 || m.Skipped != 2 {
+		t.Fatalf("both: %+v %v", m, err)
+	}
+	e := m.Skills[0]
+	if e.Name != "rev" || e.Category != "development" || e.Harness != "claude" || len(e.Requires) != 2 || e.Repo != "https://x/r.git" ||
+		e.Path != "agents/rev" || e.Ref != "main" || e.Commit != sha || e.key() != "x/r/agents/rev" {
+		t.Fatalf("entry: %+v", e)
+	}
+
+	only := t.TempDir()
+	write(only, marketFile, newBody)
+	if m, err = readMarketplace(only); err != nil || m.Legacy || len(m.Skills) != 1 {
+		t.Fatalf("new only: %+v %v", m, err)
+	}
+	if _, err = readMarketplace(t.TempDir()); err == nil {
+		t.Fatal("no catalog file: want an error")
+	}
+	write(only, marketFile, `{"agents":[{"name":"a","sha":"`+sha+`"}]}`)
+	if m, err = readMarketplace(only); err != nil || len(m.Skills) != 0 || m.Skipped != 1 {
+		t.Fatalf("an entry with no repo is skipped: %+v %v", m, err)
+	}
+	// "plugins" in a new-format file is ignored.
+	write(only, marketFile, `{"agents":[],"plugins":[{"name":"old","source":{"source":"url","url":"https://x/o.git","sha":"`+sha+`"}}]}`)
+	if m, err = readMarketplace(only); err != nil || len(m.Skills) != 0 || m.Skipped != 0 {
+		t.Fatalf("plugins read from a new-format file: %+v %v", m, err)
+	}
+}
+
+// A name the hub gives twice reads as none of them: a stray entry before or after the real one can neither
+// stand in for the installed helper (a move of its folder and journal) nor stop it. It stays as it is, and
+// the other helpers still sync.
+func TestDuplicateCatalogNameLeavesTheInstalledHelperAlone(t *testing.T) {
+	for _, first := range []bool{true, false} {
+		c := newTestCatalog(t)
+		c.publish(map[string]string{"agents/x": "", "agents/y": ""})
+		x := c.sync("x")
+		putNotes(t, c.p, agentOf(x), "x remembers")
+		file := filepath.Join(c.p.marketDir(), marketFile)
+		b, _ := os.ReadFile(file)
+		var cat struct {
+			Agents []map[string]any `json:"agents"`
+		}
+		if err := json.Unmarshal(b, &cat); err != nil {
+			t.Fatal(err)
+		}
+		var real []map[string]any
+		for _, a := range cat.Agents {
+			real = append(real, a)
+		}
+		// A helper the catalog gains, published as a new commit: it must still sync.
+		c.publish(map[string]string{"agents/x": "", "agents/y": "", "agents/z": ""})
+		nb, _ := os.ReadFile(file)
+		var now struct {
+			Agents []map[string]any `json:"agents"`
+		}
+		_ = json.Unmarshal(nb, &now)
+		var z map[string]any
+		for _, a := range now.Agents {
+			if a["name"] == "z" {
+				z = a
+			}
+		}
+		// a copy named X that points at z's folder, a helper that is not installed
+		stray := map[string]any{"name": "X", "repo": z["repo"], "path": z["path"], "sha": z["sha"]}
+		list := append(real, z)
+		if first {
+			list = append([]map[string]any{stray}, list...)
+		} else {
+			list = append(list, stray)
+		}
+		out, _ := json.Marshal(map[string]any{"agents": list})
+		_ = os.WriteFile(file, out, 0o644)
+
+		got := c.sync("x")
+		if got.ID != x.ID || got.Path != x.Path || got.Key != x.Key || got.Commit != x.Commit {
+			t.Fatalf("first=%v: x changed: %+v -> %+v (report %v)", first, x, got, c.last)
+		}
+		if n, _ := c.p.db.AgentTotals(agentOf(got)); n != 1 {
+			t.Fatalf("first=%v: x's journal: %d entries", first, n)
+		}
+		if len(c.last["moved"])+len(c.last["updated"]) != 0 || !slices.Equal(c.last["added"], []string{"z"}) {
+			t.Fatalf("first=%v: report %v", first, c.last)
+		}
+	}
+}
+
+func TestCatalogRepoDefaultsToAgentHubAndCanBeSet(t *testing.T) {
+	c := newTestCatalog(t)
+	if got := c.p.catalogURL(); got != "https://github.com/nduwork/pengupool-agent-hub.git" {
+		t.Fatalf("default catalog %q", got)
+	}
+	if _, err := c.p.marketplaceSet(context.Background(), marketSetIn{Repo: "--upload-pack=x"}); err == nil {
+		t.Fatal("an option-like address was accepted")
+	}
+	if _, err := c.p.marketplaceSet(context.Background(), marketSetIn{Repo: c.url}); err != nil || c.p.catalogURL() != c.url {
+		t.Fatalf("set: %v, now %q", err, c.p.catalogURL())
+	}
+	// the default hub in any spelling clears the setting
+	if _, err := c.p.marketplaceSet(context.Background(), marketSetIn{Repo: "git@github.com:nduwork/pengupool-agent-hub"}); err != nil || c.p.st.Config().CatalogRepo != "" {
+		t.Fatalf("reset: %v, %q", err, c.p.st.Config().CatalogRepo)
+	}
+}
+
+// The old file's own shapes (until the fallback goes): github shorthand, a bundled plugin and an
+// unpinned one are skipped as not installable, a git-subdir path is checked, and "agents" in it is ignored.
+func TestLegacyCatalogFileShapes(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	dir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(dir, ".claude-plugin"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, legacyMarketFile), []byte(`{"name":"m","agents":[{"name":"ignored","repo":"https://x/i.git","sha":"`+sha+`"}],"plugins":[
+		{"name":"a","keywords":["x"],"tags":["harness:pi"],"source":{"source":"github","repo":"o/a","ref":"main","sha":"`+sha+`"}},
+		{"name":"b","source":{"source":"url","url":"https://x/b.git","sha":"`+sha+`"}},
+		{"name":"local","source":"./local"},
+		{"name":"unpinned","source":{"source":"github","repo":"o/c"}},
+		{"name":"ui","source":{"source":"git-subdir","url":"https://github.com/o/cat.git","path":"agents/ui/","sha":"`+sha+`"}},
+		{"name":"esc","source":{"source":"git-subdir","url":"https://github.com/o/cat.git","path":"agents/../x","sha":"`+sha+`"}}]}`), 0o644)
+	m, err := readMarketplace(dir)
+	if err != nil || !m.Legacy {
+		t.Fatalf("%+v %v", m, err)
+	}
+	a := MarketEntry{Name: "a", Capabilities: []string{"x"}, Harness: "pi", Repo: "https://github.com/o/a.git", Ref: "main", Commit: sha}
+	if m.Skipped != 3 || len(m.Skills) != 3 || !reflect.DeepEqual(m.Skills[0], a) || m.Skills[1].Repo != "https://x/b.git" || m.Skills[2].Path != "agents/ui" {
+		t.Fatalf("read %+v", m)
 	}
 }

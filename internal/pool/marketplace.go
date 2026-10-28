@@ -3,6 +3,9 @@ package pool
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"os/exec"
@@ -16,44 +19,49 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
-// Marketplaces: Claude Code plugin marketplaces (.claude-plugin/marketplace.json) whose plugins are
-// skill repositories pinned to a commit, so the same catalog serves `/plugin install` and PenguPool.
-// PenguPool keeps a clone of each under <store>/marketplaces, installs a plugin by cloning its
-// repository at the pin (an ordinary Skill library git source). A plugin's keywords are its
-// capabilities; a "harness:<id>" tag names its preferred agent.
+// The Helper agent hub's catalog is PenguPool's own file, .pengupool/catalog.json: the helpers it lists
+// are skill repositories pinned to a commit. PenguPool keeps a clone of the hub under
+// <store>/marketplaces and installs a helper by cloning its repository at the pin (an ordinary Skill
+// library git source). The format, whole:
+//
+//	{
+//	  "name": "pengupool-agent-hub",              // optional
+//	  "description": "...",                       // optional
+//	  "agents": [{
+//	    "name": "pr-review-agent",                // required, unique (case-insensitive)
+//	    "description": "...",                     // optional
+//	    "group": "development",                   // optional: becomes the helper's group on install
+//	    "capabilities": ["code-review"],          // optional: what the helper is for
+//	    "harness": "claude",                      // optional: its preferred agent
+//	    "requires": ["claude"],                   // optional: any one of these agents must be installed
+//	    "repo": "https://github.com/o/r.git",     // required: the helper's Git repository
+//	    "path": "agents/pr-review-agent",         // optional: the helper's folder in repo
+//	    "ref": "main",                            // optional: the branch the pin is on
+//	    "sha": "<40 hex>"                         // required: the pinned commit
+//	  }]
+//	}
+//
+// One bad entry never stops the rest: an entry with no name, no repo, a "path" with "." or ".." in
+// it, or no full 40-hex "sha" is skipped, counted, and logged once with its name and the reason. So is
+// every entry whose name another entry has too (case-insensitive): a duplicate is ambiguous, so none
+// of that name is read, and a helper installed under it stays as it is until the hub fixes it. The
+// other entries load. A file that is not valid JSON is refused whole.
 
-const marketFile = ".claude-plugin/marketplace.json"
-
-// catalogFile is the hub's own catalog ({"agents":[{name, description, group, capabilities, harness,
-// requires, repo, path, ref, sha}]}), read first; marketFile is the fallback while a hub commit lacks it.
-const catalogFile = ".pengupool/catalog.json"
-
-type catalogEntry struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	Group        string   `json:"group"`
-	Capabilities []string `json:"capabilities"`
-	Harness      string   `json:"harness"`
-	Requires     []string `json:"requires"`
-	Repo         string   `json:"repo"`
-	Path         string   `json:"path"`
-	Ref          string   `json:"ref"`
-	SHA          string   `json:"sha"`
-}
-
-func (c catalogEntry) entry() (MarketEntry, bool) {
-	e := MarketEntry{Name: c.Name, Description: c.Description, Category: strings.TrimSpace(c.Group), Capabilities: c.Capabilities,
-		Harness: c.Harness, Requires: c.Requires, Repo: c.Repo, Path: strings.Trim(c.Path, "/"), Ref: c.Ref, Commit: c.SHA}
-	parts := strings.Split(e.Path, "/")
-	return e, e.Commit != "" && (e.Path == "" || !slices.Contains(parts, "..") && !slices.Contains(parts, "."))
-}
+const (
+	marketFile = ".pengupool/catalog.json"
+	// ponytail: the hub's old file, read when the new one is missing so a clone that has not pulled yet
+	// and older hub commits keep working; drop it once every host is on this version.
+	legacyMarketFile = ".claude-plugin/marketplace.json"
+)
 
 // Marketplace is PenguPool's reading of the catalog: only plugins with a pinned Git source.
 type Marketplace struct {
 	Name        string
 	Description string
 	Skills      []MarketEntry
-	Skipped     int // plugins PenguPool cannot install: bundled in the catalog, or not pinned to a commit
+	Skipped     int      // entries PenguPool cannot install: not pinned to a commit, or (old file) bundled in the catalog
+	Legacy      bool     // read from the old .claude-plugin/marketplace.json
+	Problems    []string // why each entry that was skipped for a mistake was
 }
 
 type MarketEntry struct {
@@ -69,8 +77,32 @@ type MarketEntry struct {
 	Category     string   `json:"category,omitempty"` // the catalog's grouping; becomes the helper's group on install
 }
 
-// ccPlugin is the part of a Claude Code marketplace plugin entry PenguPool reads.
-type ccPlugin struct {
+// catalogEntry is one helper in .pengupool/catalog.json.
+type catalogEntry struct {
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Group        string   `json:"group"`
+	Capabilities []string `json:"capabilities"`
+	Harness      string   `json:"harness"`
+	Requires     []string `json:"requires"`
+	Repo         string   `json:"repo"`
+	Path         string   `json:"path"`
+	Ref          string   `json:"ref"`
+	SHA          string   `json:"sha"`
+}
+
+// entry is the helper this entry installs, or why it cannot be one.
+func (c catalogEntry) entry() (MarketEntry, string) {
+	e := MarketEntry{Name: c.Name, Description: c.Description, Category: strings.TrimSpace(c.Group), Capabilities: c.Capabilities,
+		Harness: c.Harness, Requires: c.Requires, Repo: c.Repo, Path: strings.Trim(c.Path, "/"), Ref: c.Ref, Commit: c.SHA}
+	if parts := strings.Split(e.Path, "/"); e.Path != "" && (slices.Contains(parts, "..") || slices.Contains(parts, ".")) {
+		return e, "its path must not contain . or .."
+	}
+	return e, ""
+}
+
+// legacyPlugin is the part of an old .claude-plugin/marketplace.json plugin entry PenguPool reads.
+type legacyPlugin struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Keywords    []string        `json:"keywords"`
@@ -79,7 +111,7 @@ type ccPlugin struct {
 	Source      json.RawMessage `json:"source"`
 }
 
-type ccSource struct {
+type legacySource struct {
 	Source string `json:"source"` // github | url | git-subdir | npm ...
 	Repo   string `json:"repo"`   // github: owner/name
 	URL    string `json:"url"`
@@ -88,8 +120,8 @@ type ccSource struct {
 	SHA    string `json:"sha"`
 }
 
-func (c ccPlugin) entry() (MarketEntry, bool) {
-	var src ccSource
+func (c legacyPlugin) entry() (MarketEntry, bool) {
+	var src legacySource
 	if json.Unmarshal(c.Source, &src) != nil { // a string: a plugin directory inside the catalog
 		return MarketEntry{}, false
 	}
@@ -128,20 +160,17 @@ func (e MarketEntry) key() string {
 
 var shaRe = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
-func (m *Marketplace) validate() error {
-	seen := map[string]bool{}
-	for _, e := range m.Skills {
-		switch {
-		case e.Name == "" || seen[strings.ToLower(e.Name)]:
-			return invalid("Helper agent hub plugin names must be present and unique (%q)", e.Name)
-		case e.Repo == "" || strings.HasPrefix(e.Repo, "-") || strings.HasPrefix(e.Repo, "https://github.com/-"):
-			return invalid("plugin %s has no repository", e.Name)
-		case !shaRe.MatchString(e.Commit):
-			return invalid("plugin %s must pin a full commit SHA", e.Name)
-		}
-		seen[strings.ToLower(e.Name)] = true
+// problem is why an entry cannot be installed, "" when it can.
+func problem(e MarketEntry) string {
+	switch {
+	case e.Name == "":
+		return "it has no name"
+	case e.Repo == "" || strings.HasPrefix(e.Repo, "-") || strings.HasPrefix(e.Repo, "https://github.com/-"):
+		return "it has no repository"
+	case !shaRe.MatchString(e.Commit):
+		return "it must pin a full 40-hex commit sha"
 	}
-	return nil
+	return ""
 }
 
 // repoKey makes Git URLs comparable: git@github.com:o/r.git, https://github.com/o/r and
@@ -177,67 +206,164 @@ func (p *Pool) gitEnv(ctx context.Context, dir string, env []string, args ...str
 	return strings.TrimSpace(string(out)), nil
 }
 
-// mainMarketplace is the one catalog PenguPool reads.
+// mainMarketplace is the one catalog PenguPool reads: the Helper agent hub, a private repository
+// (cloned and fetched with the signed-in GitHub account, like any private one).
 const mainMarketplace = "https://github.com/nduwork/pengupool-agent-hub.git"
 
-func (p *Pool) marketDir() string {
-	return filepath.Join(p.st.Dir(), "marketplaces", strings.NewReplacer("/", "-", ":", "-").Replace(repoKey(mainMarketplace)))
+// catalogURL is the hub in use: the owner's setting, else the default.
+func (p *Pool) catalogURL() string { return firstNonEmpty(p.st.Config().CatalogRepo, mainMarketplace) }
+
+func (p *Pool) marketDir() string { return p.marketDirFor(p.catalogURL()) }
+
+// marketDirFor is where the clone of a catalog lives under the store.
+func (p *Pool) marketDirFor(url string) string {
+	return filepath.Join(p.st.Dir(), "marketplaces", strings.NewReplacer("/", "-", ":", "-").Replace(repoKey(url)))
+}
+
+// hubAccess says what a refused clone or fetch of the (private) hub most likely means.
+func hubAccess(err error, hub string) error {
+	if err == nil {
+		return nil
+	}
+	m := strings.ToLower(err.Error())
+	for _, w := range []string{"repository not found", "authentication failed", "could not read username", "permission denied", "error: 403", "terminal prompts disabled"} {
+		if strings.Contains(m, w) {
+			return protocol.Errorf(protocol.CodeUnavailable, "the Helper agent hub (%s) is private and GitHub refused this account: sign in with an account that has access (Settings → GitHub), then Refresh. %v", repoKey(hub), err)
+		}
+	}
+	return err
+}
+
+type marketSetIn struct {
+	Repo string `json:"repo"` // "" returns to the default hub
+}
+
+// marketplaceSet points PenguPool at another hub repository (or back at the default). Its clone is
+// made on the next refresh; helpers already installed stay as they are.
+func (p *Pool) marketplaceSet(_ context.Context, in marketSetIn) (any, error) {
+	repo := strings.TrimSpace(in.Repo)
+	if repo == mainMarketplace || repoKey(repo) == repoKey(mainMarketplace) {
+		repo = ""
+	}
+	if repo != "" {
+		if strings.HasPrefix(repo, "-") || strings.ContainsAny(repo, " \t\n") || !(strings.Contains(repo, "://") || strings.Contains(repo, "@") || strings.HasPrefix(repo, "/")) {
+			return nil, invalid("%q is not a Git repository address (https://…, git@host:owner/name or a local path)", in.Repo)
+		}
+	}
+	cfg := p.st.Config()
+	cfg.CatalogRepo = repo
+	return nil, p.st.SaveConfig(cfg)
 }
 
 // ensureMarket clones the catalog on first use.
 func (p *Pool) ensureMarket(ctx context.Context) (string, error) {
-	dir := p.marketDir()
+	return p.ensureMarketFor(ctx, p.catalogURL())
+}
+
+func (p *Pool) ensureMarketFor(ctx context.Context, url string) (string, error) {
+	dir := p.marketDirFor(url)
 	if _, err := os.Stat(dir); err == nil {
 		return dir, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return "", err
 	}
-	_, err := p.clone(ctx, mainMarketplace, dir)
-	return dir, err
+	_, err := p.clone(ctx, url, dir)
+	return dir, hubAccess(err, url)
+}
+
+// readCatalog is readMarketplace that says in the log, once per process, when the old file was the one
+// read and which entries were skipped and why.
+func (p *Pool) readCatalog(dir string) (*Marketplace, error) {
+	m, err := readMarketplace(dir)
+	if m == nil {
+		return m, err
+	}
+	once := func(msg string) {
+		if _, seen := p.logged.LoadOrStore(msg, true); !seen {
+			p.logf("pool: library sync: %s", msg)
+		}
+	}
+	if m.Legacy {
+		once("the hub has no " + marketFile + "; read " + legacyMarketFile + " instead")
+	}
+	for _, w := range m.Problems {
+		once(w)
+	}
+	return m, err
 }
 
 func readMarketplace(dir string) (*Marketplace, error) {
-	if b, err := os.ReadFile(filepath.Join(dir, catalogFile)); err == nil {
-		var raw struct {
-			Name        string         `json:"name"`
-			Description string         `json:"description"`
-			Agents      []catalogEntry `json:"agents"`
-		}
-		if err := json.Unmarshal(b, &raw); err != nil {
-			return nil, invalid("%s: %v", catalogFile, err)
-		}
-		m := &Marketplace{Name: raw.Name, Description: raw.Description}
-		for _, c := range raw.Agents {
-			if e, ok := c.entry(); ok {
-				m.Skills = append(m.Skills, e)
-			} else {
-				m.Skipped++
-			}
-		}
-		return m, m.validate()
-	}
 	b, err := os.ReadFile(filepath.Join(dir, marketFile))
+	legacy := false
+	if errors.Is(err, fs.ErrNotExist) {
+		b, err = os.ReadFile(filepath.Join(dir, legacyMarketFile))
+		legacy = true
+	}
 	if err != nil {
 		return nil, invalid("the repository has no %s", marketFile)
 	}
+	file := map[bool]string{false: marketFile, true: legacyMarketFile}[legacy]
 	var raw struct {
-		Name        string     `json:"name"`
-		Description string     `json:"description"`
-		Plugins     []ccPlugin `json:"plugins"`
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Agents      json.RawMessage `json:"agents"`
+		Plugins     json.RawMessage `json:"plugins"`
 	}
 	if err := json.Unmarshal(b, &raw); err != nil {
-		return nil, invalid("%s: %v", marketFile, err)
+		return nil, invalid("%s: %v", file, err)
 	}
-	m := &Marketplace{Name: raw.Name, Description: raw.Description}
-	for _, c := range raw.Plugins {
-		if e, ok := c.entry(); ok {
-			m.Skills = append(m.Skills, e)
-		} else {
-			m.Skipped++
+	m := &Marketplace{Name: raw.Name, Description: raw.Description, Legacy: legacy}
+	type cand struct {
+		e   MarketEntry
+		why string
+	}
+	var cands []cand
+	if legacy { // the old file's "plugins"; a new-format file ignores them
+		var plugins []legacyPlugin
+		if err := json.Unmarshal(raw.Plugins, &plugins); raw.Plugins != nil && err != nil {
+			return nil, invalid("%s: %v", file, err)
+		}
+		for _, c := range plugins {
+			if e, ok := c.entry(); ok {
+				cands = append(cands, cand{e: e})
+			} else {
+				m.Skipped++ // bundled in the catalog, or not a Git source PenguPool installs: not a mistake
+			}
+		}
+	} else {
+		var agents []catalogEntry
+		if err := json.Unmarshal(raw.Agents, &agents); raw.Agents != nil && err != nil {
+			return nil, invalid("%s: %v", file, err)
+		}
+		for _, c := range agents {
+			e, why := c.entry()
+			cands = append(cands, cand{e, why})
 		}
 	}
-	return m, m.validate()
+	// A name the hub gives twice is ambiguous: neither entry is trusted, so a stray copy cannot stand in
+	// for the real helper (the sync matches an installed helper by name too). The installed one stays as it is.
+	names := map[string]int{}
+	for _, c := range cands {
+		names[strings.ToLower(c.e.Name)]++
+	}
+	for _, c := range cands {
+		why := c.why
+		if why == "" {
+			if c.e.Name != "" && names[strings.ToLower(c.e.Name)] > 1 {
+				why = "the name is used more than once, so none of them is read"
+			} else {
+				why = problem(c.e)
+			}
+		}
+		if why != "" {
+			m.Skipped++
+			m.Problems = append(m.Problems, fmt.Sprintf("the hub's entry %q is skipped: %s (%s)", c.e.Name, why, file))
+			continue
+		}
+		m.Skills = append(m.Skills, c.e)
+	}
+	return m, nil
 }
 
 type marketIn struct {
@@ -255,7 +381,7 @@ func (p *Pool) marketplaceRefresh(ctx context.Context, _ struct{}) (any, error) 
 	if err != nil {
 		return nil, err
 	}
-	if _, err = readMarketplace(dir); err != nil {
+	if _, err = p.readCatalog(dir); err != nil {
 		return nil, err
 	}
 	return p.syncLocked(ctx), nil
@@ -269,7 +395,7 @@ func (p *Pool) pullCatalog(ctx context.Context) (string, error) {
 	}
 	was, _ := p.gitIn(ctx, dir, "rev-parse", "HEAD")
 	if _, err := p.ghGit(ctx, dir, "pull", "--ff-only", "-q"); err != nil {
-		return "", err
+		return "", hubAccess(err, p.catalogURL())
 	}
 	if now, _ := p.gitIn(ctx, dir, "rev-parse", "HEAD"); now != was {
 		p.logf("pool: library sync: catalog %s→%s", was[:min(len(was), 7)], now[:min(len(now), 7)])
@@ -407,6 +533,7 @@ func within(path, dir string) bool {
 
 type marketView struct {
 	URL         string            `json:"url"`
+	Default     string            `json:"default"`
 	Name        string            `json:"name"`
 	Description string            `json:"description,omitempty"`
 	Error       string            `json:"error,omitempty"`
@@ -439,11 +566,11 @@ func (p *Pool) marketplaceList(ctx context.Context, _ struct{}) (any, error) {
 			regs = append(regs, r)
 		}
 	}
-	v := marketView{URL: mainMarketplace, Name: repoKey(mainMarketplace), Skills: []marketEntryView{}}
+	v := marketView{URL: p.catalogURL(), Default: mainMarketplace, Name: repoKey(p.catalogURL()), Skills: []marketEntryView{}}
 	dir, err := p.ensureMarket(ctx)
 	var m *Marketplace
 	if err == nil {
-		m, err = readMarketplace(dir)
+		m, err = p.readCatalog(dir)
 	}
 	if err != nil {
 		v.Error = err.Error()
@@ -472,7 +599,7 @@ func (p *Pool) marketplaceInstall(ctx context.Context, in marketIn) (any, error)
 	if err != nil {
 		return nil, err
 	}
-	m, err := readMarketplace(dir)
+	m, err := p.readCatalog(dir)
 	if err != nil {
 		return nil, err
 	}

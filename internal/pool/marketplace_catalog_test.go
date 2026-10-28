@@ -12,7 +12,7 @@ func TestReadCatalogFile(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, ".pengupool"), 0o755)
 	sha := strings.Repeat("a", 40)
-	os.WriteFile(filepath.Join(dir, catalogFile), []byte(`{"agents":[
+	os.WriteFile(filepath.Join(dir, marketFile), []byte(`{"agents":[
 	 {"name":"a","group":"code","repo":"https://x/h.git","path":"agents/code/a","sha":"`+sha+`"},
 	 {"name":"b","repo":"https://x/h.git","path":"../b","sha":"`+sha+`"}]}`), 0o644)
 	m, err := readMarketplace(dir)

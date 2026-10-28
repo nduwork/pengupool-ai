@@ -35,7 +35,7 @@ func gitT(t *testing.T, dir string, args ...string) {
 // until the owner does.
 func TestDeleteDeprecatedClone(t *testing.T) {
 	ctx := context.Background()
-	p, res, err := installFrom(t, `{"name":"h","category":"planning","source":{"source":"url","url":%q,"sha":%q}}`)
+	p, res, err := installFrom(t, `{"name":"h","group":"planning","repo":%q,"sha":%q}`)
 	if err != nil {
 		t.Fatal(err)
 	}

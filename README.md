@@ -115,6 +115,10 @@ sharing one store (a dev app and a release app) restart each other's host at
 each launch; the app's log says so.
 v0.8.3: a host that holds the store but no longer answers (run from a disk
 image since ejected) is stopped, killed if it must be, and replaced.
+v0.8.4: the Helper agent hub from PenguPool 0.23: the owner can set the hub's
+repository in the Helper agents page; an install still on the old
+pengupool-marketplace hub moves to pengupool-agent-hub once (helpers, keys and
+journals follow); a bad catalog entry is skipped and named, not fatal.
 
 ## Credits
 
