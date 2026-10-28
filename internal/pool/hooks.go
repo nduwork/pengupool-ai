@@ -210,8 +210,9 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	case "PreToolUse":
 		if in.Harness == harness.Muse {
 			if _, ok := pl["tool_name"].(string); !ok {
-				// The Muse tool payload shape is still unknown: never
-				// block on it, allow and note it once.
+				// A Muse tool call without a name is a shape this version does not know: never
+				// block on it, allow and note it once. Named calls enforce below, with the
+				// harness read set (Muse names its tools snake_case: read_file, search, ...).
 				p.mu.Lock()
 				warned := p.museToolWarned
 				p.museToolWarned = true
@@ -549,11 +550,26 @@ func (p *Pool) contextOut(id, event string, extra ...string) HookOut {
 	}
 	text += decision.SecretRe.ReplaceAllString(p.takeNotices(id), "[left out: looked like a secret]")
 	text += strings.Join(extra, "") // what this task adds: the journal entries that fit it
+	if limit := p.hookOutCap(id); limit > 0 && len(text) > limit {
+		text = p.fitContext(id, extra, limit)
+	}
 	if text == "" {
 		return HookOut{}
 	}
 	return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 		"hookEventName": event, "additionalContext": text}})
+}
+
+// hookOutCap is the hook answer budget for id's harness in bytes, 0 for uncapped.
+func (p *Pool) hookOutCap(id string) int {
+	s, ok := p.session(id)
+	if !ok {
+		return 0
+	}
+	if a, ok := harness.Find(s.Harness); ok {
+		return a.HookOutCap
+	}
+	return 0
 }
 
 // contextSections splits rendered context at its "## " headings; the text before the first one is

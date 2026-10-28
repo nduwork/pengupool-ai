@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/nduwork/pengupool-ai/internal/decision"
+	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
@@ -249,7 +250,7 @@ func (p *Pool) guardRoute(s store.Session, pl map[string]any) (HookOut, bool) {
 		p.release(s.ID, name)
 		return HookOut{}, false
 	}
-	if lookTools[tool] || readOnlyCmd(cmd) {
+	if lookTools[tool] || harness.ReadTool(s.Harness, tool) || readOnlyCmd(cmd) {
 		return HookOut{}, false
 	}
 	p.logLine(s.ID, "triage: held "+tool)

@@ -1,10 +1,14 @@
 // The PenguPool host (the Go daemon) as the desktop app sees it: find the running one for this
-// store, or start the bundled binary with the user's login-shell PATH. The host is never tied to
-// the app's lifetime: quitting the app leaves it, and every session, running.
+// store when it is this build (restart it when it is not: after an update installed by hand the
+// old daemon still runs, and the new renderer asks it for requests it does not know), or start
+// the bundled binary with the user's login-shell PATH. The host is never tied to the app's
+// lifetime: quitting the app leaves it, and every session, running.
 import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdirSync, openSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+import { hostOutdated, isStoreDaemon, readHostVersion } from "./hostversion";
 
 export interface HostConnection {
   url: string;
@@ -95,18 +99,64 @@ export class Host {
     child.unref();
   }
 
-  /** Finds the host or starts it, waiting up to 20 s for its health check. */
-  async ensure(): Promise<HostConnection | null> {
-    const found = await this.probe();
-    if (found !== null) return found;
-    if (!existsSync(this.binary)) throw new Error(`the bundled host is missing at ${this.binary}`);
-    await this.start();
-    for (let i = 0; i < 100; i++) {
-      await new Promise((r) => setTimeout(r, 200));
-      const c = await this.probe();
-      if (c !== null) return c;
+  /**
+   * Finds the host or starts it, waiting up to 20 s for its health check. A running host that is
+   * not this build is restarted once, so the renderer never talks to requests the host does not
+   * know; sessions keep running across the restart.
+   */
+  async ensure(retried = false): Promise<HostConnection | null> {
+    let found = await this.probe();
+    if (found === null) {
+      if (!existsSync(this.binary)) throw new Error(`the bundled host is missing at ${this.binary}`);
+      await this.start();
+      for (let i = 0; i < 100 && found === null; i++) {
+        await new Promise((r) => setTimeout(r, 200));
+        found = await this.probe();
+      }
+      if (found === null) return null;
     }
-    return null;
+    if (!retried && (await this.outdated())) {
+      console.error("local host is not this build; restarting it (sessions keep running)");
+      await this.stop();
+      await this.waitDown();
+      return this.ensure(true);
+    }
+    return found;
+  }
+
+  /** Whether the running host is not the bundled build. A missing bundled version leaves the healthy host alone. */
+  private async outdated(): Promise<boolean> {
+    const bundled = await run(this.binary, ["version"], process.env, 3000);
+    if (bundled === null) return false;
+    return hostOutdated(readHostVersion(storeDir()), bundled.trim());
+  }
+
+  /** Stops this store's host: the lock file's pid and any process pgrep finds for this binary's
+   * daemon, each only when ps shows a PenguPool daemon of this store (a reused pid, a wrapper or an
+   * editor whose command line merely names one are left alone). */
+  private async stop(): Promise<void> {
+    const pids = new Set<number>();
+    const found = await run("/usr/bin/pgrep", ["-f", `${this.binary} daemon`], process.env, 3000);
+    for (const pid of (found ?? "").split("\n").filter(Boolean)) pids.add(Number(pid));
+    try {
+      const locked = readFileSync(join(storeDir(), "daemon.lock"), "utf8").trim();
+      if (/^\d+$/.test(locked)) pids.add(Number(locked));
+    } catch {
+      /* no lock file: nothing was ever started here */
+    }
+    for (const pid of pids) {
+      const cmd = await run("/bin/ps", ["-o", "command=", "-p", String(pid)], process.env, 3000);
+      if (cmd === null || !isStoreDaemon(cmd.trim(), storeDir())) continue;
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+
+  private async waitDown(): Promise<void> {
+    for (let i = 0; i < 50 && (await this.probe()) !== null; i++) await new Promise((r) => setTimeout(r, 100));
   }
 
   /** Runs a pool request on this machine's host through the CLI; it rejects with the host's message. */
@@ -128,15 +178,8 @@ export class Host {
 
   /** Stops the host (sessions keep running and are adopted again) and starts it fresh. */
   async restart(): Promise<HostConnection | null> {
-    const pids = await run("/usr/bin/pgrep", ["-f", `${this.binary} daemon --store ${storeDir()}`], process.env, 3000);
-    for (const pid of (pids ?? "").split("\n").filter(Boolean)) {
-      try {
-        process.kill(Number(pid), "SIGTERM");
-      } catch {
-        /* already gone */
-      }
-    }
-    for (let i = 0; i < 50 && (await this.probe()) !== null; i++) await new Promise((r) => setTimeout(r, 100));
+    await this.stop();
+    await this.waitDown();
     return this.ensure();
   }
 }
