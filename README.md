@@ -88,3 +88,5 @@ v0.6.0: from PenguPool2 0.23.0, terminal scrollback kept across session
 switches, flexible teams (no size cap, drop on a group, split a subtree) and
 backup renamed to sync; agent sessions are resumed automatically after a
 power off or crash.
+v0.6.1: messages the owner queues while an agent is busy, joined by the
+agent into one prompt, still count as the owner's.
