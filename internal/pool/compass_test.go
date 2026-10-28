@@ -74,6 +74,22 @@ func TestContextOrder(t *testing.T) {
 	}
 }
 
+// Agents read how sure each line is: a guiding line as the owner's rule, a shown one as only likely.
+func TestCompassContextSaysHowSure(t *testing.T) {
+	p, _ := twoTeams(t)
+	_, _ = p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Use SQL for logs"})
+	weak, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Prefer short names", CreatedAt: time.Now().AddDate(0, -5, 0).UTC().Format(time.RFC3339)})
+	at := time.Now().AddDate(0, 0, -100).UTC().Format(time.RFC3339)
+	sig, _ := p.db.AddSignal(agentdb.Signal{Owner: p.owner(), Kind: "chose", At: at})
+	_ = p.db.AddEffects([]agentdb.Effect{{SignalUID: sig, LineUID: weak, PCon: 1, Weight: 1, At: at, Kind: "chose"}})
+	got := p.renderCompass()
+	for _, want := range []string{"- Use SQL for logs (the owner's rule)", "- Prefer short names (likely; check if it matters)"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("compass lacks %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestFadingState(t *testing.T) {
 	p, _ := twoTeams(t)
 	uid, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "old way", CreatedAt: time.Now().AddDate(0, -5, 0).UTC().Format(time.RFC3339)})
