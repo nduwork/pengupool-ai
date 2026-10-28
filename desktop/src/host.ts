@@ -104,12 +104,25 @@ export class Host {
    * not this build is restarted once, so the renderer never talks to requests the host does not
    * know; sessions keep running across the restart. A host of this store that holds its lock but
    * does not answer (one run from a disk image since ejected cannot load its own code) is stopped
-   * first, or the new one could never take the lock.
+   * first, or the new one could never take the lock: only after a second miss 3 s later, so a host
+   * that is slow or still starting is left to answer. One ensure runs at a time; a second caller
+   * gets the first one's answer instead of stopping the host it is starting.
    */
-  async ensure(retried = false): Promise<HostConnection | null> {
+  ensure(): Promise<HostConnection | null> {
+    this.pending ??= this.ensureOnce().finally(() => (this.pending = undefined));
+    return this.pending;
+  }
+
+  private pending?: Promise<HostConnection | null>;
+
+  private async ensureOnce(retried = false): Promise<HostConnection | null> {
     let found = await this.probe();
     if (found === null) {
       if (!existsSync(this.binary)) throw new Error(`the bundled host is missing at ${this.binary}`);
+      await new Promise((r) => setTimeout(r, 3000));
+      found = await this.probe();
+    }
+    if (found === null) {
       if ((await this.stop()) > 0) console.error("local host did not answer; stopped it (sessions keep running)");
       await this.start();
       for (let i = 0; i < 100 && found === null; i++) {
@@ -122,7 +135,7 @@ export class Host {
       console.error("local host is not this build; restarting it (sessions keep running)");
       await this.stop();
       await this.waitDown();
-      return this.ensure(true);
+      return this.ensureOnce(true);
     }
     return found;
   }
