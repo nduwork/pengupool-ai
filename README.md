@@ -135,6 +135,10 @@ when the helper lives in a subfolder of its repository, so `experience search`
 reaches its journal. Update checks look at this repository's releases (they
 answered 404). A remote host whose PenguPool sits in the app, in a folder with a
 space, is reached again.
+v0.9.2: the app again restarts a host that is not its own build (and one that holds
+the store but does not answer), so after an update the host runs the new version;
+0.9.0 had lost this. `make install` replaces the app in /Applications when it is
+there.
 
 ## Credits
 
