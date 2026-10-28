@@ -116,14 +116,25 @@ func agentCLIChecks() []doctorCheck {
 	return cs
 }
 
-// mcpCheck finds PenguPool MCP servers left registered with Claude or Muse. PenguPool uses none: a
-// dead one only fails at every session start.
+// mcpCheck finds PenguPool MCP servers registered with Claude or Muse. PenguPool AI uses none, but
+// PenguPool 2 may use its own, so only a dead one (its command is gone) warns: it fails at every
+// session start.
 func mcpCheck(home string) doctorCheck {
-	var found []string
+	var dead, live []string
 	scan := func(file string, servers map[string]json.RawMessage, where string) {
 		for name, def := range servers {
-			if strings.Contains(strings.ToLower(name+string(def)), "pengu") {
-				found = append(found, fmt.Sprintf("%q in %s%s", name, file, where))
+			if !strings.Contains(strings.ToLower(name+string(def)), "pengu") {
+				continue
+			}
+			var d struct {
+				Command string `json:"command"`
+			}
+			_ = json.Unmarshal(def, &d)
+			entry := fmt.Sprintf("%q in %s%s", name, file, where)
+			if _, err := exec.LookPath(d.Command); d.Command != "" && err != nil {
+				dead = append(dead, entry+" calls "+d.Command+", which is gone")
+			} else {
+				live = append(live, entry)
 			}
 		}
 	}
@@ -147,11 +158,15 @@ func mcpCheck(home string) doctorCheck {
 	if raw, err := os.ReadFile(f); err == nil && json.Unmarshal(raw, &muse) == nil {
 		scan(f, muse.MCPServers, "")
 	}
-	if len(found) == 0 {
-		return doctorCheck{"MCP", "no PenguPool MCP server registered", false}
+	slices.Sort(dead)
+	slices.Sort(live)
+	switch {
+	case len(dead) > 0:
+		return doctorCheck{"MCP", "dead PenguPool MCP servers, remove them: " + strings.Join(dead, "; "), true}
+	case len(live) > 0:
+		return doctorCheck{"MCP", "PenguPool AI uses no MCP server; these are registered (PenguPool 2 may use them): " + strings.Join(live, "; "), false}
 	}
-	slices.Sort(found)
-	return doctorCheck{"MCP", "PenguPool uses no MCP server, remove these leftovers: " + strings.Join(found, "; "), true}
+	return doctorCheck{"MCP", "no PenguPool MCP server registered", false}
 }
 
 // museCheck: the PenguPool plugin Muse holds must be on and call a pengupool that exists, with this
@@ -203,10 +218,10 @@ func museVerdict(listJSON []byte, dir string, homeStore bool) doctorCheck {
 			if len(h.Command) == 0 {
 				continue
 			}
-			if _, err := os.Stat(h.Command[0]); err != nil {
+			if _, err := exec.LookPath(h.Command[0]); err != nil {
 				return doctorCheck{"Muse plugin", "its hooks call " + h.Command[0] + ", which is gone" + fix, true}
 			}
-			if i := slices.Index(h.Command, "--store"); homeStore && (i < 0 || i+1 >= len(h.Command) || filepath.Clean(h.Command[i+1]) != filepath.Clean(dir)) {
+			if i := slices.Index(h.Command, "--store"); homeStore && slices.Contains(h.Command, "hook") && (i < 0 || i+1 >= len(h.Command) || filepath.Clean(h.Command[i+1]) != filepath.Clean(dir)) {
 				return doctorCheck{"Muse plugin", "its hooks report to another store (" + strings.Join(h.Command, " ") + ")" + fix, true}
 			}
 		}
@@ -240,35 +255,51 @@ func hostVerdict(ps, dir, defaultDir string, lockPid int, answered bool) []docto
 		cmd = strings.TrimSpace(cmd)
 		bin, rest, _ := strings.Cut(cmd, " daemon")
 		pid, err := strconv.Atoi(pidText)
-		if !ok || err != nil || filepath.Base(bin) != "pengupool" || (rest != "" && rest[0] != ' ') {
+		// The binary itself, not a shell or editor quoting it (as desktop/src/hostversion.ts isStoreDaemon).
+		if !ok || err != nil || filepath.Base(bin) != "pengupool" || strings.ContainsAny(bin, `'"`) || (rest != "" && rest[0] != ' ') {
 			continue
 		}
-		s := defaultDir
-		if _, v, has := strings.Cut(rest, " --store "); has {
-			s = strings.TrimSpace(v)
+		s := defaultDir // a host started with PENGUPOOL_HOME and no --store is taken to use doctor's own default
+		if _, v, has := strings.Cut(strings.Replace(rest, " --store=", " --store ", 1), " --store "); has {
+			s, _, _ = strings.Cut(v, " --") // the path may hold spaces; a later flag ends it
+			s = strings.TrimSpace(s)
 		}
 		if filepath.Clean(s) == filepath.Clean(dir) {
 			hosts = append(hosts, proc{pid, cmd})
 		}
 	}
-	var cs []doctorCheck
-	switch {
-	case len(hosts) == 0:
+	if len(hosts) == 0 {
 		return []doctorCheck{{"Host", "not running on " + dir + " (the app starts it)", false}}
-	case len(hosts) > 1:
+	}
+	// The pid to name is the lock's only when it is one of these hosts: the lock file can be missing
+	// (pid 0) or stale, and a reused pid is someone else's process.
+	holder := 0
+	if slices.ContainsFunc(hosts, func(h proc) bool { return h.pid == lockPid }) {
+		holder = lockPid
+	} else if len(hosts) == 1 {
+		holder = hosts[0].pid
+	}
+	var cs []doctorCheck
+	if len(hosts) > 1 {
 		var pids []string
 		for _, h := range hosts {
 			pids = append(pids, strconv.Itoa(h.pid))
 		}
-		cs = append(cs, doctorCheck{"Host", fmt.Sprintf("%d hosts on %s (pids %s); only pid %d holds it. Quit PenguPool AI, stop them, and open it again", len(hosts), dir, strings.Join(pids, ", "), lockPid), true})
+		held := "none of them holds the lock"
+		if holder != 0 {
+			held = fmt.Sprintf("only pid %d holds it", holder)
+		}
+		cs = append(cs, doctorCheck{"Host", fmt.Sprintf("%d hosts on %s (pids %s); %s. Quit PenguPool AI, stop them, and open it again", len(hosts), dir, strings.Join(pids, ", "), held), true})
 	}
 	for _, h := range hosts {
-		if strings.HasPrefix(h.cmd, "/Volumes/") {
+		if strings.HasPrefix(h.cmd, "/Volumes/") && strings.Contains(h.cmd, ".app/Contents/") {
 			cs = append(cs, doctorCheck{"Host", fmt.Sprintf("pid %d runs from a disk image (%s); install the app into Applications and open it from there", h.pid, h.cmd), true})
 		}
 	}
-	if !answered {
-		cs = append(cs, doctorCheck{"Host", fmt.Sprintf("pid %d holds %s but does not answer; `kill -9 %d`, then open PenguPool AI", lockPid, dir, lockPid), true})
+	if !answered && holder != 0 {
+		cs = append(cs, doctorCheck{"Host", fmt.Sprintf("pid %d holds %s but does not answer; `kill -9 %d`, then open PenguPool AI", holder, dir, holder), true})
+	} else if !answered {
+		cs = append(cs, doctorCheck{"Host", "the host on " + dir + " does not answer; quit PenguPool AI, stop the hosts above, and open it again", true})
 	}
 	if len(cs) == 0 {
 		cs = append(cs, doctorCheck{"Host", fmt.Sprintf("pid %d on %s answers", hosts[0].pid, dir), false})

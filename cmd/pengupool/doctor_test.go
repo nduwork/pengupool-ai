@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -31,6 +33,7 @@ func TestMuseVerdict(t *testing.T) {
 		{"gone", "which is gone", list(true, "/tmp/pengu-h2-gone", "hook", "--store", "/s"), true},
 		{"other store", "another store", list(true, exe, "hook", "--store", "/tmp/h2store"), true},
 		{"missing", "not installed", []byte(`{"plugins":[]}`), true},
+		{"bare command on PATH", "installed and active", list(true, "sh", "-c", "true"), false},
 	} {
 		got := museVerdict(c.json, "/s", true)
 		if got.Warn != c.warn || !strings.Contains(got.Detail, c.want) {
@@ -70,16 +73,41 @@ func TestHostVerdict(t *testing.T) {
 	if cs := hostVerdict("", dir, def, 0, false); len(cs) != 1 || cs[0].Warn {
 		t.Errorf("no host: %+v", cs)
 	}
+	// A missing lock (pid 0) or one naming another process never yields `kill -9 0` or that pid.
+	two := "  600 /Applications/P.app/Contents/Resources/bin/pengupool daemon\n  601 /x/pengupool daemon --store=" + dir
+	for _, lock := range []int{0, 4242} {
+		got := fmt.Sprint(hostVerdict(two, dir, def, lock, false))
+		if strings.Contains(got, "kill -9") || strings.Contains(got, "pid "+strconv.Itoa(lock)) || !strings.Contains(got, "none of them holds the lock") {
+			t.Errorf("lock %d: %s", lock, got)
+		}
+	}
+	if got := fmt.Sprint(hostVerdict("  600 /x/pengupool daemon", dir, def, 0, false)); !strings.Contains(got, "kill -9 600") {
+		t.Errorf("one silent host: %s", got)
+	}
+	// A dev build on an external disk is not a disk image; a later flag ends the store path.
+	dev := "  700 /Volumes/DATA/repos/pengupool-ai/bin/pengupool daemon --store " + dir + " --verbose"
+	if cs := hostVerdict(dev, dir, def, 700, true); len(cs) != 1 || cs[0].Warn {
+		t.Errorf("dev host: %+v", cs)
+	}
+	// A shell or editor quoting the binary is not a host.
+	if cs := hostVerdict(`  800 sh -c '/x/pengupool daemon --store `+dir+`'`, dir, def, 0, true); cs[0].Warn || !strings.Contains(cs[0].Detail, "not running") {
+		t.Errorf("wrapper counted: %+v", cs)
+	}
 }
 
 func TestMCPCheck(t *testing.T) {
 	home := t.TempDir()
 	os.MkdirAll(filepath.Join(home, ".config", "muse"), 0o700)
-	os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{"mcpServers":{"ok":{"command":"x"}},"projects":{"/r":{"mcpServers":{"pengu-compass":{"command":"pengupool"}}}}}`), 0o600)
-	os.WriteFile(filepath.Join(home, ".config", "muse", "settings.json"), []byte(`{"mcpServers":{"c":{"args":["/a/pengupool","mcp"]}}}`), 0o600)
+	os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{"mcpServers":{"ok":{"command":"x"}},"projects":{"/r":{"mcpServers":{"pengu-compass":{"command":"/gone/pengupool"}}}}}`), 0o600)
+	os.WriteFile(filepath.Join(home, ".config", "muse", "settings.json"), []byte(`{"mcpServers":{"c":{"command":"sh","args":["/a/pengupool","mcp"]}}}`), 0o600)
 	c := mcpCheck(home)
-	if !c.Warn || !strings.Contains(c.Detail, `"pengu-compass"`) || !strings.Contains(c.Detail, `"c" in`) || strings.Contains(c.Detail, `"ok"`) {
-		t.Errorf("%+v", c)
+	if !c.Warn || !strings.Contains(c.Detail, `"pengu-compass"`) || strings.Contains(c.Detail, `"c" in`) || strings.Contains(c.Detail, `"ok"`) {
+		t.Errorf("dead: %+v", c)
+	}
+	// A live one (PenguPool 2 may use its own) is listed, not a warning.
+	os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{}`), 0o600)
+	if c := mcpCheck(home); c.Warn || !strings.Contains(c.Detail, `"c" in`) {
+		t.Errorf("live: %+v", c)
 	}
 	if c := mcpCheck(t.TempDir()); c.Warn {
 		t.Errorf("empty home warns: %+v", c)
