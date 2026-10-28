@@ -325,6 +325,7 @@ func (p *Pool) handlers() map[string]handler {
 		"experience.get":        bind(p.experienceGet),
 		"experience.delete":     bind(p.experienceDelete),
 		"session.launch":        bind(p.launch),
+		"shell.open":            bind(p.shellOpen),
 		"session.resume":        bind(p.resume),
 		"session.open_terminal": bind(p.openTerminal),
 		"session.forget":        bind(p.forget),

@@ -17,8 +17,10 @@ import (
 	"time"
 )
 
-// DefaultRingBytes is the screen-replay ring size from the plan (4 MiB).
-const DefaultRingBytes = 4 << 20
+// DefaultRingBytes is the screen-replay ring size (8 MiB): what a client that detached (another
+// session selected, a dropped connection) can catch up on from its own offset, scrollback included.
+// The buffer is only touched as output arrives, so a quiet session holds little of it.
+const DefaultRingBytes = 8 << 20
 
 // DefaultCols and DefaultRows are the PTY size a worker starts with when the launcher does not
 // specify one.

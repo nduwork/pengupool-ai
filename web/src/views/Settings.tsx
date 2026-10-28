@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useApp, usePersisted } from "../app/ctx";
 import { desktop, localDesktop } from "../app/desktop";
 import { Button } from "../components/ui/button";
+import { SCROLLBACK_DEFAULT, clampScrollback } from "../components/termCache";
 import { Badge, Card, Input, Label, Select, Switch } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
 import type { NodeView, Update } from "../protocol/domain";
@@ -54,6 +55,7 @@ export function Settings(): ReactElement {
         <div className="min-w-0 flex-1 overflow-auto">
           <div className="mx-auto max-w-3xl p-6">
             {section === "general" ? <Harnesses /> : null}
+            {section === "general" ? <TerminalHistory /> : null}
             {section === "models" ? <Providers /> : null}
             {section === "connections" ? <Connections /> : null}
             {section === "nodes" ? <Nodes /> : null}
@@ -448,6 +450,30 @@ function Row({ title, hint, children }: { title: string; hint?: ReactNode; child
         {hint !== undefined ? <p className="text-caption text-muted-foreground">{hint}</p> : null}
       </div>
       <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+const SCROLLBACK_CHOICES = [5000, 10000, 20000, 50000, 100000];
+
+/** How far back a terminal scrolls. Per viewer: it lives in this browser or app window, not in the host. */
+function TerminalHistory(): ReactElement {
+  const [lines, setLines] = usePersisted<number>("terminal.scrollback", SCROLLBACK_DEFAULT);
+  const value = SCROLLBACK_CHOICES.includes(lines) ? lines : SCROLLBACK_DEFAULT;
+  return (
+    <div className="mb-4 rounded-lg border border-border px-4">
+      <Row
+        title="Terminal history"
+        hint="Lines each terminal keeps to scroll back through. A line costs about 12 bytes per column (about 30 MB for 20,000 lines of 120 columns); the last few sessions you left keep theirs. Applies when a terminal next opens."
+      >
+        <Select value={value} onChange={(e) => setLines(clampScrollback(Number(e.target.value)))} aria-label="Terminal history">
+          {SCROLLBACK_CHOICES.map((n) => (
+            <option key={n} value={n}>
+              {n.toLocaleString("en-US")} lines
+            </option>
+          ))}
+        </Select>
+      </Row>
     </div>
   );
 }

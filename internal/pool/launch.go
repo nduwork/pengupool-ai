@@ -106,6 +106,9 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 		Model: r.Model, Effort: r.Effort, Resume: r.Resume, Command: r.Command, Env: p.env, Ollama: ollama,
 		SkillRepo: p.skillRepo(r.SkillID), ReadDirs: r.ReadDirs, Bin: p.binFor(r.Harness),
 	})
+	if r.Harness == harness.Shell {
+		env = append([]string(nil), p.env...) // a plain shell is no session: none of the session markers
+	}
 	if err != nil {
 		if strings.HasPrefix(err.Error(), "harness_unavailable") {
 			return store.Session{}, protocol.Errorf(protocol.CodeHarnessUnavailable, "%v", err)

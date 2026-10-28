@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { AttachSession, type AttachEvents, type AttachState } from "../client/attach";
 import type { Connection } from "../client/connection";
 import { TERMINAL_QUERY_CSI, TERMINAL_QUERY_OSC } from "../protocol/queries";
+import { TermCache, scrollbackSetting } from "./termCache";
 import { PATH_MIME, UNSAFE_NOTICE, onTypePath, safePath, takePaths, typePath } from "../views/explorerPaths";
 
 /** What Shift+Enter types: ESC CR, as Option+Enter does; Claude Code reads it as a new line, where a bare CR sends. */
@@ -19,6 +20,20 @@ export const SHIFT_ENTER = "\x1b\r";
 export function isShiftEnter(e: Pick<KeyboardEvent, "key" | "shiftKey" | "ctrlKey" | "altKey" | "metaKey">): boolean {
   return e.key === "Enter" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
 }
+
+/** A terminal left behind by a session the user switched away from, and where its screen had got to. */
+interface Kept {
+  term: Terminal;
+  fit: FitAddon;
+  retained: { generation: number; offset: bigint } | undefined;
+}
+
+/**
+ * The last few sessions' terminals stay in memory when another session is selected, so their scrollback
+ * survives the switch: coming back resumes from the worker's replay ring, from where the screen stopped.
+ * Past this many the least recently used is dropped (and its history with it, until the next snapshot).
+ */
+const kept = new TermCache<Kept>(4, (k) => k.term.dispose());
 
 export interface TerminalPaneProps {
   sessionId: string;
@@ -54,13 +69,14 @@ export function TerminalPane({
     const host = hostRef.current;
     if (host === null) return;
 
-    const term = new Terminal({
+    const back = kept.take(sessionId);
+    const term = back?.term ?? new Terminal({
       fontFamily: '"Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace',
       fontSize: 13,
       lineHeight: 1.25,
       cursorBlink: true,
       allowProposedApi: true,
-      scrollback: 10000,
+      scrollback: scrollbackSetting(),
       macOptionIsMeta: true,
       theme: {
         background: "#0d1117",
@@ -74,21 +90,27 @@ export function TerminalPane({
         brightBlue: "#93c5fd", brightMagenta: "#d8b4fe", brightCyan: "#5eead4", brightWhite: "#f8fafc",
       },
     });
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    const unicode = new Unicode11Addon();
-    term.loadAddon(unicode);
-    term.unicode.activeVersion = "11";
-    // Links open in the user's browser, never inside the app window.
-    term.loadAddon(new WebLinksAddon((_e, uri) => (desktop !== undefined ? desktop.openExternal(uri) : window.open(uri, "_blank"))));
-    term.open(host);
-    // GPU rendering like Orca; fall back to the DOM renderer if the context is lost or refused.
-    try {
-      const gl = new WebglAddon();
-      gl.onContextLoss(() => gl.dispose());
-      term.loadAddon(gl);
-    } catch {
-      /* DOM renderer */
+    const fit = back?.fit ?? new FitAddon();
+    if (back === undefined) {
+      term.loadAddon(fit);
+      const unicode = new Unicode11Addon();
+      term.loadAddon(unicode);
+      term.unicode.activeVersion = "11";
+      // Links open in the user's browser, never inside the app window.
+      term.loadAddon(new WebLinksAddon((_e, uri) => (desktop !== undefined ? desktop.openExternal(uri) : window.open(uri, "_blank"))));
+      term.open(host);
+      // GPU rendering like Orca; fall back to the DOM renderer if the context is lost or refused.
+      try {
+        const gl = new WebglAddon();
+        gl.onContextLoss(() => gl.dispose());
+        term.loadAddon(gl);
+      } catch {
+        /* DOM renderer */
+      }
+    } else {
+      // A terminal kept from an earlier visit moves into this pane, scrollback and all.
+      term.options.scrollback = scrollbackSetting();
+      if (term.element !== undefined) host.appendChild(term.element);
     }
     fit.fit();
     term.focus();
@@ -125,6 +147,7 @@ export function TerminalPane({
         connection.sendFrame({ type, channel, seq, length: payload.length }, payload),
       events,
     });
+    if (back?.retained !== undefined) session.restore(back.retained);
     sessionRef.current = session;
     onAttach(session);
 
@@ -224,9 +247,10 @@ export function TerminalPane({
       session.detach();
       sessionRef.current = null;
       onAttach(null);
-      term.dispose();
+      kept.put(sessionId, { term, fit, retained: session.retainedState() });
     };
-    // The pane is remounted per session (keyed by session id); connection identity is stable.
+    // The pane is remounted per session (keyed by session id); connection identity is stable. Its
+    // terminal outlives the mount (see `kept`).
   }, [sessionId, channel, clientKind, connection, onAttach, onState, onNotice]);
 
   // Reconnect handling: re-attach with retained state when the daemon comes back.

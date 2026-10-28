@@ -107,6 +107,18 @@ export class AttachSession {
     return this.state;
   }
 
+  /** What a later session needs to resume this one's screen: the generation and the offset it has drawn up to. */
+  retainedState(): { generation: number; offset: bigint } | undefined {
+    return this.hasRetained ? { generation: this.generation, offset: this.offset } : undefined;
+  }
+
+  /** Resumes a screen kept from an earlier session: the next attach asks the worker to replay from there. */
+  restore(r: { generation: number; offset: bigint }): void {
+    this.generation = r.generation;
+    this.offset = r.offset;
+    this.hasRetained = true;
+  }
+
   get leaseOwner(): boolean {
     return this.ownsLease;
   }

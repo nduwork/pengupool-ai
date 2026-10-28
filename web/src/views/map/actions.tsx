@@ -75,6 +75,16 @@ export function SessionMenu({ s, folded, canFold, onFold }: { s: SessionView; fo
       >
         Copy path
       </Item>
+      <Item
+        icon={<SquareTerminal />}
+        onSelect={() =>
+          void app.call<SessionView>("shell.open", { cwd: s.cwd }).then((t) => {
+            if (t !== undefined) app.select(t.id);
+          })
+        }
+      >
+        New terminal in this folder
+      </Item>
       <Item icon={<ExternalLink />} onSelect={() => void app.call("session.open_terminal", { session_id: s.id })} disabled={!running || onSSHHost}>
         Open in Terminal app
       </Item>

@@ -1,8 +1,8 @@
-import { BookOpen, ChevronDown, ChevronRight, Pencil, Plus, Settings as SettingsIcon, SquareTerminal, Users } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, Pencil, Plus, Settings as SettingsIcon, SquareTerminal, Users, X } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { Group, Panel, useDefaultLayout, usePanelRef } from "react-resizable-panels";
 
-import { StatusDot, harnessLabel, useApp, usePersisted, type Nav } from "../app/ctx";
+import { StatusDot, harnessLabel, isShell, useApp, usePersisted, type Nav } from "../app/ctx";
 import { desktop } from "../app/desktop";
 import { Kbd, SectionTitle, Tip } from "../components/ui/controls";
 import { cn } from "../lib/utils";
@@ -26,7 +26,7 @@ type SessionGroup = { key: string; name: string; title: string; team?: Team; row
 
 /** Session groups: each active team with its members in tree order (lead first), then everything ungrouped. */
 function groupSessions(app: ReturnType<typeof useApp>): SessionGroup[] {
-  const byId = new Map(app.sessions.map((s) => [s.id, s]));
+  const byId = new Map(app.sessions.filter((s) => !isShell(s)).map((s) => [s.id, s]));
   const placed = new Set<string>();
   const out: SessionGroup[] = [];
   for (const t of app.domain.teams.filter((x) => x.state === "active")) {
@@ -51,7 +51,7 @@ function groupSessions(app: ReturnType<typeof useApp>): SessionGroup[] {
     for (const r of roots) walk(r, 0);
     out.push({ key: t.id, name: t.name, title: t.goal ?? t.name, team: t, rows });
   }
-  const rest = app.sessions.filter((s) => !placed.has(s.id));
+  const rest = app.sessions.filter((s) => !isShell(s) && !placed.has(s.id));
   if (rest.length > 0) out.push({ key: "ungrouped", name: "Ungrouped", title: "Sessions not in a group", rows: rest.map((s) => ({ s, depth: 0 })) });
   return out;
 }
@@ -67,6 +67,11 @@ export function Sidebar(): ReactElement {
   const running = app.sessions.filter((s) => s.state === "running").length;
   const newSession = (): void => app.showDialog(<NewSessionDialog onClose={() => app.showDialog(null)} />);
   const groups = groupSessions(app);
+  const terminals = app.sessions.filter(isShell);
+  const openTerminal = async (): Promise<void> => {
+    const s = await app.call<SessionView>("shell.open", {});
+    if (s !== undefined) app.select(s.id);
+  };
 
   return (
     <aside className="flex h-full min-h-0 flex-col bg-sidebar" aria-label="Sidebar">
@@ -158,6 +163,37 @@ export function Sidebar(): ReactElement {
                         <span className="ml-auto shrink-0 text-micro text-faint">{s.role === "helper" ? "helper" : s.context_pct !== undefined ? `${s.context_pct}%` : harnessLabel(s.harness)}</span>
                       </button>
                     ))}
+              </div>
+            ))}
+            <SectionTitle
+              action={
+                <Tip label="New terminal: your login shell, in your home folder">
+                  <button type="button" aria-label="New terminal" className="rounded p-0.5 text-faint hover:bg-hover hover:text-foreground" onClick={() => void openTerminal()}>
+                    <Plus className="size-3.5" />
+                  </button>
+                </Tip>
+              }
+            >
+              Terminals
+            </SectionTitle>
+            {terminals.length === 0 ? <p className="px-2 py-1 text-caption text-muted-foreground">A plain shell, apart from the agents.</p> : null}
+            {terminals.map((s) => (
+              <div key={s.id} className={cn("group flex h-7 items-center rounded-md pr-1 text-label text-muted-foreground hover:bg-hover hover:text-foreground", s.id === app.selected && "bg-selected text-foreground")}>
+                <button type="button" onClick={() => app.select(s.id)} aria-current={s.id === app.selected} className="flex h-full min-w-0 flex-1 items-center gap-2 pl-2 text-left">
+                  <SquareTerminal className="size-3.5 shrink-0 text-faint" />
+                  <span className="truncate">{s.name}</span>
+                  <span className="ml-auto shrink-0 text-micro text-faint">{s.state === "running" ? (s.cwd.split("/").filter(Boolean).pop() ?? "/") : s.state}</span>
+                </button>
+                <Tip label={s.state === "running" ? "Close terminal (ends its shell)" : "Remove"}>
+                  <button
+                    type="button"
+                    aria-label={`Close ${s.name}`}
+                    onClick={() => void app.call("session.close", { session_id: s.id })}
+                    className="hidden rounded p-0.5 text-faint hover:text-foreground focus-visible:inline-flex group-hover:inline-flex"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </Tip>
               </div>
             ))}
           </div>

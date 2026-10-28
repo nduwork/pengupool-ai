@@ -3,7 +3,7 @@ import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
-import { URGENCY, ctxClass, harnessLabel, sessionStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
+import { URGENCY, ctxClass, harnessLabel, isShell, sessionStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
 import { Button } from "../../components/ui/button";
 import { Badge, Empty, Select, Tip } from "../../components/ui/controls";
 import { cn } from "../../lib/utils";
@@ -105,7 +105,7 @@ export function TeamMap(): ReactElement {
   }, [domain.teams, sessions.length, kind, roomy, folded, sizeKey]);
 
   const inTeam = new Set(domain.teams.filter((t) => t.state === "active").flatMap((t) => t.members.filter((m) => m.state === "active").map((m) => m.session_id)));
-  const ungrouped = sessions.filter((s) => !inTeam.has(s.id));
+  const ungrouped = sessions.filter((s) => !inTeam.has(s.id) && !isShell(s));
   const parentOf = (teamId: string, id: string): string | undefined => domain.teams.find((t) => t.id === teamId)?.members.find((m) => m.session_id === id)?.parent;
 
   // Lit edges: the latest message on a tree line within 90 s, green down, milky blue up.
