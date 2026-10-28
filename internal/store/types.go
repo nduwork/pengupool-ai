@@ -126,7 +126,7 @@ type Config struct {
 	MuseDevices []MuseDevice `json:"muse_devices,omitempty"`
 	// Sync shares the Compass and the helpers' experience through a private GitHub repository.
 	Sync Sync `json:"sync"`
-	// Backup is Sync's name before 0.23: read when there is no "sync", never written back.
+	// Backup is Sync's old name: read when there is no "sync", and written beside it for one release so a downgrade keeps the settings.
 	Backup *Sync `json:"backup,omitempty"`
 }
 

@@ -9,7 +9,7 @@ import (
 )
 
 // A config.json written before the rename holds the settings under "backup": they are read as the
-// sync's, and the next save writes "sync" only. An existing "sync" wins over a stale "backup".
+// sync's, and the next save writes both, for one release. An existing "sync" wins over a stale "backup".
 func TestConfigReadsTheOldBackupKey(t *testing.T) {
 	dir := t.TempDir()
 	old := `{"version":` + strconv.Itoa(Version) + `,"backup":{"github":true,"interval_min":10,"repo":"me/pengupool-memory"}}`
@@ -28,8 +28,8 @@ func TestConfigReadsTheOldBackupKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(filepath.Join(dir, ConfigFile))
-	if strings.Contains(string(b), `"backup"`) || !strings.Contains(string(b), `"repo": "me/pengupool-memory"`) {
-		t.Fatalf("the saved config:\n%s", b)
+	if strings.Count(string(b), `"repo": "me/pengupool-memory"`) != 2 || !strings.Contains(string(b), `"backup"`) || !strings.Contains(string(b), `"sync"`) {
+		t.Fatalf("the saved config holds the settings under both keys:\n%s", b)
 	}
 
 	both := `{"version":` + strconv.Itoa(Version) + `,"sync":{"github":true,"repo":"me/new"},"backup":{"github":false,"repo":"me/old"}}`

@@ -95,10 +95,10 @@ func (p *Pool) syncLoop(ctx context.Context) {
 
 // syncOnce takes today's snapshot if it is missing and, with GitHub on, pushes the record.
 func (p *Pool) syncOnce(ctx context.Context) error {
-	if !p.syncMu.TryLock() {
+	if !p.roundMu.TryLock() {
 		return conflict("a sync is already running")
 	}
-	defer p.syncMu.Unlock()
+	defer p.roundMu.Unlock()
 	p.setSync(func(s *syncStatus) { s.Running = true })
 	err := p.snapshotDaily()
 	if err == nil && p.st.Config().Sync.GitHub {
@@ -369,10 +369,10 @@ func (p *Pool) noteHistory(ctx context.Context, repoDir string) {
 // --force-with-lease so a push that landed meanwhile is not lost. Other machines need nothing:
 // every round fetches and resets, and merges from its own database.
 func (p *Pool) syncCompact(ctx context.Context, _ struct{}) (any, error) {
-	if !p.syncMu.TryLock() {
+	if !p.roundMu.TryLock() {
 		return nil, conflict("a sync is running; try again in a moment")
 	}
-	defer p.syncMu.Unlock()
+	defer p.roundMu.Unlock()
 	repoDir := filepath.Join(p.st.Dir(), "sync", "repo")
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil {
 		return nil, invalid("nothing to compact: nothing has been synced yet")
@@ -555,11 +555,11 @@ func (p *Pool) syncSet(ctx context.Context, in syncSetIn) (any, error) {
 	}
 	// The next push clones the new repository; the old clone is moved aside then, and the old
 	// repository is left as it is on GitHub.
-	if !p.syncMu.TryLock() {
+	if !p.roundMu.TryLock() {
 		return nil, conflict("a sync is running; try again in a moment")
 	}
 	err := p.st.SaveConfig(cfg)
-	p.syncMu.Unlock()
+	p.roundMu.Unlock()
 	if err != nil {
 		return nil, err
 	}

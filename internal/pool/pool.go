@@ -115,7 +115,7 @@ type Pool struct {
 
 	reposCache atomic.Pointer[ghRepos] // the GitHub account's repositories
 	// syncFor is the sync repository checked this run (private, writable) and the account's
-	// login, which names this environment's folder in a shared repository (guarded by syncMu).
+	// login, which names this environment's folder in a shared repository (guarded by roundMu).
 	syncFor, syncLogin string
 
 	ownerName atomic.Value // string: the owner the Compass belongs to (compass.go)

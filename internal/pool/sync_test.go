@@ -303,3 +303,23 @@ func TestSyncRequestsKeepTheirOldNames(t *testing.T) {
 		}
 	}
 }
+
+// The record's round and the Skill library's sync are separate locks: neither refuses the other.
+func TestSyncRoundAndLibrarySyncDoNotBlockEachOther(t *testing.T) {
+	p, _ := twoTeams(t)
+	p.syncMu.Lock() // a library sync is running
+	if err := p.syncOnce(context.Background()); err != nil {
+		t.Errorf("a record round during a library sync: %v", err)
+	}
+	p.syncMu.Unlock()
+	p.roundMu.Lock() // a record round is running
+	if !p.syncMu.TryLock() {
+		t.Error("a library sync is refused during a record round")
+	} else {
+		p.syncMu.Unlock()
+	}
+	if err := p.syncOnce(context.Background()); err == nil {
+		t.Error("two record rounds ran at once")
+	}
+	p.roundMu.Unlock()
+}

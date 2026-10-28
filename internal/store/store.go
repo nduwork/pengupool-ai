@@ -257,7 +257,10 @@ func (s *Store) SaveConfig(cfg Config) error {
 	cfg.MuseDevices = s.cfg.MuseDevices
 	cfg.Version = Version
 	cfg.UpdatedAt = time.Now().UTC()
-	if err := s.saveLocked(ConfigFile, cfg); err != nil {
+	// For the release of the rename the settings are written under both keys, so a downgrade keeps them.
+	disk := cfg
+	disk.Backup = &cfg.Sync
+	if err := s.saveLocked(ConfigFile, disk); err != nil {
 		return err
 	}
 	s.cfg = cfg
