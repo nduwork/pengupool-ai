@@ -87,7 +87,7 @@ func TestHookLoopEndToEnd(t *testing.T) {
 		appendLine(t, path, fmt.Sprintf(`{"type":"user","isCompactSummary":true,"timestamp":"%s","message":{"role":"user","content":[{"type":"text","text":"summary of the login work"}]}}`, time.Now().UTC().Format(time.RFC3339Nano)))
 		return nil
 	}
-	_ = hook(plan, "PostToolUse", map[string]any{"tool_name": "SendMessage", "tool_input": map[string]any{"to": "lead", "message": "Done: fixed the login redirect\nIt keeps the next page."}})
+	_ = hook(plan, "PostToolUse", map[string]any{"tool_name": "SendMessage", "tool_input": map[string]any{"to": "lead", "message": "Done: fixed the login redirect\nIt keeps the next page.\nLesson: the redirect target lives in auth/next.go, not the router."}})
 	_ = hook(plan, "Stop", map[string]any{"stop_hook_active": false})
 	var e agentdb.Entry
 	for i := 0; i < 400 && e.Title == ""; i++ {
@@ -103,14 +103,18 @@ func TestHookLoopEndToEnd(t *testing.T) {
 	if e.Body != "summary of the login work" {
 		t.Fatalf("entry = %+v", e)
 	}
-	// The next start lists it; a later prompt about it gets it as a match.
+	// A prompt about it gets it as a match, with its lesson; the next start lists it again (the
+	// compact forgot it), and a prompt after that does not repeat it.
+	ask := map[string]any{"prompt": "[PenguPool team message from lead (main)] please redo the login redirect work"}
+	if ctxPrompt := hook(plan, "UserPromptSubmit", ask); !strings.Contains(ctxPrompt, "fixed the login redirect — Lesson: the redirect target lives in auth/next.go") {
+		t.Fatalf("prompt context lacks the match and its lesson:\n%s", ctxPrompt)
+	}
 	ctxAgain := hook(plan, "SessionStart", map[string]any{"session_id": "conv2", "transcript_path": path})
 	if !strings.Contains(ctxAgain, "fixed the login redirect") {
 		t.Fatalf("next SessionStart lacks the entry:\n%s", ctxAgain)
 	}
-	ctxPrompt := hook(plan, "UserPromptSubmit", map[string]any{"prompt": "[PenguPool team message from lead (main)] please redo the login redirect work"})
-	if !strings.Contains(ctxPrompt, "fixed the login redirect") {
-		t.Fatalf("prompt context lacks the match:\n%s", ctxPrompt)
+	if ctxPrompt := hook(plan, "UserPromptSubmit", ask); strings.Contains(ctxPrompt, "fixed the login redirect") {
+		t.Fatalf("an entry shown since the start was listed again:\n%s", ctxPrompt)
 	}
 }
 

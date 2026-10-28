@@ -106,7 +106,7 @@ func (p *Pool) buildContext(id string) string {
 			p.renderSkill(&b, sk)
 		}
 		if reportsTo(&d, t, id) != "" && p.helperOf(id) != nil {
-			b.WriteString("\nWhen your job is finished, start your report to your parent with `Done:` and a one-line title (`Done: fixed the login redirect`), then the details. PenguPool keeps a report like that as an entry of your past work, and may type your agent's compact command once you are idle. A question or a progress note does not start with `Done:`.\n")
+			b.WriteString("\nWhen your job is finished, start your report to your parent with `Done:` and a one-line title (`Done: fixed the login redirect`), then the details, and a line `Lesson: …`: one sentence you would want to know before the next job like this (what worked, what to avoid, where things are), not what you did; leave it out when nothing carries over. PenguPool keeps a report like that as an entry of your past work, and may type your agent's compact command once you are idle. A question or a progress note does not start with `Done:`.\n")
 		}
 	}
 	b.WriteString(p.renderNotes(id))

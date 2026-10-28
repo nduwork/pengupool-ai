@@ -76,6 +76,7 @@ type Pool struct {
 	msgSock           map[string]claudeInbox       // session id → Claude inbox socket
 	crossOK           map[sessionPair]time.Time    // channels the owner opened with @, until when
 	injected          map[string]map[string]string // session id → digest → heading of each context section it was given
+	journalShown      map[string]map[int64]bool    // session id → journal entries listed to it since it started
 	unlocks           map[string]map[string]bool   // connection id → unlocked team ids
 	failures          map[string][]time.Time       // connection+team → recent wrong passwords
 	lastInput         map[string]time.Time         // session id → last desktop input (unused by native paths)

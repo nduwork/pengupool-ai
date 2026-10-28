@@ -3,7 +3,7 @@
 //
 //   - compass: the owner's preference lines, one global set; signals and signal_effects: what the
 //     owner said or chose and what each did to a line, from which a line's belief is replayed;
-//   - experience: one entry per finished helper job (title, and the harness's compacted context as the body);
+//   - experience: one entry per finished helper job (title, lesson, and the harness's compacted context as the body);
 //   - gates: each moment an agent of an autonomous team waited on the owner, and who answered how.
 //
 // Search is SQLite FTS5; there are no embeddings. Writes go through the host only: triggers on the
@@ -67,6 +67,7 @@ var tables = []struct{ name, cols string }{
   helper TEXT NOT NULL,                   -- the helper's agent key (its skill's repository key)
   at TEXT NOT NULL,                       -- RFC 3339
   title TEXT NOT NULL,                    -- the first line of the done report
+  lesson TEXT NOT NULL DEFAULT '',        -- the report's "Lesson:" line: what carries over to the next job
   body TEXT NOT NULL,                     -- the compaction summary, else the done report
   body_hash TEXT NOT NULL DEFAULT '',     -- hex sha256 of the body: the same helper keeps a body once
   team_id TEXT NOT NULL DEFAULT ''`}, // the team the job was done for: its entries rank first in its searches
@@ -106,14 +107,14 @@ CREATE TRIGGER IF NOT EXISTS compass_ad AFTER DELETE ON compass BEGIN
 CREATE TRIGGER IF NOT EXISTS compass_au AFTER UPDATE ON compass BEGIN
   INSERT INTO compass_fts(compass_fts, rowid, body, condition) VALUES ('delete', old.id, old.body, old.condition);
   INSERT INTO compass_fts(rowid, body, condition) VALUES (new.id, new.body, new.condition); END;
-CREATE VIRTUAL TABLE IF NOT EXISTS experience_fts USING fts5(title, body, content='experience', content_rowid='id', tokenize='porter unicode61');
+CREATE VIRTUAL TABLE IF NOT EXISTS experience_fts USING fts5(title, lesson, body, content='experience', content_rowid='id', tokenize='porter unicode61');
 CREATE TRIGGER IF NOT EXISTS experience_ai AFTER INSERT ON experience BEGIN
-  INSERT INTO experience_fts(rowid, title, body) VALUES (new.id, new.title, new.body); END;
+  INSERT INTO experience_fts(rowid, title, lesson, body) VALUES (new.id, new.title, new.lesson, new.body); END;
 CREATE TRIGGER IF NOT EXISTS experience_ad AFTER DELETE ON experience BEGIN
-  INSERT INTO experience_fts(experience_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body); END;
+  INSERT INTO experience_fts(experience_fts, rowid, title, lesson, body) VALUES ('delete', old.id, old.title, old.lesson, old.body); END;
 CREATE TRIGGER IF NOT EXISTS experience_au AFTER UPDATE ON experience BEGIN
-  INSERT INTO experience_fts(experience_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
-  INSERT INTO experience_fts(rowid, title, body) VALUES (new.id, new.title, new.body); END;
+  INSERT INTO experience_fts(experience_fts, rowid, title, lesson, body) VALUES ('delete', old.id, old.title, old.lesson, old.body);
+  INSERT INTO experience_fts(rowid, title, lesson, body) VALUES (new.id, new.title, new.lesson, new.body); END;
 CREATE TRIGGER IF NOT EXISTS compass_tombstone AFTER DELETE ON compass BEGIN
   INSERT OR IGNORE INTO tombstones(key, at) VALUES ('compass:' || old.uid, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')); END;
 CREATE TRIGGER IF NOT EXISTS experience_tombstone AFTER DELETE ON experience BEGIN
@@ -262,13 +263,16 @@ func (d *DB) reconcile() error {
 	if err := d.tx(hashBodies); err != nil { // entries of a file before body_hash
 		return err
 	}
-	// An index made before stemming is dropped, so extra makes it again with the stemmer; the rebuild
-	// below refills it. Its triggers name the table, so they stay valid.
-	for _, t := range []string{"compass_fts", "experience_fts"} {
+	// An index made before stemming, or before lessons, is dropped with its triggers, so extra makes
+	// them again; the rebuild below refills it.
+	for t, need := range map[string]string{"compass_fts": "porter", "experience_fts": "lesson"} {
 		var def string
-		if err := d.db.QueryRow(`SELECT sql FROM sqlite_master WHERE name = ?`, t).Scan(&def); err == nil && !strings.Contains(def, "porter") {
-			if _, err := d.db.Exec("DROP TABLE " + t); err != nil {
-				return err
+		if err := d.db.QueryRow(`SELECT sql FROM sqlite_master WHERE name = ?`, t).Scan(&def); err == nil && !strings.Contains(def, need) {
+			table := strings.TrimSuffix(t, "_fts")
+			for _, q := range []string{"DROP TABLE " + t, "DROP TRIGGER IF EXISTS " + table + "_ai", "DROP TRIGGER IF EXISTS " + table + "_ad", "DROP TRIGGER IF EXISTS " + table + "_au"} {
+				if _, err := d.db.Exec(q); err != nil {
+					return err
+				}
 			}
 		}
 	}
