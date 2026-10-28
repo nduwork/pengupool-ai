@@ -140,6 +140,7 @@ func (p *Pool) journalTurnEnd(id string) {
 	p.mu.Lock()
 	pe.typed = time.Now()
 	pe.timer.Reset(journalWait)
+	delete(p.journalShown, id) // the compaction forgets what it was shown (not every harness fires SessionStart for it)
 	p.mu.Unlock()
 	if err := p.typeInto(id, a.Compact+"\r"); err != nil {
 		p.logf("pool: compact %s for its journal entry: %v", s.Name, err)
