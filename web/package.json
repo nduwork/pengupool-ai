@@ -1,7 +1,7 @@
 {
   "name": "pengupool-ai-web",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.8.1",
   "type": "module",
   "description": "PenguPool AI browser terminal: React + TypeScript client for the v1 wire protocol, embedded by internal/webapp.",
   "scripts": {
@@ -24,6 +24,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.57.0",
     "marked": "18.0.14",
+    "mermaid": "^11.17.2",
     "radix-ui": "^1.8.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

@@ -104,6 +104,10 @@ v0.8.0: the Teams page folds into the map (group settings and close on each
 group's frame, closed groups from the background menu); a helper's journal
 entries carry a one-line lesson from its Done report, and the helper sees the
 matching entries with every task, each once per session.
+v0.8.1: the file preview draws Mermaid diagrams in Markdown, runs an HTML
+page's scripts with its own assets (isolated), shows PDFs, and follows the
+file as it changes; Muse sessions get their hooks again (the app replaces a
+PenguPool plugin left from another build instead of failing on it).
 
 ## Credits
 
