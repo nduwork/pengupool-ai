@@ -18,7 +18,7 @@ import (
 )
 
 // Version of the prototype. It is not the protocol version; that is protocol.Version.
-const Version = "0.8.4"
+const Version = "0.8.5"
 
 const help = `usage: pengupool <command> [options]
 
@@ -72,6 +72,9 @@ const help = `usage: pengupool <command> [options]
         Muse Code reviews the diff (commit, stdin, or worktree).
   experiment [--tasks F] [--out D] [--only ID...] [--judge-model M] [--judge-base-url U] [--max-steps N]
         run the with-vs-without benchmark.
+  doctor [--store DIR] [--home DIR]
+        check this machine: v1 leftovers, agent CLIs, PenguPool MCP leftovers, the Muse plugin,
+        and the host. It only reads.
   version | help
 
 Store directory: $PENGUPOOL_HOME/v2, default ~/.pengupool/v2 (override with --store or
@@ -143,6 +146,8 @@ func main() {
 		err = runReview(args[1:])
 	case "experiment":
 		err = runExperiment(args[1:])
+	case "doctor":
+		err = cmdDoctor(args[1:])
 	case "version", "-V", "--version":
 		fmt.Println(versionLine())
 	case "help", "-h", "--help":
