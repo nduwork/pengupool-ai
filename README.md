@@ -93,3 +93,7 @@ agent into one prompt, still count as the owner's.
 v0.6.2: PenguPool adds no questions beyond the agent's own: a tool call the
 host cannot check goes to the agent's permissions, and agents check the
 Compass before asking the owner anything else.
+v0.7.0: Compass lines read as the owner's rule or only likely; search
+stems words; hedged words weigh half; lines pulled both ways go to review
+(restate or remove); a Gaussian belief runs in shadow beside the Beta one,
+reported by `pengupool eval` with a drift benchmark.

@@ -164,7 +164,7 @@ func (p *Pool) renderCompass() string {
 		out.WriteString("No preferences yet.\n")
 	}
 	for _, v := range shown {
-		l := "- " + strings.ReplaceAll(v.text(), "\n", "\n  ")
+		l := "- " + strings.ReplaceAll(v.text(), "\n", "\n  ") + v.sureness()
 		if out.Len()+len(l) > maxCompassContext {
 			out.WriteString("… more: search with the command below\n")
 			break
@@ -172,6 +172,15 @@ func (p *Pool) renderCompass() string {
 		out.WriteString(l + "\n")
 	}
 	return out.String()
+}
+
+// sureness says how sure a line is in words agents act on: a passive tag is ignored, phrasing is not.
+// A line guides as the owner's rule only when the owner had a say in it (trusted).
+func (v lineView) sureness() string {
+	if v.guides() && v.trusted() {
+		return " (the owner's rule)"
+	}
+	return " (likely; check if it matters)"
 }
 
 // renderNotes is the hint every agent gets: the record is PenguPool's, the compass is searchable.

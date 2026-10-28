@@ -102,11 +102,7 @@ func (p *Pool) beliefs(lines []agentdb.Line) []lineView {
 	t, th := p.at(), p.thresholds()
 	out := make([]lineView, len(lines))
 	for i, l := range lines {
-		prior := agentdb.PriorStated
-		if l.Origin == "chose" {
-			prior = agentdb.PriorChose
-		}
-		b := agentdb.Replay(prior, effects[l.UID], t)
+		b := agentdb.Replay(priorOf(l), effects[l.UID], t)
 		v := lineView{Line: l, Mu: b.Mu, N: b.N, Sigma: b.Sigma, Effects: len(effects[l.UID]), belief: b, th: th}
 		last := b.Last
 		if last.IsZero() {
@@ -125,6 +121,25 @@ func (p *Pool) beliefs(lines []agentdb.Line) []lineView {
 		out[i] = v
 	}
 	return out
+}
+
+// shadowBeliefs are the lines' beliefs under the engine not in use, with the same priors: eval
+// reports them beside the live ones.
+func (p *Pool) shadowBeliefs(lines []agentdb.Line) []agentdb.Belief {
+	effects, _ := p.db.Effects()
+	t := p.at()
+	out := make([]agentdb.Belief, len(lines))
+	for i, l := range lines {
+		out[i] = agentdb.ReplayShadow(priorOf(l), effects[l.UID], t)
+	}
+	return out
+}
+
+func priorOf(l agentdb.Line) agentdb.Prior {
+	if l.Origin == "chose" {
+		return agentdb.PriorChose
+	}
+	return agentdb.PriorStated
 }
 
 // lines are the owner's lines matching query (all when empty) with their beliefs.
@@ -271,6 +286,9 @@ func (p *Pool) matchLines(sig agentdb.Signal, offered, line string, mk bool) str
 			} else if a.Choice == "contradicts" {
 				con = 1
 			}
+			// After the noise filters: hedged words are weaker evidence, not noise.
+			k := 1 - 0.5*min(max(sig.Tentative, 0), 1)
+			sup, con = sup*k, con*k
 			if sup > 0 || con > 0 {
 				on = append(on, effectOn{l.UID, sup, con})
 			}
@@ -762,6 +780,42 @@ func (p *Pool) compassSave(_ context.Context, in compassSaveIn) (any, error) {
 
 type lineUIDIn struct {
 	UID string `json:"uid"`
+}
+
+type compassRestateIn struct {
+	UID  string `json:"uid"`
+	Body string `json:"body"`
+}
+
+// compassRestate replaces a line with the owner's new wording of it: a fresh stated line with the old
+// one's kind and condition, so its belief starts over. Either both happen or neither: the new line is
+// removed again when the old one cannot be.
+func (p *Pool) compassRestate(_ context.Context, in compassRestateIn) (any, error) {
+	db, err := p.agentDB()
+	if err != nil {
+		return nil, err
+	}
+	defer p.lockKey("compass")()
+	old, err := db.Line(in.UID)
+	if err != nil {
+		return nil, notFound("no line %s", in.UID)
+	}
+	if old.Tag != "" { // a permission's line is answered by its tag; restating would make it plain
+		return nil, invalid("line %s is a permission line; edit or remove it instead", in.UID)
+	}
+	l := agentdb.Line{Owner: p.owner(), Kind: old.Kind, Body: in.Body, Condition: old.Condition, Source: "owner"}
+	if err := checkLine(&l); err != nil {
+		return nil, err
+	}
+	uid, err := db.PutLine(l)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.DeleteLine(old.UID); err != nil {
+		_ = db.DeleteLine(uid)
+		return nil, err
+	}
+	return map[string]string{"uid": uid}, nil
 }
 
 func (p *Pool) compassDelete(_ context.Context, in lineUIDIn) (any, error) {

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -519,5 +520,37 @@ func TestOpenDropsTeamRecords(t *testing.T) {
 	}
 	if d.Legacy() {
 		t.Error("legacy tables left")
+	}
+}
+
+// Full-text search stems words, so a paraphrase finds its line.
+func TestCompassSearchStems(t *testing.T) {
+	d := open(t)
+	uid, _ := d.PutLine(Line{Owner: "me", Body: "The owner prefers pnpm"})
+	if ls, _ := d.Lines("me", "preferred", "", 10); len(ls) != 1 || ls[0].UID != uid {
+		t.Fatalf("preferred found %+v", ls)
+	}
+}
+
+// An index made before stemming is made again with the stemmer when the database opens.
+func TestOldFTSIndexIsRebuiltStemmed(t *testing.T) {
+	d, p := openRaw(t)
+	uid, _ := d.PutLine(Line{Owner: "me", Body: "The owner prefers pnpm"})
+	if _, err := d.db.Exec(`DROP TABLE compass_fts; CREATE VIRTUAL TABLE compass_fts USING fts5(body, condition, content='compass', content_rowid='id'); INSERT INTO compass_fts(compass_fts) VALUES ('rebuild');`); err != nil {
+		t.Fatal(err)
+	}
+	d.Close()
+	d2, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d2.Close()
+	var def string
+	_ = d2.db.QueryRow(`SELECT sql FROM sqlite_master WHERE name = 'compass_fts'`).Scan(&def)
+	if !strings.Contains(def, "porter") {
+		t.Fatalf("compass_fts = %s", def)
+	}
+	if ls, _ := d2.Lines("me", "preferred", "", 10); len(ls) != 1 || ls[0].UID != uid {
+		t.Fatalf("preferred found %+v", ls)
 	}
 }

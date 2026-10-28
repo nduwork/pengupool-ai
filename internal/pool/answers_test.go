@@ -199,7 +199,9 @@ func TestAnswerReplayReportsAgreement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r != (AnswerReplay{Choices: 5, Fired: 2, Agreed: 1, Against: 1}) {
+	live := r
+	live.ShadowFired, live.ShadowAgreed = 0, 0
+	if live != (AnswerReplay{Choices: 5, Fired: 2, Agreed: 1, Against: 1}) {
 		t.Fatalf("replay = %+v", r)
 	}
 	if _, err := p.RPC(t.Context(), gateway.Caller{}, "compass.answer_replay", nil); err == nil {
@@ -207,5 +209,41 @@ func TestAnswerReplayReportsAgreement(t *testing.T) {
 	}
 	if res, err := p.RPC(t.Context(), gateway.Caller{Owner: true}, "compass.answer_replay", nil); err != nil || res.(AnswerReplay) != r {
 		t.Errorf("owner: %v %v", res, err)
+	}
+}
+
+func TestAnswerReplayShadow(t *testing.T) {
+	p, _ := twoTeams(t)
+	uid, err := p.db.PutLine(agentdb.Line{Kind: "preference", Body: "Use JSONL for logs.", Origin: "chose", Owner: p.owner()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, sup := range []float64{1, 1, 1, 0} {
+		answered(t, p, uid, "team1", 10-i, sup, "chose", agentdb.WeightChose)
+	}
+	answered(t, p, uid, "team2", 3, 1, "chose", agentdb.WeightChose)
+	// by hand: each team1 choice against the team's answers before it, under the Gaussian
+	team, _ := p.db.TeamEffects("team1")
+	es := team[uid]
+	fired, agreed := 0, 0
+	old := agentdb.Engine
+	agentdb.Engine = "gauss"
+	t.Cleanup(func() { agentdb.Engine = old })
+	for i, e := range es {
+		at, _ := time.Parse(time.RFC3339, e.At)
+		if agentdb.AnswerGuides(agentdb.PriorChose, es[:i], at) {
+			fired++
+			if e.PSup > e.PCon {
+				agreed++
+			}
+		}
+	}
+	agentdb.Engine = old
+	r, err := p.answerReplay()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fired == 0 || r.ShadowFired != fired || r.ShadowAgreed != agreed {
+		t.Fatalf("shadow %d/%d, want %d/%d", r.ShadowAgreed, r.ShadowFired, agreed, fired)
 	}
 }

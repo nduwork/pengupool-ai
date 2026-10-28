@@ -66,7 +66,7 @@ func (p *Pool) answerCandidates(teamID, question string) []answerCand {
 		out = append(out, answerCand{UID: l.UID, Rule: rule, Evidence: answerEvidence(es), Belief: b, Guides: agentdb.AnswerGuides(agentdb.PriorChose, es, p.at())})
 	}
 	slices.SortStableFunc(out, func(a, b answerCand) int {
-		return cmp.Or(-cmp.Compare(a.Belief.Mu, b.Belief.Mu), -cmp.Compare(a.Belief.Alpha, b.Belief.Alpha))
+		return cmp.Or(-cmp.Compare(a.Belief.Mu, b.Belief.Mu), -cmp.Compare(a.Belief.N, b.Belief.N))
 	})
 	return out[:min(len(out), maxAnswerCandidates)]
 }
@@ -163,25 +163,28 @@ type AnswerReplay struct {
 	Fired   int `json:"fired"`   // of those, the ones a line would already have answered, from that team's earlier answers alone
 	Agreed  int `json:"agreed"`  // of those, the ones where the owner then chose what the line said
 	Against int `json:"against"` // of those, the ones where the owner went against it
+	// Fired and Agreed under the other belief engine, which only reports.
+	ShadowFired  int `json:"shadow_fired"`
+	ShadowAgreed int `json:"shadow_agreed"`
 }
 
 // answerReplay replays the owner's recorded choices in time order, per team and per line, against
 // the same evidence test the Compass answers by (agentdb.AnswerGuides over the answers before each
 // choice): how often it would have answered (Fired of Choices) and how often the owner then agreed
-// (Agreed of Fired). It reads the owner's own records only and changes nothing. A choice that
-// touched several lines counts once, by the line with the most evidence.
+// (Agreed of Fired), and the same under the shadow engine. It reads the owner's own records only
+// and changes nothing. A choice that touched several lines counts once, by the line with the most
+// evidence.
 func (p *Pool) answerReplay() (AnswerReplay, error) {
-	var r AnswerReplay
 	if p.db == nil {
-		return r, nil
+		return AnswerReplay{}, nil
 	}
 	sigs, err := p.db.RecentSignals(p.owner(), 1<<20)
 	if err != nil {
-		return r, err
+		return AnswerReplay{}, err
 	}
 	effects, err := p.db.Effects()
 	if err != nil {
-		return r, err
+		return AnswerReplay{}, err
 	}
 	team := map[string]string{} // signal → team
 	for _, s := range sigs {
@@ -198,39 +201,44 @@ func (p *Pool) answerReplay() (AnswerReplay, error) {
 			}
 		}
 	}
-	for _, s := range sigs {
-		if s.Kind != "chose" || s.TeamID == "" || len(bySignal[s.UID]) == 0 {
-			continue
-		}
-		r.Choices++
-		at, _ := time.Parse(time.RFC3339, s.At)
-		var best *agentdb.Effect
-		bestAlpha := -1.0
-		for _, e := range bySignal[s.UID] {
-			var before []agentdb.Effect
-			for _, x := range byKey[key{s.TeamID, e.LineUID}] {
-				if x.At < s.At || x.At == s.At && x.SignalUID < s.UID {
-					before = append(before, x)
-				}
-			}
-			if !agentdb.AnswerGuides(agentdb.PriorChose, before, at) {
+	run := func(replay func(agentdb.Prior, []agentdb.Effect, time.Time) agentdb.Belief) (r AnswerReplay) {
+		for _, s := range sigs {
+			if s.Kind != "chose" || s.TeamID == "" || len(bySignal[s.UID]) == 0 {
 				continue
 			}
-			if a := agentdb.Replay(agentdb.PriorChose, before, at).Alpha; a > bestAlpha {
-				e := e
-				best, bestAlpha = &e, a
+			r.Choices++
+			at, _ := time.Parse(time.RFC3339, s.At)
+			var best *agentdb.Effect
+			bestN := -1.0
+			for _, e := range bySignal[s.UID] {
+				var before []agentdb.Effect
+				for _, x := range byKey[key{s.TeamID, e.LineUID}] {
+					if x.At < s.At || x.At == s.At && x.SignalUID < s.UID {
+						before = append(before, x)
+					}
+				}
+				if !agentdb.AnswerGuidesBy(replay, agentdb.PriorChose, before, at) {
+					continue
+				}
+				if n := replay(agentdb.PriorChose, before, at).N; n > bestN {
+					e := e
+					best, bestN = &e, n
+				}
+			}
+			switch {
+			case best == nil:
+			case best.PSup > best.PCon:
+				r.Fired++
+				r.Agreed++
+			default:
+				r.Fired++
+				r.Against++
 			}
 		}
-		switch {
-		case best == nil:
-		case best.PSup > best.PCon:
-			r.Fired++
-			r.Agreed++
-		default:
-			r.Fired++
-			r.Against++
-		}
+		return r
 	}
+	r, shadow := run(agentdb.Replay), run(agentdb.ReplayShadow)
+	r.ShadowFired, r.ShadowAgreed = shadow.Fired, shadow.Agreed
 	return r, nil
 }
 

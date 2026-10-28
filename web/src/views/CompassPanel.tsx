@@ -7,7 +7,7 @@ import { Empty, Input, Select, Textarea, submitOnEnter } from "../components/ui/
 import { Sheet } from "../components/ui/dialog";
 import { cn } from "../lib/utils";
 import { useSpotChecks } from "./Approvals";
-import { groupLines, type Line, type ReviewItem } from "./compass";
+import { groupLines, reviewTitle, type Line, type ReviewItem } from "./compass";
 import { Mascot } from "./Mascot";
 
 // The owner's Compass (preference lines kept by the host in agents.db, not in any repository; each
@@ -222,7 +222,7 @@ function ReviewSheet({ items, onChange }: { items: ReviewItem[]; onChange: () =>
             key={it.lines[0].uid + it.kind}
             className={cn("grid gap-1.5 rounded-lg border p-3 text-label", it.kind === "broad" ? "border-warning/50 bg-warning/5" : "border-border")}
           >
-            <p className="text-caption font-semibold">{it.kind === "broad" ? `Broad: ${it.why}` : `Merge: ${it.why}`}</p>
+            <p className="text-caption font-semibold">{reviewTitle(it)}</p>
             <ul className="grid gap-0.5 text-muted-foreground">
               {it.lines.map((l) => (
                 <li key={l.uid} className="[overflow-wrap:anywhere]">
@@ -231,8 +231,13 @@ function ReviewSheet({ items, onChange }: { items: ReviewItem[]; onChange: () =>
               ))}
             </ul>
             {it.kind === "merge" ? <p>Becomes {it.patterns?.map((p) => `\`${p}\``).join(", ")}, keeping the evidence.</p> : null}
+            {it.kind === "conflicted" ? <Restate it={it} onDone={() => done(i)} /> : null}
             <div className="flex flex-wrap justify-end gap-2">
-              {it.kind === "broad" ? (
+              {it.kind === "conflicted" ? (
+                <Button size="sm" variant="danger" onClick={async () => (await app.call("compass.delete", { uid: it.lines[0].uid })) !== undefined && done(i)}>
+                  Remove
+                </Button>
+              ) : it.kind === "broad" ? (
                 <>
                   <Button
                     size="sm"
@@ -259,5 +264,25 @@ function ReviewSheet({ items, onChange }: { items: ReviewItem[]; onChange: () =>
         ))}
       </ul>
     </Sheet>
+  );
+}
+
+/** Restate a line pulled both ways: a new line in the owner's words replaces it (same kind and condition), so it starts as stated. */
+function Restate({ it, onDone }: { it: ReviewItem; onDone: () => void }): ReactElement {
+  const app = useApp();
+  const [body, setBody] = useState(it.lines[0].body);
+  return (
+    <form
+      className="flex gap-2"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (body.trim() !== "" && (await app.call("compass.restate", { uid: it.lines[0].uid, body: body.trim() })) !== undefined) onDone();
+      }}
+    >
+      <Input value={body} onChange={(e) => setBody(e.target.value)} aria-label="Restate the line" />
+      <Button size="sm" type="submit" variant="default" disabled={body.trim() === ""}>
+        Restate
+      </Button>
+    </form>
   );
 }

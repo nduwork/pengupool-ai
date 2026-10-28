@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { groupLines, type Line } from "./compass";
+import { groupLines, reviewTitle, type Line } from "./compass";
 
 const l = (uid: string, state: Line["state"], mu: number): Line => ({ uid, state, mu, kind: "preference", body: uid, created_at: "", n: 0, sigma: 0, effects: 0 });
 
@@ -10,5 +10,11 @@ describe("groupLines", () => {
     const out = groupLines(lines);
     expect(out.map((g) => g.title)).toEqual(["Guiding", "Learning", "Fading"]);
     expect(out[0].lines.map((x) => x.uid)).toEqual(["c", "b"]);
+  });
+});
+
+describe("reviewTitle", () => {
+  it("names a line pulled both ways", () => {
+    expect(reviewTitle({ kind: "conflicted", why: "your signals pulled it both ways", lines: [{ uid: "a", body: "Use pnpm" }] })).toBe("Pulled both ways: your signals pulled it both ways");
   });
 });

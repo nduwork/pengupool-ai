@@ -98,7 +98,7 @@ CREATE INDEX IF NOT EXISTS compass_owner ON compass(owner);
 CREATE INDEX IF NOT EXISTS gates_session ON gates(session_id, id);
 CREATE INDEX IF NOT EXISTS gates_team ON gates(team_id, id);
 CREATE INDEX IF NOT EXISTS experience_helper ON experience(helper, id);
-CREATE VIRTUAL TABLE IF NOT EXISTS compass_fts USING fts5(body, condition, content='compass', content_rowid='id');
+CREATE VIRTUAL TABLE IF NOT EXISTS compass_fts USING fts5(body, condition, content='compass', content_rowid='id', tokenize='porter unicode61');
 CREATE TRIGGER IF NOT EXISTS compass_ai AFTER INSERT ON compass BEGIN
   INSERT INTO compass_fts(rowid, body, condition) VALUES (new.id, new.body, new.condition); END;
 CREATE TRIGGER IF NOT EXISTS compass_ad AFTER DELETE ON compass BEGIN
@@ -106,7 +106,7 @@ CREATE TRIGGER IF NOT EXISTS compass_ad AFTER DELETE ON compass BEGIN
 CREATE TRIGGER IF NOT EXISTS compass_au AFTER UPDATE ON compass BEGIN
   INSERT INTO compass_fts(compass_fts, rowid, body, condition) VALUES ('delete', old.id, old.body, old.condition);
   INSERT INTO compass_fts(rowid, body, condition) VALUES (new.id, new.body, new.condition); END;
-CREATE VIRTUAL TABLE IF NOT EXISTS experience_fts USING fts5(title, body, content='experience', content_rowid='id');
+CREATE VIRTUAL TABLE IF NOT EXISTS experience_fts USING fts5(title, body, content='experience', content_rowid='id', tokenize='porter unicode61');
 CREATE TRIGGER IF NOT EXISTS experience_ai AFTER INSERT ON experience BEGIN
   INSERT INTO experience_fts(rowid, title, body) VALUES (new.id, new.title, new.body); END;
 CREATE TRIGGER IF NOT EXISTS experience_ad AFTER DELETE ON experience BEGIN
@@ -261,6 +261,16 @@ func (d *DB) reconcile() error {
 	}
 	if err := d.tx(hashBodies); err != nil { // entries of a file before body_hash
 		return err
+	}
+	// An index made before stemming is dropped, so extra makes it again with the stemmer; the rebuild
+	// below refills it. Its triggers name the table, so they stay valid.
+	for _, t := range []string{"compass_fts", "experience_fts"} {
+		var def string
+		if err := d.db.QueryRow(`SELECT sql FROM sqlite_master WHERE name = ?`, t).Scan(&def); err == nil && !strings.Contains(def, "porter") {
+			if _, err := d.db.Exec("DROP TABLE " + t); err != nil {
+				return err
+			}
+		}
 	}
 	// Full-text indexes follow their tables: rebuilt, so a rebuilt table's index is true.
 	q := extra + `

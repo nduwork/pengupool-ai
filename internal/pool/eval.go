@@ -171,6 +171,13 @@ type EvalReport struct {
 	MuMin    *float64 `json:"shown_mu_min"`
 	MuMedian *float64 `json:"shown_mu_median"`
 	MuMax    *float64 `json:"shown_mu_max"`
+	// The same lines under the other belief engine, which only reports, and how many lines the two
+	// engines differ on (guides or shown).
+	ShadowEngine    string `json:"shadow_engine"`
+	ShadowGuiding   int    `json:"shadow_guiding"`
+	ShadowShown     int    `json:"shadow_shown"`
+	ShadowDropped   int    `json:"shadow_dropped"`
+	EnginesDisagree int    `json:"engines_disagree"`
 
 	Checks  []EvalCheck `json:"checks"`
 	Verdict string      `json:"verdict"` // PASS | FAIL | INCONCLUSIVE (a bar with too few cases)
@@ -412,20 +419,7 @@ func (p *Pool) replay(eps []Episode) EvalReport {
 		r.Scores[k] = sc
 	}
 	r.Waiting, _ = p.db.WaitingSignals()
-	var mus []float64
-	for _, v := range p.lines("", 0) {
-		r.Lines++
-		if v.guides() {
-			r.Guiding++
-		}
-		if v.shown() {
-			r.Shown++
-			mus = append(mus, v.Mu)
-		}
-	}
-	if slices.Sort(mus); len(mus) > 0 {
-		r.MuMin, r.MuMedian, r.MuMax = &mus[0], &mus[len(mus)/2], &mus[len(mus)-1]
-	}
+	p.compassTally(&r)
 	r.Coverage, r.WrongRate, r.Agreement = ratio(r.GoAheads, r.CheckIns), ratio(r.WrongGo, r.GoKnown), ratio(r.Agreed, r.Known)
 	r.check("wrong go-ahead rate", r.WrongRate, "<= 0.05", r.GoKnown, func(v float64) bool { return v <= 0.05 })
 	if labelled {
@@ -442,6 +436,44 @@ func (p *Pool) replay(eps []Episode) EvalReport {
 		}
 	}
 	return r
+}
+
+// compassTally counts the Compass's lines as they stand, under the live engine and the shadow one.
+func (p *Pool) compassTally(r *EvalReport) {
+	views := p.lines("", 0)
+	lines := make([]agentdb.Line, len(views))
+	for i, v := range views {
+		lines[i] = v.Line
+	}
+	shadow := p.shadowBeliefs(lines)
+	r.ShadowEngine = agentdb.ShadowEngine()
+	var mus []float64
+	for i, v := range views {
+		r.Lines++
+		if v.guides() {
+			r.Guiding++
+		}
+		if v.shown() {
+			r.Shown++
+			mus = append(mus, v.Mu)
+		}
+		s := shadow[i]
+		if s.Guides(v.th) {
+			r.ShadowGuiding++
+		}
+		if s.Shown(v.th) {
+			r.ShadowShown++
+		}
+		if s.Dropped(v.th) {
+			r.ShadowDropped++
+		}
+		if s.Guides(v.th) != v.guides() || s.Shown(v.th) != v.shown() {
+			r.EnginesDisagree++
+		}
+	}
+	if slices.Sort(mus); len(mus) > 0 {
+		r.MuMin, r.MuMedian, r.MuMax = &mus[0], &mus[len(mus)/2], &mus[len(mus)-1]
+	}
 }
 
 // settle tallies one check-in against the owner's answer (nil: it does not say).
@@ -528,6 +560,10 @@ func (r EvalReport) String() string {
 	}
 	fmt.Fprintf(&b, "\nCompass at the end: %d lines, %d guiding, %d shown (mu min %s, median %s, max %s), %d signals waiting in the ledger\n\n",
 		r.Lines, r.Guiding, r.Shown, pct(r.MuMin), pct(r.MuMedian), pct(r.MuMax), r.Waiting)
+	if r.ShadowEngine != "" {
+		fmt.Fprintf(&b, "under %s (shadow): %d guiding, %d shown, %d dropped; the engines disagree on %d lines\n\n",
+			r.ShadowEngine, r.ShadowGuiding, r.ShadowShown, r.ShadowDropped, r.EnginesDisagree)
+	}
 	for _, c := range r.Checks {
 		fmt.Fprintf(&b, "%-22s %s (bar %s, %d cases): %s", c.Name, pct(c.Value), c.Bar, c.Cases, c.Result)
 		if c.Result == "too few cases" {
