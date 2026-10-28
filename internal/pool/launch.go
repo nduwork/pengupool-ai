@@ -121,6 +121,7 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 		Cols: r.Cols, Rows: r.Rows,
 		Decorate: func(s *store.Session) {
 			s.RunLog = runlog
+			s.LaunchModel, s.LaunchEffort = r.Model, r.Effort
 			// Starting until the agent's SessionStart hook says it is up: a first-run dialog (folder
 			// trust, login) must never receive a typed team message.
 			// A terminal has no hook to clear it, so it never starts.
@@ -319,6 +320,7 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	keep := s
 	ns, err := p.spawn(ctx, spawnReq{
 		ID: s.ID, Name: s.Name, Harness: s.Harness, Cwd: s.Cwd, Resume: resumeID, Cols: s.Cols, Rows: s.Rows, SkillID: keep.SkillID,
+		Model: s.LaunchModel, Effort: s.LaunchEffort,
 		Decorate: func(n *store.Session) {
 			n.TeamID, n.Role, n.SkillID, n.ConvID, n.Transcript = keep.TeamID, keep.Role, keep.SkillID, keep.ConvID, keep.Transcript
 			if keep.RunLog != "" {
@@ -333,15 +335,29 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	return ns.View(), nil
 }
 
+// restoreGap spaces the sessions RestoreLost resumes.
+var restoreGap = 3 * time.Second
+
 // RestoreLost resumes the agent sessions that were running before this host started and whose
 // workers did not survive (the machine powered off or crashed): the hub marked them lost. A session
 // the owner stopped, or one that exited on its own, is not touched; a terminal cannot be resumed.
 func (p *Pool) RestoreLost(ctx context.Context, wasRunning []string) {
+	n := 0
 	for _, id := range wasRunning {
 		s, ok := p.session(id)
-		if !ok || s.State != "lost" || !harness.IsAgent(s.Harness) {
+		if !ok || s.State != "lost" || !harness.IsAgent(s.Harness) || !p.onThisHost(s.NodeID) {
 			continue
 		}
+		// ponytail: one at a time, a few seconds apart, so a reboot does not start every agent at once;
+		// a Settings switch or a cap when someone keeps many sessions.
+		if n > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(restoreGap):
+			}
+		}
+		n++
 		if _, err := p.resume(ctx, sessionIn{SessionID: id}); err != nil {
 			p.logf("pool: restore %s after the host restarted: %v", s.Name, err)
 			continue

@@ -75,13 +75,17 @@ type Session struct {
 	CostUSD float64 `json:"cost_usd,omitempty"`
 	// Model is the model it last reported; JobStart is when its current piece of work began (the
 	// first prompt after its last log entry), recorded on that entry.
-	Model      string    `json:"model,omitempty"`
-	JobStart   time.Time `json:"job_start,omitempty"`
-	Branch     string    `json:"branch,omitempty"`
-	RunLog     string    `json:"run_log,omitempty"`
-	Transcript string    `json:"transcript,omitempty"`
-	ConvID     string    `json:"conv_id,omitempty"`
-	Env        []string  `json:"env,omitempty"`
+	Model string `json:"model,omitempty"`
+	// LaunchModel and LaunchEffort are what it was started with ("ollama/<m>" on Ollama), so a resume
+	// starts it the same way.
+	LaunchModel  string    `json:"launch_model,omitempty"`
+	LaunchEffort string    `json:"launch_effort,omitempty"`
+	JobStart     time.Time `json:"job_start,omitempty"`
+	Branch       string    `json:"branch,omitempty"`
+	RunLog       string    `json:"run_log,omitempty"`
+	Transcript   string    `json:"transcript,omitempty"`
+	ConvID       string    `json:"conv_id,omitempty"`
+	Env          []string  `json:"env,omitempty"`
 	// ActiveAt is the last harness activity (hook event); Summary is the owner\'s role description.
 	ActiveAt time.Time `json:"active_at,omitempty"`
 	Summary  string    `json:"summary,omitempty"`
