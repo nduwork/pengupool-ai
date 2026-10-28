@@ -268,7 +268,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 				p.logLine(s.ID, "permission: declined for the owner, who declined "+why+" before")
 				return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 					"hookEventName": "PermissionRequest",
-					"decision":      map[string]any{"behavior": "deny", "message": "PenguPool: the owner declined " + why + " before. Ask them if it is needed now."},
+					"decision":      map[string]any{"behavior": "deny", "message": "PenguPool: the owner declined " + why + " before."},
 				}}), nil
 			}
 		}

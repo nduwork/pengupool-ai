@@ -1636,7 +1636,7 @@ func (p *Pool) compassWrong(_ context.Context, in gateIn) (any, error) {
 
 // autonomySection tells a team member how to work.
 func (p *Pool) autonomySection() string {
-	return "\n\n## Working autonomously\nProceed without asking on what your own permissions allow; your harness asks the owner what it must. " +
+	return "\n\n## Working autonomously\nProceed without asking on what your own permissions allow (when your harness has them, it asks the owner what it must). " +
 		"Before you stop to ask the owner anything else, check the compass above and search it: when it answers, follow it. Ask only what neither settles.\n" +
 		"PenguPool triage may answer your check-ins at the end of a turn from the owner's recorded decisions; treat a [PenguPool triage] go-ahead as the owner's standing instruction.\n"
 }

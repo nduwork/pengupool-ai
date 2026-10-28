@@ -10,14 +10,14 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// The floor: what waits for the owner, whatever the team's autonomy, the agent or memory says,
-// unless a confirmed (confident) Compass line of the owner's allows that exact action, which triage
-// checks with the decision model before it lets one pass (floorWaiver). A fixed list. It is enforced where the tool is called (guardFloor matches the actual
-// command or path); the same list matched against the agent's whole reply, before any go-ahead, is
-// the early warning, since an agent's text can describe a push innocently. A false
-// positive costs one owner question; a false negative lets triage wave through something on it, so
-// the patterns lean wide. A match whose "prose" group is set is a noun in passing ("release notes"),
-// not the act. Text is folded first (floorFold), so look-alike dashes and spaces match too.
+// The floor: what PenguPool never answers for the owner, whatever the team's autonomy, the agent or
+// memory says, unless a confirmed (confident) Compass line of the owner's allows that exact action,
+// which triage checks with the decision model (floorWaiver). A fixed list. It only limits triage's
+// go-ahead and auto-answers (matched against the agent's reply and the harness's permission prompt);
+// it never adds a question of PenguPool's own. A false positive leaves one question to the owner; a
+// false negative lets triage wave through something on it, so the patterns lean wide. A match whose
+// "prose" group is set is a noun in passing ("release notes"), not the act. Text is folded first
+// (floorFold), so look-alike dashes and spaces match too.
 
 // gitCmd is "git", any global options (-C <dir>, -c k=v, --no-pager) and the subcommand's leading space.
 const gitCmd = `\bgit(\s+(-[cC]\s+\S+|--?[a-z][\w-]*(=\S+)?))*\s+`
