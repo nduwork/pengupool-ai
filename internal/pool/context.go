@@ -21,10 +21,20 @@ import (
 // the Compass, the team's log), anything that looks like a credential is cut out before it
 // reaches the agent: one guard at the one way in, as Harness² guards its evidence tree.
 func (p *Pool) renderContext(id string) string {
-	return decision.SecretRe.ReplaceAllString(p.buildContext(id), "[left out: looked like a secret]")
+	return p.renderContextCap(id, maxCompassContext)
+}
+
+// renderContextCap renders like renderContext with the compass capped at n bytes, for a harness
+// that drops a hook answer past its stdout ceiling: the team sections stay whole.
+func (p *Pool) renderContextCap(id string, n int) string {
+	return decision.SecretRe.ReplaceAllString(p.buildContextCap(id, n), "[left out: looked like a secret]")
 }
 
 func (p *Pool) buildContext(id string) string {
+	return p.buildContextCap(id, maxCompassContext)
+}
+
+func (p *Pool) buildContextCap(id string, compassCap int) string {
 	st := p.st.State()
 	d := st.Domain
 	t := teamOf(&d, id)
@@ -42,7 +52,7 @@ func (p *Pool) buildContext(id string) string {
 	if t.Goal != "" { // the owner's latest instruction is the current task
 		fmt.Fprintf(&b, "\n\n## Current task (the owner's latest instruction)\n%s", t.Goal)
 	}
-	b.WriteString("\n" + p.renderCompass())
+	b.WriteString("\n" + p.renderCompassCap(compassCap))
 	if me.Assignment != "" {
 		fmt.Fprintf(&b, "\nYour assignment: %s", me.Assignment)
 	}
@@ -148,6 +158,10 @@ func (p *Pool) renderSkill(b *strings.Builder, sk *protocol.Skill) {
 // belief (not the dropped), strongest first, at most 32 KiB. Agents only read: PenguPool records
 // their turns and the owner keeps the Compass.
 func (p *Pool) renderCompass() string {
+	return p.renderCompassCap(maxCompassContext)
+}
+
+func (p *Pool) renderCompassCap(n int) string {
 	if p.db == nil {
 		return ""
 	}
@@ -165,7 +179,7 @@ func (p *Pool) renderCompass() string {
 	}
 	for _, v := range shown {
 		l := "- " + strings.ReplaceAll(v.text(), "\n", "\n  ") + v.sureness()
-		if out.Len()+len(l) > maxCompassContext {
+		if out.Len()+len(l) > n {
 			out.WriteString("… more: search with the command below\n")
 			break
 		}
@@ -199,6 +213,27 @@ func (p *Pool) renderNotes(id string) string {
 }
 
 const maxCompassContext = 32 << 10
+
+// fitContext re-renders id's context to fit limit bytes for a harness that drops a hook answer
+// past its stdout ceiling: the team sections and extras stay whole and the compass takes what is
+// left, so the roster and the triage note survive. A final clip guards a pathological goal.
+func (p *Pool) fitContext(id string, extra []string, limit int) string {
+	extras := strings.Join(extra, "")
+	compass := decision.SecretRe.ReplaceAllString(p.renderCompass(), "[left out: looked like a secret]")
+	room := limit - (len(p.renderContext(id)) - len(compass)) - len(extras) - 256
+	if room < 0 {
+		room = 0
+	}
+	text := p.renderContextCap(id, room) + extras
+	if len(text) > limit {
+		cut := strings.LastIndex(text[:limit-64], "\n")
+		if cut < 0 {
+			cut = limit - 64
+		}
+		text = text[:cut] + "\n…trimmed to this harness's hook answer limit\n"
+	}
+	return text
+}
 
 var wordRe = regexp.MustCompile(`[\pL\pN_]+`)
 

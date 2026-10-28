@@ -44,6 +44,9 @@ type Agent struct {
 	Ollama bool `json:"ollama"`
 	// Experimental agents work but are not where PenguPool's support is focused (Claude Code is).
 	Experimental bool `json:"experimental"`
+	// HookOutCap caps a hook answer's additionalContext in bytes when > 0 (Muse drops a hook
+	// answer whose stdout passes 16 KiB, the roster and the triage note with it); 0 leaves it whole.
+	HookOutCap int `json:"-"`
 }
 
 // Agents are the supported runtimes, in menu order: Claude Code (on its account or on Ollama) is
@@ -51,7 +54,7 @@ type Agent struct {
 // team messages go through PenguPool, which delivers each in the recipient's own way.
 var Agents = []Agent{
 	{ID: Claude, Label: "Claude Code", Hint: "Anthropic's coding agent", Compact: "/compact", Clear: "/clear", Ollama: true},
-	{ID: Muse, Label: "Muse Code", Hint: "Meta's coding agent", Typed: true},
+	{ID: Muse, Label: "Muse Code", Hint: "Meta's coding agent", Typed: true, HookOutCap: 12 << 10},
 	{ID: OMP, Label: "OMP", Hint: "oh-my-pi agent", Compact: "/compact", Clear: "/new", Ollama: true},
 	{ID: Pi, Label: "pi", Hint: "pi coding agent", Compact: "/compact", Clear: "/new", Ollama: true},
 	{ID: Codex, Label: "Codex", Hint: "OpenAI's coding agent", Compact: "/compact", Clear: "/new", Typed: true, Ollama: true},
@@ -75,6 +78,20 @@ func Find(id string) (Agent, bool) {
 
 // IsAgent reports whether id names a supported agent runtime.
 func IsAgent(id string) bool { _, ok := Find(id); return ok }
+
+// museReadTools are Muse's read-only tools (snake_case): they may run while triage holds a
+// session's working tools, like the shared look-tools (web reads are reads). Anything else fails
+// closed into the hold.
+var museReadTools = map[string]bool{"read_file": true, "search": true, "web_fetch": true, "web_search": true}
+
+// ReadTool reports whether name is a read-only tool of the harness kind, beyond the shared
+// look-tools: triage lets it run while it holds the session's working tools.
+func ReadTool(kind, name string) bool {
+	if kind == Muse {
+		return museReadTools[name]
+	}
+	return false
+}
 
 // ClaudeEvents are the Claude Code hooks PenguPool listens to.
 var ClaudeEvents = []string{
