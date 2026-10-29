@@ -560,7 +560,9 @@ function MuseApp(): ReactElement {
   const [n, setN] = useState(0);
   return (
     <div>
-      <H title="Muse app">Pair a phone running the Muse app; it walks waiting sessions one card at a time. Each device has its own token, revocable here.</H>
+      <H title="Muse app">
+        Pair a phone running the Muse app; it walks waiting sessions one card at a time. Each device has its own token, revocable here. The phone reaches this machine over your tailnet once Local network is on (or Tailscale Serve is set up); the pairing shows the URL to use.
+      </H>
       <MuseDevices key={n} onChanged={() => setN(n + 1)} />
     </div>
   );

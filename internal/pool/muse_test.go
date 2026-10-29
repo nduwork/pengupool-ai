@@ -328,3 +328,39 @@ func TestMuseAnswerRespectsVisibility(t *testing.T) {
 		t.Fatalf("hidden launch changed: %+v", a[len(a)-1])
 	}
 }
+
+// Without Serve, the pairing URL is this machine's own tailnet name over plain HTTP once Local
+// network is on; with Serve it stays the HTTPS Serve name.
+func TestMuseBaseURL(t *testing.T) {
+	p, _ := musePool(t)
+	oldAddr := HTTPAddr
+	t.Cleanup(func() { HTTPAddr = oldAddr })
+	// The host check's cached name, fresh so no lookup runs.
+	tailnetName.Lock()
+	oldName, oldAt := tailnetName.name, tailnetName.at
+	tailnetName.name, tailnetName.at = "mac.tail1.ts.net", time.Now()
+	tailnetName.Unlock()
+	t.Cleanup(func() {
+		tailnetName.Lock()
+		tailnetName.name, tailnetName.at = oldName, oldAt
+		tailnetName.Unlock()
+	})
+	HTTPAddr = func() string { return "127.0.0.1:7787" }
+	if got := p.museBaseURL(); got != "https://<tailnet-name>" {
+		t.Errorf("loopback only: %q", got)
+	}
+	HTTPAddr = func() string { return "192.168.1.5:7787" }
+	if got := p.museBaseURL(); got != "https://<tailnet-name>" {
+		t.Errorf("one LAN address: %q", got)
+	}
+	HTTPAddr = func() string { return "[::]:7787" }
+	if got := p.museBaseURL(); got != "http://mac.tail1.ts.net:7787" {
+		t.Errorf("Local network on: %q", got)
+	}
+	if err := p.st.UpdateConfig(func(c *store.Config) error { c.Network.Tailscale = "https://mac.tail1.ts.net/"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.museBaseURL(); got != "https://mac.tail1.ts.net" {
+		t.Errorf("Serve: %q", got)
+	}
+}

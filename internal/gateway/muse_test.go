@@ -8,9 +8,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
@@ -147,6 +149,25 @@ func TestMuseTailnetNameHost(t *testing.T) {
 		resp.Body.Close()
 		if resp.StatusCode != want {
 			t.Errorf("Host %q = %d, want %d", host, resp.StatusCode, want)
+		}
+	}
+}
+
+// A pairing the device can fix is a 4xx, never a 502 that reads as the host being down.
+func TestMuseErrorStatus(t *testing.T) {
+	for err, want := range map[error]int{
+		protocol.Errorf(protocol.CodeConflict, "a device named phone1 is already paired"): http.StatusConflict,
+		protocol.Errorf(protocol.CodeInvalidArgument, "a device name is required"):        http.StatusBadRequest,
+		protocol.Errorf(protocol.CodeInvalidArgument, "x is not an agent session"):        http.StatusForbidden,
+		protocol.Errorf(protocol.CodeUnauthorized, "bad or expired code"):                 http.StatusUnauthorized,
+		protocol.Errorf(protocol.CodeNotFound, "no open check-in 7"):                      http.StatusNotFound,
+		protocol.Errorf(protocol.CodeUnauthorized, "no device"):                           http.StatusUnauthorized,
+		errors.New("worker exploded"):                                                     http.StatusBadGateway,
+	} {
+		rec := httptest.NewRecorder()
+		writeMuseError(rec, err)
+		if rec.Code != want {
+			t.Errorf("%v = %d, want %d", err, rec.Code, want)
 		}
 	}
 }

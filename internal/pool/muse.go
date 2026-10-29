@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"slices"
 	"sort"
 	"strconv"
@@ -537,13 +538,23 @@ func (p *Pool) musePairCode(_ context.Context, c gateway.Caller, _ json.RawMessa
 	return musePairCodeOut{Code: code, URL: p.museBaseURL() + "/api/muse/v1"}, nil
 }
 
-// museBaseURL is the tailnet URL the Muse app reaches.
+// museBaseURL is the tailnet URL the Muse app reaches: the Serve name over HTTPS when Serve is set
+// up, else this machine's own tailnet name over plain HTTP when the listener is a wildcard bind
+// (Local network on). The name is the one the host check holds, so the URL always passes it.
 func (p *Pool) museBaseURL() string {
 	name := strings.Trim(strings.TrimPrefix(strings.TrimPrefix(p.st.Config().Network.Tailscale, "https://"), "http://"), "/")
-	if name == "" {
-		return "https://<tailnet-name>"
+	if name != "" {
+		return "https://" + name
 	}
-	return "https://" + name
+	if HTTPAddr != nil {
+		host, port, err := net.SplitHostPort(HTTPAddr())
+		if ip := net.ParseIP(host); err == nil && ip != nil && ip.IsUnspecified() {
+			if ts := TailnetName(); ts != "" {
+				return "http://" + net.JoinHostPort(ts, port)
+			}
+		}
+	}
+	return "https://<tailnet-name>"
 }
 
 type musePairIn struct {
