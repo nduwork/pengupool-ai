@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
+	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
@@ -33,5 +35,16 @@ func TestHistoryLeavesOutSecrets(t *testing.T) {
 	got := string(raw)
 	if strings.Contains(got, "sk-ant-") || strings.Count(got, leftOut) != 2 {
 		t.Fatalf("history: %s", got)
+	}
+}
+
+// The resume list titles a past session by its first prompt: credentials left out, clipped by runes.
+func TestPreviousSessionTitleLeavesOutSecrets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	os.WriteFile(path, []byte(`{"sessionId":"s1","cwd":"/x","message":{"role":"user","content":"key sk-ant-abcdefghijklmnopqrstuvwxyz0123 `+strings.Repeat("é", 200)+`"}}
+`), 0o644)
+	got := readTranscriptHead(harness.Claude, path).Title
+	if strings.Contains(got, "sk-ant-") || !strings.Contains(got, leftOut) || !utf8.ValidString(got) {
+		t.Fatalf("title: %q", got)
 	}
 }
