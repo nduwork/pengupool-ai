@@ -266,6 +266,13 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		if str("tool_name") == "AskUserQuestion" && s.Harness == harness.Claude {
 			p.askedPicks(s, pl)
 		}
+		// The owner's words this turn may be waiting to be worded: offered now, while the turn runs.
+		if s.Harness == harness.Claude {
+			if note := p.wordingNow(s.ID, "in the turn (tool round)"); note != "" {
+				return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
+					"hookEventName": "PostToolUse", "additionalContext": note}}), nil
+			}
+		}
 	case "ToolFailed": // Muse: a tool failed or was denied; the turn goes on. Which one is unknown, so
 		// a permission prompt it answered stays open until the turn ends and expires it.
 		p.setStatus(s.ID, "working")
@@ -331,6 +338,16 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			p.journalTurnEnd(s.ID) // continued: working again
 			return out, nil
 		}
+		// A wording not yet offered goes on the turn once, before it ends: a harness that can continue
+		// a turn words the owner's words while they are fresh. At most once per wording (wordingNow),
+		// and never on a turn this hook already continued.
+		if stopContinues(s.Harness) && !active {
+			if note := strings.TrimSpace(p.wordingNow(s.ID, "at the turn's end (one continuation)")); note != "" {
+				p.turnStart(s.ID, note)
+				p.journalTurnEnd(s.ID)
+				return continueTurn(s.Harness, note), nil
+			}
+		}
 		p.setStatus(s.ID, "idle")
 		p.journalTurnEnd(s.ID) // before the queue: a delivered message starts the next turn
 		p.flushQueue(s.ID)     // after the turn's end: a message it delivers starts the next turn
@@ -347,6 +364,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		}
 		p.markDelivered(ids)
 	case "SessionEnd":
+		p.wordingEnded(s.ID)
 		p.setStatus(s.ID, "ended")
 		p.logLine(s.ID, "session: harness session ended ("+firstNonEmpty(str("reason"), "exit")+")")
 	}
