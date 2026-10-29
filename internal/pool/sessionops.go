@@ -852,6 +852,24 @@ func (p *Pool) repoWorktrees(ctx context.Context, in pathIn) (any, error) {
 	return wts, nil
 }
 
+// repoBranches lists a repository's local branches, its checked-out one first, for New session's
+// New worktree; none for a folder that is not a Git repository.
+func (p *Pool) repoBranches(ctx context.Context, in pathIn) (any, error) {
+	out, err := exec.CommandContext(ctx, "git", "-C", in.Path, "for-each-ref", "--format=%(HEAD)%(refname:short)", "--sort=-committerdate", "refs/heads").Output()
+	branches := []string{}
+	if err != nil {
+		return branches, nil
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if b, head := strings.CutPrefix(line, "*"); head {
+			branches = append([]string{b}, branches...)
+		} else if b = strings.TrimSpace(line); b != "" {
+			branches = append(branches, b)
+		}
+	}
+	return branches, nil
+}
+
 // repoPull fast-forwards a repository; it never merges or rewrites.
 func (p *Pool) repoPull(ctx context.Context, in pathIn) (any, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", in.Path, "pull", "--ff-only")

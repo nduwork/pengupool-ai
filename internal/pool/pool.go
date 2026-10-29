@@ -334,6 +334,7 @@ func (p *Pool) handlers() map[string]handler {
 		"team.group":            bind(p.teamGroup),
 		"team.rename":           bind(p.teamRename),
 		"repo.worktrees":        bind(p.repoWorktrees),
+		"repo.branches":         bind(p.repoBranches),
 		"repo.pull":             bind(p.repoPull),
 		"worktree.remove":       bind(p.worktreeRemove),
 		"history.read":          p.historyRead,

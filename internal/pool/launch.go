@@ -19,11 +19,16 @@ import (
 )
 
 type sourceIn struct {
-	Kind   string `json:"kind"` // local | clone | repo
+	Kind   string `json:"kind"` // local | clone | repo | worktree (a new worktree of the repository at Path)
 	Path   string `json:"path,omitempty"`
 	URL    string `json:"url,omitempty"`
 	Dest   string `json:"dest,omitempty"`
 	RepoID string `json:"repo_id,omitempty"`
+
+	// worktree: Branch is made from From (empty: the repository's HEAD) when NewBranch, else checked out.
+	Branch    string `json:"branch,omitempty"`
+	NewBranch bool   `json:"new_branch,omitempty"`
+	From      string `json:"from,omitempty"`
 }
 
 type launchIn struct {
@@ -55,14 +60,51 @@ func (p *Pool) launch(ctx context.Context, in launchIn) (any, error) {
 	if name == "" {
 		name = p.uniqueName(repo.Name + "-" + in.Harness)
 	}
+	id, cwd, trust := protocol.NewID(), repo.Path, ""
+	if in.Source.Kind == "worktree" {
+		if cwd, err = p.addWorktree(ctx, repo, in.Source, name, id); err != nil {
+			return nil, err
+		}
+		trust = repo.Path
+	}
 	s, err := p.spawn(ctx, spawnReq{
-		Name: name, Harness: in.Harness, Command: in.Command, Model: in.Model, Via: in.Via,
-		Cwd: repo.Path, Cols: in.Cols, Rows: in.Rows,
+		ID: id, Name: name, Harness: in.Harness, Command: in.Command, Model: in.Model, Via: in.Via,
+		Cwd: cwd, TrustFrom: trust, Cols: in.Cols, Rows: in.Rows,
 	})
 	if err != nil {
+		if trust != "" { // the worktree this launch just made goes with it, and a new branch with no commits
+			_ = removeWorktree(repo.Path, cwd, map[bool]string{true: in.Source.Branch}[in.Source.NewBranch], true)
+		}
 		return nil, err
 	}
 	return s.View(), nil
+}
+
+// addWorktree makes a new session's worktree in PenguPool's own folder, so the repository's folder
+// gets no siblings: on a new branch from src.From (the repository's HEAD when empty), or on an
+// existing branch no other worktree has checked out. git's own refusal is the error.
+func (p *Pool) addWorktree(ctx context.Context, repo protocol.Repo, src sourceIn, name, id string) (string, error) {
+	if !repo.Git {
+		return "", invalid("%s is not a Git repository", repo.Path)
+	}
+	if src.Branch == "" || strings.HasPrefix(src.Branch, "-") || strings.HasPrefix(src.From, "-") {
+		return "", invalid("choose a branch")
+	}
+	wt := filepath.Join(p.st.Dir(), "worktrees", "sessions", slug(name)+"-"+id[len(id)-8:]) // ids are time-ordered: the tail is the random part
+	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
+		return "", err
+	}
+	args := []string{"-C", repo.Path, "worktree", "add", wt, src.Branch}
+	if src.NewBranch {
+		args = []string{"-C", repo.Path, "worktree", "add", "-b", src.Branch, wt}
+		if src.From != "" {
+			args = append(args, src.From)
+		}
+	}
+	if out, err := exec.CommandContext(ctx, "git", args...).CombinedOutput(); err != nil {
+		return "", invalid("git worktree add: %s", strings.TrimSpace(string(out)))
+	}
+	return wt, nil
 }
 
 type spawnReq struct {
@@ -97,7 +139,7 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 	if r.Harness == harness.Muse { // a Muse installed or upgraded since the daemon started gets its hooks first
 		harness.EnsureMusePlugin(p.st.Dir(), p.exe, p.env, p.logf)
 	}
-	if r.SkillID != "" && r.Resume == "" { // a helper starts in a folder PenguPool made: trust it, so no dialog waits for the owner
+	if (r.SkillID != "" || r.TrustFrom != "") && r.Resume == "" { // a helper or a worktree starts in a folder PenguPool made: trust it, so no dialog waits for the owner
 		if err := pretrustFolder(r.Harness, r.Cwd, r.TrustFrom); err != nil {
 			p.logf("pool: trust %s for %s: %v", r.Cwd, r.Harness, err)
 		}
@@ -171,7 +213,7 @@ func (p *Pool) resolveSource(ctx context.Context, src sourceIn) (protocol.Repo, 
 			return protocol.Repo{}, err
 		}
 		return p.registerRepo(dest, "clone", src.URL)
-	case "local", "":
+	case "local", "", "worktree":
 		path, err := absDir(src.Path)
 		if err != nil {
 			return protocol.Repo{}, err
