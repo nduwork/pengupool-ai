@@ -634,9 +634,9 @@ func (c *conn) dispatch(ctx context.Context, f protocol.Frame) {
 				}
 			}
 		}
-		if !c.forward(f) {
-			c.sendError(protocol.NewID(), protocol.Errorf(protocol.CodeNotFound, "no session attached"))
-		}
+		// With nothing attached the frame is dropped: it was typed into a pane whose session was just
+		// closed or went. An error here has no session_id, so every other attached pane would show it.
+		c.forward(f)
 		return
 	}
 	msg, err := protocol.DecodeControl(f)
@@ -656,9 +656,7 @@ func (c *conn) dispatch(ctx context.Context, f protocol.Frame) {
 	case protocol.TypeSessionDetach:
 		c.detach(msg)
 	case protocol.TypeSessionResize:
-		if !c.forward(f) {
-			c.sendError(msg.ID, protocol.Errorf(protocol.CodeNotFound, "session %s is not attached", msg.SessionID))
-		}
+		c.forward(f) // nothing attached: a closed pane's last resize, dropped like its input above
 	case protocol.TypeSessionList:
 		c.list(msg)
 	case protocol.TypeSessionCreate, protocol.TypeSessionKill:

@@ -671,6 +671,24 @@ func TestDetachWhenNothingIsAttached(t *testing.T) {
 	}
 }
 
+// Input or a resize from a pane whose session is gone is dropped without an error for every other pane.
+func TestInputWhenNothingIsAttached(t *testing.T) {
+	srv, _ := newTestServer(t, &fakeSessions{})
+	c := dialHello(t, srv)
+	_ = c.WriteFrame(protocol.Frame{Header: protocol.Header{Type: protocol.FrameInput, Channel: 3, Length: 1}, Payload: []byte("x")})
+	_ = c.Send(&protocol.Message{ID: "r", Type: protocol.TypeSessionResize, SessionID: "gone", Cols: 80, Rows: 24})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if resp, err := c.Call(ctx, &protocol.Message{Type: protocol.TypePing}); err != nil || resp.Type != protocol.TypePong {
+		t.Fatalf("ping: %+v %v", resp, err)
+	}
+	quiet, stop := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer stop()
+	if f, err := c.Next(quiet); err == nil {
+		t.Fatalf("input with nothing attached answered %+v", f)
+	}
+}
+
 func TestWebSocketRoundTrip(t *testing.T) {
 	p, gw := newWorkerPeer(7, []byte("ws greeting"))
 	fs := &fakeSessions{dialFn: func(_ context.Context, sessionID string) (net.Conn, error) {
