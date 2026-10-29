@@ -732,8 +732,9 @@ func readTranscriptHead(h, path string) PreviousSession {
 		if ps.Title == "" && rec.Message.Role == "user" && !rec.IsMeta {
 			t := strings.TrimSpace(contentText(rec.Message.Content))
 			if t != "" && !strings.HasPrefix(t, "<") {
-				if len(t) > 120 {
-					t = t[:120] + "…"
+				t = redact(t) // the resume list shows it
+				if c := clipRunes(t, 120); c != t {
+					t = c + "…"
 				}
 				ps.Title = t
 			}
