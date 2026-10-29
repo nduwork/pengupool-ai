@@ -42,6 +42,17 @@ func writeHostVersion(dir, line string) error {
 	return os.WriteFile(filepath.Join(dir, hostVersionFile), []byte(line+"\n"), 0o600)
 }
 
+// runningIDs are the sessions the record says are running.
+func runningIDs(st *store.Store) []string {
+	var ids []string
+	for _, s := range st.State().Sessions {
+		if s.State == "running" {
+			ids = append(ids, s.ID)
+		}
+	}
+	return ids
+}
+
 // hubSessions adapts *hub.Hub to the gateway's session interface. The adapter lives here, in the
 // one package that is allowed to know about both, which keeps the two packages independent.
 type hubSessions struct {
@@ -135,6 +146,10 @@ func cmdDaemon(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// The sessions running when the host last stopped: any whose worker is gone now (a reboot, a
+	// crash) are offered to the owner to restore once the host is up.
+	wasRunning := runningIDs(st)
+
 	h, err := hub.New(hub.Options{Store: st, Executable: selfPath(), Logf: logf})
 	if err != nil {
 		return err
@@ -147,6 +162,7 @@ func cmdDaemon(args []string) error {
 	nodes := node.New(st, selfPath(), logf)
 	nodes.Version = versionLine()
 	pl := pool.New(pool.Options{Store: st, Hub: h, Exe: selfPath(), Logf: logf, Nodes: nodes, Version: Version, RequireOwnerInput: true})
+	pl.MarkLost(wasRunning)
 	go pl.Run(ctx)
 	srv, err := gateway.New(gateway.Options{
 		SocketPath: hubSocket(dir),

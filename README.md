@@ -147,6 +147,9 @@ scripts again, and follows a file as an agent writes it. The Tailscale setup is 
 the checklist in Phone connections, the Tailscale app's CLI found when it is not on
 PATH, the approval link when Serve needs one, and Serve re-pointed after the host's
 port changes.
+v0.9.5: after a reboot or crash ended running sessions, the app asks whether to
+restore them (agents resume their conversations). Sessions keep running through an
+app quit and an update, and are not asked about.
 
 ## Credits
 
