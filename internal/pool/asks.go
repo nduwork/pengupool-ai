@@ -15,8 +15,9 @@ import (
 // blocked. `pengupool send --type` names it; a message without one (and Claude's SendMessage, which
 // has no flag) is typed by its first line: "Done:", "Ask:" or "Blocked:", else tell.
 // An ask stays open until its recipient sends the asker anything, or a message answers it by
-// reply_to. One open past askWait, or whose recipient went idle without answering, is escalated:
-// triage goes on for the owner when it is sure the owner would; otherwise it waits in Needs you.
+// reply_to. One open past askWait is escalated: triage goes on for the owner when it is sure the
+// owner would; otherwise it waits in Needs you. ponytail: a recipient that went idle without
+// answering waits out askWait too; telling that apart needs a delivery time on the record.
 
 // Via: host and channel messages travel through PenguPool, native ones through Claude's own
 // SendMessage (to a teammate, or on a channel the owner opened).
@@ -26,12 +27,8 @@ const (
 	viaChannel = "channel"
 )
 
-// askWait is how long an ask waits for its answer; askIdle how long a recipient that went idle
-// without answering has had it. Tests shorten both.
-var (
-	askWait = 15 * time.Minute
-	askIdle = time.Minute
-)
+// askWait is how long an ask waits for its answer.
+const askWait = 15 * time.Minute
 
 var msgTypes = map[string]bool{"tell": true, "ask": true, "done": true, "blocked": true}
 
@@ -75,11 +72,10 @@ func (p *Pool) sweepAsks(at time.Time) {
 		if m.EscalatedAt != "" || !askOpen(ms, i) {
 			continue
 		}
-		to, _ := sessionByID(&st, m.To)
-		idle := m.State == "delivered" && to.Status == "idle" && olderThan(m.At, at, askIdle)
-		if !olderThan(m.At, at, askWait) && !idle {
+		if !olderThan(m.At, at, askWait) {
 			continue
 		}
+		to, _ := sessionByID(&st, m.To)
 		claimed := false
 		_ = p.update(func(st *store.State) error {
 			for j := range st.Domain.Messages {
@@ -204,11 +200,10 @@ func (p *Pool) nativeArrived(id, from string, at time.Time) {
 		if m.To != id || m.Via != viaNative || m.State != "queued" || m.From == "" {
 			continue
 		}
-		if from != "" {
-			if m.From != from {
-				continue
-			}
-		} else if !olderThan(m.At, at, time.Second) {
+		if from != "" && m.From != from || from == "" && !olderThan(m.At, at, time.Second) {
+			continue
+		}
+		if t, err := time.Parse(time.RFC3339, m.At); err != nil || t.After(at) { // sent after the prompt: still on its way
 			continue
 		}
 		ids = append(ids, m.ID)

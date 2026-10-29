@@ -72,8 +72,7 @@ Every message between members is on one record, whatever carries it (`via`: host
 native for Claude's own SendMessage). A message is `queued` until it is in the recipient's turn, then
 `delivered`, or `failed`. Its type is tell, ask, done or blocked (`send --type`, or the first line
 `Done:`, `Ask:`, `Blocked:`). An ask stays open until the recipient sends the asker anything; one open
-15 minutes, or whose recipient went idle without answering, goes to triage, and to Needs you only when
-triage can't settle it. No colour stands alone: each cue has a glyph or a word.
+15 minutes goes to triage, and to Needs you only when triage can't settle it. No colour stands alone: each cue has a glyph or a word.
 
 | Where | Shows |
 |---|---|

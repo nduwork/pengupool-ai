@@ -129,7 +129,13 @@ func TestAskEscalatesAndTheOwnerSettlesIt(t *testing.T) {
 	old := store.RFC3339(time.Now().Add(-askWait - time.Minute))
 	putMessage(t, p, protocol.TeamMessage{ID: "ask1", TeamID: "team1", From: "webaaaaaaaaa", To: "leadaaaaaaaa", Text: "Ask: which port?", Type: "ask", State: "delivered", At: old})
 	putMessage(t, p, protocol.TeamMessage{ID: "ask2", TeamID: "team1", From: "webaaaaaaaaa", To: "leadaaaaaaaa", Text: "Ask: which host?", Type: "ask", State: "delivered", At: now()})
+	// queued while the recipient worked, delivered at its idle: it has only just got it
+	putMessage(t, p, protocol.TeamMessage{ID: "ask3", TeamID: "team1", From: "planaaaaaaaa", To: "leadaaaaaaaa", Text: "Ask: which db?", Type: "ask", State: "delivered", At: store.RFC3339(time.Now().Add(-2 * time.Minute))})
+	_ = p.update(func(st *store.State) error { st.Sessions[0].Status = "idle"; return nil })
 	p.sweepAsks(time.Now())
+	if m := message(p, "ask3"); m.EscalatedAt != "" {
+		t.Fatal("an ask the idle recipient has only just got was escalated")
+	}
 	if m := message(p, "ask1"); m.EscalatedAt == "" {
 		t.Fatal("an ask past its wait was not escalated")
 	}
