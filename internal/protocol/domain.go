@@ -204,6 +204,16 @@ type TeamMessage struct {
 	State  string `json:"state"` // queued | delivered | failed
 	Reason string `json:"reason,omitempty"`
 	At     string `json:"at"`
+	// Via is how it travels: host (PenguPool delivers it), channel (PenguPool delivers it outside the
+	// team, on a channel the owner opened) or native (Claude's own SendMessage). Empty: host.
+	Via string `json:"via,omitempty"`
+	// Type is tell, ask, done or blocked; empty: tell.
+	Type    string `json:"type,omitempty"`
+	ReplyTo string `json:"reply_to,omitempty"` // the ask this answers
+	// An ask waiting too long is escalated (to triage, then the owner's Needs you); one the owner
+	// or triage closed without the recipient's answer is settled.
+	EscalatedAt string `json:"escalated_at,omitempty"`
+	SettledAt   string `json:"settled_at,omitempty"`
 }
 
 // NodeView is a worker host as clients see it.

@@ -17,7 +17,7 @@ import (
 )
 
 // Version of the prototype. It is not the protocol version; that is protocol.Version.
-const Version = "0.9.8"
+const Version = "0.9.9"
 
 const help = `usage: pengupool <command> [options]
 
@@ -33,8 +33,10 @@ const help = `usage: pengupool <command> [options]
         stop a session and its worker.
   web
         print the browser app URL for the running daemon.
-  send --to MEMBER TEXT
-        message another member of this session's team (from inside a team session).
+  send --to MEMBER [--type tell|ask|done|blocked] [--reply-to ASK_ID] TEXT
+        message another member of this session's team (from inside a team session). An ask stays
+        open until the member answers; without --type, a first line starting Done:, Ask: or
+        Blocked: gives the type.
   search WORDS
         (inside an agent session) search the owner's compass and a helper's own journal entries.
         "memory search" is the same, under its old name.

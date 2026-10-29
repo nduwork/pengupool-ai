@@ -153,7 +153,7 @@ func TestTreeTalk(t *testing.T) {
 			onRecord = append(onRecord, m)
 		}
 	}
-	if len(onRecord) != 1 || onRecord[0].From != id["web"] || onRecord[0].To != id["lead"] || onRecord[0].State != "delivered" || onRecord[0].ID == "" {
+	if len(onRecord) != 1 || onRecord[0].From != id["web"] || onRecord[0].To != id["lead"] || onRecord[0].State != "queued" || onRecord[0].Via != viaNative || onRecord[0].ID == "" {
 		t.Fatalf("the SendMessage on the record: %+v", onRecord)
 	}
 	// Each member's context lists only its neighbours, with the way to reach each.

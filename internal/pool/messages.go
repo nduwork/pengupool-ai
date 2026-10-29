@@ -26,13 +26,14 @@ const maxMessage = 4 << 10
 const keepMessages = 300
 
 // addMessage puts a message on the team's record, keeping the newest keepMessages. The oldest that
-// are no longer queued go first: a queued message or notice is still to be delivered.
+// are no longer queued go first: a queued message or notice is still to be delivered, and an open
+// ask still to be answered.
 func addMessage(st *store.State, m protocol.TeamMessage) {
 	ms := append(st.Domain.Messages, m)
 	if drop := len(ms) - keepMessages; drop > 0 {
 		kept := make([]protocol.TeamMessage, 0, keepMessages)
-		for _, x := range ms {
-			if drop > 0 && x.State != "queued" {
+		for i, x := range ms {
+			if drop > 0 && x.State != "queued" && !askOpen(ms, i) {
 				drop--
 				continue
 			}
@@ -44,9 +45,11 @@ func addMessage(st *store.State, m protocol.TeamMessage) {
 }
 
 type sendIn struct {
-	From string `json:"from"`
-	To   string `json:"to"`
-	Text string `json:"text"`
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Text    string `json:"text"`
+	Type    string `json:"type,omitempty"`     // tell | ask | done | blocked; empty: by its first line
+	ReplyTo string `json:"reply_to,omitempty"` // the id of an ask sent to the sender
 }
 
 func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
@@ -57,6 +60,10 @@ func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
 	if len(text) > maxMessage {
 		return nil, invalid("a message is limited to %d bytes; put longer content in a file and send its path", maxMessage)
 	}
+	typ, err := msgType(in.Type, text)
+	if err != nil {
+		return nil, err
+	}
 	var msg protocol.TeamMessage
 	var toSession store.Session
 	// A session outside the team only through a channel the owner opened with @.
@@ -64,7 +71,16 @@ func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
 	if x, ok := sessionNamed(p.st.State(), in.To); ok && p.crossTeamOpen(in.From, x.ID) {
 		channel = x.ID
 	}
-	err := p.update(func(st *store.State) error {
+	err = p.update(func(st *store.State) error {
+		if in.ReplyTo != "" {
+			found := false
+			for _, m := range st.Domain.Messages {
+				found = found || m.ID == in.ReplyTo && m.Type == "ask" && m.To == in.From
+			}
+			if !found {
+				return invalid("reply_to %q is not an ask sent to you", in.ReplyTo)
+			}
+		}
 		t := teamOf(&st.Domain, in.From)
 		var hits []protocol.Member
 		teamID := ""
@@ -108,9 +124,13 @@ func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
 			return protocol.Errorf(protocol.CodeUnavailable, "%s is not running", firstNonEmpty(hits[0].Name, in.To))
 		}
 		toSession = st.Sessions[i]
+		via := viaHost
+		if channel != "" && !sameTeam(&st.Domain, in.From, hits[0].SessionID) {
+			via = viaChannel
+		}
 		msg = protocol.TeamMessage{
 			ID: protocol.NewID(), TeamID: teamID, From: in.From, To: hits[0].SessionID,
-			Text: text, State: "queued", At: now(),
+			Text: text, State: "queued", At: now(), Via: via, Type: typ, ReplyTo: in.ReplyTo,
 		}
 		addMessage(st, msg)
 		return nil
@@ -160,7 +180,7 @@ func (p *Pool) flushQueue(id string) {
 	}
 	// Messages a previous daemon queued are in state.json only.
 	for _, m := range p.st.State().Domain.Messages {
-		if m.To == id && m.From != "" && m.State == "queued" && !contains(q, m.ID) {
+		if m.To == id && m.From != "" && m.State == "queued" && m.Via != viaNative && !contains(q, m.ID) {
 			p.deliver(m)
 		}
 	}
@@ -189,6 +209,10 @@ func (p *Pool) deliver(m protocol.TeamMessage) {
 	}
 	body := fmt.Sprintf("[PenguPool team message from %s (%s)] %s\n\nTo reply, run this shell command (do not just print it): %s send --to %q \"<your reply>\"",
 		from.Name, from.Role, m.Text, p.exe, from.Name)
+	if m.Type == "ask" {
+		body = fmt.Sprintf("[PenguPool team message from %s (%s), an ask waiting for your answer] %s\n\nTo answer, run this shell command (do not just print it): %s send --to %q --reply-to %s \"<your answer>\"",
+			from.Name, from.Role, m.Text, p.exe, from.Name, m.ID)
+	}
 	if d := p.st.State().Domain; m.From != "" && !sameTeam(&d, m.From, m.To) {
 		body = strings.Replace(body, "[PenguPool team message from "+from.Name+" ("+from.Role+")", outsideLabel+from.Name+", outside your team, on a channel the owner opened", 1)
 	}

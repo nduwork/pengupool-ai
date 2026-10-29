@@ -1,4 +1,4 @@
-import { Bell, MessageCircleQuestion, ShieldQuestion, Rocket, ThumbsDown, ThumbsUp, Users } from "lucide-react";
+import { Bell, MessageCircleQuestion, MessagesSquare, ShieldQuestion, Rocket, ThumbsDown, ThumbsUp, Users } from "lucide-react";
 import { Popover } from "radix-ui";
 import { useEffect, useState, type ReactElement } from "react";
 
@@ -8,19 +8,24 @@ import { Badge, Input, Label, RoleTag, Select, Textarea, submitOnEnter } from ".
 import { Sheet } from "../components/ui/dialog";
 import type { Approval, Member, Proposal, ProposedMember, Team } from "../protocol/domain";
 import { FormationSheet, roleOf } from "./Formation";
-import { reconcileInbox, sessionNeeds, type InboxEntry, type Need } from "./inbox";
+import { askNeeds, reconcileInbox, sessionNeeds, type InboxEntry, type Need } from "./inbox";
+import { age } from "./map/asks";
 
 // Urgent approvals stay visible: a bell with a count in the title bar. NeedsYouBar is what needs the
 // owner now: an agent's check-in (answered here: Go on, Stop, or a reply typed into its terminal for
 // it), a permission dialog (it lives in the harness, so Open terminal) and the go-aheads triage picked
-// for the owner to check (a one-tap verdict). The bell's
+// for the owner to check (a one-tap verdict), and a team member's ask nobody answered that triage
+// could not settle (Go on, Reply in the recipient's terminal, Dismiss). The bell's
 // popover also holds the Inbox: the history of those asks, one entry per session.
 
 export function ApprovalsBell(): ReactElement {
   const app = useApp();
   const pending = app.domain.approvals.filter((a) => a.state === "pending" && a.kind !== "permission"); // permission requests are answered in the terminal
   const [inbox, setInbox] = usePersisted<InboxEntry[]>("inbox", []);
-  useEffect(() => setInbox(reconcileInbox(inbox, sessionNeeds(app.sessions, app.gates), Date.now())), [app.sessions, app.gates]);
+  useEffect(
+    () => setInbox(reconcileInbox(inbox, [...sessionNeeds(app.sessions, app.gates), ...askNeeds(app.domain.messages, app.sessions)], Date.now())),
+    [app.sessions, app.gates, app.domain.messages],
+  );
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -42,10 +47,14 @@ export function ApprovalsBell(): ReactElement {
             <>
               <p className="px-2 pb-1 pt-2 text-label font-semibold">Inbox</p>
               {inbox.map((e) => (
-                <button key={e.session} type="button" onClick={() => app.select(e.session)} className="flex w-full items-center gap-2 rounded-md p-2 text-left text-label hover:bg-hover">
-                  <ShieldQuestion className={e.resolvedAt === undefined ? "size-4 shrink-0 text-warning" : "size-4 shrink-0 text-faint"} />
+                <button key={e.key ?? e.session} type="button" onClick={() => app.select(e.session)} className="flex w-full items-center gap-2 rounded-md p-2 text-left text-label hover:bg-hover">
+                  {e.kind === "ask" ? (
+                    <MessagesSquare className={e.resolvedAt === undefined ? "size-4 shrink-0 text-warning" : "size-4 shrink-0 text-faint"} />
+                  ) : (
+                    <ShieldQuestion className={e.resolvedAt === undefined ? "size-4 shrink-0 text-warning" : "size-4 shrink-0 text-faint"} />
+                  )}
                   <span className={e.resolvedAt === undefined ? "min-w-0 flex-1 truncate" : "min-w-0 flex-1 truncate text-muted-foreground"}>
-                    <strong className="font-semibold">{e.name}</strong> {e.text}
+                    <strong className="font-semibold">{e.name}</strong> {e.kind === "ask" ? `asked ${e.toName ?? ""}: “${e.text}”` : e.text}
                   </span>
                   <span className="shrink-0 text-caption text-faint">{e.resolvedAt === undefined ? ago(new Date(e.at).toISOString()) : "resolved"}</span>
                 </button>
@@ -76,12 +85,16 @@ export function useSpotChecks(): { spots: { id: number; agent: string; question:
 export function NeedsYouBar(): ReactElement | null {
   const app = useApp();
   const list = sessionNeeds(app.sessions, app.gates);
+  const asks = askNeeds(app.domain.messages, app.sessions);
   const { spots, verdict } = useSpotChecks();
-  if (list.length === 0 && spots.length === 0) return null;
+  if (list.length === 0 && asks.length === 0 && spots.length === 0) return null;
   return (
     <div className="grid grid-cols-1 gap-1 border-b border-warning/30 bg-warning/10 px-3 py-1.5" role="region" aria-label="Needs you">
       {list.map((n) => (
         <NeedRow key={n.session} n={n} />
+      ))}
+      {asks.map((n) => (
+        <AskRow key={n.key} n={n} />
       ))}
       {spots.map((g) => (
         <div key={g.id} className="flex items-center gap-2 text-label">
@@ -105,7 +118,41 @@ export function NeedsYouBar(): ReactElement | null {
 function NeedRole({ id }: { id: string }): ReactElement | null {
   const app = useApp();
   const role = roleOf(app.domain, app.sessions, id);
-  return role !== undefined ? <RoleTag role={role} className="align-middle" /> : null;
+  return role !== undefined ? (
+    <>
+      {" "}
+      <RoleTag role={role} className="align-middle" />
+    </>
+  ) : null;
+}
+
+/** A member's ask nobody answered and triage could not settle: go on without the answer, answer it
+ *  in the recipient's terminal, or close it. */
+function AskRow({ n }: { n: Need }): ReactElement | null {
+  const app = useApp();
+  const a = n.ask;
+  if (a === undefined) return null;
+  const settle = (action: "go_on" | "dismiss"): void => void app.call("ask.settle", { id: a.id, action });
+  return (
+    <div className="flex items-center gap-2 text-label">
+      <MessagesSquare className="size-4 shrink-0 text-warning" />
+      <span className="min-w-0 flex-1 truncate" title={`${n.name} asked ${n.toName ?? ""}: ${a.text}`}>
+        <strong className="font-semibold">{n.name}</strong>
+        <NeedRole id={a.from} /> asked <strong className="font-semibold">{n.toName}</strong>
+        <NeedRole id={a.to} />: “{a.text}” ·{" "}
+        {age(a.at, Date.now())}
+      </span>
+      <Button size="sm" variant="default" onClick={() => settle("go_on")}>
+        Go on
+      </Button>
+      <Button size="sm" title={`Opens ${n.toName ?? ""}'s terminal`} onClick={() => app.select(a.to)}>
+        Reply
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => settle("dismiss")}>
+        Dismiss
+      </Button>
+    </div>
+  );
 }
 
 function NeedRow({ n }: { n: Need }): ReactElement {
@@ -123,7 +170,8 @@ function NeedRow({ n }: { n: Need }): ReactElement {
       <div className="flex items-center gap-2">
         {checkin ? <MessageCircleQuestion className="size-4 shrink-0 text-warning" /> : <ShieldQuestion className="size-4 shrink-0 text-warning" />}
         <span className="min-w-0 flex-1 truncate" title={n.text}>
-          <strong className="font-semibold">{n.name}</strong> <NeedRole id={n.session} /> {checkin ? "asks: " : ""}
+          <strong className="font-semibold">{n.name}</strong>
+          <NeedRole id={n.session} /> {checkin ? "asks: " : ""}
           {n.text}
         </span>
         {n.gate?.floor === true ? <Badge tone="danger">floor</Badge> : null}

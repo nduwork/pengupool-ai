@@ -293,6 +293,8 @@ func contextPercent(raw []byte) (float64, bool) {
 func cmdSend(args []string) error {
 	fs := flag.NewFlagSet("send", flag.ContinueOnError)
 	to := fs.String("to", "", "member name or session id")
+	typ := fs.String("type", "", "tell, ask, done or blocked (default: by the first line, Done:/Ask:/Blocked:, else tell)")
+	replyTo := fs.String("reply-to", "", "the id of the ask this answers")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -307,7 +309,7 @@ func cmdSend(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	res, err := rpc(ctx, poolStore(), "message.send", map[string]string{"from": from, "to": *to, "text": text})
+	res, err := rpc(ctx, poolStore(), "message.send", map[string]string{"from": from, "to": *to, "text": text, "type": *typ, "reply_to": *replyTo})
 	if err != nil {
 		return err
 	}

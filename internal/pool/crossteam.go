@@ -166,6 +166,15 @@ func (p *Pool) ownerMentions(s store.Session, prompt string) {
 
 var fromSockRe = regexp.MustCompile(`\bfrom="uds:([^"]+)"`)
 
+// outsideSender is the session a cross-session message came from, by its message socket; "" when
+// it is not a PenguPool session's.
+func (p *Pool) outsideSender(prompt string) string {
+	if m := fromSockRe.FindStringSubmatch(prompt); m != nil {
+		return p.sessionBySocket(m[1])
+	}
+	return ""
+}
+
 // blockOutside refuses a cross-session message from a session the receiver may not hear. It is
 // dropped before the agent sees it (the prompt never enters its context) and the attempt is logged.
 func (p *Pool) blockOutside(s store.Session, prompt string) (HookOut, bool) {
@@ -173,11 +182,7 @@ func (p *Pool) blockOutside(s store.Session, prompt string) (HookOut, bool) {
 	if !ok {
 		return HookOut{}, false
 	}
-	sender := ""
-	if m := fromSockRe.FindStringSubmatch(prompt); m != nil {
-		sender = p.sessionBySocket(m[1])
-	}
-	if p.mayTalk(sender, s.ID) {
+	if p.mayTalk(p.outsideSender(prompt), s.ID) {
 		return HookOut{}, false
 	}
 	p.logLine(s.ID, "team: blocked a message from "+from+" (not this session's parent or child; the owner can open a channel with @"+s.Name+")")

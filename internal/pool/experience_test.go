@@ -35,8 +35,10 @@ func journalSetup(t *testing.T, h string) (*Pool, string, *[]string) {
 	return p, path, &typed
 }
 
+// done is a message from the helper to its parent, typed as on the way in (msgType).
 func done(text string) protocol.TeamMessage {
-	return protocol.TeamMessage{TeamID: "team1", From: plan, To: "leadaaaaaaaa", Text: text}
+	typ, _ := msgType("", text)
+	return protocol.TeamMessage{TeamID: "team1", From: plan, To: "leadaaaaaaaa", Text: text, Type: typ}
 }
 
 func appendLine(t *testing.T, path, line string) {
@@ -114,8 +116,9 @@ func TestOnlyADoneReportMakesAnEntry(t *testing.T) {
 	for _, m := range []protocol.TeamMessage{
 		done("Question: which branch?"),
 		done("progress: half way\nDone: not on the first line"),
-		{TeamID: "team1", From: plan, To: "webaaaaaaaaa", Text: "Done: to a sibling, not the parent"},
-		{TeamID: "team1", From: "webaaaaaaaaa", To: "leadaaaaaaaa", Text: "Done: a helper without a skill"},
+		{TeamID: "team1", From: plan, To: "webaaaaaaaaa", Text: "Done: to a sibling, not the parent", Type: "done"},
+		{TeamID: "team1", From: "webaaaaaaaaa", To: "leadaaaaaaaa", Text: "Done: a helper without a skill", Type: "done"},
+		{TeamID: "team1", From: plan, To: "leadaaaaaaaa", Text: "Done: but sent as a tell", Type: "tell"},
 	} {
 		p.doneReport(m)
 	}
