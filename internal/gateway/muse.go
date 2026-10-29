@@ -158,6 +158,8 @@ func writeMuseError(w http.ResponseWriter, err error) {
 		switch pe.Code {
 		case protocol.CodeConflict:
 			code = http.StatusConflict
+		case protocol.CodeNotFound:
+			code = http.StatusNotFound
 		case protocol.CodeInvalidArgument:
 			code = http.StatusBadRequest
 		}

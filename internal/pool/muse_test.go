@@ -333,12 +333,25 @@ func TestMuseAnswerRespectsVisibility(t *testing.T) {
 // network is on; with Serve it stays the HTTPS Serve name.
 func TestMuseBaseURL(t *testing.T) {
 	p, _ := musePool(t)
-	oldAddr, oldLookup := HTTPAddr, lookupTailnetName
-	t.Cleanup(func() { HTTPAddr, lookupTailnetName = oldAddr, oldLookup })
-	lookupTailnetName = func() (string, error) { return "mac.tail1.ts.net", nil }
+	oldAddr := HTTPAddr
+	t.Cleanup(func() { HTTPAddr = oldAddr })
+	// The host check's cached name, fresh so no lookup runs.
+	tailnetName.Lock()
+	oldName, oldAt := tailnetName.name, tailnetName.at
+	tailnetName.name, tailnetName.at = "mac.tail1.ts.net", time.Now()
+	tailnetName.Unlock()
+	t.Cleanup(func() {
+		tailnetName.Lock()
+		tailnetName.name, tailnetName.at = oldName, oldAt
+		tailnetName.Unlock()
+	})
 	HTTPAddr = func() string { return "127.0.0.1:7787" }
 	if got := p.museBaseURL(); got != "https://<tailnet-name>" {
 		t.Errorf("loopback only: %q", got)
+	}
+	HTTPAddr = func() string { return "192.168.1.5:7787" }
+	if got := p.museBaseURL(); got != "https://<tailnet-name>" {
+		t.Errorf("one LAN address: %q", got)
 	}
 	HTTPAddr = func() string { return "[::]:7787" }
 	if got := p.museBaseURL(); got != "http://mac.tail1.ts.net:7787" {
