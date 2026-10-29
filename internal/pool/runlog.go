@@ -35,7 +35,7 @@ func slug(s string) string {
 
 func (p *Pool) runLogPath(id, name string) string {
 	return filepath.Join(p.st.Dir(), store.LogsDir,
-		time.Now().Format("2006-01-02")+"-"+slug(name)+"-"+id[:8]+".log")
+		time.Now().Format("2006-01-02")+"-"+slug(name)+"-"+idTail(id)+".log")
 }
 
 // logLine appends one "HH:MM:SS text" line to a session's run log. Newlines in text are folded so
@@ -98,3 +98,8 @@ func (p *Pool) runlogDelete(_ context.Context, in sessionIn) (any, error) {
 	}
 	return nil, nil
 }
+
+// idTail is the short form of an id in a file, folder or branch name. Ids are time-ordered (UUIDv7):
+// their first 8 characters change only about once a minute, so two of them made close together
+// shared a name; the tail is the random part. Names made before keep working: they are stored.
+func idTail(id string) string { return id[max(0, len(id)-8):] }

@@ -622,8 +622,8 @@ func (p *Pool) startMember(ctx context.Context, team *protocol.Team, repo protoc
 			return m, invalid("SMEs need a Git work repository")
 		}
 		m.RepoID = repo.ID
-		m.Worktree = filepath.Join(p.st.Dir(), "worktrees", team.ID[:8], slug(pm.Name)+"-"+id[:8])
-		m.Branch = fmt.Sprintf("pengupool/%s/%s-%s", slug(t.Title), slug(pm.Name), id[:8])
+		m.Worktree = filepath.Join(p.st.Dir(), "worktrees", idTail(team.ID), slug(pm.Name)+"-"+idTail(id))
+		m.Branch = fmt.Sprintf("pengupool/%s/%s-%s", slug(t.Title), slug(pm.Name), idTail(id))
 		if err := os.MkdirAll(filepath.Dir(m.Worktree), 0o755); err != nil {
 			return m, err
 		}

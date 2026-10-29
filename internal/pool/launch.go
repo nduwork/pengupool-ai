@@ -98,7 +98,7 @@ func (p *Pool) addWorktree(ctx context.Context, repo protocol.Repo, src sourceIn
 	if src.NewBranch && (src.Branch == "" || strings.HasPrefix(src.Branch, "-") || src.From != "" && !local(src.From)) || !src.NewBranch && !local(src.Branch) {
 		return "", invalid("choose one of the repository's branches")
 	}
-	wt := filepath.Join(p.st.Dir(), "worktrees", "sessions", slug(name)+"-"+id[len(id)-8:]) // ids are time-ordered: the tail is the random part
+	wt := filepath.Join(p.st.Dir(), "worktrees", "sessions", slug(name)+"-"+idTail(id))
 	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
 		return "", err
 	}
@@ -423,7 +423,7 @@ func (p *Pool) openTerminal(_ context.Context, in sessionIn) (any, error) {
 	if !ok {
 		return nil, notFound("no session %s", in.SessionID)
 	}
-	script := filepath.Join(p.st.Dir(), "run", "open-"+s.ID[:8]+".command")
+	script := filepath.Join(p.st.Dir(), "run", "open-"+idTail(s.ID)+".command")
 	body := fmt.Sprintf("#!/bin/sh\nexec %s attach --store %s %s\n", shq(p.exe), shq(p.st.Dir()), s.ID)
 	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
 		return nil, err
