@@ -608,7 +608,8 @@ func (p *Pool) nodeKeySetup(ctx context.Context, in nodeKeySetupIn) (any, error)
 }
 
 // historyRead returns a session's agent history from its harness transcript: Claude's JSONL
-// records or OMP's session events. Only user and assistant text; tool noise is dropped.
+// records or OMP's session events. Only user and assistant text, credentials left out; tool noise
+// is dropped. A phone may read it, so nothing secret leaves the host.
 func (p *Pool) historyRead(_ context.Context, c gateway.Caller, raw json.RawMessage) (any, error) {
 	var in struct {
 		SessionID string `json:"session_id"`
@@ -663,7 +664,7 @@ func (p *Pool) historyRead(_ context.Context, c gateway.Caller, raw json.RawMess
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
-		items = append(items, item{Role: role, Text: text, At: rec.Timestamp})
+		items = append(items, item{Role: role, Text: redact(text), At: rec.Timestamp})
 	}
 	if len(items) > in.Limit {
 		items = items[len(items)-in.Limit:]
