@@ -3,20 +3,52 @@ import { useEffect, useId, useState, type ReactElement } from "react";
 import { AGENTS, agentOptions, checkFailed, launchAgent, pickable, skillName, useApp, type Found } from "../app/ctx";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
-import { Input, Label, Select, Textarea } from "../components/ui/controls";
+import { Input, Label, Select, Textarea, type Role } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
 import type { Domain, FormationChange, Member, Team } from "../protocol/domain";
 
 // Formation: every change to who is on a team is approved by the owner. A change made here is
-// approved in the same step (team.formation); a member's request waits in Approvals. The anchor is
-// the hub of a task's communication and composes its results; it is not a boss.
+// approved in the same step (team.formation); a member's request waits in Approvals. Who leads is not
+// a change: the LEAD is the root of the team's tree.
 
-/** The session id of the team's anchor: its current task's anchor while active, else its
- * coordinator, else its main worker (mirrors the host's anchorOf). */
-export function anchorOf(_domain: Domain, t: Team): string {
+/** The session id of the team's LEAD: the root of its tree, the main worker, else the first active
+ * member with no active parent (mirrors the host's leadOf). */
+export function leadOf(t: Team): string {
   const active = t.members.filter((m) => m.state === "active");
-  if (t.anchor_id !== undefined && active.some((m) => m.session_id === t.anchor_id)) return t.anchor_id;
-  return active.find((m) => m.coordinator === true)?.session_id ?? active.find((m) => m.role === "main")?.session_id ?? "";
+  return (active.find((m) => m.role === "main") ?? active.find((m) => treeParent(t, m.session_id) === ""))?.session_id ?? "";
+}
+
+/** A member's nearest active ancestor, past members that left; "" at the top (mirrors the host's treeParent). */
+function treeParent(t: Team, id: string): string {
+  const parent = (x: string): string => t.members.find((m) => m.session_id === x)?.parent ?? "";
+  const seen = new Set([id]);
+  for (let up = parent(id); up !== "" && !seen.has(up); up = parent(up)) {
+    seen.add(up);
+    if (t.members.some((m) => m.session_id === up && m.state === "active")) return up;
+  }
+  return "";
+}
+
+/** A member's label, derived, never stored (mirrors the host's teamLabel): LEAD for the root of the
+ * tree, HELPER for an agent from the helper pool, SME for a member the owner added with a repository
+ * behind it (its worktree, or a session working in a known repository); undefined for any other member. */
+export function teamLabel(t: Team, m: Member, cwd?: string, repos: { path: string }[] = []): Role | undefined {
+  if (m.session_id === leadOf(t)) return "lead";
+  if (m.skill_id !== undefined && m.skill_id !== "") return "helper";
+  if ((m.repo_id ?? "") !== "" || (m.worktree ?? "") !== "") return "sme";
+  if (cwd !== undefined && cwd !== "" && repos.some((r) => r.path !== "" && (cwd === r.path || cwd.startsWith(r.path + "/")))) return "sme";
+  return undefined;
+}
+
+/** The role of a session on its active team; undefined for a session on no team. */
+export function roleOf(domain: Domain, sessions: readonly { id: string; cwd?: string }[], sessionId: string): Role | undefined {
+  const cwd = sessions.find((x) => x.id === sessionId)?.cwd;
+  for (const t of domain.teams) {
+    if (t.state !== "active") continue;
+    const m = t.members.find((x) => x.session_id === sessionId && x.state === "active");
+    if (m !== undefined) return teamLabel(t, m, cwd, domain.repos);
+  }
+  return undefined;
 }
 
 export function describeChange(domain: Domain, t: Team | undefined, c: FormationChange): string {
@@ -28,8 +60,8 @@ export function describeChange(domain: Domain, t: Team | undefined, c: Formation
         : `Add an SME for ${domain.repos.find((r) => r.id === c.repo_id)?.name ?? "a repository"}`;
     case "remove":
       return `Remove ${member}`;
-    case "anchor":
-      return `Make ${member} the anchor`;
+    default: // a request from an older record to choose who leads; it changes nothing
+      return `${String(c.op)} ${member}`;
   }
 }
 
@@ -102,9 +134,7 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
       >
         {adding ? null : (
           <p className="text-muted-foreground">
-            {change.op === "anchor"
-              ? "The anchor gets a digest of every message, composes the members' results and proposes completion. It cannot approve, merge or change the direction."
-              : "A member that leaves keeps its own experience."}
+            A member that leaves keeps its own experience.
           </p>
         )}
         {adding ? (

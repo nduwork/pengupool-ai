@@ -739,7 +739,7 @@ func (p *Pool) Run(ctx context.Context) {
 	}()
 	go p.syncLoop(ctx)
 	go p.updateLoop(ctx)
-	go p.codexLoop(ctx)
+	go p.readyLoop(ctx)
 	go func() { // the Skill library follows the marketplace: a minute after start, then every 6 hours
 		p.syncMu.Lock() // the move to the Helper agent hub, before any sync reads the catalog
 		p.unlockClones()

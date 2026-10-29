@@ -49,6 +49,23 @@ and resume, but none are offered.
 
 A plain terminal session stays independent of all of this.
 
+## Team roles
+
+Each team member's role comes from the team's tree. It is worked out when needed, and nobody stores or chooses it (`teamLabel` in
+internal/pool/formation.go, mirrored in web/src/views/Formation.tsx):
+
+| Role | Who | Tag (`RoleTag`, web/src/components/ui/controls.tsx) |
+|---|---|---|
+| Lead | the root of the tree; it combines the results and reports to the owner. A root that has a repository is the Lead, not an SME, and a team with no repository members still has a Lead | strong outline, `text-foreground`, semibold |
+| SME | a member the owner added that has a repository behind it: its worktree, or its session working in a known repository | hairline outline, muted, medium |
+| Helper | an agent taken from the helper pool | no outline, muted, normal weight |
+
+The tags have no colour, so they never compete with the status colours or the one teal accent. A tag
+shows only on a team member: in the sidebar tree, on map cards, in both session headers, in the agent
+message log, in the Needs-you strip and in a launch proposal. Tags are written in sentence case
+everywhere except the map, where the outlined role chip on each card is uppercase (`LEAD`, `SME`,
+`HELPER`).
+
 ## The Compass
 
 ```

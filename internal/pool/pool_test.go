@@ -213,7 +213,7 @@ func TestTeamGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	d = st.State().Domain
-	if tm = teamOf(&d, "b"); tm == nil || parentOf(tm, "b") != "a" || anchorOf(&d, tm) != "a" || teamOf(&d, "m") != nil {
+	if tm = teamOf(&d, "b"); tm == nil || parentOf(tm, "b") != "a" || leadOf(tm) != "a" || teamOf(&d, "m") != nil {
 		t.Fatalf("after the move = %+v", d.Teams)
 	}
 	// The root dropped on the canvas stays put; a, the root, onto m brings b along under it.
@@ -227,7 +227,7 @@ func TestTeamGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	d = st.State().Domain
-	if tm = teamOf(&d, "b"); tm == nil || parentOf(tm, "b") != "a" || parentOf(tm, "a") != "m" || anchorOf(&d, tm) != "m" {
+	if tm = teamOf(&d, "b"); tm == nil || parentOf(tm, "b") != "a" || parentOf(tm, "a") != "m" || leadOf(tm) != "m" {
 		t.Fatalf("after the merge = %+v", d.Teams)
 	}
 	// A close takes one session off: b moves up to m, and the two-member team then ends with m's close.
@@ -266,7 +266,7 @@ func TestTeamGroupMovesWorktreeHelpers(t *testing.T) {
 	}
 	d := st.State().Domain
 	tm := teamOf(&d, "w")
-	if tm == nil || anchorOf(&d, tm) != "m2" || parentOf(tm, "w") != "m1" || parentOf(tm, "m1") != "m2" || findTeam(&d, "t1").State != "closed" {
+	if tm == nil || leadOf(tm) != "m2" || parentOf(tm, "w") != "m1" || parentOf(tm, "m1") != "m2" || findTeam(&d, "t1").State != "closed" {
 		t.Fatalf("teams = %+v", d.Teams)
 	}
 	for _, m := range tm.Members {
@@ -303,7 +303,7 @@ func TestTeamGroupEdges(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := st.State().Domain
-	if tm := teamOf(&d, "h"); tm == nil || anchorOf(&d, tm) != "x" || parentOf(tm, "h") != "m" {
+	if tm := teamOf(&d, "h"); tm == nil || leadOf(tm) != "x" || parentOf(tm, "h") != "m" {
 		t.Fatalf("the helper under a closed member was left behind: %+v", d.Teams)
 	}
 	// x's team is 5; three more make 8, and a team of 8 takes more: a team has no size limit.
@@ -687,7 +687,7 @@ func TestGoalChangesAreNotRecorded(t *testing.T) {
 	}
 }
 
-func TestFormationAnchorAndGoal(t *testing.T) {
+func TestFormationLeadAndGoal(t *testing.T) {
 	st, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -710,13 +710,13 @@ func TestFormationAnchorAndGoal(t *testing.T) {
 		t.Fatal(err)
 	}
 	team := res.(protocol.Team)
-	// The team is the unit: its goal is set and evolves in place; the coordinator anchors.
+	// The team is the unit: its goal is set and evolves in place; the root of its tree leads.
 	if _, err := p.teamGoal(ctx, goalIn{TeamID: team.ID, Goal: "Ship app #1"}); err != nil {
 		t.Fatal(err)
 	}
 	d := st.State().Domain
-	if a := anchorOf(&d, findTeam(&d, team.ID)); a != "lead1aaaaaaaaa" {
-		t.Fatalf("anchor = %q", a)
+	if a := leadOf(findTeam(&d, team.ID)); a != "lead1aaaaaaaaa" {
+		t.Fatalf("lead = %q", a)
 	}
 	// A child messages its parent through the host (different agents). Two siblings do not talk;
 	// the parent passes on what the other needs.
@@ -726,24 +726,20 @@ func TestFormationAnchorAndGoal(t *testing.T) {
 	if _, err := p.messageSend(ctx, sendIn{From: "gcp1aaaaaaaaa", To: "web", Text: "hi"}); err == nil {
 		t.Fatal("two siblings talked")
 	}
-	// A member asks to move the anchor: nothing changes until the owner approves.
-	r, err := p.teamRequest(ctx, requestIn{SessionID: "gcp1aaaaaaaaa", Op: "anchor", Member: "web"})
+	// Who leads is derived, never chosen: a request to change it is refused.
+	if _, err := p.teamRequest(ctx, requestIn{SessionID: "gcp1aaaaaaaaa", Op: "anchor", Member: "web"}); err == nil {
+		t.Fatal("a request to choose the lead was accepted")
+	}
+	r, err := p.teamRequest(ctx, requestIn{SessionID: "lead1aaaaaaaaa", Op: "remove", Member: "web", Reason: "not needed"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	appr := r.(map[string]string)["approval"]
-	d = st.State().Domain
-	if a := anchorOf(&d, findTeam(&d, team.ID)); a != "lead1aaaaaaaaa" {
-		t.Fatal("the anchor moved before approval")
-	}
-	raw, _ := json.Marshal(decideIn{ID: appr, Decision: "approve"})
+	raw, _ := json.Marshal(decideIn{ID: appr, Decision: "deny"})
 	if _, err := p.approvalDecide(ctx, gateway.Caller{}, raw); err != nil {
 		t.Fatal(err)
 	}
 	d = st.State().Domain
-	if a := anchorOf(&d, findTeam(&d, team.ID)); a != "web1aaaaaaaaa" {
-		t.Fatalf("anchor after approval = %q", a)
-	}
 	// A second decision racing the first finds the approval no longer pending.
 	if i := slices.IndexFunc(d.Approvals, func(a protocol.Approval) bool { return a.ID == appr }); i < 0 {
 		t.Fatal("approval gone")
@@ -763,9 +759,8 @@ func TestFormationAnchorAndGoal(t *testing.T) {
 	if ls, _ := p.db.Lines(p.owner(), "", "", 0); len(ls) != 0 {
 		t.Fatalf("a team change reached the Compass: %+v", ls)
 	}
-	// The roster stays on the record, not in the agents' context: no notice for the anchor move or
-	// the leave, and the Team members section alone says who is on the team.
-	if n := p.takeNotices("lead1aaaaaaaaa"); strings.Contains(n, "anchor moved") || strings.Contains(n, " left") {
+	// The roster stays on the record, not in the agents' context: no notice for the leave, and the Team members section alone says who is on the team.
+	if n := p.takeNotices("lead1aaaaaaaaa"); strings.Contains(n, " left") {
 		t.Fatalf("roster notices: %q", n)
 	}
 	if got := p.renderContext("lead1aaaaaaaaa"); strings.Contains(got, "## Roster") || strings.Contains(got, "[fact] gcp:") || strings.Contains(got, "- gcp —") || !strings.Contains(got, "- web — ") {
@@ -778,7 +773,7 @@ func TestFormationAnchorAndGoal(t *testing.T) {
 			n++
 		}
 	}
-	if n != 3 { // assemble, anchor, remove
+	if n != 2 { // assemble, remove
 		t.Fatalf("approved formation changes = %d", n)
 	}
 	// The goal evolves: same team.
@@ -1285,9 +1280,9 @@ func TestRepositoryKeepsNoRecord(t *testing.T) {
 	placeToolTurn(p, "repoaaaaaaaa", "fix the build", "Fixed it.")
 }
 
-// An anchor agent joins a group with no work repository, in its own folder, and anchors it in the
-// same approved step.
-func TestAnchorAgentJoinsAndAnchors(t *testing.T) {
+// A team-hub agent joins a group with no work repository, in its own folder. It is a HELPER: the root
+// of the tree still leads.
+func TestHubAgentJoinsAsHelper(t *testing.T) {
 	agentOnPath(t)
 	st, err := store.Open(t.TempDir())
 	if err != nil {
@@ -1311,7 +1306,7 @@ func TestAnchorAgentJoinsAndAnchors(t *testing.T) {
 		for _, n := range []string{"gcp", "web"} {
 			s.Sessions = append(s.Sessions, store.Session{ID: n + "1aaaaaaaaa", Name: n, Harness: "claude", State: "running", Status: "working"})
 		}
-		s.Domain.Skills = []protocol.Skill{{ID: "anc", Name: "anchor-agent", Path: skill, Capabilities: []string{"team-hub", "team-record"}}}
+		s.Domain.Skills = []protocol.Skill{{ID: "anc", Name: "team-lead-agent", Path: skill, Capabilities: []string{"team-hub", "team-record"}}}
 		return nil
 	})
 	res, err := p.teamCreate(ctx, teamCreateIn{Name: "app", SessionIDs: []string{"gcp1aaaaaaaaa", "web1aaaaaaaaa"}})
@@ -1326,18 +1321,19 @@ func TestAnchorAgentJoinsAndAnchors(t *testing.T) {
 	if _, err := p.placeHelperRPC(ctx, placeIn{TeamID: team.ID, SkillID: "anc", Model: "m-picked"}); err != nil {
 		t.Fatal(err)
 	}
-	d := st.State().Domain
+	s0 := st.State()
+	d := s0.Domain
 	tm := findTeam(&d, team.ID)
 	i := slices.IndexFunc(tm.Members, func(m protocol.Member) bool { return m.SkillID == "anc" })
-	if i < 0 || tm.Members[i].Worktree != "" || anchorOf(&d, tm) != tm.Members[i].SessionID {
-		t.Fatalf("members %+v, anchor %q", tm.Members, anchorOf(&d, tm))
+	if i < 0 || tm.Members[i].Worktree != "" || leadOf(tm) != "gcp1aaaaaaaaa" || teamLabel(&s0, tm, tm.Members[i]) != "HELPER" {
+		t.Fatalf("members %+v, lead %q", tm.Members, leadOf(tm))
 	}
 	// It works in a scratch folder of its own, never in its skill repository.
-	if s, _ := p.session(tm.Members[i].SessionID); s.Cwd != filepath.Join(st.Dir(), "work", team.ID, "anchor-agent") || s.Model != "m-picked" {
-		t.Fatalf("anchor runs in %q on model %q", s.Cwd, s.Model)
+	if s, _ := p.session(tm.Members[i].SessionID); s.Cwd != filepath.Join(st.Dir(), "work", team.ID, "team-lead-agent") || s.Model != "m-picked" {
+		t.Fatalf("the hub agent runs in %q on model %q", s.Cwd, s.Model)
 	}
-	if !slices.ContainsFunc(d.Approvals, func(a protocol.Approval) bool { return strings.Contains(a.Detail, "as the team's anchor") }) {
-		t.Fatal("the approval does not say the agent becomes the anchor")
+	if !slices.ContainsFunc(d.Approvals, func(a protocol.Approval) bool { return strings.Contains(a.Detail, "team-lead-agent (helper agent)") }) {
+		t.Fatal("the approval does not name the helper agent")
 	}
 }
 
@@ -1374,7 +1370,7 @@ func TestApproveAddWithPick(t *testing.T) {
 	ctx := context.Background()
 	_ = st.Update(func(s *store.State) error {
 		s.Sessions = append(s.Sessions, store.Session{ID: "gcp1aaaaaaaaa", Name: "gcp", Harness: "claude", State: "running", Status: "working"})
-		s.Domain.Skills = []protocol.Skill{{ID: "anc", Name: "anchor-agent", Path: t.TempDir(), Capabilities: []string{"team-hub"}}}
+		s.Domain.Skills = []protocol.Skill{{ID: "anc", Name: "team-lead-agent", Path: t.TempDir(), Capabilities: []string{"team-hub"}}}
 		return nil
 	})
 	res, err := p.teamCreate(ctx, teamCreateIn{Name: "app", SessionIDs: []string{"gcp1aaaaaaaaa"}})
@@ -1871,10 +1867,10 @@ func TestWithUserPath(t *testing.T) {
 	}
 }
 
-// A Codex session leaves "starting" once its screen shows Codex's prompt (its SessionStart hook comes
-// only with the first prompt). Its folder-trust dialog and its sign-in screen do not, nor does a
-// session whose screen is not followed; another harness waits for its own hook.
-func TestCodexReadyOnItsPrompt(t *testing.T) {
+// A Codex or Muse session leaves "starting" once its screen shows its prompt (its SessionStart hook
+// comes only with the first prompt). A folder-trust dialog and a sign-in screen do not, nor does a
+// session whose screen is not followed; Claude waits for its own hook.
+func TestReadyOnItsPrompt(t *testing.T) {
 	st, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -1890,17 +1886,33 @@ func TestCodexReadyOnItsPrompt(t *testing.T) {
 		"trust1aaaaaa": "Folder access\n/work/repo\nTrust this folder? Codex can read, edit, and run files here.\n› 1. Trust and continue\n  2. Back to Agent Command Center\n  enter continue · esc back",
 		"signin1aaaaa": "Welcome to Codex, OpenAI's command-line coding agent\nChoose how you want to use Codex.\n> 1. Sign in with ChatGPT\n  Press enter to continue",
 		"claude1aaaaa": "? for shortcuts",
+		// What Muse 1.4.14 showed, rendered by the emulator.
+		"museready1aa": "  Muse Code 1.4.14\n── Voice input (⌥ + v to start) ────────\n❯\n────────\n  muse-spark-1.3-contributor · max · /work/repo · Auto-review",
+		"musetrust1aa": "Do you trust this workspace?\nWorkspace:\n/work/repo\n⟩ 1  Trust and continue\n  2  Quit\nUse Up/Down or 1/2, then Enter. Esc quits.",
 	}
 	p.testScreen = func(id string) (string, bool) { s, ok := screens[id]; return s, ok }
 	_ = st.Update(func(s *store.State) error {
 		for _, id := range []string{"ready1aaaaaa", "trust1aaaaaa", "signin1aaaaa", "nofollow1aaa"} {
 			s.Sessions = append(s.Sessions, store.Session{ID: id, Harness: harness.Codex, State: "running", Status: "starting"})
 		}
-		s.Sessions = append(s.Sessions, store.Session{ID: "claude1aaaaa", Harness: harness.Claude, State: "running", Status: "starting"})
+		s.Sessions = append(s.Sessions, store.Session{ID: "claude1aaaaa", Harness: harness.Claude, State: "running", Status: "starting"},
+			store.Session{ID: "museready1aa", Harness: harness.Muse, State: "running", Status: "starting"},
+			store.Session{ID: "musetrust1aa", Harness: harness.Muse, State: "running", Status: "starting"})
 		return nil
 	})
-	p.readyCodex()
-	want := map[string]string{"ready1aaaaaa": "idle", "trust1aaaaaa": "starting", "signin1aaaaa": "starting", "nofollow1aaa": "starting", "claude1aaaaa": "starting"}
+	// A message that waited for the Muse session is typed once its prompt is up.
+	_ = st.Update(func(s *store.State) error {
+		addMessage(s, protocol.TeamMessage{ID: "m1", From: "claude1aaaaa", To: "museready1aa", Text: "hello", State: "queued"})
+		return nil
+	})
+	var typed []string
+	p.testKeys = func(id, text string) error { typed = append(typed, id+": "+text); return nil }
+	p.readyByPrompt()
+	if len(typed) != 1 || !strings.HasPrefix(typed[0], "museready1aa: ") || !strings.Contains(typed[0], "hello") {
+		t.Errorf("typed %q", typed)
+	}
+	want := map[string]string{"ready1aaaaaa": "idle", "trust1aaaaaa": "starting", "signin1aaaaa": "starting", "nofollow1aaa": "starting", "claude1aaaaa": "starting",
+		"museready1aa": "idle", "musetrust1aa": "starting"}
 	for id, status := range want {
 		if s, _ := p.session(id); s.Status != status {
 			t.Errorf("%s: %q, want %q", id, s.Status, status)
@@ -1922,7 +1934,7 @@ func TestAddMessageKeepsQueued(t *testing.T) {
 }
 
 // The owner's rule for team assembly: no limit, and only the rules that keep the roster whole. A
-// session joins under the anchor (the group frame's drop), a subtree splits off as a team of its own
+// session joins under the LEAD (the group frame's drop), a subtree splits off as a team of its own
 // with its worktree, a worktree session leaves for ungrouped, and a refused move says why in the log.
 func TestTeamAssemblyIsFlexible(t *testing.T) {
 	st, err := store.Open(t.TempDir())
@@ -1955,13 +1967,13 @@ func TestTeamAssemblyIsFlexible(t *testing.T) {
 		}
 		return nil
 	})
-	// No cap, and the group frame's drop: x joins under the anchor.
+	// No cap, and the group frame's drop: x joins under the LEAD.
 	if _, err := p.teamGroup(nil, groupIn{SessionID: "x", ParentID: "m"}); err != nil {
 		t.Fatal(err)
 	}
 	d := st.State().Domain
 	if tm := teamOf(&d, "x"); tm == nil || tm.ID != "t1" || activeMembers(tm) != 16 || parentOf(tm, "x") != "m" {
-		t.Fatalf("x did not join under the anchor of a 15-member team: %+v", tm)
+		t.Fatalf("x did not join under the LEAD of a 15-member team: %+v", tm)
 	}
 	// Split a worktree session with its subtree into a team of its own: it keeps its worktree.
 	if _, err := p.teamGroup(nil, groupIn{SessionID: "w"}); err != nil {
@@ -1969,7 +1981,7 @@ func TestTeamAssemblyIsFlexible(t *testing.T) {
 	}
 	d = st.State().Domain
 	nt := teamOf(&d, "w")
-	if nt == nil || nt.ID == "t1" || activeMembers(nt) != 2 || anchorOf(&d, nt) != "w" || parentOf(nt, "c") != "w" {
+	if nt == nil || nt.ID == "t1" || activeMembers(nt) != 2 || leadOf(nt) != "w" || parentOf(nt, "c") != "w" {
 		t.Fatalf("the subtree did not become a team: %+v", nt)
 	}
 	if r := nt.Members[0]; r.SessionID != "w" || r.Role != "main" || r.Worktree != "/wt/w" || r.Branch != "b" || r.RepoID != "r1" {

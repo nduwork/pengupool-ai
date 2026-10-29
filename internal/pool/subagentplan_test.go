@@ -75,7 +75,7 @@ func TestSubagentPlan(t *testing.T) {
 	}{
 		"owner prompt": {helper, "survey the runner health checks and report back"},
 		"notice":       {helper, "[PenguPool notice] the runner health checks and report"},
-		"anchor":       {lead, msg},
+		"lead":         {lead, msg},
 		"short":        {helper, "[PenguPool team message from lead] go"},
 	} {
 		if got := p.subagentPlan(c.s, c.p); got != "" || d.asked != 0 {

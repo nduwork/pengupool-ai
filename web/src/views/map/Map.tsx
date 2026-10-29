@@ -3,14 +3,14 @@ import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
-import { URGENCY, ctxClass, harnessLabel, isShell, sessionStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
+import { URGENCY, ctxClass, harnessLabel, isShell, shownStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
 import { Button } from "../../components/ui/button";
-import { Badge, Empty, Select, Tip } from "../../components/ui/controls";
+import { Badge, Empty, RoleTag, Select, Tip, type Role } from "../../components/ui/controls";
 import { cn } from "../../lib/utils";
 import type { SessionView } from "../../protocol/control";
 import type { Team, TeamMessage } from "../../protocol/domain";
 import { ProposalSheet } from "../Approvals";
-import { FormationSheet, anchorOf } from "../Formation";
+import { FormationSheet, leadOf, roleOf } from "../Formation";
 import { SessionHover, UnreadDot } from "./SessionBits";
 import { NewSessionDialog } from "../NewSession";
 import { PATH_MIME, UNSAFE_NOTICE, typePath } from "../explorerPaths";
@@ -142,7 +142,7 @@ export function TeamMap(): ReactElement {
     }
   };
 
-  // A session dropped on a group's frame or title joins that group under its anchor; dropped on the
+  // A session dropped on a group's frame or title joins that group under its LEAD; dropped on the
   // Ungrouped column it leaves its group and keeps running. Both stop here, so the canvas drop (which
   // splits a session off as a group of its own) does not also run.
   const frameDrop = (e: React.DragEvent, team: Team | undefined): void => {
@@ -152,8 +152,8 @@ export function TeamMap(): ReactElement {
     e.stopPropagation();
     if (team === undefined) void app.call("team.group", { session_id: sid, ungroup: true });
     else {
-      const anchor = anchorOf(domain, team);
-      if (anchor !== undefined && anchor !== sid) void app.call("team.group", { session_id: sid, parent_id: anchor });
+      const lead = leadOf(team);
+      if (lead !== "" && lead !== sid) void app.call("team.group", { session_id: sid, parent_id: lead });
     }
   };
   const frameOver = (e: React.DragEvent): void => {
@@ -196,7 +196,7 @@ export function TeamMap(): ReactElement {
   };
 
   const card = (s: SessionView, box: { x: number; y: number; w: number; h: number }, opts: { teamId?: string; hidden?: string[]; hasKids: boolean; lone?: boolean }): ReactElement => {
-    const st = sessionStatus(s);
+    const st = shownStatus(s, app.gates);
     const style = statusStyle(st);
     const team = opts.teamId !== undefined ? domain.teams.find((t) => t.id === opts.teamId) : undefined;
     const member = team?.members.find((m) => m.session_id === s.id);
@@ -204,7 +204,7 @@ export function TeamMap(): ReactElement {
     const urgent = (opts.hidden ?? [])
       .map((id) => byId.get(id))
       .filter((x): x is SessionView => x !== undefined)
-      .map(sessionStatus)
+      .map((x) => shownStatus(x, app.gates))
       .sort((a, b) => (URGENCY[b] ?? 0) - (URGENCY[a] ?? 0))[0];
     const repoName = s.cwd.split("/").filter(Boolean).pop() ?? "";
     return (
@@ -242,6 +242,7 @@ export function TeamMap(): ReactElement {
               "group absolute flex cursor-default flex-col justify-center rounded-md border-[1.5px] bg-panel px-2.5 py-1.5 text-left text-[10px] leading-[14px] outline-none transition-[border-color,border-width]",
               "hover:border-2 focus-visible:ring-2 focus-visible:ring-ring",
               opts.lone === true && "border-dashed",
+              st === "approval" && "border-2", // waiting on the owner: a red outline, thicker so it reads in both themes
               selected === s.id && "ring-2 ring-primary ring-offset-2 ring-offset-background",
               dropTarget === s.id && "ring-2 ring-primary",
               flashIds.includes(s.id) && "ring-4 ring-success",
@@ -250,16 +251,15 @@ export function TeamMap(): ReactElement {
             style={{ left: box.x, top: box.y, width: box.w, height: box.h, borderColor: tone(st) }}
           >
             {/* As v1 drew it: the state in its colour, the name, then harness · context · repo, then the step in hand. */}
-            {team !== undefined && anchorOf(domain, team) === s.id ? (
-              <span
-                className="absolute right-2 top-1.5 rounded-[2px] border border-current px-[3px] text-[8px] leading-[11px] tracking-[0.08em] text-muted-foreground opacity-70"
-                title="The anchor: the hub of this task's communication"
-              >
-                ANCHOR
-              </span>
-            ) : null}
+            {(() => {
+              const role = team !== undefined ? roleOf(domain, app.sessions, s.id) : undefined;
+              return role !== undefined ? (
+                <RoleTag role={role} className="absolute right-2 top-1.5 rounded-[2px] px-[3px] text-[8px] leading-[11px] tracking-[0.08em] uppercase" />
+              ) : null;
+            })()}
             <span className="flex items-center gap-1.5 font-semibold" style={{ color: tone(st) }}>
-              {SYMBOL[st] ?? "·"} {style.label}
+              {SYMBOL[st] !== undefined ? `${SYMBOL[st]} ` : ""}
+              {style.label}
               <UnreadDot id={s.id} />
             </span>
             <span className="line-clamp-2 pr-8 text-[12px] font-semibold text-foreground [overflow-wrap:anywhere]">{s.name}</span>
@@ -606,8 +606,15 @@ export function MessageLog(): ReactElement {
                 className={cn("flex w-full gap-x-2 rounded py-0.5 text-left font-mono text-[11.5px] hover:bg-accent/40 focus-visible:outline focus-visible:outline-1", full && "flex-wrap")}
               >
                 <span className="shrink-0 text-faint">{new Date(m.at).toLocaleTimeString()}</span>
-                <Badge>agent</Badge>
-                <span className={cn("font-semibold", full ? "shrink-0" : "min-w-0 shrink truncate")} style={{ color: edge(m) }}>
+                {(() => {
+                  const from = roleOf(app.domain, app.sessions, m.from);
+                  return from !== undefined ? <RoleTag role={from} /> : <Badge>agent</Badge>;
+                })()}
+                <span
+                  className={cn("font-semibold", full ? "shrink-0" : "min-w-0 shrink truncate")}
+                  style={{ color: edge(m) }}
+                  title={`${roleWord(roleOf(app.domain, app.sessions, m.from))} → ${roleWord(roleOf(app.domain, app.sessions, m.to))}`}
+                >
                   {name(m.from)} → {name(m.to)}
                 </span>
                 <span
@@ -680,9 +687,10 @@ export function StepLine({ chain }: { chain: Chain }): ReactElement {
 
 /** v1's state colours: green active, amber waiting on you, red lost, grey otherwise. */
 function tone(st: string): string {
-  return st === "working" ? "var(--success)" : st === "idle" || st === "approval" || st === "terminal" ? "var(--warning)" : st === "lost" || st === "unreachable" ? "var(--danger)" : "var(--faint)";
+  return st === "working" ? "var(--success)" : st === "idle" || st === "terminal" ? "var(--warning)" : st === "approval" || st === "lost" || st === "unreachable" ? "var(--danger)" : "var(--faint)";
 }
-const SYMBOL: Record<string, string> = { working: "●", idle: "◷", approval: "!", starting: "◌", stale: "○", terminal: "!", ended: "■", exited: "■", lost: "✕", unreachable: "✕" };
+// approval has none: its label starts with "?".
+const SYMBOL: Record<string, string> = { working: "●", idle: "◷", starting: "◌", stale: "○", terminal: "!", ended: "■", exited: "■", lost: "✕", unreachable: "✕" };
 
 /** Card padding plus border, left and right: the width a card's text gets is the card's minus this. */
 const CARD_INSET = 23;
@@ -725,3 +733,5 @@ export function useChains(): Record<string, Chain> {
   }, []);
   return chains;
 }
+
+const roleWord = (r: Role | undefined): string => (r === undefined ? "Member" : r === "sme" ? "SME" : r[0].toUpperCase() + r.slice(1));

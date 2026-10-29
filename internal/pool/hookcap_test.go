@@ -37,7 +37,7 @@ func TestContextOutFitsMuseCap(t *testing.T) {
 	if len(muse) >= 16<<10 {
 		t.Fatalf("muse hook answer is %d bytes, past the 16 KiB ceiling", len(muse))
 	}
-	for _, want := range []string{"## Team members", "- web —", "send --to", "anchor", "… more: search"} {
+	for _, want := range []string{"## Team members", "- web —", "send --to", "LEAD", "… more: search"} {
 		if !strings.Contains(muse, want) {
 			t.Errorf("capped context lacks %q", want)
 		}
@@ -48,7 +48,7 @@ func TestContextOutFitsMuseCap(t *testing.T) {
 	}
 }
 
-// A Muse anchor under a firm triage note is held like any anchor: its read tools pass,
+// A Muse LEAD under a firm triage note is held like any LEAD: its read tools pass,
 // its working tools wait until it sends the routed member the work, and unknown tools
 // fail closed into the hold.
 func TestGuardRouteMuseTools(t *testing.T) {

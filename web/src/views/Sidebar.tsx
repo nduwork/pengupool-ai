@@ -4,7 +4,8 @@ import { Group, Panel, useDefaultLayout, usePanelRef } from "react-resizable-pan
 
 import { StatusDot, harnessLabel, isShell, useApp, usePersisted, type Nav } from "../app/ctx";
 import { desktop } from "../app/desktop";
-import { Kbd, SectionTitle, Tip } from "../components/ui/controls";
+import { Kbd, RoleTag, SectionTitle, Tip } from "../components/ui/controls";
+import { roleOf } from "./Formation";
 import { cn } from "../lib/utils";
 import type { SessionView } from "../protocol/control";
 import type { Team } from "../protocol/domain";
@@ -155,9 +156,13 @@ export function Sidebar(): ReactElement {
                         )}
                         style={{ paddingLeft: 28 + Math.min(depth, 4) * 12 }}
                       >
-                        <StatusDot status={s.status} state={s.state} harness={s.harness} active_at={s.active_at} role={s.role} />
+                        <StatusDot id={s.id} status={s.status} state={s.state} harness={s.harness} active_at={s.active_at} role={s.role} />
                         <span className="truncate">{s.name}</span>
-                        <span className="ml-auto shrink-0 text-micro text-faint">{s.role === "helper" ? "helper" : s.context_pct !== undefined ? `${s.context_pct}%` : harnessLabel(s.harness)}</span>
+                        {(() => {
+                          const role = roleOf(app.domain, app.sessions, s.id);
+                          return role !== undefined ? <RoleTag role={role} /> : null;
+                        })()}
+                        <span className="ml-auto shrink-0 text-micro text-faint">{s.context_pct !== undefined ? `${s.context_pct}%` : harnessLabel(s.harness)}</span>
                       </button>
                     ))}
               </div>

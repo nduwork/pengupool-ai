@@ -77,7 +77,7 @@ func TestNextStepNote(t *testing.T) {
 			t.Fatalf("%s: %q", c, got)
 		}
 	}
-	// Only the anchor is triaged, and a PenguPool notice is not a step.
+	// Only the LEAD is triaged, and a PenguPool notice is not a step.
 	dec := &routeDecider{choice: "web", pr: 0.91, calibrated: true}
 	p.testDecider = dec
 	if p.nextStepNote(web, routePrompt) != "" || p.nextStepNote(lead, "[PenguPool notice] x") != "" || dec.asked != 0 {
@@ -119,7 +119,7 @@ func TestRouteOptions(t *testing.T) {
 	if _, ok := seen["web"]; ok || !strings.Contains(seen["plan"], "busy") {
 		t.Fatalf("status: %v", seen)
 	}
-	// A member the anchor may not message (not its parent or child) is not an option.
+	// A member the LEAD may not message (not its parent or child) is not an option.
 	p.setSession("webaaaaaaaaa", func(x *store.Session) { x.Status = "idle" })
 	_ = p.st.Update(func(s *store.State) error {
 		for i := range s.Domain.Teams[0].Members {
@@ -201,6 +201,6 @@ func TestGuardRoute(t *testing.T) {
 	p.testDecider = &routeDecider{choice: "self", pr: 0.95, calibrated: true}
 	p.nextStepNote(lead, routePrompt)
 	if call("Bash", sh("make runner")) {
-		t.Fatal("a turn kept by the anchor is not held")
+		t.Fatal("a turn kept by the LEAD is not held")
 	}
 }

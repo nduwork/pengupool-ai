@@ -65,6 +65,25 @@ export function Badge({ className, tone = "neutral", children }: { className?: s
   return <span className={cn("inline-flex items-center gap-1 rounded-sm border px-1.5 py-px text-micro font-medium", tones[tone], className)}>{children}</span>;
 }
 
+/** A team member's role: derived from the team's tree (views/Formation.tsx teamLabel), never stored. */
+export type Role = "lead" | "sme" | "helper";
+
+// Cues, no hue, so the tag never competes with the status colours: the box, the weight and the word.
+const ROLE: Record<Role, { word: string; cls: string; tip: string }> = {
+  lead: { word: "Lead", cls: "border-muted-foreground text-foreground font-semibold", tip: "Lead: the session at the root of the team's tree" },
+  sme: { word: "SME", cls: "border-border text-muted-foreground font-medium", tip: "SME: a member you added, working in its own repository" },
+  helper: { word: "Helper", cls: "border-transparent text-muted-foreground", tip: "Helper: an agent from the helper pool" },
+};
+
+export function RoleTag({ role, className }: { role: Role; className?: string }): React.ReactElement {
+  const r = ROLE[role];
+  return (
+    <span title={r.tip} className={cn("inline-flex shrink-0 items-center rounded-sm border px-1 text-micro leading-[14px]", r.cls, className)}>
+      {r.word}
+    </span>
+  );
+}
+
 export function Kbd({ children }: { children: ReactNode }): React.ReactElement {
   return <kbd className="rounded border border-border bg-muted px-1 font-mono text-micro text-muted-foreground">{children}</kbd>;
 }

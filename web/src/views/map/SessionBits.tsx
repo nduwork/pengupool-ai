@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 
-import { harnessLabel, sessionStatus, statusStyle, useApp } from "../../app/ctx";
+import { harnessLabel, shownStatus, statusStyle, useApp } from "../../app/ctx";
 import type { SessionView } from "../../protocol/control";
 import { parseRunLog } from "../runlog";
 
@@ -28,8 +28,8 @@ export function SessionHover({ s }: { s: SessionView }): ReactElement {
   return (
     <div className="grid max-w-72 grid-cols-1 gap-0.5">
       <strong>{s.name}</strong>
-      <span className={statusStyle(sessionStatus(s)).text}>
-        {statusStyle(sessionStatus(s)).label} · {harnessLabel(s.harness)}
+      <span className={statusStyle(shownStatus(s, app.gates)).text}>
+        {statusStyle(shownStatus(s, app.gates)).label} · {harnessLabel(s.harness)}
       </span>
       {last !== "" ? <span className="line-clamp-3 text-muted-foreground [overflow-wrap:anywhere]">{last}</span> : null}
       {s.branch !== undefined && s.branch !== "" ? <span className="font-mono text-muted-foreground">{s.branch}</span> : null}

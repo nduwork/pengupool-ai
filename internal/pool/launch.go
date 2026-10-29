@@ -455,11 +455,11 @@ func (p *Pool) skillRepo(id string) string {
 	return ""
 }
 
-// codexLoop readies Codex sessions. Codex runs its SessionStart hook only with the first prompt, so a
-// session left at "starting" would never receive a team message. It is ready once its screen shows
-// Codex's prompt footer: a folder-trust dialog, a sign-in or an update screen does not show it, and a
-// typed message would answer them.
-func (p *Pool) codexLoop(ctx context.Context) {
+// readyLoop readies Codex and Muse sessions. Both run their SessionStart hook only with the first
+// prompt, so a session left at "starting" would never receive a team message. It is ready once its
+// screen shows the agent's prompt (promptMarkers): a folder-trust dialog, a sign-in or an update
+// screen does not show it, and a typed message would answer them.
+func (p *Pool) readyLoop(ctx context.Context) {
 	t := time.NewTicker(3 * time.Second)
 	defer t.Stop()
 	for {
@@ -467,26 +467,31 @@ func (p *Pool) codexLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			p.readyCodex()
+			p.readyByPrompt()
 			p.watchStartup()
 		}
 	}
 }
 
-// codexPrompt is the footer under Codex's prompt (0.164). ponytail: tied to Codex's wording; a later
-// Codex that changes it leaves its sessions "starting" until their first prompt, as before.
-const codexPrompt = "? for shortcuts"
+// promptMarkers is what each agent shows only at its prompt: Codex's footer (0.164), Muse's input
+// rule (1.4.14). ponytail: tied to their wording; a later version that changes it leaves its sessions
+// "starting" until their first prompt, as before.
+var promptMarkers = map[string]string{
+	harness.Codex: "? for shortcuts",
+	harness.Muse:  "Voice input (⌥ + v to start)",
+}
 
-func (p *Pool) readyCodex() {
+func (p *Pool) readyByPrompt() {
 	screen := p.hub.ScreenText
 	if p.testScreen != nil {
 		screen = p.testScreen
 	}
 	for _, s := range p.st.State().Sessions {
-		if s.Harness != harness.Codex || s.State != "running" || s.Status != "starting" {
+		marker, ok := promptMarkers[s.Harness]
+		if !ok || s.State != "running" || s.Status != "starting" {
 			continue
 		}
-		if text, ok := screen(s.ID); !ok || !strings.Contains(text, codexPrompt) {
+		if text, ok := screen(s.ID); !ok || !strings.Contains(text, marker) {
 			continue
 		}
 		changed := false
@@ -498,7 +503,7 @@ func (p *Pool) readyCodex() {
 		if !changed { // its SessionStart hook got there first, and flushed
 			continue
 		}
-		p.logLine(s.ID, "session: codex ready (its prompt is on screen)")
+		p.logLine(s.ID, "session: "+s.Harness+" ready (its prompt is on screen)")
 		p.flushQueue(s.ID)
 	}
 }

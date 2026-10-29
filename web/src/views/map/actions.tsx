@@ -1,4 +1,4 @@
-import { Anchor, ArrowUpToLine, ChevronDown, ChevronRight, Copy, Eraser, ExternalLink, FolderOpen, FoldVertical, History, IdCard, Pencil, Plus, RotateCcw, SquareTerminal, Users, X } from "lucide-react";
+import { ArrowUpToLine, ChevronDown, ChevronRight, Copy, Eraser, ExternalLink, FolderOpen, FoldVertical, History, IdCard, Pencil, Plus, RotateCcw, SquareTerminal, Users, X } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -11,7 +11,6 @@ import { Sheet } from "../../components/ui/dialog";
 import type { SessionView } from "../../protocol/control";
 import type { Team } from "../../protocol/domain";
 import { cn } from "../../lib/utils";
-import { anchorOf } from "../Formation";
 import { NewSessionDialog } from "../NewSession";
 
 // The session actions v1 offered on a card's right-click menu, and the background menu.
@@ -108,11 +107,6 @@ export function SessionMenu({ s, folded, canFold, onFold }: { s: SessionView; fo
       {team !== undefined ? (
         <Item icon={<Users />} onSelect={() => show(<RenameSheet team={team} />)}>
           Rename group {team.name}…
-        </Item>
-      ) : null}
-      {team !== undefined && anchorOf(app.domain, team) !== s.id ? (
-        <Item icon={<Anchor />} onSelect={() => void app.call("team.formation", { team_id: team.id, change: { op: "anchor", session_id: s.id } })}>
-          Make anchor of {team.name}
         </Item>
       ) : null}
       {team !== undefined && !main ? (

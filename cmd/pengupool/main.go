@@ -42,7 +42,7 @@ const help = `usage: pengupool <command> [options]
         (inside a helper session) list its own journal entries that match words (id, date, title,
         a snippet), or print one in full. An entry is kept when the helper tells its parent
         "Done: <title>".
-  team request add --skill S|--repo R [--assignment A] | remove MEMBER | anchor MEMBER [--reason R]
+  team request add --skill S|--repo R [--assignment A] | remove MEMBER [--reason R]
         (inside a team session) ask the owner to change who is on the team; it waits for approval.
   compass word [--supports UID]... [--contradicts UID]... [--line "preference|restriction :: BODY :: WHEN"]... | compass word --none
         (inside a session asked to) say which Compass lines the owner's last words support or go
