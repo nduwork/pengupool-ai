@@ -47,13 +47,26 @@ type restorable struct {
 	Agent   bool   `json:"agent"` // an agent resumes its conversation; a terminal cannot be restored
 }
 
-// restorableSessions are the last run's sessions that are still on record and not running.
-func (p *Pool) restorableSessions() []restorable {
-	st := p.st.State()
+// localNode is onThisHost for a state in hand (inside an update, where the store is locked).
+func localNode(st *store.State, nodeID string) bool {
+	if nodeID == "" {
+		return true
+	}
+	for _, n := range st.Nodes {
+		if n.ID == nodeID {
+			return n.Kind == "local"
+		}
+	}
+	return false
+}
+
+// restorableIn lists the sessions of restore that are still lost: a session the owner resumed or
+// forgot meanwhile is not offered again.
+func (p *Pool) restorableIn(st *store.State, restore []string) []restorable {
 	var out []restorable
-	for _, id := range st.Restore {
-		i := sessionIndex(&st, id)
-		if i < 0 || st.Sessions[i].State == "running" || !p.onThisHost(st.Sessions[i].NodeID) {
+	for _, id := range restore {
+		i := sessionIndex(st, id)
+		if i < 0 || st.Sessions[i].State != "lost" || !localNode(st, st.Sessions[i].NodeID) {
 			continue
 		}
 		s := st.Sessions[i]
@@ -62,16 +75,26 @@ func (p *Pool) restorableSessions() []restorable {
 	return out
 }
 
-// runRestorable is what the app asks the owner about at start: the last run's sessions.
+func (p *Pool) restorableSessions() []restorable {
+	st := p.st.State()
+	return p.restorableIn(&st, st.Restore)
+}
+
+// runRestorable is what the app asks the owner about at start: the sessions that stopped.
 func (p *Pool) runRestorable(_ context.Context, _ struct{}) (any, error) {
 	return p.restorableSessions(), nil
 }
 
-// runRestore resumes the last run's agent sessions, one at a time, in the background; the list is
-// cleared first, so a second answer does nothing.
+// runRestore resumes the stopped agent sessions, one at a time, in the background. The list is
+// taken and cleared in one update, so an overlapping answer (the app and a paired device) gets
+// nothing to resume.
 func (p *Pool) runRestore(_ context.Context, _ struct{}) (any, error) {
-	todo := p.restorableSessions()
-	if err := p.clearRestore(); err != nil {
+	var todo []restorable
+	if err := p.update(func(st *store.State) error {
+		todo = p.restorableIn(st, st.Restore)
+		st.Restore = nil
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	n := 0
@@ -94,7 +117,7 @@ func (p *Pool) runRestore(_ context.Context, _ struct{}) (any, error) {
 				p.logf("pool: restore %s: %v", r.Name, err)
 				continue
 			}
-			p.logf("pool: restored %s from the last run", r.Name)
+			p.logf("pool: restored %s", r.Name)
 		}
 	}()
 	return map[string]int{"restoring": n}, nil

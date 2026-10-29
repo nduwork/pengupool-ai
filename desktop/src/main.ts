@@ -126,7 +126,7 @@ async function askRestore(): Promise<void> {
     type: "question",
     message: `Restore ${lost.length === 1 ? "the session" : `the ${lost.length} sessions`} that stopped?`,
     detail:
-      "These were running when the computer restarted or PenguPool's host stopped:\n" +
+      "These were running when the computer restarted or PenguPool stopped unexpectedly:\n" +
       lost.map((s) => `• ${s.name}${s.agent ? "" : " (terminal)"}`).join("\n") +
       (agents.length < lost.length ? "\n\nA terminal cannot be restored; agents resume their conversations." : "\n\nAgents resume their conversations."),
     buttons: agents.length > 0 ? ["Restore all", "Don't restore"] : ["OK"],
