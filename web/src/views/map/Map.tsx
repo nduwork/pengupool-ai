@@ -282,7 +282,7 @@ export function TeamMap(): ReactElement {
               <UnreadDot id={s.id} />
             </span>
             <span className="line-clamp-2 pr-8 text-[12px] font-semibold text-foreground [overflow-wrap:anywhere]">{s.name}</span>
-            <span className={cn("truncate text-muted-foreground", mine.length > 0 && "pr-10")}>
+            <span className={cn("truncate text-muted-foreground", mine.length > 1 ? "pr-[4.5rem]" : mine.length > 0 && "pr-10")}>
               {harnessLabel(s.harness)}
               {s.context_pct !== undefined ? (
                 <>
@@ -586,7 +586,8 @@ function askLabel(asks: TeamMessage[], name: (id: string) => string): string {
 
 function AskPill({ asks, name, className, style }: { asks: TeamMessage[]; name: (id: string) => string; className?: string; style?: React.CSSProperties }): ReactElement {
   const { text, escalated } = askPill(asks, Date.now());
-  const label = askLabel(asks, name);
+  const words = askLabel(asks, name);
+  const label = words.charAt(0).toUpperCase() + words.slice(1);
   return (
     <span
       role="img"

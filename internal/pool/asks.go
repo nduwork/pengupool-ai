@@ -64,9 +64,9 @@ func askOpen(ms []protocol.TeamMessage, i int) bool {
 	return true
 }
 
-// sweepAsks hands the asks that waited too long to triage, each once at a time. One triage does not
-// settle is escalated: it waits in the owner's Needs you, so the owner is never shown an ask triage
-// then closes. A daemon that stops mid-triage leaves it unescalated, and the next one triages it again.
+// sweepAsks hands the asks that waited too long to triage, one triage per ask at a time. An ask
+// triage does not settle is escalated: it waits in the owner's Needs you, so the owner is never shown
+// an ask that triage then closes. A daemon that stops mid-triage leaves it unescalated, and the next one triages it again.
 func (p *Pool) sweepAsks(at time.Time) {
 	ms := p.st.State().Domain.Messages
 	for i, m := range ms {
