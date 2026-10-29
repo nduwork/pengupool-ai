@@ -229,6 +229,7 @@ func (s Session) View() protocol.SessionView {
 		Cwd:       s.Cwd,
 		Command:   append([]string(nil), s.Command...),
 		Harness:   s.Harness,
+		Custom:    s.Custom,
 		State:     s.State,
 		ExitCode:  s.ExitCode,
 		Pid:       s.Pid,

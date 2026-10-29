@@ -1,7 +1,7 @@
 import { FolderOpen, GitBranch } from "lucide-react";
 import { useEffect, useState, type ReactElement } from "react";
 
-import { AGENTS, UNSUPPORTED_NOTE, agentOptions, checkFailed, harnessLabel, isUnsupported, launchAgent, pickable, useApp, usePersisted, type CustomAgent, type Found } from "../app/ctx";
+import { AGENTS, UNSUPPORTED_NOTE, agentOptions, checkFailed, choosePick, harnessLabel, isUnsupported, launchAgent, parentPick, pickable, useApp, usePersisted, type CustomAgent, type Found } from "../app/ctx";
 import { localDesktop } from "../app/desktop";
 import { FolderBrowser } from "../components/FolderBrowser";
 import { Button } from "../components/ui/button";
@@ -28,18 +28,24 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
   };
   const [url, setUrl] = useState("");
   const [dest, setDest] = useState("");
-  const [savedHarness, setSavedHarness] = usePersisted("new.harness", "");
-  // A child starts on its parent's agent unless another is picked.
-  const [want, setHarnessState] = useState<string>(parent?.harness !== undefined && AGENTS.some((a) => a.id === parent.harness) ? parent.harness : savedHarness);
+  // A new key: a pick remembered before Custom agents (a plain "claude") must not beat the default
+  // entry the Ollama setting moved to.
+  const [savedHarness, setSavedHarness] = usePersisted("new.agent", "");
+  // A child starts on its parent's agent (or its parent's Custom agent) unless another is picked.
+  const [want, setHarnessState] = useState<string>(parentPick(parent) ?? savedHarness);
   const setHarness = (h: string): void => {
     setHarnessState(h);
     setSavedHarness(h);
   };
   // Which agents are installed on this machine (version, or why not), and the owner's Custom agents.
   const [found, setFound] = useState<Found | null>(null);
+  const [probeFailed, setProbeFailed] = useState(false);
   const [customs, setCustoms] = useState<CustomAgent[]>([]);
   useEffect(() => {
-    void app.conn.request<Found>("harness.probe").then(setFound, () => setFound(checkFailed()));
+    void app.conn.request<Found>("harness.probe").then(setFound, () => {
+      setProbeFailed(true);
+      setFound(checkFailed());
+    });
     void app.conn.request<{ custom_agents?: CustomAgent[] | null }>("settings.get").then(
       (r) => setCustoms(r.custom_agents ?? []),
       () => undefined,
@@ -48,12 +54,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
   // What is shown is what is sent: a remembered pick that is gone gives way to the default Custom
   // agent, else the first installed agent.
   const options = pickable(found, customs);
-  const fallback = customs.find((c) => c.default === true);
-  const harness = options.some((o) => o.value === want)
-    ? want
-    : fallback !== undefined && options.some((o) => o.value === `custom:${fallback.id}`)
-      ? `custom:${fallback.id}`
-      : (options[0]?.value ?? "");
+  const harness = choosePick(options, want, customs);
   const custom = harness.startsWith("custom:") ? customs.find((c) => `custom:${c.id}` === harness) : undefined;
   const agent = custom !== undefined ? (custom.starts ?? "") : harness;
   const [model, setModel] = useState("");
@@ -94,7 +95,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
     setBusy(true);
     const s = await app.call<SessionView>("session.launch", {
       name: name.trim() === "" ? defaultName() : name.trim(),
-      ...launchAgent(harness, model),
+      ...launchAgent(harness, custom !== undefined ? "" : model),
       source: kind === "clone" ? { kind, url, dest } : { kind: "local", path },
     });
     if (s !== undefined && parentId !== undefined) await app.call("team.group", { session_id: s.id, parent_id: parentId });
@@ -106,7 +107,8 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
   };
 
   const valid =
-    (kind === "local" ? path.trim() !== "" : url.trim() !== "" && dest.trim() !== "") && harness !== "";
+    // Not before the install check answers: until then the pick may still change.
+    (kind === "local" ? path.trim() !== "" : url.trim() !== "" && dest.trim() !== "") && found !== null && harness !== "";
 
   return (
     <Sheet
@@ -137,16 +139,18 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
           hint={
             found === null
               ? "Checking which agents are installed…"
-              : options.length === 0
+              : probeFailed
+                ? "Couldn't check which agents are installed; all are offered."
+                : options.length === 0
                 ? "No agent is installed here. Install one, or add a Custom agent in Settings › Agents."
                 : custom !== undefined && isUnsupported(custom)
                   ? `${custom.command} · ${UNSUPPORTED_NOTE}`
-                  : `${custom !== undefined ? `${custom.command} · ` : ""}${AGENTS.find((a) => a.id === agent)?.hint ?? ""} · ${found[agent]?.version ?? ""}`
+                  : [custom?.command, AGENTS.find((a) => a.id === agent)?.hint, found[agent]?.version].filter((x) => x !== undefined && x !== "").join(" · ")
           }
         >
           Agent
           <Select value={harness} onChange={(e) => setHarness(e.target.value)} aria-label="Agent runtime" autoFocus>
-            {agentOptions(options, (v) => (parent !== undefined && parent.harness === v ? " (same as parent)" : ""))}
+            {agentOptions(options, (v) => (parent !== undefined && parentPick(parent) === v ? " (same as parent)" : ""))}
           </Select>
         </Label>
 
@@ -235,7 +239,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
             Name
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={valid ? defaultName() : "defaults to the folder"} />
           </Label>
-          {agent !== "" ? (
+          {custom === undefined ? ( // a Custom agent's command carries its own model
             <Label>
               Model <span className="font-normal text-faint">optional</span>
               <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="harness default" />

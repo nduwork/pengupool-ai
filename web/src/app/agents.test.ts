@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkFailed, launchAgent, pickable, type CustomAgent, type Found } from "./ctx";
+import { checkFailed, choosePick, launchAgent, parentPick, pickable, type CustomAgent, type Found } from "./ctx";
 
 const yes = { version: "1.0" };
 const no = { version: "", error: "harness_unavailable: not on PATH" };
@@ -27,5 +27,18 @@ describe("New session's agent list", () => {
   it("launches a Custom agent by its id", () => {
     expect(launchAgent("custom:o", "")).toEqual({ harness: "", custom: "o", model: undefined });
     expect(launchAgent("codex", " gpt-5 ")).toEqual({ harness: "codex", model: "gpt-5" });
+  });
+  it("a child starts on its parent's Custom agent, else its agent", () => {
+    expect(parentPick({ harness: "claude", custom: "o" })).toBe("custom:o");
+    expect(parentPick({ harness: "codex" })).toBe("codex");
+    expect(parentPick({ harness: "shell" })).toBeUndefined();
+  });
+  it("the default Custom agent beats a pick that is not offered", () => {
+    const customs: CustomAgent[] = [{ id: "o", name: "Ollama", command: "ollama launch claude --", starts: "claude", default: true }];
+    const options = pickable({ claude: yes, codex: yes }, customs);
+    expect(choosePick(options, "", customs)).toBe("custom:o");
+    expect(choosePick(options, "gone", customs)).toBe("custom:o");
+    expect(choosePick(options, "codex", customs)).toBe("codex");
+    expect(choosePick(pickable({ codex: yes }, customs), "", customs)).toBe("codex"); // its agent is not installed
   });
 });

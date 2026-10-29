@@ -66,6 +66,8 @@ export interface SessionView {
   cwd: string;
   command?: string[];
   harness?: string;
+  /** The Custom agent it started from (Settings › Agents). */
+  custom?: string;
   state: string;
   exit_code?: number;
   pid?: number;

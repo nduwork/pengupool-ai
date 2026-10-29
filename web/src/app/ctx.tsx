@@ -135,7 +135,7 @@ export interface CustomAgent {
 }
 
 /** The note on anything PenguPool does not support for messages and hooks: a Custom agent that starts nothing. */
-export const UNSUPPORTED_NOTE = "PenguPool does not support it for messages or hooks: no teams, no Compass, no messages.";
+export const UNSUPPORTED_NOTE = "No hooks, teams, Compass or messages: PenguPool only opens it in a terminal.";
 
 export const isUnsupported = (c: CustomAgent): boolean => (c.starts ?? "") === "";
 
@@ -158,6 +158,21 @@ export function pickable(found: Found | null, customs: readonly CustomAgent[] = 
     out.push({ value: `custom:${c.id}`, label: c.name, agent: starts === "" ? undefined : starts });
   }
   return out;
+}
+
+/** What New session starts on for a child: its parent's Custom agent, else its parent's agent. */
+export function parentPick(parent: { harness?: string; custom?: string } | undefined): string | undefined {
+  if (parent?.custom !== undefined && parent.custom !== "") return `custom:${parent.custom}`;
+  return AGENTS.some((a) => a.id === parent?.harness) ? parent?.harness : undefined;
+}
+
+/** What is shown is what is sent: the wanted pick while it is offered, else the default Custom agent,
+ * else the first option. */
+export function choosePick(options: readonly { value: string }[], want: string, customs: readonly CustomAgent[]): string {
+  if (options.some((o) => o.value === want)) return want;
+  const d = customs.find((c) => c.default === true);
+  if (d !== undefined && options.some((o) => o.value === `custom:${d.id}`)) return `custom:${d.id}`;
+  return options[0]?.value ?? "";
 }
 
 /** What a picked option launches: an agent and its model, or a Custom agent. */

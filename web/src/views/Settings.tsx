@@ -431,7 +431,7 @@ function useSettings(n: number): SettingsResp | null {
   return s;
 }
 
-function Row({ title, hint, children }: { title: string; hint?: ReactNode; children: ReactNode }): ReactElement {
+function Row({ title, hint, children }: { title: ReactNode; hint?: ReactNode; children: ReactNode }): ReactElement {
   return (
     <div className="flex items-start gap-4 border-b border-border py-3 last:border-0">
       <div className="min-w-0 flex-1">
@@ -975,7 +975,11 @@ function Agents(): ReactElement {
         {AGENTS.filter((a) => !a.hidden).map((a) => {
           const v = r?.[a.id];
           return (
-            <Row key={a.id} title={a.label} hint={v === undefined ? "Checking…" : (v.error ?? v.version)}>
+            <Row
+              key={a.id}
+              title={a.label}
+              hint={v === undefined ? "Checking…" : (v.error ?? (a.id === "claude" ? `${v.version}. It asks you to sign in to your Anthropic account in its first session.` : v.version))}
+            >
               {v === undefined ? <Loader2 className="size-3.5 animate-spin text-faint" /> : <Badge tone={v.error === undefined ? "success" : "neutral"}>{v.error === undefined ? "installed" : "not installed"}</Badge>}
             </Row>
           );
@@ -1033,7 +1037,16 @@ function CustomAgents({ found }: { found: Found | null }): ReactElement {
       {list.map((c) => (
         <Row
           key={c.id}
-          title={c.name}
+          title={
+            <>
+              {c.name}
+              {c.default === true ? (
+                <Badge className="ml-2" tone="primary">
+                  Default
+                </Badge>
+              ) : null}
+            </>
+          }
           hint={
             <>
               <span className="block break-all font-mono">{c.command}</span>
@@ -1041,11 +1054,26 @@ function CustomAgents({ found }: { found: Found | null }): ReactElement {
             </>
           }
         >
-          <span className="flex gap-1">
+          <span className="flex items-center gap-1">
+            {c.default !== true ? (
+              <Button size="sm" variant="ghost" onClick={() => void save(list.map((x) => ({ ...x, default: x.id === c.id })))}>
+                Make default
+              </Button>
+            ) : null}
             <Button size="icon" variant="ghost" aria-label={`Edit ${c.name}`} onClick={() => setEditing(c)}>
               <Pencil />
             </Button>
-            <Button size="icon" variant="ghost" aria-label={`Delete ${c.name}`} onClick={() => void save(list.filter((x) => x.id !== c.id))}>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label={`Delete ${c.name}`}
+              onClick={() => {
+                // A session started from it resumes through it: deleting it leaves that session unable to resume.
+                const using = app.sessions.filter((s) => s.custom === c.id).length;
+                if (using > 0 && !window.confirm(`${using} session${using === 1 ? "" : "s"} started from ${c.name} will no longer resume. Delete it?`)) return;
+                void save(list.filter((x) => x.id !== c.id));
+              }}
+            >
               <Trash2 />
             </Button>
           </span>
@@ -1068,7 +1096,8 @@ function CustomAgentSheet({ entry, onClose, onSave }: { entry: CustomAgent; onCl
   const [e, setE] = useState(entry);
   const starts = e.starts ?? "";
   const endsRight = starts === "" || /(^|\s)--$/.test(e.command.trim());
-  const ok = e.name.trim() !== "" && e.command.trim() !== "" && endsRight;
+  const cutOff = starts !== "" && /[#\n]/.test(e.command);
+  const ok = e.name.trim() !== "" && e.command.trim() !== "" && endsRight && !cutOff;
   return (
     <Sheet
       title={entry.id === "" ? "Add a Custom agent" : `Edit ${entry.name}`}
@@ -1091,6 +1120,8 @@ function CustomAgentSheet({ entry, onClose, onSave }: { entry: CustomAgent; onCl
           hint={
             starts === "" ? (
               UNSUPPORTED_NOTE
+            ) : cutOff ? (
+              <span className="text-danger">No # comment or second line: it would cut the agent&apos;s own arguments off the command.</span>
             ) : endsRight ? (
               "PenguPool adds the agent's own arguments (its hooks, settings and resume) after the command, so it runs as a full agent."
             ) : (
