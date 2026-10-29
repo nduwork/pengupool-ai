@@ -164,6 +164,9 @@ Removed: Set anchor; the Claude Code on Ollama card (address, model, "every sess
 Ollama", which moves to New session's default); per-session Ollama models; Ollama for helpers,
 team members and the other agents; GitHub Copilot and Gemini CLI from the pickers (their old
 sessions still resume); the "(experimental)" labels.
+v0.9.8: New session and Add member start every agent on its own default model.
+Removed: the Model field in New session and in Add member (`pengupool new --model` still
+works, and a session resumes on its recorded model).
 
 ## Credits
 
