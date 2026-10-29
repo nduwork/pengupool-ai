@@ -128,7 +128,7 @@ export function TeamMap(): ReactElement {
   // Open asks: a pill on the asker's card and on the route between asker and recipient.
   const asks = openAsks(domain.messages);
   const asksOn = (a: string, b: string): TeamMessage[] => asks.filter((x) => (x.from === a && x.to === b) || (x.from === b && x.to === a));
-  const newest = newestByPair(domain.messages);
+  const newest = newestByPair(domain.messages.filter((m) => m.state !== "queued")); // orders the lit routes
   // The lit routes, a message arrived within 90 s (beads), oldest message first so the newest draws
   // on top where routes share a trunk.
   const lit = (routes: Route[]): Array<{ r: Route; dir: "down" | "up"; at: number }> =>
