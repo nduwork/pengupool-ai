@@ -276,6 +276,9 @@ func tailscaleName() (string, error) {
 	return strings.TrimSuffix(st.Self.DNSName, "."), nil
 }
 
+// lookupTailnetName is tailscaleName; a test stands in for the CLI.
+var lookupTailnetName = tailscaleName
+
 var tailnetName struct {
 	sync.Mutex
 	name    string
@@ -284,7 +287,8 @@ var tailnetName struct {
 }
 
 // TailnetName is this machine's own Tailscale DNS name, or "" off a tailnet. It never blocks a
-// request: it returns the last answer and refreshes one older than a minute in the background.
+// request: it returns the last answer and refreshes one older than a minute in the background. A
+// failed lookup (tailscaled restarting, busy) keeps the last name: the token still gates every call.
 func TailnetName() string {
 	t := &tailnetName
 	t.Lock()
@@ -292,9 +296,12 @@ func TailnetName() string {
 	if !t.running && time.Since(t.at) > time.Minute {
 		t.running = true
 		go func() {
-			name, _ := tailscaleName()
+			name, err := lookupTailnetName()
 			t.Lock()
-			t.name, t.at, t.running = name, time.Now(), false
+			if err == nil {
+				t.name = name
+			}
+			t.at, t.running = time.Now(), false
 			t.Unlock()
 		}()
 	}

@@ -231,8 +231,11 @@ func phoneHosts(serve, tailnet string) []string {
 
 // localAddr is how a client on this machine reaches a listener bound at bound: a wildcard bind
 // is not an address to dial, so it becomes loopback of the same family on the same port. A dual-stack
-// [::] becomes [::1], not 127.0.0.1: another host may hold 127.0.0.1 on the same port, and the more
-// specific bind would take the connection.
+// [::] (what Go reports for 0.0.0.0 on macOS) becomes [::1], not 127.0.0.1: another host may hold
+// 127.0.0.1 on the same port, and the more specific bind would take the connection. An IPv4-only
+// 0.0.0.0 becomes 127.0.0.1.
+// ponytail: an IPv4-only host with another host on 127.0.0.1:<port> still dials the wrong one; the
+// desktop's owner check refuses it, so it fails closed. Fall back to a free port if that ever happens.
 func localAddr(bound string) string {
 	host, port, err := net.SplitHostPort(bound)
 	ip := net.ParseIP(host)

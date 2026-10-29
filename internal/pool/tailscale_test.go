@@ -2,11 +2,13 @@ package pool
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
@@ -268,4 +270,33 @@ func TestHealTailscaleServe(t *testing.T) {
 			t.Fatal("throwaway store re-served")
 		}
 	})
+}
+
+// A failed lookup keeps the last tailnet name, so paired devices are not refused for a minute.
+func TestTailnetNameKeepsLastOnError(t *testing.T) {
+	old := lookupTailnetName
+	t.Cleanup(func() { lookupTailnetName = old })
+	refresh := func(name string, err error) string {
+		lookupTailnetName = func() (string, error) { return name, err }
+		tailnetName.Lock()
+		tailnetName.at = time.Time{}
+		tailnetName.Unlock()
+		TailnetName()
+		for i := 0; i < 200; i++ {
+			tailnetName.Lock()
+			done := !tailnetName.running
+			tailnetName.Unlock()
+			if done {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		return TailnetName()
+	}
+	if got := refresh("mac.tail1.ts.net", nil); got != "mac.tail1.ts.net" {
+		t.Fatalf("name = %q", got)
+	}
+	if got := refresh("", errors.New("tailscaled restarting")); got != "mac.tail1.ts.net" {
+		t.Fatalf("after a failed lookup name = %q, want the last one", got)
+	}
 }
