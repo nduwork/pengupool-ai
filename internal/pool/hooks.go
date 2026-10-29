@@ -154,7 +154,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	}
 
 	switch in.Event {
-	case "Stop", "SessionStart", "SessionEnd":
+	case "Stop", "TurnEnded", "SessionStart", "SessionEnd":
 		// A question or plan tool that was denied or interrupted never reports PostToolUse: its
 		// flag must not outlive the turn or the session (ownerinput.go).
 		p.mu.Lock()
@@ -232,7 +232,10 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 				return HookOut{}, nil
 			}
 		}
-		p.setStatus(s.ID, "working")
+		// Muse asks its permission before PreToolUse: the call waits on the owner until it runs or fails.
+		if in.Harness != harness.Muse || s.Status != "approval" {
+			p.setStatus(s.ID, "working")
+		}
 		p.turnOpen(s.ID, "")
 		p.asking(s.ID, str("tool_name"), true)
 		if out, deny := p.guardRoute(s, pl); deny {
@@ -263,6 +266,13 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		if str("tool_name") == "AskUserQuestion" && s.Harness == harness.Claude {
 			p.askedPicks(s, pl)
 		}
+	case "ToolFailed": // Muse: a tool failed or was denied; the turn goes on
+		p.setStatus(s.ID, "working")
+		p.asking(s.ID, str("tool_name"), false)
+	case "TurnEnded": // Muse: the turn ended in an error or an interrupt, with no Stop. No triage and
+		// no queue: the owner may be at the prompt; the next Stop delivers it. ponytail: Interrupt is
+		// async, so one that lands after the owner's next prompt shows idle until that turn's next hook.
+		p.setStatus(s.ID, "idle")
 	case "PermissionRequest":
 		// A shell command the owner answered before is answered the same way for them on an autonomous
 		// team (autoAnswer). Otherwise no decision: the harness shows its own dialog in the terminal;

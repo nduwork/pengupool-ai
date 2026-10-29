@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"os"
@@ -66,8 +67,8 @@ func TestMusePluginBakesHookIdentity(t *testing.T) {
 	if raw.Name != "pengupool" || len(raw.Capabilities.Hooks) != len(museHookEvents) {
 		t.Fatalf("manifest: %+v", raw.Name)
 	}
-	for _, h := range raw.Capabilities.Hooks {
-		want := []string{"/x/pengupool", "hook", "--store", dir, "muse", h.Event}
+	for i, h := range raw.Capabilities.Hooks {
+		want := []string{"/x/pengupool", "hook", "--store", dir, "muse", cmp.Or(museHookEvents[i].pool, h.Event)}
 		if !slices.Equal(h.Command, want) {
 			t.Fatalf("hook %s: %v", h.ID, h.Command)
 		}

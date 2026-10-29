@@ -2,6 +2,7 @@ package harness
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -26,16 +27,24 @@ import (
 // musePluginID is the plugin's stable id in the muse home.
 const musePluginID = "pengupool"
 
-// museHookEvents are the plugin hooks, in pool event order.
-var museHookEvents = []struct{ id, event string }{
-	{"session-start", "SessionStart"},
-	{"user-prompt-submit", "UserPromptSubmit"},
-	{"pre-tool-use", "PreToolUse"},
-	{"post-tool-use", "PostToolUse"},
-	{"stop", "Stop"},
-	{"session-end", "SessionEnd"},
-	{"notification", "Notification"},
-	{"permission-request", "PermissionRequest"},
+// museHookEvents are the plugin hooks: the Muse event, and the pool event it reports when that is
+// another name. A failed or denied tool reports ToolFailed; a turn that ended in an error or an
+// interrupt, TurnEnded. Muse admits an Interrupt hook only async.
+var museHookEvents = []struct {
+	id, event, pool string
+	async           bool
+}{
+	{"session-start", "SessionStart", "", false},
+	{"user-prompt-submit", "UserPromptSubmit", "", false},
+	{"pre-tool-use", "PreToolUse", "", false},
+	{"post-tool-use", "PostToolUse", "", false},
+	{"stop", "Stop", "", false},
+	{"session-end", "SessionEnd", "", false},
+	{"notification", "Notification", "", false},
+	{"permission-request", "PermissionRequest", "", false},
+	{"post-tool-use-failure", "PostToolUseFailure", "ToolFailed", false},
+	{"stop-failure", "StopFailure", "TurnEnded", false},
+	{"interrupt", "Interrupt", "TurnEnded", true},
 }
 
 // musePluginDir is the bundle under the store the daemon installs from.
@@ -48,10 +57,14 @@ func musePluginDir(storeDir string) string {
 func writeMusePlugin(storeDir, exe string) (string, error) {
 	hooks := make([]map[string]any, 0, len(museHookEvents))
 	for _, h := range museHookEvents {
-		hooks = append(hooks, map[string]any{
+		hook := map[string]any{
 			"id": h.id, "event": h.event,
-			"command": []string{exe, "hook", "--store", storeDir, Muse, h.event},
-		})
+			"command": []string{exe, "hook", "--store", storeDir, Muse, cmp.Or(h.pool, h.event)},
+		}
+		if h.async {
+			hook["async"] = true
+		}
+		hooks = append(hooks, hook)
 	}
 	manifest := map[string]any{
 		"schemaVersion": 1, "name": musePluginID, "version": "1",
