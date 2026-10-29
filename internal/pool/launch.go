@@ -98,7 +98,7 @@ func (p *Pool) addWorktree(ctx context.Context, repo protocol.Repo, src sourceIn
 	if src.NewBranch && (src.Branch == "" || strings.HasPrefix(src.Branch, "-") || src.From != "" && !local(src.From)) || !src.NewBranch && !local(src.Branch) {
 		return "", invalid("choose one of the repository's branches")
 	}
-	wt := filepath.Join(p.st.Dir(), "worktrees", "sessions", slug(name)+"-"+id[len(id)-8:]) // ids are time-ordered: the tail is the random part
+	wt := filepath.Join(p.st.Dir(), "worktrees", "sessions", slug(name)+"-"+idTail(id))
 	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
 		return "", err
 	}
