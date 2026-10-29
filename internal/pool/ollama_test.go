@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -114,8 +115,11 @@ func TestProbeOffersListedAgents(t *testing.T) {
 	p := New(Options{Store: st, Exe: "pengupool", Env: []string{"PATH=" + t.TempDir(), "OLLAMA_HOST=127.0.0.1:1"}})
 	r, _ := p.harnessProbe(context.Background(), struct{}{})
 	var got []string
-	for k := range r.(map[string]map[string]string) {
+	for k, v := range r.(map[string]map[string]string) {
 		got = append(got, k)
+		if e := v["error"]; e == "" || regexp.MustCompile(`^[a-z_]+: `).MatchString(e) {
+			t.Errorf("%s: the owner reads %q (no install here, so a message without its code)", k, e)
+		}
 	}
 	slices.Sort(got)
 	if want := []string{"claude", "codex", "muse", "ollama", "omp", "opencode", "pi"}; !slices.Equal(got, want) {

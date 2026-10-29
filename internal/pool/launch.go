@@ -2,6 +2,7 @@ package pool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -404,7 +405,7 @@ func (p *Pool) harnessProbe(ctx context.Context, _ struct{}) (any, error) {
 		v, err := harness.Probe(k, p.env)
 		r := map[string]string{"version": v}
 		if err != nil {
-			r["error"] = err.Error()
+			r["error"] = probeNote(err)
 		}
 		out[k] = r
 	}
@@ -412,14 +413,23 @@ func (p *Pool) harnessProbe(ctx context.Context, _ struct{}) (any, error) {
 	bin, err := harness.LookupOllama(p.env)
 	r := map[string]string{"version": bin} // installed: the CLI's path (an error alongside: no model to start)
 	if err != nil {
-		r["error"] = err.Error()
+		r["error"] = probeNote(err)
 	} else if m, err := p.ollamaModel(ctx); err != nil {
-		r["error"] = err.Error()
+		r["error"] = probeNote(err)
 	} else {
 		r["model"] = m
 	}
 	out["ollama"] = r
 	return out, nil
+}
+
+// probeNote is an install check's error as the owner reads it: the message, without its code.
+func probeNote(err error) string {
+	var pe *protocol.Error
+	if errors.As(err, &pe) {
+		return pe.Message
+	}
+	return strings.TrimPrefix(err.Error(), "harness_unavailable: ")
 }
 
 // agentIDs lists the supported agent runtimes for error messages.

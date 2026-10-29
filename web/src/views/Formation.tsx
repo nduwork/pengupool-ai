@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useId, useState, type ReactElement } from "react";
 
 import { AGENTS, agentOptions, checkFailed, launchAgent, pickable, skillName, useApp, type Found } from "../app/ctx";
 import { Button } from "../components/ui/button";
@@ -44,9 +44,15 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
   const skill = app.domain.skills.find((s) => s.id === change.skill_id);
   const allowed = AGENTS.filter((a) => (skill?.requires ?? []).length === 0 || (skill?.requires ?? []).includes(a.id));
   const [found, setFound] = useState<Found | null>(null);
+  const [probeFailed, setProbeFailed] = useState(false);
   useEffect(() => {
-    if (adding) void app.conn.request<Found>("harness.probe").then(setFound, () => setFound(checkFailed()));
+    if (adding)
+      void app.conn.request<Found>("harness.probe").then(setFound, () => {
+        setProbeFailed(true);
+        setFound(checkFailed());
+      });
   }, [adding]);
+  const hintId = useId();
   const [want, setHarness] = useState(change.harness ?? skill?.harness ?? (team.harness || "claude"));
   // What is shown is what is sent: a wanted agent the helper may not run on, or that is not
   // installed, gives way to the first one that is. A helper runs on an installed agent itself.
@@ -104,6 +110,7 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
         {adding ? (
           <>
             <Label
+              hintId={hintId}
               hint={
                 found === null
                   ? "Checking which agents are installed…"
@@ -111,11 +118,13 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
                     ? `None of the agents ${skill?.name ?? "it"} runs on is installed here.`
                     : allowed.length === 1
                       ? `Only ${allowed[0].label} can run ${skill?.name ?? "this helper"}.`
-                      : `${AGENTS.find((a) => a.id === agent)?.hint ?? ""} · ${found[agent]?.version ?? ""}`
+                      : [AGENTS.find((a) => a.id === agent)?.hint, found[agent]?.version, probeFailed ? "Couldn't check which agents are installed; all are offered." : undefined]
+                          .filter((x) => x !== undefined && x !== "")
+                          .join(" · ")
               }
             >
               Agent
-              <Select value={harness} onChange={(e) => setHarness(e.target.value)} aria-label="Agent runtime" autoFocus>
+              <Select value={harness} onChange={(e) => setHarness(e.target.value)} aria-label="Agent runtime" aria-describedby={hintId} autoFocus>
                 {agentOptions(usable, (id) => (skill?.harness === id ? " (helper's default)" : ""))}
               </Select>
             </Label>

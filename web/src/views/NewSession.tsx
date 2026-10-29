@@ -1,5 +1,5 @@
 import { FolderOpen, GitBranch } from "lucide-react";
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useId, useState, type ReactElement } from "react";
 
 import { AGENTS, CLAUDE_OLLAMA, agentOptions, checkFailed, choosePick, harnessLabel, pickReady, launchAgent, parentPick, pickable, useApp, usePersisted, type Found } from "../app/ctx";
 import { localDesktop } from "../app/desktop";
@@ -58,6 +58,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
   const harness = choosePick(options, want, ollamaDefault === true);
   const onOllama = harness === CLAUDE_OLLAMA;
   const agent = onOllama ? "claude" : harness;
+  const hintId = useId();
   const [model, setModel] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -137,6 +138,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
         }}
       >
         <Label
+          hintId={hintId}
           hint={
             found === null
               ? "Checking which agents are installed…"
@@ -155,7 +157,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
           }
         >
           Agent
-          <Select value={harness} onChange={(e) => setHarness(e.target.value)} aria-label="Agent runtime" autoFocus>
+          <Select value={harness} onChange={(e) => setHarness(e.target.value)} aria-label="Agent runtime" aria-describedby={hintId} autoFocus>
             {agentOptions(options, (v) => (parent !== undefined && parentPick(parent) === v ? " (same as parent)" : ""))}
           </Select>
         </Label>

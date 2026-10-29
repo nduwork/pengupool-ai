@@ -959,46 +959,57 @@ function General(): ReactElement {
 function Agents(): ReactElement {
   const app = useApp();
   const [r, setR] = useState<Found | null>(null);
+  const [failed, setFailed] = useState(false); // the check itself failed: nothing is known
   const [n, setN] = useState(0);
   useEffect(() => {
     setR(null);
-    void app.call<Found>("harness.probe").then((x) => setR(x ?? null));
+    setFailed(false);
+    void app.call<Found>("harness.probe").then((x) => {
+      setR(x ?? null);
+      setFailed(x === undefined);
+    });
   }, [n]);
   const claude = r?.claude;
-  const ollama = r?.ollama;
+  // Claude Code (Ollama): ready, or why not (no ollama CLI, no Claude Code, Ollama down or no model).
+  const ollama = r === null ? undefined : (r.ollama ?? { version: "", error: "" });
+  const ollamaHint =
+    ollama === undefined
+      ? undefined
+      : ollama.version === "" && ollama.error !== undefined
+        ? "Claude Code on a local or cloud model, through ollama launch claude. Needs the ollama CLI (ollama.com/download)."
+        : claude?.error !== undefined
+          ? "Needs Claude Code."
+          : (ollama.error ?? `Claude Code through ollama launch claude, on ${ollama.model ?? "Ollama's default model"} (the model Ollama picks for Claude; change it with ollama launch claude).`);
+  const ollamaBadge = ollama === undefined ? "" : ollama.version === "" && ollama.error !== undefined ? "not installed" : claude?.error !== undefined || ollama.error !== undefined ? "not ready" : "ready";
+  const status = (badge: string, ok: boolean): ReactElement =>
+    failed ? (
+      <Badge tone="neutral">unknown</Badge>
+    ) : badge === "" ? (
+      <Loader2 className="size-3.5 animate-spin text-faint" />
+    ) : (
+      <Badge tone={ok ? "success" : "neutral"}>{badge}</Badge>
+    );
   return (
     <div>
       <H title="Agents">
         PenguPool runs the coding agents installed on this machine, each with its own settings for the session; it never changes an agent&apos;s configuration. New session offers the installed ones.
       </H>
       <Card className="mb-4 px-4">
+        {failed ? <p className="border-b border-border py-3 text-caption text-danger">Couldn&apos;t check which agents are installed. Check again, or start a session: New session offers them all.</p> : null}
         {AGENTS.filter((a) => !a.hidden).map((a) => {
           const v = r?.[a.id];
           return (
             <Row
               key={a.id}
               title={a.label}
-              hint={v === undefined ? "Checking…" : (v.error ?? (a.id === "claude" ? `${v.version}. It asks you to sign in to your Anthropic account in its first session.` : v.version))}
+              hint={failed ? "Not checked." : v === undefined ? "Checking…" : (v.error ?? (a.id === "claude" ? `${v.version}. It asks you to sign in to your Anthropic account in its first session.` : v.version))}
             >
-              {v === undefined ? <Loader2 className="size-3.5 animate-spin text-faint" /> : <Badge tone={v.error === undefined ? "success" : "neutral"}>{v.error === undefined ? "installed" : "not installed"}</Badge>}
+              {status(v === undefined ? "" : v.error === undefined ? "installed" : "not installed", v?.error === undefined)}
             </Row>
           );
         })}
-        <Row
-          title="Claude Code (Ollama)"
-          hint={
-            ollama === undefined
-              ? "Checking…"
-              : ollama.error !== undefined
-                ? ollama.version === "" ? "Claude Code on a local or cloud model, through ollama launch claude. Needs the ollama CLI (ollama.com/download)." : ollama.error
-                : `Claude Code through ollama launch claude, on ${ollama.model ?? "Ollama's default model"} (the model Ollama picks for Claude; change it with ollama launch claude).`
-          }
-        >
-          {ollama === undefined ? (
-            <Loader2 className="size-3.5 animate-spin text-faint" />
-          ) : (
-            <Badge tone={ollama.error === undefined ? "success" : "neutral"}>{ollama.error === undefined ? "ready" : ollama.version === "" ? "not installed" : "not ready"}</Badge>
-          )}
+        <Row title="Claude Code (Ollama)" hint={failed ? "Not checked." : (ollamaHint ?? "Checking…")}>
+          {status(ollamaBadge, ollamaBadge === "ready")}
         </Row>
         <div className="flex items-center gap-2 py-3">
           {claude !== undefined && claude.error !== undefined ? (
