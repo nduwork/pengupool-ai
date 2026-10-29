@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/harness"
@@ -48,14 +49,19 @@ func (p *Pool) MarkRestore(ids []string) {
 func (p *Pool) EndRun(ctx context.Context) {
 	ids := p.RunningSessions()
 	p.MarkRestore(ids)
-	for _, id := range ids {
-		if p.hub == nil {
-			break
-		}
-		if err := p.hub.Kill(ctx, id); err != nil {
-			p.logf("pool: end session %s with the run: %v", id, err)
-		}
+	if p.hub == nil {
+		return
 	}
+	// All at once: each may wait seconds for its agent to exit, and the app waits for the host.
+	var wg sync.WaitGroup
+	for _, id := range ids {
+		wg.Go(func() {
+			if err := p.hub.Kill(ctx, id); err != nil {
+				p.logf("pool: end session %s with the run: %v", id, err)
+			}
+		})
+	}
+	wg.Wait()
 }
 
 type restorable struct {
@@ -71,7 +77,7 @@ func (p *Pool) restorableSessions() []restorable {
 	var out []restorable
 	for _, id := range st.Restore {
 		i := sessionIndex(&st, id)
-		if i < 0 || st.Sessions[i].State == "running" {
+		if i < 0 || st.Sessions[i].State == "running" || !p.onThisHost(st.Sessions[i].NodeID) {
 			continue
 		}
 		s := st.Sessions[i]

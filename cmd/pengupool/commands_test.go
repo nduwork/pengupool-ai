@@ -215,3 +215,40 @@ func TestHandOverToTheNextHost(t *testing.T) {
 		t.Fatalf("stale hand-over: worker %v, restore %v", r.worker(sid), r.restore())
 	}
 }
+
+// The first app run after a host started by hand (or one before 0.9.5, which an update from it
+// stops with SIGTERM and no hand-over) adopts the sessions that host left running.
+func TestOwnedHostAdoptsAStandaloneHostsSessions(t *testing.T) {
+	r := newOwnedRun(t)
+	host := exec.Command(r.bin, "daemon", "--http", "127.0.0.1:0")
+	host.Env = r.env
+	if err := host.Start(); err != nil {
+		t.Fatal(err)
+	}
+	exited := make(chan error, 1)
+	go func() { exited <- host.Wait() }()
+	for range 400 {
+		if c, err := net.Dial("unix", filepath.Join(r.store, "run", "hub.sock")); err == nil {
+			c.Close()
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	sid := r.session()
+	_ = host.Process.Signal(syscall.SIGTERM)
+	waitExit(t, exited, "the standalone host did not stop")
+	if !r.worker(sid) {
+		t.Fatal("a standalone host's session ended with it")
+	}
+	app, _, exited := r.app()
+	if !r.worker(sid) || len(r.restore()) != 0 {
+		t.Fatalf("not adopted: worker %v, restore %v", r.worker(sid), r.restore())
+	}
+	// From now on the store's host is an app run's: quitting ends the sessions.
+	_ = app.Process.Kill()
+	_ = app.Wait()
+	waitExit(t, exited, "the host outlived the app")
+	if r.worker(sid) || !slices.Contains(r.restore(), sid) {
+		t.Fatalf("after the app quit: worker %v, restore %v", r.worker(sid), r.restore())
+	}
+}

@@ -4,7 +4,7 @@
 // asks to restore them. Quitting to install an update hands the sessions over instead: the host
 // exits and leaves them running for the updated app's host to adopt.
 import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -105,10 +105,12 @@ export class Host {
   }
 
   /**
-   * This run's host: started on first use, waiting up to 20 s for its health check. A host this run
-   * did not start (a standalone `pengupool daemon`, or one a previous run left) is stopped first, so
-   * the app never talks to a host of another build. One ensure runs at a time; a second caller gets
-   * the first one's answer instead of starting a second host.
+   * This run's host: started on first use, waiting up to 20 s for its health check. One ensure runs
+   * at a time; a second caller gets the first one's answer instead of starting a second host.
+   * Before it starts a host it stops the store's others, so the app never talks to a host of another
+   * build: its own host only when it misses two probes 3 s apart (a slow or waking host is kept), and
+   * handing the sessions over (the next host adopts them), as for a host started by hand. A host of
+   * another app run (--owner-pid) ends its own sessions.
    */
   ensure(): Promise<HostConnection | null> {
     this.pending ??= this.ensureOnce().finally(() => (this.pending = undefined));
@@ -119,11 +121,22 @@ export class Host {
 
   private async ensureOnce(): Promise<HostConnection | null> {
     if (this.own > 0 && signal(this.own, 0)) {
-      const found = await this.probe();
+      let found = await this.probe();
+      if (found === null) {
+        await new Promise((r) => setTimeout(r, 3000));
+        found = await this.probe();
+      }
       if (found !== null) return found;
     }
     if (!existsSync(this.binary)) throw new Error(`the bundled host is missing at ${this.binary}`);
-    if ((await this.stop(await this.hostPids())) > 0) console.error("stopped a host this run did not start");
+    const hosts = await this.hostPids();
+    const handOver = hosts.filter((h) => h.pid === this.own || !h.owned);
+    if (handOver.length > 0) writeHandover(); // a wedged host cannot write it itself
+    const own = hosts.filter((h) => h.pid === this.own).map((h) => h.pid);
+    const others = hosts.filter((h) => h.pid !== this.own).map((h) => h.pid);
+    // Its own host gets SIGUSR1, the hand-over: SIGTERM would end the sessions with the run.
+    if ((await this.stop(own, "SIGUSR1")) + (await this.stop(others)) > 0) console.error("replaced a host; its sessions are handed over");
+    this.own = 0;
     await this.start();
     for (let i = 0; i < 100; i++) {
       await new Promise((r) => setTimeout(r, 200));
@@ -156,8 +169,8 @@ export class Host {
 
   /** This store's running hosts: the lock file's pid and what pgrep finds for this binary's daemon,
    * each only when ps shows a PenguPool daemon of this store (a reused pid, a wrapper or an editor
-   * whose command line merely names one are left out). */
-  private async hostPids(): Promise<number[]> {
+   * whose command line merely names one are left out); owned when an app run owns it. */
+  private async hostPids(): Promise<{ pid: number; owned: boolean }[]> {
     const pids = new Set<number>();
     const found = await run("/usr/bin/pgrep", ["-f", `${this.binary} daemon`], process.env, 3000);
     for (const pid of (found ?? "").split("\n").filter(Boolean)) pids.add(Number(pid));
@@ -167,10 +180,10 @@ export class Host {
     } catch {
       /* no lock file: nothing was ever started here */
     }
-    const out: number[] = [];
+    const out: { pid: number; owned: boolean }[] = [];
     for (const pid of pids) {
-      const cmd = await run("/bin/ps", ["-o", "command=", "-p", String(pid)], process.env, 3000);
-      if (cmd !== null && isStoreDaemon(cmd.trim(), storeDir())) out.push(pid);
+      const cmd = (await run("/bin/ps", ["-o", "command=", "-p", String(pid)], process.env, 3000))?.trim();
+      if (cmd !== undefined && isStoreDaemon(cmd, storeDir())) out.push({ pid, owned: cmd.includes(" --owner-pid ") });
     }
     return out;
   }
@@ -196,6 +209,16 @@ export class Host {
   async restart(): Promise<HostConnection | null> {
     await this.quit(true);
     return this.ensure();
+  }
+}
+
+/** Marks the running sessions as handed over: the next host adopts them (cmd/pengupool handoverFile). */
+function writeHandover(): void {
+  try {
+    mkdirSync(join(storeDir(), "run"), { recursive: true });
+    writeFileSync(join(storeDir(), "run", "handover"), new Date().toISOString().replace(/\.\d+Z$/, "Z"));
+  } catch (e) {
+    console.error("hand-over marker:", e);
   }
 }
 

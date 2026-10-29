@@ -1,8 +1,10 @@
 // In-app update, the desktop half: the host downloads the new disk image into <store>/updates/<tag>
 // (internal/pool/update.go); the app writes the script below, starts it detached and quits. The
-// script waits for the app to exit, copies the new PenguPool AI.app next to the installed one, stops
-// the old host, swaps the two and opens the new app. Agent sessions keep running: their workers
-// outlive the host and the new host adopts them. Plain functions only, so node --test runs them.
+// app hands its host's sessions over before it quits (the host exits and leaves them running). The
+// script waits for the app to exit, copies the new PenguPool AI.app next to the installed one, hands
+// over from any host still running, swaps the two and opens the new app, whose host adopts the
+// sessions; a failure reopens the old app, whose host adopts them the same way. Plain functions
+// only, so node --test runs them.
 import { realpathSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 
@@ -89,12 +91,13 @@ ditto "$MNT/PenguPool AI.app" "$NEW" >> "$LOG" 2>&1 || fail "could not copy the 
 find "$NEW" -xattrname com.apple.quarantine -exec xattr -d -s com.apple.quarantine {} \\; 2>/dev/null # macOS xattr has no -r
 log "copied the new app"
 detach
-# The old host would answer the new app; sessions keep running without it.
+# The old host would answer the new app. It hands its sessions over: an app run's host on SIGUSR1
+# (SIGTERM would end them with the run), a host started by hand on SIGTERM.
 PIDS=$(hostpids)
-if [ -n "$PIDS" ]; then
-  # shellcheck disable=SC2086
-  kill $PIDS 2>/dev/null && log "stopping the old host ($PIDS)"
-fi
+for p in $PIDS; do
+  if ps -o command= -p "$p" | grep -q -- "--owner-pid"; then kill -USR1 "$p" 2>/dev/null; else kill "$p" 2>/dev/null; fi
+done
+[ -n "$PIDS" ] && log "stopping the old host ($PIDS); its sessions keep running"
 i=0
 while PIDS=$(hostpids) && [ -n "$PIDS" ]; do
   i=$((i + 1))

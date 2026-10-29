@@ -185,7 +185,18 @@ func cmdDaemon(args []string) error {
 	wasRunning := runningIDs(st)
 	// A restart to apply listener settings (pool.Restarter), or a host the app handed its sessions to
 	// before installing an update (handOver), continues the same run: adopt its sessions.
-	sameRun := os.Getenv("PENGUPOOL_SAME_RUN") == "1" || tookOver(dir)
+	// A host started by hand (or before 0.9.5) meant its sessions to outlive it: the first app run
+	// after it adopts them. run/owned says the last host was an app run's.
+	ownedMark := filepath.Join(dir, "run", "owned")
+	_, err = os.Stat(ownedMark)
+	afterStandalone := os.IsNotExist(err)
+	if *ownerPID > 0 {
+		_ = os.WriteFile(ownedMark, nil, 0o600)
+	} else {
+		_ = os.Remove(ownedMark)
+	}
+	tookOver := tookOver(dir) // consumes the marker
+	sameRun := tookOver || os.Getenv("PENGUPOOL_SAME_RUN") == "1" || afterStandalone
 	os.Unsetenv("PENGUPOOL_SAME_RUN")
 	var handover atomic.Bool
 	if *ownerPID > 0 {
