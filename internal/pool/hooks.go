@@ -154,7 +154,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	}
 
 	switch in.Event {
-	case "Stop", "TurnFailed", "Interrupted", "SessionStart", "SessionEnd":
+	case "Stop", "TurnFailed", "SessionStart", "SessionEnd": // Interrupted clears them below, past its guard
 		// A question or plan tool that was denied or interrupted never reports PostToolUse: its
 		// flag must not outlive the turn or the session (ownerinput.go).
 		p.mu.Lock()
@@ -276,8 +276,14 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		// ponytail: it still reads idle until that turn's next hook, and meanwhile a message may be
 		// typed into the busy session; the window is the hook's spawn delay. A turn interrupted in
 		// its first second reads working until its next hook.
-		if in.Event == "Interrupted" && p.turnSince(s.ID, entered.Add(-time.Second)) {
-			break
+		if in.Event == "Interrupted" {
+			if p.turnSince(s.ID, entered.Add(-time.Second)) {
+				break
+			}
+			p.mu.Lock()
+			delete(p.askingOwner, s.ID)
+			delete(p.routed, s.ID)
+			p.mu.Unlock()
 		}
 		p.setStatus(s.ID, "idle")
 		p.turnBroke(s)

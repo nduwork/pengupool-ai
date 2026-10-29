@@ -163,6 +163,15 @@ func TestAskEscalatesAndTheOwnerSettlesIt(t *testing.T) {
 	if message(p, "ask4").EscalatedAt != "" {
 		t.Fatal("a settled ask was escalated")
 	}
+	putMessage(t, p, protocol.TeamMessage{ID: "ask5", TeamID: "team1", From: "webaaaaaaaaa", To: "leadaaaaaaaa", Text: "Ask: which zone?", Type: "ask", State: "delivered", At: old})
+	putMessage(t, p, protocol.TeamMessage{ID: "re5", TeamID: "team1", From: "leadaaaaaaaa", To: "webaaaaaaaaa", Text: "us-east1", State: "delivered", At: now()})
+	if p.askWaiting("ask5") {
+		t.Fatal("an answered ask still waits")
+	}
+	p.escalateAsk(message(p, "ask5")) // answered while triage weighed it: the owner is not asked
+	if message(p, "ask5").EscalatedAt != "" {
+		t.Fatal("an answered ask was escalated")
+	}
 
 	raw, _ := json.Marshal(settleIn{ID: "ask1", Action: "dismiss"})
 	if _, err := p.RPC(context.Background(), gateway.Caller{Unix: true}, "ask.settle", raw); err == nil {
