@@ -199,4 +199,10 @@ func TestDeliveredAt(t *testing.T) {
 	if got := message(p, "m1").DeliveredAt; got != "2026-01-02T00:00:00Z" {
 		t.Fatalf("a second mark moved the delivery time to %q", got)
 	}
+	// A record delivered before 0.9.23 has no time, and a late mark gives it none: its route stays unlit.
+	putMessage(t, p, protocol.TeamMessage{ID: "m2", TeamID: "team1", From: "a", To: "b", Text: "y", State: "delivered", At: "2026-01-01T00:00:00Z"})
+	p.markDelivered([]string{"m2"})
+	if got := message(p, "m2").DeliveredAt; got != "" {
+		t.Fatalf("an old delivered record was stamped %q", got)
+	}
 }
