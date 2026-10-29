@@ -1889,10 +1889,10 @@ func TestWithUserPath(t *testing.T) {
 	}
 }
 
-// A Codex session leaves "starting" once its screen shows Codex's prompt (its SessionStart hook comes
-// only with the first prompt). Its folder-trust dialog and its sign-in screen do not, nor does a
-// session whose screen is not followed; another harness waits for its own hook.
-func TestCodexReadyOnItsPrompt(t *testing.T) {
+// A Codex or Muse session leaves "starting" once its screen shows its prompt (its SessionStart hook
+// comes only with the first prompt). A folder-trust dialog and a sign-in screen do not, nor does a
+// session whose screen is not followed; Claude waits for its own hook.
+func TestReadyOnItsPrompt(t *testing.T) {
 	st, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -1908,17 +1908,33 @@ func TestCodexReadyOnItsPrompt(t *testing.T) {
 		"trust1aaaaaa": "Folder access\n/work/repo\nTrust this folder? Codex can read, edit, and run files here.\n› 1. Trust and continue\n  2. Back to Agent Command Center\n  enter continue · esc back",
 		"signin1aaaaa": "Welcome to Codex, OpenAI's command-line coding agent\nChoose how you want to use Codex.\n> 1. Sign in with ChatGPT\n  Press enter to continue",
 		"claude1aaaaa": "? for shortcuts",
+		// What Muse 1.4.14 showed, rendered by the emulator.
+		"museready1aa": "  Muse Code 1.4.14\n── Voice input (⌥ + v to start) ────────\n❯\n────────\n  muse-spark-1.3-contributor · max · /work/repo · Auto-review",
+		"musetrust1aa": "Do you trust this workspace?\nWorkspace:\n/work/repo\n⟩ 1  Trust and continue\n  2  Quit\nUse Up/Down or 1/2, then Enter. Esc quits.",
 	}
 	p.testScreen = func(id string) (string, bool) { s, ok := screens[id]; return s, ok }
 	_ = st.Update(func(s *store.State) error {
 		for _, id := range []string{"ready1aaaaaa", "trust1aaaaaa", "signin1aaaaa", "nofollow1aaa"} {
 			s.Sessions = append(s.Sessions, store.Session{ID: id, Harness: harness.Codex, State: "running", Status: "starting"})
 		}
-		s.Sessions = append(s.Sessions, store.Session{ID: "claude1aaaaa", Harness: harness.Claude, State: "running", Status: "starting"})
+		s.Sessions = append(s.Sessions, store.Session{ID: "claude1aaaaa", Harness: harness.Claude, State: "running", Status: "starting"},
+			store.Session{ID: "museready1aa", Harness: harness.Muse, State: "running", Status: "starting"},
+			store.Session{ID: "musetrust1aa", Harness: harness.Muse, State: "running", Status: "starting"})
 		return nil
 	})
-	p.readyCodex()
-	want := map[string]string{"ready1aaaaaa": "idle", "trust1aaaaaa": "starting", "signin1aaaaa": "starting", "nofollow1aaa": "starting", "claude1aaaaa": "starting"}
+	// A message that waited for the Muse session is typed once its prompt is up.
+	_ = st.Update(func(s *store.State) error {
+		addMessage(s, protocol.TeamMessage{ID: "m1", From: "claude1aaaaa", To: "museready1aa", Text: "hello", State: "queued"})
+		return nil
+	})
+	var typed []string
+	p.testKeys = func(id, text string) error { typed = append(typed, id+": "+text); return nil }
+	p.readyByPrompt()
+	if len(typed) != 1 || !strings.HasPrefix(typed[0], "museready1aa: ") || !strings.Contains(typed[0], "hello") {
+		t.Errorf("typed %q", typed)
+	}
+	want := map[string]string{"ready1aaaaaa": "idle", "trust1aaaaaa": "starting", "signin1aaaaa": "starting", "nofollow1aaa": "starting", "claude1aaaaa": "starting",
+		"museready1aa": "idle", "musetrust1aa": "starting"}
 	for id, status := range want {
 		if s, _ := p.session(id); s.Status != status {
 			t.Errorf("%s: %q, want %q", id, s.Status, status)
