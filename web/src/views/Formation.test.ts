@@ -28,4 +28,8 @@ describe("team labels", () => {
     const t = team([m("b", { parent: "a" }), m("a", { skill_id: "hub" })]);
     expect(leadOf(t)).toBe("a");
   });
+  it("a member under one that left still hangs under the root", () => {
+    const t = team([m("c", { parent: "b" }), m("b", { parent: "a", state: "closed" }), m("a", { skill_id: "hub" })]);
+    expect(leadOf(t)).toBe("a");
+  });
 });

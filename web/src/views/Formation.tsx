@@ -15,8 +15,18 @@ import type { Domain, FormationChange, Member, Team } from "../protocol/domain";
  * member with no active parent (mirrors the host's leadOf). */
 export function leadOf(t: Team): string {
   const active = t.members.filter((m) => m.state === "active");
-  const ids = new Set(active.map((m) => m.session_id));
-  return (active.find((m) => m.role === "main") ?? active.find((m) => m.parent === undefined || m.parent === "" || !ids.has(m.parent)))?.session_id ?? "";
+  return (active.find((m) => m.role === "main") ?? active.find((m) => treeParent(t, m.session_id) === ""))?.session_id ?? "";
+}
+
+/** A member's nearest active ancestor, past members that left; "" at the top (mirrors the host's treeParent). */
+function treeParent(t: Team, id: string): string {
+  const parent = (x: string): string => t.members.find((m) => m.session_id === x)?.parent ?? "";
+  const seen = new Set([id]);
+  for (let up = parent(id); up !== "" && !seen.has(up); up = parent(up)) {
+    seen.add(up);
+    if (t.members.some((m) => m.session_id === up && m.state === "active")) return up;
+  }
+  return "";
 }
 
 /** A member's label, derived, never stored (mirrors the host's teamLabel): LEAD for the root of the
