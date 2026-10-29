@@ -33,20 +33,22 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
   const [branch, setBranch] = useState<string | null>(null); // null: the default name, until the owner types one
   const [from, setFrom] = useState("");
   const [existing, setExisting] = useState("");
-  const [branches, setBranches] = useState<string[]>([]);
+  // null until repo.branches answers, so "No branches here" never shows for a repository still loading.
+  const [branchList, setBranches] = useState<string[] | null>(null);
+  const branches = branchList ?? [];
   const [inUse, setInUse] = useState<Map<string, string>>(new Map());
   useEffect(() => {
     // Another repository: nothing picked in the last one carries over.
     setBranch(null);
     setFrom("");
     setExisting("");
-    setBranches([]);
+    setBranches(null);
     setInUse(new Map());
     if (kind !== "worktree" || path.trim() === "") return;
     let live = true;
     void app.conn.request<string[]>("repo.branches", { path: path.trim() }).then(
       (bs) => live && setBranches(bs),
-      () => live && setBranches([]),
+      () => live && setBranches(null),
     );
     void app.conn.request<{ path: string; branch: string }[]>("repo.worktrees", { path: path.trim() }).then(
       (ws) => live && setInUse(new Map(ws.filter((w) => w.branch !== "").map((w) => [w.branch, app.sessions.find((s) => s.cwd === w.path)?.name ?? (w.path.split("/").pop() ?? w.path)]))),
@@ -116,7 +118,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
 
   // A distinct default name, so two sessions in one folder are told apart.
   const defaultName = (): string => {
-    const base = (kind === "clone" ? (url.split("/").pop() ?? "repo").replace(/\.git$/, "") : (path.split("/").filter(Boolean).pop() ?? "session")) + `-${agent}`;
+    const base = (kind === "clone" ? (url.split("/").filter(Boolean).pop() ?? "repo").replace(/\.git$/, "") : (path.split("/").filter(Boolean).pop() ?? "session")) + `-${agent}`;
     const taken = new Set(app.sessions.map((s) => s.name));
     if (!taken.has(base)) return base;
     for (let i = 2; ; i++) if (!taken.has(`${base}-${i}`)) return `${base}-${i}`;
@@ -216,7 +218,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
               type="button"
               onClick={() => setKind(k)}
               aria-pressed={kind === k}
-              className={cn("flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md focus-visible:outline-2 focus-visible:outline-ring", kind === k ? "bg-panel font-medium shadow-sm" : "text-muted-foreground")}
+              className={cn("flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md focus-visible:outline-2 focus-visible:outline-foreground dark:focus-visible:outline-ring", kind === k ? "bg-panel font-medium shadow-sm dark:ring-1 dark:ring-border" : "text-muted-foreground")}
             >
               {icon}
               {label}
@@ -264,7 +266,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
                   type="button"
                   onClick={() => setNewBranch(k)}
                   aria-pressed={newBranch === k}
-                  className={cn("flex h-7 flex-1 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-ring", newBranch === k ? "bg-panel font-medium shadow-sm" : "text-muted-foreground")}
+                  className={cn("flex h-7 flex-1 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-foreground dark:focus-visible:outline-ring", newBranch === k ? "bg-panel font-medium shadow-sm dark:ring-1 dark:ring-border" : "text-muted-foreground")}
                 >
                   {label}
                 </button>
@@ -276,7 +278,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
                   Branch
                   <Input value={branchName()} onChange={(e) => setBranch(e.target.value)} aria-invalid={branchTaken} className="font-mono" />
                 </Label>
-                <Label hint={branches.length === 0 && path.trim() !== "" ? "No branches here. Choose a Git repository with at least one commit." : undefined}>
+                <Label hint={branchList?.length === 0 ? "No branches here. Choose a Git repository with at least one commit." : undefined}>
                   From
                   <Select value={from !== "" ? from : (branches[0] ?? "")} onChange={(e) => setFrom(e.target.value)} disabled={branches.length === 0}>
                     {branches.map((b) => (
@@ -292,7 +294,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
                 Branch
                 <Select value={existing} onChange={(e) => setExisting(e.target.value)}>
                   <option value="" disabled>
-                    {branches.length === 0 ? "No branches found" : "Choose a branch"}
+                    {branchList?.length === 0 ? "No branches found" : "Choose a branch"}
                   </option>
                   {branches.map((b) => (
                     <option key={b} value={b} disabled={inUse.has(b)}>

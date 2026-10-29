@@ -82,4 +82,10 @@ func TestLaunchInNewWorktree(t *testing.T) {
 	if bs := got.([]string); bs[0] != "main" {
 		t.Fatalf("branches %v: the checked-out feature branch came first", bs)
 	}
+	// origin's HEAD names the default branch when there is one.
+	git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/old")
+	got, _ = p.repoBranches(context.Background(), pathIn{Path: repo})
+	if bs := got.([]string); bs[0] != "old" {
+		t.Fatalf("branches %v: origin's HEAD (old) did not come first", bs)
+	}
 }
