@@ -48,19 +48,22 @@ type pendingEntry struct {
 	done                        chan struct{}
 }
 
-// doneReport is a team message just sent: when a helper sends its parent a message whose first line
-// starts "Done:", it is the helper's finished job.
+// doneReport is a team message just sent: when a helper sends its parent a done message
+// (`send --type done`, or a first line that starts "Done:"), it is the helper's finished job.
 func (p *Pool) doneReport(m protocol.TeamMessage) {
-	first, _, _ := strings.Cut(strings.TrimSpace(m.Text), "\n")
-	if p.db == nil || m.TeamID == "" || !strings.HasPrefix(strings.ToLower(first), "done:") {
+	if p.db == nil || m.TeamID == "" || m.Type != "done" {
 		return
+	}
+	first, _, _ := strings.Cut(strings.TrimSpace(m.Text), "\n")
+	if strings.HasPrefix(strings.ToLower(first), "done:") {
+		first = first[len("done:"):]
 	}
 	d := p.st.State().Domain
 	t, sk := teamOf(&d, m.From), p.helperOf(m.From)
 	if t == nil || sk == nil || reportsTo(&d, t, m.From) != m.To {
 		return
 	}
-	title := clipRunes(oneLine(redactSecrets(first[len("done:"):])), journalTitle)
+	title := clipRunes(oneLine(redactSecrets(first)), journalTitle)
 	if title == "" {
 		title = "Done"
 	}

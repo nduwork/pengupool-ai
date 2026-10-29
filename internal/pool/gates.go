@@ -416,7 +416,7 @@ func (p *Pool) queued(id string) bool {
 		return true
 	}
 	for _, m := range p.st.State().Domain.Messages {
-		if m.To == id && m.State == "queued" {
+		if m.To == id && m.State == "queued" && m.Via != viaNative { // a native one waits in Claude's own inbox
 			return true
 		}
 	}

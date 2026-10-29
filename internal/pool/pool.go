@@ -387,6 +387,7 @@ func (p *Pool) handlers() map[string]handler {
 		"team.unlock":           p.teamUnlock,
 		"team.lock":             p.teamLock,
 		"message.send":          bind(p.messageSend),
+		"ask.settle":            bind(p.askSettle), // the owner's, from Needs you
 		"hook.event":            bindCaller(p.hookEventFrom),
 		"decision.providers":    bind(p.providers),
 		"decision.ask":          bindCaller(p.decisionAsk),

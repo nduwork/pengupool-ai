@@ -69,6 +69,7 @@ func (p *Pool) watchStartup() {
 		}
 	}
 	p.expireQueued(time.Now())
+	p.sweepAsks(time.Now())
 }
 
 // expireQueued fails the agent messages that wait on a session that will not take them: one that has
@@ -85,6 +86,8 @@ func (p *Pool) expireQueued(at time.Time) {
 		switch {
 		case !ok || to.State != "running":
 			why = "the session is no longer running"
+		case m.Via == viaNative: // it waits in the recipient's own inbox, however long it starts
+			continue
 		case to.Status == "starting" && olderThan(m.At, at, messageWait) && at.Sub(to.StartedAt) > messageWait: // a resumed session starts the wait again
 			why = "the session is not ready after " + messageWait.String()
 			if to.Waiting != "" {

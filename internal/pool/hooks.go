@@ -190,6 +190,9 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			return out, nil
 		}
 		t := turn{Prompt: str("prompt")}
+		if from := p.outsideSender(t.Prompt); from != "" {
+			p.nativeArrived(s.ID, from, entered)
+		}
 		if t.fromOwner() && !p.ownerSent(s.ID, t.Prompt) {
 			t.Unverified = true // looks like the owner's, but the owner sent nothing: not the owner's
 			p.logLine(s.ID, "prompt: a user turn the owner did not send; treated as a teammate's words ("+p.ownerInputSeen(s.ID)+")")
@@ -252,6 +255,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		p.turnOpen(s.ID, "")
 		p.asking(s.ID, str("tool_name"), false)
 		p.turnTool(s.ID)
+		p.nativeArrived(s.ID, "", entered)
 		if str("tool_name") == "SendMessage" {
 			p.sendMessageRan(s, pl)
 		}
@@ -433,6 +437,7 @@ func (p *Pool) sendTarget(pl map[string]any) (string, bool) {
 
 // sendMessageRan puts a SendMessage that went through (PostToolUse: no hook or prompt refused it)
 // on the team's record, so the map and the message log show it, and keeps it when it is a done report.
+// It is queued until it is in the recipient's turn (nativeArrived); its type is its first line's.
 func (p *Pool) sendMessageRan(s store.Session, pl map[string]any) {
 	target, ok := p.sendTarget(pl)
 	if !ok || target == "" || !p.mayTalk(s.ID, target) {
@@ -450,7 +455,8 @@ func (p *Pool) sendMessageRan(s store.Session, pl map[string]any) {
 		text = leftOut
 	}
 	text = clip(text, maxMessage)
-	m := protocol.TeamMessage{ID: protocol.NewID(), TeamID: t.ID, From: s.ID, To: target, Text: text, State: "delivered", At: now()}
+	typ, _ := msgType("", text)
+	m := protocol.TeamMessage{ID: protocol.NewID(), TeamID: t.ID, From: s.ID, To: target, Text: text, State: "queued", At: now(), Via: viaNative, Type: typ}
 	if err := p.update(func(st *store.State) error { addMessage(st, m); return nil }); err != nil {
 		p.logf("pool: message record for %s: %v", s.ID, err)
 	}
