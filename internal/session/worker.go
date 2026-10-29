@@ -337,6 +337,9 @@ func (w *worker) readPTY() {
 	for {
 		w.readWait.Store(time.Now().UnixNano())
 		n, err := w.ptmx.Read(buf)
+		if ptyWakeDelay > 0 {
+			time.Sleep(ptyWakeDelay)
+		}
 		w.readWait.Store(0)
 		if ptyReadDelay > 0 {
 			time.Sleep(ptyReadDelay)
@@ -470,25 +473,30 @@ func (w *worker) waitChild() {
 }
 
 // drainOutput waits for the PTY read loop to finish appending the child's output, or to sit idle
-// on an empty PTY for outputDrainGrace, or for the deadline.
+// on an empty PTY for outputDrainGrace since the child exited, or for the deadline, or for the
+// worker's shutdown. Idle counts from the exit at the earliest: a read loop blocked in Read long
+// before it has yet to wake for the child's last bytes.
 func (w *worker) drainOutput(deadline time.Time) {
+	exited := time.Now()
 	tick := time.NewTicker(outputDrainGrace / 5)
 	defer tick.Stop()
 	for {
 		select {
 		case <-w.ptyDone:
 			return
+		case <-w.done:
+			return
 		case <-tick.C:
 		}
-		if since := w.readWait.Load(); since != 0 && time.Since(time.Unix(0, since)) >= outputDrainGrace || time.Now().After(deadline) {
+		if since := w.readWait.Load(); since != 0 && time.Since(time.Unix(0, max(since, exited.UnixNano()))) >= outputDrainGrace || time.Now().After(deadline) {
 			return
 		}
 	}
 }
 
-// ptyReadDelay slows the PTY read loop down by this much per read: tests only, to hold output
-// back past the child's exit.
-var ptyReadDelay time.Duration
+// ptyReadDelay slows the PTY read loop down by this much per read, and ptyWakeDelay its waking
+// from a Read that returned: tests only, to hold output back past the child's exit.
+var ptyReadDelay, ptyWakeDelay time.Duration
 
 // exitCode reports how a child ended the way a shell does: a child that died from a signal has no
 // exit status, so 128+signal is reported instead of the -1 the process state carries.

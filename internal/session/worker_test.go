@@ -1625,3 +1625,32 @@ func TestWorkerExitDoesNotWaitForASilentGrandchild(t *testing.T) {
 	}
 	t.Fatal("session.exit waited on a silent grandchild")
 }
+
+// TestWorkerExitWaitsForAReaderStillWaking: the read loop sat in Read long before the child's last
+// bytes, and is slow to wake for them; its old wait does not count as the PTY being drained.
+func TestWorkerExitWaitsForAReaderStillWaking(t *testing.T) {
+	ptyWakeDelay = 100 * time.Millisecond // under outputDrainGrace: a slow schedule, not a stuck one
+	defer func() { ptyWakeDelay = 0 }()
+	tw := startWorker(t, []string{"/bin/sh", "-c", `sleep 1; printf 'last line\n'`})
+	c := dialWorker(t, tw.sock)
+	c.hello()
+	c.attach(1, true, nil)
+	c.readSnapshot()
+	var out strings.Builder
+	for start := time.Now(); time.Since(start) < 5*time.Second; {
+		for _, f := range c.drainIdle(idleWindow) {
+			switch f.Header.Type {
+			case protocol.FrameOutput:
+				out.Write(f.Payload)
+			case protocol.FrameControl:
+				if decodeControl(t, f).Type == protocol.TypeSessionExit {
+					if !strings.Contains(out.String(), "last line") {
+						t.Fatalf("session.exit came before the last line: %q", out.String())
+					}
+					return
+				}
+			}
+		}
+	}
+	t.Fatal("session.exit never arrived")
+}
