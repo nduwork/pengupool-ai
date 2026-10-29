@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
@@ -60,6 +61,9 @@ func TestStartFresh(t *testing.T) {
 		web := s.Domain.Teams[0].Members[1] // web helps "other", whose team still runs
 		s.Domain.Teams[0].Members = slices.Delete(s.Domain.Teams[0].Members, 1, 2)
 		s.Domain.Teams[1].Members = append(s.Domain.Teams[1].Members, web)
+		s.Sessions[2].State = "exited" // plan stopped before the reboot: not offered, but its team goes
+		s.Sessions[2].TeamID, s.Sessions[2].Role = "team1", "helper"
+		s.Domain.Approvals = append(s.Domain.Approvals, protocol.Approval{ID: "ap1", Kind: "formation", TeamID: "team1", State: "pending"})
 		return nil
 	})
 	p.MarkLost([]string{"leadaaaaaaaa", "webaaaaaaaaa", "planaaaaaaaa", "otheraaaaaaa"})
@@ -68,10 +72,16 @@ func TestStartFresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := st.State()
-	if got := out.(map[string]int); got["sessions"] != 2 || got["teams"] != 1 || len(s.Sessions) != 2 || len(s.Restore) != 0 {
+	if got := out.(map[string]int); got["sessions"] != 1 || got["teams"] != 1 || len(s.Sessions) != 3 || len(s.Restore) != 0 {
 		t.Fatalf("fresh = %v, sessions %d, restore %v", got, len(s.Sessions), s.Restore)
 	}
 	if d := s.Domain; findTeam(&d, "team1").State != "closed" || findTeam(&d, "team2").State != "active" {
 		t.Fatalf("teams: %+v", d.Teams)
+	}
+	if i := sessionIndex(&s, "planaaaaaaaa"); i < 0 || s.Sessions[i].TeamID != "" {
+		t.Fatalf("plan kept the closed team: %+v", s.Sessions)
+	}
+	if s.Domain.Approvals[0].State != "denied" {
+		t.Fatalf("formation request: %+v", s.Domain.Approvals[0])
 	}
 }

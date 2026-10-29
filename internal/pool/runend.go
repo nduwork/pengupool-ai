@@ -158,10 +158,7 @@ func (p *Pool) runFresh(_ context.Context, _ struct{}) (any, error) {
 			}) {
 				continue
 			}
-			t.State = "closed"
-			for k := range t.Members {
-				t.Members[k].State = "closed"
-			}
+			dissolve(st, t)
 			for k := range st.Domain.Approvals { // as teamClose: a closed team's requests change nothing
 				if a := &st.Domain.Approvals[k]; a.Kind == "formation" && a.TeamID == t.ID && a.State == "pending" {
 					a.State = "denied"
