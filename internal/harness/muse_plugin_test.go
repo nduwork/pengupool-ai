@@ -4,10 +4,12 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -94,6 +96,7 @@ func withUnsetEnv(t *testing.T, key string) {
 // A non-home store never reaches the installer: the exec entry points
 // stay untouched, so no test can install into the owner's muse home.
 func TestEnsureMusePluginSkipsTempStore(t *testing.T) {
+	museSkipLogged = sync.Once{} // logged once per process: this test is the first
 	oldLook, oldRun := museLookPath, museRun
 	museLookPath = func([]string) (string, error) { t.Error("lookpath called for a temp store"); return "", nil }
 	museRun = func(_ context.Context, _ string, _ ...string) error {
@@ -114,3 +117,59 @@ func TestEnsureMusePluginSkipsTempStore(t *testing.T) {
 
 // The installer gate is the owner's real home, not DefaultDir: with
 // PENGUPOOL_HOME set, even a store equal to DefaultDir installs nothing;
+
+// The plugin installs once per bundle and Muse version: a Muse upgraded since gets it again.
+func TestEnsureMusePluginReinstallsForANewMuse(t *testing.T) {
+	oldLook, oldRun, oldVer := museLookPath, museRun, museVersion
+	defer func() { museLookPath, museRun, museVersion = oldLook, oldRun, oldVer }()
+	installs, ver := 0, "Muse Code 1.4.14"
+	museLookPath = func([]string) (string, error) { return "/x/muse", nil }
+	museVersion = func(string) string { return ver }
+	museRun = func(_ context.Context, _ string, args ...string) error {
+		if args[1] == "install" {
+			installs++
+		}
+		return nil
+	}
+	dir := t.TempDir()
+	logf := func(string, ...any) {}
+	ensureMusePlugin(dir, "/x/pengupool", nil, logf)
+	ensureMusePlugin(dir, "/x/pengupool", nil, logf) // a launch: already installed
+	if installs != 1 {
+		t.Fatalf("%d installs for one Muse", installs)
+	}
+	ver = "Muse Code 1.5.0"
+	ensureMusePlugin(dir, "/x/pengupool", nil, logf)
+	if installs != 2 {
+		t.Fatal("an upgraded Muse did not get the plugin")
+	}
+}
+
+// A failed install leaves no marker behind (a rollback to that bundle installs again), and launches
+// right after it do not try it again.
+func TestEnsureMusePluginFailureLeavesNoMarker(t *testing.T) {
+	oldLook, oldRun, oldVer := museLookPath, museRun, museVersion
+	defer func() { museLookPath, museRun, museVersion = oldLook, oldRun, oldVer }()
+	installs := 0
+	museLookPath = func([]string) (string, error) { return "/x/muse", nil }
+	museVersion = func(string) string { return "Muse Code 9.9.9" }
+	museRun = func(_ context.Context, _ string, args ...string) error {
+		if args[1] == "install" {
+			installs++
+			return errors.New("refused")
+		}
+		return nil
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(musePluginDir(dir), ".installed-sha")
+	os.MkdirAll(musePluginDir(dir), 0o700)
+	os.WriteFile(marker, []byte("old"), 0o600)
+	ensureMusePlugin(dir, "/x/pengupool", nil, func(string, ...any) {})
+	ensureMusePlugin(dir, "/x/pengupool", nil, func(string, ...any) {})
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("a failed install kept the old marker")
+	}
+	if installs != 1 {
+		t.Fatalf("%d installs right after a failure", installs)
+	}
+}
