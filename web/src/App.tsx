@@ -1,10 +1,10 @@
-import { Compass, ExternalLink, MessagesSquare, Moon, PanelBottom, PanelLeft, Square, Sun } from "lucide-react";
+import { Compass, ExternalLink, MessagesSquare, Moon, PanelBottom, PanelLeft, Square, Sun, Unplug } from "lucide-react";
 import { Tooltip } from "radix-ui";
 import { Group, Panel, useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Toaster, toast } from "sonner";
 
-import { Ctx, harnessLabel, isAgent, useApp, usePersisted, type AppCtx, type EditorTab, type Nav } from "./app/ctx";
+import { Ctx, harnessLabel, HOOKS_LONG, hooksAction, isAgent, useApp, usePersisted, type AppCtx, type EditorTab, type Nav } from "./app/ctx";
 import { desktop, onSSHHost } from "./app/desktop";
 import { AttachSession, type AttachState } from "./client/attach";
 import { Connection, type ConnectionInfo } from "./client/connection";
@@ -335,6 +335,14 @@ export function App(): ReactElement {
                     › {selectedView.name} <SessionRole id={selectedView.id} /> <span className="text-faint">· {harnessLabel(selectedView.harness)}</span>
                   </span>
                 ) : null}
+                {nav === "workspace" && selectedView?.hooks_missing === true ? (
+                  <Tip label={hooksAction(selectedView.harness)}>
+                    <span tabIndex={0} aria-label={`${HOOKS_LONG} ${hooksAction(selectedView.harness)}`} className="inline-flex shrink-0 items-center gap-1 text-label text-foreground">
+                      <Unplug className="size-3.5" aria-hidden />
+                      No hooks
+                    </span>
+                  </Tip>
+                ) : null}
                 <span className="flex-1" />
                 <ConnectionPill info={info} />
                 {nav === "workspace" ? (
@@ -435,6 +443,12 @@ function TerminalHeader(): ReactElement {
         {harnessLabel(s.harness)} · {s.cols}×{s.rows}
         {s.context_pct !== undefined ? ` · ${s.context_pct}% context` : ""}
       </span>
+      {s.hooks_missing === true ? (
+        <span title={`${HOOKS_LONG} ${hooksAction(s.harness)}`} className="inline-flex shrink-0 items-center gap-1 text-micro text-[#c9d1d9]">
+          <Unplug className="size-3" aria-hidden />
+          No hooks
+        </span>
+      ) : null}
       {!isAgent(s) ? (
         <span className="rounded-sm bg-[#f59e0b]/20 px-1.5 text-micro text-[#fcd34d]" title="Started before sessions were bound to an agent. Stop it and start a Claude Code or OMP session instead.">
           Not an agent session

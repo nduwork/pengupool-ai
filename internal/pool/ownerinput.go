@@ -49,7 +49,11 @@ func squash(s string) string {
 // interrupt and a new prompt must still read as the owner's. A dialog answer typed as text ("y") is
 // credited too: only a later turn with that same text would match it.
 func (p *Pool) OwnerInput(sessionID, text string) {
-	if s, ok := p.session(sessionID); ok && (s.Status == "approval" && s.Harness != harness.Muse || s.Status == "starting") {
+	s, ok := p.session(sessionID)
+	if ok && s.Waiting == "" && squash(text) != "" {
+		p.promptTyped(s) // counted while starting too: an agent with no hooks never leaves it
+	}
+	if ok && (s.Status == "approval" && s.Harness != harness.Muse || s.Status == "starting") {
 		return
 	}
 	p.mu.Lock()

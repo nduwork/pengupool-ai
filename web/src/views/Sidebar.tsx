@@ -1,8 +1,8 @@
-import { BookOpen, ChevronDown, ChevronRight, Pencil, Plus, Settings as SettingsIcon, SquareTerminal, Users, X } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, Pencil, Plus, Settings as SettingsIcon, SquareTerminal, Unplug, Users, X } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { Group, Panel, useDefaultLayout, usePanelRef } from "react-resizable-panels";
 
-import { StatusDot, harnessLabel, isShell, useApp, usePersisted, type Nav } from "../app/ctx";
+import { StatusDot, harnessLabel, HOOKS_LONG, isShell, useApp, usePersisted, type Nav } from "../app/ctx";
 import { desktop } from "../app/desktop";
 import { Kbd, RoleTag, SectionTitle, Tip } from "../components/ui/controls";
 import { roleOf } from "./Formation";
@@ -162,7 +162,14 @@ export function Sidebar(): ReactElement {
                           const role = roleOf(app.domain, app.sessions, s.id);
                           return role !== undefined ? <RoleTag role={role} /> : null;
                         })()}
-                        <span className="ml-auto shrink-0 text-micro text-faint">{s.context_pct !== undefined ? `${s.context_pct}%` : harnessLabel(s.harness)}</span>
+                        {s.hooks_missing === true ? (
+                          <span title={HOOKS_LONG} className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-micro text-foreground">
+                            <Unplug className="size-3" aria-hidden />
+                            no hooks
+                          </span>
+                        ) : (
+                          <span className="ml-auto shrink-0 text-micro text-faint">{s.context_pct !== undefined ? `${s.context_pct}%` : harnessLabel(s.harness)}</span>
+                        )}
                       </button>
                     ))}
               </div>

@@ -87,6 +87,10 @@ type Session struct {
 	// ActiveAt is the last harness activity (hook event); Summary is the owner\'s role description.
 	ActiveAt time.Time `json:"active_at,omitempty"`
 	Summary  string    `json:"summary,omitempty"`
+
+	// HooksMissing: the owner prompted this agent launch 2+ minutes ago and none of PenguPool's hooks
+	// has reached the daemon since it launched. Worked out in memory (pool/hookless.go), never written.
+	HooksMissing bool `json:"-"`
 }
 
 // State is the whole of state.json.
@@ -236,6 +240,7 @@ func (s Session) View() protocol.SessionView {
 		ActiveAt:   RFC3339(s.ActiveAt),
 		Summary:    s.Summary,
 	}
+	v.HooksMissing = s.HooksMissing
 	return v
 }
 
