@@ -48,12 +48,25 @@ func TestMuseStatusFollowsItsEvents(t *testing.T) {
 		p.mu.Unlock()
 	}
 	age()
+	p.asking("museaaaaaaaa", "AskUserQuestion", true) // a question and a triage route open in this turn
+	p.mu.Lock()
+	if p.routed == nil {
+		p.routed = map[string]string{}
+	}
+	p.routed["museaaaaaaaa"] = "webaaaaaaaaa"
+	p.mu.Unlock()
 	step("Interrupted", "idle") // no Stop
+	p.mu.Lock()
+	asking, routed := p.askingOwner["museaaaaaaaa"], p.routed["museaaaaaaaa"]
+	p.mu.Unlock()
+	if asking || routed != "" {
+		t.Fatalf("the interrupted turn left its question (%v) or route (%q) open", asking, routed)
+	}
 	step("UserPromptSubmit", "working")
 	p.asking("museaaaaaaaa", "AskUserQuestion", true) // the new turn has a question open
-	step("Interrupted", "working") // late: the owner's new turn is not closed by it
+	step("Interrupted", "working")                    // late: the owner's new turn is not closed by it
 	p.mu.Lock()
-	asking := p.askingOwner["museaaaaaaaa"]
+	asking = p.askingOwner["museaaaaaaaa"]
 	p.mu.Unlock()
 	if !asking {
 		t.Fatal("a late Interrupt cleared the new turn's question")

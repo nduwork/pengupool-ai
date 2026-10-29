@@ -122,11 +122,11 @@ func TestTreeTalk(t *testing.T) {
 	if err := relay("db", "lead"); err == nil {
 		t.Fatal("a grandchild reached the top directly")
 	}
-	// Two Claude Code sessions: the relay sends them to SendMessage.
-	if err := relay("web", "lead"); err == nil || !strings.Contains(err.Error(), "SendMessage") {
-		t.Fatalf("claude → claude went through the relay: %v", err)
+	// Two Claude Code sessions talk through the relay too.
+	if err := relay("web", "lead"); err != nil {
+		t.Fatalf("claude → claude was refused: %v", err)
 	}
-	// SendMessage: to the parent passes and is recorded; to a sibling is denied.
+	// SendMessage still works: to the parent passes and is recorded; to a sibling is denied.
 	tool := func(event, from, to string) string {
 		b, _ := json.Marshal(map[string]any{"tool_name": "SendMessage", "tool_input": map[string]any{"to": to, "message": "css is done"}})
 		out, err := p.hookEvent(ctx, hookIn{SessionID: id[from], Harness: "claude", Event: event, Payload: b})
@@ -160,7 +160,7 @@ func TestTreeTalk(t *testing.T) {
 	if c := p.renderContext(id["db"]); !strings.Contains(c, "- gcp (your parent): `pengupool send --to \"gcp\"") || strings.Contains(c, "- api (your") || strings.Contains(c, "- lead (your") {
 		t.Fatalf("db's contacts:\n%s", c)
 	}
-	if c := p.renderContext(id["lead"]); !strings.Contains(c, "- web (your child): your SendMessage tool") || !strings.Contains(c, "- gcp (your child): `pengupool send") || strings.Contains(c, "- db (your") {
+	if c := p.renderContext(id["lead"]); !strings.Contains(c, "- web (your child): `pengupool send --to \"web\"") || !strings.Contains(c, "- gcp (your child): `pengupool send") || strings.Contains(c, "- db (your") {
 		t.Fatalf("lead's contacts:\n%s", c)
 	}
 	// gcp closes: its children hang under the nearest active ancestor, lead.

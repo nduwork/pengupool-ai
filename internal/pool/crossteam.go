@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
@@ -94,21 +93,6 @@ func contacts(d *protocol.Domain, id string) []protocol.Member {
 		}
 	}
 	return out
-}
-
-// native: both sessions run Claude Code, so they talk through its own SendMessage and the host
-// only checks and records; any other pair goes through `pengupool send`.
-func native(st store.State, x, y string) bool {
-	hx, hy := "", ""
-	for _, s := range st.Sessions {
-		switch s.ID {
-		case x:
-			hx = s.Harness
-		case y:
-			hy = s.Harness
-		}
-	}
-	return hx == harness.Claude && hy == harness.Claude
 }
 
 // mayTalk: x may message y, and y may hear x.
