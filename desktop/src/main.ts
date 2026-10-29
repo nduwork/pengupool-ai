@@ -122,18 +122,22 @@ async function askRestore(): Promise<void> {
   const lost = await host.rpc<Restorable[] | null>("run.restorable", {}).catch(() => null);
   if (lost === null || lost.length === 0) return;
   const agents = lost.filter((s) => s.agent);
+  // Restore all resumes the agents; Start fresh takes the stopped sessions off the map (deleting
+  // nothing on disk); Don't restore only forgets the question.
+  const answers = agents.length > 0 ? ["run.restore", "run.fresh", "run.dismiss"] : ["run.fresh", "run.dismiss"];
   const r = await dialog.showMessageBox({
     type: "question",
     message: `Restore ${lost.length === 1 ? "the session" : `the ${lost.length} sessions`} that stopped?`,
     detail:
       "These were running when the computer restarted or PenguPool stopped unexpectedly:\n" +
       lost.map((s) => `• ${s.name}${s.agent ? "" : " (terminal)"}`).join("\n") +
-      (agents.length < lost.length ? "\n\nA terminal cannot be restored; agents resume their conversations." : "\n\nAgents resume their conversations."),
-    buttons: agents.length > 0 ? ["Restore all", "Don't restore"] : ["OK"],
+      (agents.length < lost.length ? "\n\nA terminal cannot be restored; agents resume their conversations." : "\n\nAgents resume their conversations.") +
+      "\n\nStart fresh removes them from the map (their files and teams' notes are kept).",
+    buttons: agents.length > 0 ? ["Restore all", "Start fresh", "Don't restore"] : ["Start fresh", "Don't restore"],
     defaultId: 0,
-    cancelId: agents.length > 0 ? 1 : 0,
+    cancelId: answers.length - 1,
   });
-  await host.rpc(agents.length > 0 && r.response === 0 ? "run.restore" : "run.dismiss", {}).catch((e: unknown) => console.error("restore:", e));
+  await host.rpc(answers[r.response] ?? "run.dismiss", {}).catch((e: unknown) => console.error("restore:", e));
 }
 
 // ---- window state -------------------------------------------------------------------------------

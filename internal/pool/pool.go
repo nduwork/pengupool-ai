@@ -315,6 +315,7 @@ func (p *Pool) handlers() map[string]handler {
 		"session.resume":        bind(p.resume),
 		"run.restorable":        bind(p.runRestorable),
 		"run.restore":           bind(p.runRestore),
+		"run.fresh":             bind(p.runFresh),
 		"run.dismiss":           bind(p.runDismiss),
 		"session.open_terminal": bind(p.openTerminal),
 		"session.forget":        bind(p.forget),

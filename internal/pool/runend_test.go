@@ -2,6 +2,7 @@ package pool
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/nduwork/pengupool-ai/internal/store"
@@ -42,5 +43,35 @@ func TestRestoreQuestion(t *testing.T) {
 	}
 	if r := st.State().Restore; len(r) != 0 {
 		t.Fatalf("restore list after restore: %v", r)
+	}
+}
+
+// Start fresh takes the stopped sessions off the map instead of restoring them: a team none of whose
+// members runs is closed (kept under Closed groups); a stopped member of a running team stays.
+func TestStartFresh(t *testing.T) {
+	ctx := context.Background()
+	p, st := twoTeams(t)
+	_ = st.Update(func(s *store.State) error {
+		for i := range s.Sessions {
+			if s.Sessions[i].ID != "otheraaaaaaa" {
+				s.Sessions[i].State = "lost"
+			}
+		}
+		web := s.Domain.Teams[0].Members[1] // web helps "other", whose team still runs
+		s.Domain.Teams[0].Members = slices.Delete(s.Domain.Teams[0].Members, 1, 2)
+		s.Domain.Teams[1].Members = append(s.Domain.Teams[1].Members, web)
+		return nil
+	})
+	p.MarkLost([]string{"leadaaaaaaaa", "webaaaaaaaaa", "planaaaaaaaa", "otheraaaaaaa"})
+	out, err := p.runFresh(ctx, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := st.State()
+	if got := out.(map[string]int); got["sessions"] != 2 || got["teams"] != 1 || len(s.Sessions) != 2 || len(s.Restore) != 0 {
+		t.Fatalf("fresh = %v, sessions %d, restore %v", got, len(s.Sessions), s.Restore)
+	}
+	if d := s.Domain; findTeam(&d, "team1").State != "closed" || findTeam(&d, "team2").State != "active" {
+		t.Fatalf("teams: %+v", d.Teams)
 	}
 }

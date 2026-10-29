@@ -150,6 +150,9 @@ port changes.
 v0.9.5: after a reboot or crash ended running sessions, the app asks whether to
 restore them (agents resume their conversations). Sessions keep running through an
 app quit and an update, and are not asked about.
+v0.9.6: the restore question after a reboot also offers Start fresh: the stopped sessions
+leave the map and a team with none of its members running is closed (under Closed groups).
+Nothing is deleted on disk; scrollback, worktrees, team notes and journals stay.
 
 ## Credits
 
