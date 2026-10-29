@@ -353,9 +353,11 @@ func (p *Pool) markDelivered(ids []string) {
 func (p *Pool) setMessage(id, state, reason string) {
 	_ = p.update(func(st *store.State) error {
 		for i := range st.Domain.Messages {
-			if st.Domain.Messages[i].ID == id {
-				st.Domain.Messages[i].State = state
-				st.Domain.Messages[i].Reason = reason
+			if m := &st.Domain.Messages[i]; m.ID == id {
+				if state == "delivered" && m.State != "delivered" { // a re-mark, or a record from before 0.9.23, keeps its time
+					m.DeliveredAt = now()
+				}
+				m.State, m.Reason = state, reason
 			}
 		}
 		return nil

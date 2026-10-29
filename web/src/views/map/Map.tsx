@@ -112,13 +112,12 @@ export function TeamMap(): ReactElement {
   const parentOf = (teamId: string, id: string): string | undefined => domain.teams.find((t) => t.id === teamId)?.members.find((m) => m.session_id === id)?.parent;
 
   // Lit edges: the latest message on a tree line within 90 s that is no longer queued, green down, milky
-  // blue up; a queued one leaves its line plain grey (the message log says it is queued). ponytail: the
-  // 90 s count from the send time, so a message queued longer than that arrives with no beads; count
-  // from its delivery once the record keeps one.
+  // blue up; a queued one leaves its line plain grey (the message log says it is queued). The 90 s count
+  // from its delivery, so one that waited in the queue still arrives with beads.
   const hot = new Map<string, "down" | "up">();
   const now = Date.now();
   for (const m of domain.messages) {
-    if (m.state === "queued" || now - Date.parse(m.at) > HOT_MS) continue;
+    if (m.state === "queued" || now - Date.parse(m.delivered_at ?? m.at) > HOT_MS) continue;
     const team = domain.teams.find((t) => t.id === m.team_id);
     if (team === undefined) continue;
     if (parentOf(team.id, m.to) === m.from) hot.set(`${m.from}>${m.to}`, "down");
@@ -135,7 +134,7 @@ export function TeamMap(): ReactElement {
     routes
       .flatMap((r) => {
         const dir = hot.get(`${r.from}>${r.to}`);
-        const at = Math.max(...[newest.get(`${r.from}>${r.to}`), newest.get(`${r.to}>${r.from}`)].map((m) => (m === undefined ? 0 : Date.parse(m.at))));
+        const at = Math.max(...[newest.get(`${r.from}>${r.to}`), newest.get(`${r.to}>${r.from}`)].map((m) => (m === undefined ? 0 : Date.parse(m.delivered_at ?? m.at))));
         return dir === undefined ? [] : [{ r, dir, at }];
       })
       .sort((a, b) => a.at - b.at);

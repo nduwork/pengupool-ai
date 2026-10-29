@@ -214,6 +214,8 @@ type TeamMessage struct {
 	// or triage closed without the recipient's answer is settled.
 	EscalatedAt string `json:"escalated_at,omitempty"`
 	SettledAt   string `json:"settled_at,omitempty"`
+
+	DeliveredAt string `json:"delivered_at,omitempty"` // when it reached the recipient; older records have none
 }
 
 // NodeView is a worker host as clients see it.
