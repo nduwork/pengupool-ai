@@ -218,7 +218,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
               type="button"
               onClick={() => setKind(k)}
               aria-pressed={kind === k}
-              className={cn("flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md focus-visible:outline-2 focus-visible:outline-foreground dark:focus-visible:outline-ring", kind === k ? "bg-panel font-medium shadow-sm dark:ring-1 dark:ring-border" : "text-muted-foreground")}
+              className={cn("flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md focus-visible:outline-2 focus-visible:outline-foreground dark:focus-visible:outline-ring", kind === k ? "bg-panel font-medium shadow-sm dark:ring-1 dark:ring-faint" : "text-muted-foreground")}
             >
               {icon}
               {label}
@@ -266,7 +266,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
                   type="button"
                   onClick={() => setNewBranch(k)}
                   aria-pressed={newBranch === k}
-                  className={cn("flex h-7 flex-1 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-foreground dark:focus-visible:outline-ring", newBranch === k ? "bg-panel font-medium shadow-sm dark:ring-1 dark:ring-border" : "text-muted-foreground")}
+                  className={cn("flex h-7 flex-1 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-foreground dark:focus-visible:outline-ring", newBranch === k ? "bg-panel font-medium shadow-sm dark:ring-1 dark:ring-faint" : "text-muted-foreground")}
                 >
                   {label}
                 </button>
