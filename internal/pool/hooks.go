@@ -333,6 +333,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		// The turn ends before the session goes idle: triage may continue it from here with the
 		// owner's go-ahead (then it stays working, and its queue waits for the next Stop).
 		active, _ := pl["stop_hook_active"].(bool)
+		p.nativeArrived(s.ID, "", entered) // a turn with no tool round: what it was sent is in it too
 		out := p.turnEnd(s, firstNonEmpty(str("last_assistant_message"), str("prompt_response")),
 			firstNonEmpty(str("transcript_path"), str("transcriptPath")), active, entered.Add(StopDeadline))
 		if out.Stdout != "" {
