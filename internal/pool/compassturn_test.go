@@ -103,3 +103,35 @@ func TestWordingAskedWhileAnotherEnds(t *testing.T) {
 	}
 	<-done
 }
+
+// A wording turn asks the owner nothing, so the owner's pending check-in outlives it.
+func TestWordingTurnKeepsTheOwnersCheckIn(t *testing.T) {
+	p, _, _ := gateTeam(t)
+	open := func() int {
+		n := 0
+		gs, _ := p.db.OpenGates()
+		for _, g := range gs {
+			if g.SessionID == "leadaaaaaaaa" && g.Kind == "checkin" {
+				n++
+			}
+		}
+		return n
+	}
+	endTurn(p, "leadaaaaaaaa", checkInReply) // no guiding line: the check-in waits on the owner
+	if open() != 1 {
+		t.Fatalf("%d open check-ins after the turn", open())
+	}
+	var notices []string
+	p.testNotice = func(_, text string) error { notices = append(notices, text); return nil }
+	p.askWording(agentdb.Signal{SessionID: "leadaaaaaaaa", Kind: "preference", Words: "bug fixes go before features"}, nil, 0)
+	if len(notices) != 1 {
+		t.Fatalf("notices %q", notices)
+	}
+	raw, _ := json.Marshal(map[string]any{"stop_hook_active": false})
+	if _, err := p.hookEvent(context.Background(), hookIn{SessionID: "leadaaaaaaaa", Event: "Stop", Payload: raw}); err != nil {
+		t.Fatal(err)
+	}
+	if open() != 1 {
+		t.Fatalf("the wording turn's Stop expired the owner's check-in: %d open", open())
+	}
+}

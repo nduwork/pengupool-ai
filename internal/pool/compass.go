@@ -529,6 +529,7 @@ func (p *Pool) wordingAtIdle(id string) {
 		return
 	}
 	p.turnStart(id, note) // a notice's turn, not the owner's: it asks for no wording of its own
+	p.bumpTurn(id)        // a go-ahead decided for the previous turn no longer fires on top of it
 }
 
 // wordingNow is the wording's first offer, inside the turn the owner's words opened: "" when there is
