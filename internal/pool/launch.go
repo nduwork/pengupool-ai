@@ -94,6 +94,9 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 	if p.testSpawn != nil {
 		return p.testSpawn(r)
 	}
+	if r.Harness == harness.Muse { // a Muse installed or upgraded since the daemon started gets its hooks first
+		harness.EnsureMusePlugin(p.st.Dir(), p.exe, p.env, p.logf)
+	}
 	if r.SkillID != "" && r.Resume == "" { // a helper starts in a folder PenguPool made: trust it, so no dialog waits for the owner
 		if err := pretrustFolder(r.Harness, r.Cwd, r.TrustFrom); err != nil {
 			p.logf("pool: trust %s for %s: %v", r.Cwd, r.Harness, err)

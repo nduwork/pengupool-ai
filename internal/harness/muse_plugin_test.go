@@ -114,3 +114,30 @@ func TestEnsureMusePluginSkipsTempStore(t *testing.T) {
 
 // The installer gate is the owner's real home, not DefaultDir: with
 // PENGUPOOL_HOME set, even a store equal to DefaultDir installs nothing;
+
+// The plugin installs once per bundle and Muse version: a Muse upgraded since gets it again.
+func TestEnsureMusePluginReinstallsForANewMuse(t *testing.T) {
+	oldLook, oldRun, oldVer := museLookPath, museRun, museVersion
+	defer func() { museLookPath, museRun, museVersion = oldLook, oldRun, oldVer }()
+	installs, ver := 0, "Muse Code 1.4.14"
+	museLookPath = func([]string) (string, error) { return "/x/muse", nil }
+	museVersion = func(string) string { return ver }
+	museRun = func(_ context.Context, _ string, args ...string) error {
+		if args[1] == "install" {
+			installs++
+		}
+		return nil
+	}
+	dir := t.TempDir()
+	logf := func(string, ...any) {}
+	ensureMusePlugin(dir, "/x/pengupool", nil, logf)
+	ensureMusePlugin(dir, "/x/pengupool", nil, logf) // a launch: already installed
+	if installs != 1 {
+		t.Fatalf("%d installs for one Muse", installs)
+	}
+	ver = "Muse Code 1.5.0"
+	ensureMusePlugin(dir, "/x/pengupool", nil, logf)
+	if installs != 2 {
+		t.Fatal("an upgraded Muse did not get the plugin")
+	}
+}

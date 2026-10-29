@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/store"
@@ -96,9 +97,19 @@ var museRun = func(ctx context.Context, bin string, args ...string) error {
 	return nil
 }
 
+// museVersion is the muse binary's --version line, stubbed in tests.
+var museVersion = func(bin string) string {
+	out, _ := exec.Command(bin, "--version").Output()
+	return firstLine(out)
+}
+
+// museMu: the daemon's start and a Muse launch may both ensure the plugin; one installs.
+var museMu sync.Mutex
+
 // EnsureMusePlugin installs and approves the PenguPool plugin in the
-// user's muse home, once per bundle hash, and only for the owner's real
-// home (store.IsHomeDefault): any other store logs one line and installs
+// user's muse home, once per bundle hash and Muse version (a Muse installed
+// or upgraded later gets it at its next launch), and only for the owner's
+// real home (store.IsHomeDefault): any other store logs one line and installs
 // nothing, so a throwaway daemon never touches the owner's muse home.
 // One log line when it installs; silence otherwise.
 func EnsureMusePlugin(storeDir, exe string, env []string, logf func(string, ...any)) {
@@ -106,6 +117,12 @@ func EnsureMusePlugin(storeDir, exe string, env []string, logf func(string, ...a
 		logf("muse plugin: skipped (not the owner's home)")
 		return
 	}
+	ensureMusePlugin(storeDir, exe, env, logf)
+}
+
+func ensureMusePlugin(storeDir, exe string, env []string, logf func(string, ...any)) {
+	museMu.Lock()
+	defer museMu.Unlock()
 	bin, err := museLookPath(env) // the user's PATH: a Dock-launched daemon's own lacks ~/.local/bin
 	if err != nil {
 		return // muse is not here: nothing to wire
@@ -115,9 +132,10 @@ func EnsureMusePlugin(storeDir, exe string, env []string, logf func(string, ...a
 		logf("muse plugin: %v", err)
 		return
 	}
+	key := sum + " " + museVersion(bin)
 	marker := filepath.Join(musePluginDir(storeDir), ".installed-sha")
-	if old, err := os.ReadFile(marker); err == nil && string(old) == sum {
-		return // installed and approved for this bundle
+	if old, err := os.ReadFile(marker); err == nil && string(old) == key {
+		return // installed and approved for this bundle and this Muse
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -132,7 +150,7 @@ func EnsureMusePlugin(storeDir, exe string, env []string, logf func(string, ...a
 		logf("muse plugin: %v", err)
 		return
 	}
-	_ = os.WriteFile(marker, []byte(sum), 0o600)
+	_ = os.WriteFile(marker, []byte(key), 0o600)
 	logf("muse plugin: installed and approved")
 }
 
