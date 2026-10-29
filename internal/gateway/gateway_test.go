@@ -659,6 +659,18 @@ func TestAttachUnknownSession(t *testing.T) {
 	}
 }
 
+// A detach with nothing attached (the pane of a session that was just closed) is done, not an error:
+// an error without a session would reach every other attached pane.
+func TestDetachWhenNothingIsAttached(t *testing.T) {
+	srv, _ := newTestServer(t, &fakeSessions{})
+	c := dialHello(t, srv)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if resp, err := c.Call(ctx, &protocol.Message{Type: protocol.TypeSessionDetach, SessionID: "gone"}); err == nil {
+		t.Fatalf("detach with nothing attached answered %+v", resp)
+	}
+}
+
 func TestWebSocketRoundTrip(t *testing.T) {
 	p, gw := newWorkerPeer(7, []byte("ws greeting"))
 	fs := &fakeSessions{dialFn: func(_ context.Context, sessionID string) (net.Conn, error) {
