@@ -1615,3 +1615,16 @@ func TestAutonomySectionIsAlwaysGiven(t *testing.T) {
 		t.Fatalf("context lacks the autonomy section: %s", out)
 	}
 }
+
+// A long check-in shows its question: the end of the reply, not its first lines.
+func TestOpenGatesShowTheQuestionOfALongCheckin(t *testing.T) {
+	p, _, _ := gateTeam(t)
+	endTurn(p, "leadaaaaaaaa", strings.Repeat("Ran the suite and read the logs. ", 30)+checkInReply)
+	out, err := p.RPC(context.Background(), gateway.Caller{Owner: true}, "gates.open", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := out.([]openGate); len(got) != 1 || !strings.HasSuffix(got[0].Question, "go on with the loader?") {
+		t.Fatalf("open = %+v", got)
+	}
+}

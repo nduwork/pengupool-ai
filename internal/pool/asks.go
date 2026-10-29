@@ -78,6 +78,9 @@ func (p *Pool) sweepAsks(at time.Time) {
 		}
 		go func() {
 			defer p.triaging.Delete(m.ID)
+			if !p.askWaiting(m.ID) { // the snapshot is old: escalated, settled or answered since
+				return
+			}
 			if !p.triageAsk(m) {
 				p.escalateAsk(m)
 			}
@@ -85,12 +88,23 @@ func (p *Pool) sweepAsks(at time.Time) {
 	}
 }
 
-// escalateAsk passes an ask triage did not settle on to the owner.
+// askWaiting says whether an ask is still open and not yet with the owner, in the current state.
+func (p *Pool) askWaiting(id string) bool {
+	ms := p.st.State().Domain.Messages
+	for i, m := range ms {
+		if m.ID == id {
+			return m.EscalatedAt == "" && askOpen(ms, i)
+		}
+	}
+	return false
+}
+
+// escalateAsk passes an ask triage did not settle on to the owner, unless it was answered meanwhile.
 func (p *Pool) escalateAsk(m protocol.TeamMessage) {
 	escalated := false
 	_ = p.update(func(st *store.State) error {
 		for j := range st.Domain.Messages {
-			if x := &st.Domain.Messages[j]; x.ID == m.ID && x.EscalatedAt == "" && x.SettledAt == "" {
+			if x := &st.Domain.Messages[j]; x.ID == m.ID && x.EscalatedAt == "" && askOpen(st.Domain.Messages, j) {
 				x.EscalatedAt, escalated = now(), true
 			}
 		}
@@ -125,6 +139,9 @@ func (p *Pool) triageAsk(m protocol.TeamMessage) bool {
 	a := res.Answers["proceed"]
 	if !res.Calibrated || a.Yes < 0.5 || a.Confidence < decision.Thresholds["proceed"] {
 		return false
+	}
+	if !p.askWaiting(m.ID) {
+		return true // answered or settled while the model ran: no go on, and nothing for the owner
 	}
 	p.goOnAsk(m.ID, fmt.Sprintf("[PenguPool triage] No answer from %s. Go on with your best judgement and say what you assumed (p=%.2f, the owner's decision model).", firstNonEmpty(to.Name, m.To), a.Confidence))
 	return true

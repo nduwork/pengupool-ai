@@ -50,7 +50,14 @@ func TestMuseStatusFollowsItsEvents(t *testing.T) {
 	age()
 	step("Interrupted", "idle") // no Stop
 	step("UserPromptSubmit", "working")
+	p.asking("museaaaaaaaa", "AskUserQuestion", true) // the new turn has a question open
 	step("Interrupted", "working") // late: the owner's new turn is not closed by it
+	p.mu.Lock()
+	asking := p.askingOwner["museaaaaaaaa"]
+	p.mu.Unlock()
+	if !asking {
+		t.Fatal("a late Interrupt cleared the new turn's question")
+	}
 	step("TurnFailed", "idle")
 }
 
