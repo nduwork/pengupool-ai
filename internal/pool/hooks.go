@@ -154,7 +154,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	}
 
 	switch in.Event {
-	case "Stop", "SessionStart", "SessionEnd":
+	case "Stop", "TurnFailed", "Interrupted", "SessionStart", "SessionEnd":
 		// A question or plan tool that was denied or interrupted never reports PostToolUse: its
 		// flag must not outlive the turn or the session (ownerinput.go).
 		p.mu.Lock()
@@ -232,7 +232,10 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 				return HookOut{}, nil
 			}
 		}
-		p.setStatus(s.ID, "working")
+		// Muse asks its permission before PreToolUse: the call waits on the owner until it runs or fails.
+		if in.Harness != harness.Muse || s.Status != "approval" {
+			p.setStatus(s.ID, "working")
+		}
 		p.turnOpen(s.ID, "")
 		p.asking(s.ID, str("tool_name"), true)
 		if out, deny := p.guardRoute(s, pl); deny {
@@ -262,6 +265,24 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		p.permissionRan(s, str("tool_name"), pl["tool_input"], str("tool_use_id"))
 		if str("tool_name") == "AskUserQuestion" && s.Harness == harness.Claude {
 			p.askedPicks(s, pl)
+		}
+	case "ToolFailed": // Muse: a tool failed or was denied; the turn goes on. Which one is unknown, so
+		// a permission prompt it answered stays open until the turn ends and expires it.
+		p.setStatus(s.ID, "working")
+		p.asking(s.ID, str("tool_name"), false)
+		p.turnTool(s.ID)
+	case "TurnFailed", "Interrupted": // Muse: the turn ended in an error or an interrupt, with no Stop
+		// Interrupt is async: one landing after the owner's next prompt must not close that new turn.
+		// ponytail: it still reads idle until that turn's next hook, and meanwhile a message may be
+		// typed into the busy session; the window is the hook's spawn delay. A turn interrupted in
+		// its first second reads working until its next hook.
+		if in.Event == "Interrupted" && p.turnSince(s.ID, entered.Add(-time.Second)) {
+			break
+		}
+		p.setStatus(s.ID, "idle")
+		p.turnBroke(s)
+		if in.Event == "TurnFailed" {
+			p.flushQueue(s.ID) // an unattended agent's queue goes on; after an interrupt the owner is at the prompt
 		}
 	case "PermissionRequest":
 		// A shell command the owner answered before is answered the same way for them on an autonomous
