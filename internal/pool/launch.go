@@ -373,7 +373,7 @@ func (p *Pool) openTerminal(_ context.Context, in sessionIn) (any, error) {
 	if !ok {
 		return nil, notFound("no session %s", in.SessionID)
 	}
-	script := filepath.Join(p.st.Dir(), "run", "open-"+s.ID[:8]+".command")
+	script := filepath.Join(p.st.Dir(), "run", "open-"+idTail(s.ID)+".command")
 	body := fmt.Sprintf("#!/bin/sh\nexec %s attach --store %s %s\n", shq(p.exe), shq(p.st.Dir()), s.ID)
 	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
 		return nil, err
