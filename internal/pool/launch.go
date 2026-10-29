@@ -72,7 +72,10 @@ func (p *Pool) launch(ctx context.Context, in launchIn) (any, error) {
 		Cwd: cwd, TrustFrom: trust, Cols: in.Cols, Rows: in.Rows,
 	})
 	if err != nil {
-		if trust != "" { // the worktree this launch just made goes with it, and a new branch with no commits
+		// The worktree this launch just made goes with it, and so does its new branch while that has
+		// nothing of its own (safe -d: a branch from a From that HEAD does not contain stays). Any
+		// pretrust entry for the folder stays in the agent's list: harmless, as the folder is gone.
+		if trust != "" {
 			_ = removeWorktree(repo.Path, cwd, map[bool]string{true: in.Source.Branch}[in.Source.NewBranch], true)
 		}
 		return nil, err
@@ -82,13 +85,18 @@ func (p *Pool) launch(ctx context.Context, in launchIn) (any, error) {
 
 // addWorktree makes a new session's worktree in PenguPool's own folder, so the repository's folder
 // gets no siblings: on a new branch from src.From (the repository's HEAD when empty), or on an
-// existing branch no other worktree has checked out. git's own refusal is the error.
+// existing branch no other worktree has checked out. git's own refusal is the error. Both start from
+// one of the repository's own local branches: the folder is pretrusted when the repository is, so it
+// must not start from a fork's or a remote's commits (and their agent settings) the owner never saw.
 func (p *Pool) addWorktree(ctx context.Context, repo protocol.Repo, src sourceIn, name, id string) (string, error) {
 	if !repo.Git {
 		return "", invalid("%s is not a Git repository", repo.Path)
 	}
-	if src.Branch == "" || strings.HasPrefix(src.Branch, "-") || strings.HasPrefix(src.From, "-") {
-		return "", invalid("choose a branch")
+	local := func(b string) bool {
+		return b != "" && !strings.HasPrefix(b, "-") && exec.CommandContext(ctx, "git", "-C", repo.Path, "show-ref", "--verify", "--quiet", "refs/heads/"+b).Run() == nil
+	}
+	if src.NewBranch && (src.Branch == "" || strings.HasPrefix(src.Branch, "-") || src.From != "" && !local(src.From)) || !src.NewBranch && !local(src.Branch) {
+		return "", invalid("choose one of the repository's branches")
 	}
 	wt := filepath.Join(p.st.Dir(), "worktrees", "sessions", slug(name)+"-"+id[len(id)-8:]) // ids are time-ordered: the tail is the random part
 	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {

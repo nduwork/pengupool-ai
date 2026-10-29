@@ -52,6 +52,14 @@ func TestLaunchInNewWorktree(t *testing.T) {
 	if err := launch(sourceIn{Branch: "--force"}); err == nil {
 		t.Fatal("an option as a branch name was passed to git")
 	}
+	// Only the repository's own local branches: not a commit, a remote's or a fork's ref (the folder may be pretrusted).
+	sha := git("rev-parse", "HEAD")
+	if err := launch(sourceIn{Branch: sha}); err == nil {
+		t.Fatal("a commit was checked out as an existing branch")
+	}
+	if err := launch(sourceIn{Branch: "pengupool/x", NewBranch: true, From: sha}); err == nil {
+		t.Fatal("a new branch was made from a commit that is no local branch")
+	}
 
 	p.testSpawn = func(r spawnReq) (store.Session, error) { cwd = r.Cwd; return store.Session{}, errors.New("no agent") }
 	if err := launch(sourceIn{Branch: "pengupool/gone", NewBranch: true}); err == nil {
