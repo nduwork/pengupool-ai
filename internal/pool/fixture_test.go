@@ -74,7 +74,7 @@ func TestContextShowsTask(t *testing.T) {
 	_ = st.Update(func(s *store.State) error { s.Domain.Teams[0].Goal = "ship login"; return nil })
 	lead := p.renderContext("leadaaaaaaaa")
 	if want := "## Current task (the owner's latest instruction)\nship login"; !strings.Contains(lead, want) {
-		t.Errorf("anchor context lacks %q:\n%s", want, lead)
+		t.Errorf("LEAD context lacks %q:\n%s", want, lead)
 	}
 	if strings.Contains(lead, "## Epics") || strings.Contains(lead, "epic propose") {
 		t.Errorf("a team record is in the context:\n%s", lead)
@@ -132,7 +132,7 @@ func TestDeleteClosedTeamOnly(t *testing.T) {
 		s.Domain.Approvals = append(s.Domain.Approvals, protocol.Approval{ID: "a1", TeamID: "team1"}, protocol.Approval{ID: "a2", TeamID: "team2"})
 		return nil
 	})
-	os.MkdirAll(filepath.Join(p.workDir("team1"), "anchor"), 0o755) // an anchor's scratch folder
+	os.MkdirAll(filepath.Join(p.workDir("team1"), "hub"), 0o755) // a team-hub agent's scratch folder
 	os.MkdirAll(p.workDir("team2"), 0o755)
 	if _, err := p.teamDelete(ctx, teamIDIn{TeamID: "team1"}); err != nil {
 		t.Fatal(err)

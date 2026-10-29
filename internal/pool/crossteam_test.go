@@ -218,7 +218,7 @@ func TestContextSendsOnlyChangedSections(t *testing.T) {
 		t.Fatal(err)
 	}
 	upd = prompt("UserPromptSubmit")
-	if !strings.Contains(upd, "- newcomer — helper") || strings.Contains(upd, "## Direction") || strings.Contains(upd, "## Current task") ||
+	if !strings.Contains(upd, "- newcomer — member") || strings.Contains(upd, "## Direction") || strings.Contains(upd, "## Current task") ||
 		strings.Contains(upd, "no longer applies") || strings.Contains(upd, "notices") {
 		t.Fatalf("a join is not just the Team members section: %s", upd)
 	}

@@ -25,7 +25,7 @@ func descendsFrom(pid, ancestor int) (yes, known bool) {
 
 // bindSession keeps an agent to its own session. An agent's CLI call names its session in the
 // request (session_id, or from for a message), and the unix socket is open to every process of the
-// owner's account, so another agent could name a session that is not its own (the anchor's, a member
+// owner's account, so another agent could name a session that is not its own (the LEAD's, a member
 // of another team). The daemon reads the calling process from the socket and takes the request only
 // when that process descends from the named session's worker. A caller that is not an agent (the
 // owner's token, the phone, the terminal) is not checked; the phone gets only its own requests (RPC).

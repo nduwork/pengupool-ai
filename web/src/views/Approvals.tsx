@@ -4,10 +4,10 @@ import { useEffect, useState, type ReactElement } from "react";
 
 import { AGENTS, ago, harnessLabel, sessionName, skillName, useApp, usePersisted } from "../app/ctx";
 import { Button } from "../components/ui/button";
-import { Badge, Input, Label, Select, Textarea, submitOnEnter } from "../components/ui/controls";
+import { Badge, Input, Label, RoleTag, Select, Textarea, submitOnEnter } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
 import type { Approval, Member, Proposal, ProposedMember, Team } from "../protocol/domain";
-import { FormationSheet } from "./Formation";
+import { FormationSheet, roleOf } from "./Formation";
 import { reconcileInbox, sessionNeeds, type InboxEntry, type Need } from "./inbox";
 
 // Urgent approvals stay visible: a bell with a count in the title bar. NeedsYouBar is what needs the
@@ -102,6 +102,12 @@ export function NeedsYouBar(): ReactElement | null {
 }
 
 /** One ask of the owner. A check-in is answered here; a permission dialog lives in the harness's terminal. */
+function NeedRole({ id }: { id: string }): ReactElement | null {
+  const app = useApp();
+  const role = roleOf(app.domain, app.sessions, id);
+  return role !== undefined ? <RoleTag role={role} className="align-middle" /> : null;
+}
+
 function NeedRow({ n }: { n: Need }): ReactElement {
   const app = useApp();
   const [reply, setReply] = useState(false);
@@ -117,7 +123,7 @@ function NeedRow({ n }: { n: Need }): ReactElement {
       <div className="flex items-center gap-2">
         {checkin ? <MessageCircleQuestion className="size-4 shrink-0 text-warning" /> : <ShieldQuestion className="size-4 shrink-0 text-warning" />}
         <span className="min-w-0 flex-1 truncate" title={n.text}>
-          <strong className="font-semibold">{n.name}</strong> {checkin ? "asks: " : ""}
+          <strong className="font-semibold">{n.name}</strong> <NeedRole id={n.session} /> {checkin ? "asks: " : ""}
           {n.text}
         </span>
         {n.gate?.floor === true ? <Badge tone="danger">floor</Badge> : null}
@@ -287,7 +293,15 @@ export function ProposalSheet({ taskId }: { taskId: string }): ReactElement {
         {members.map((m, i) => (
           <div key={i} className="flex items-center gap-2 rounded-md border border-border p-2.5">
             <span className="font-medium">{m.name}</span>
-            {m.role === "main" ? <Badge tone="primary">Main worker</Badge> : <Badge>Helper · {skillName(app.domain, m.skill_id)}</Badge>}
+            {m.role === "main" ? (
+              <RoleTag role="lead" />
+            ) : m.role === "sme" ? (
+              <RoleTag role="sme" />
+            ) : (
+              <>
+                <RoleTag role="helper" /> {skillName(app.domain, m.skill_id)}
+              </>
+            )}
             {m.coordinator === true ? <Badge tone="warning">Coordinator</Badge> : null}
           </div>
         ))}

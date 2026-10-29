@@ -110,8 +110,6 @@ export interface Team {
   harness: string;
   /** The team's job; it evolves, edited in place (a direction change). */
   goal?: string;
-  /** The member every message reaches and who composes the results: a hub, not a boss. */
-  anchor_id?: string;
   /** What each member session spent while on the team, in USD, as its harness reports it. */
   cost_by?: Record<string, number>;
   /** The owner's budget for the team's job; unset: the app shows an estimate. */
@@ -124,7 +122,7 @@ export interface Team {
 }
 
 export interface FormationChange {
-  op: "add" | "remove" | "anchor";
+  op: "add" | "remove";
   skill_id?: string;
   repo_id?: string;
   session_id?: string;

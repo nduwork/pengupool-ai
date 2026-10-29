@@ -11,7 +11,8 @@ import { Connection, type ConnectionInfo } from "./client/connection";
 import { TerminalPane, pruneTerminals } from "./components/TerminalPane";
 import { instanceOf } from "./components/termCache";
 import { Button } from "./components/ui/button";
-import { Tip } from "./components/ui/controls";
+import { RoleTag, Tip } from "./components/ui/controls";
+import { roleOf } from "./views/Formation";
 import { cn } from "./lib/utils";
 import { T } from "./protocol/control";
 import { EMPTY_DOMAIN } from "./protocol/domain";
@@ -330,7 +331,7 @@ export function App(): ReactElement {
                 <span className="text-label font-semibold">{NAV_TITLE[nav]}</span>
                 {nav === "workspace" && selectedView !== undefined ? (
                   <span className="truncate text-label text-muted-foreground">
-                    › {selectedView.name} <span className="text-faint">· {harnessLabel(selectedView.harness)}</span>
+                    › {selectedView.name} <SessionRole id={selectedView.id} /> <span className="text-faint">· {harnessLabel(selectedView.harness)}</span>
                   </span>
                 ) : null}
                 <span className="flex-1" />
@@ -413,6 +414,13 @@ function ConnectionPill({ info }: { info: ConnectionInfo }): ReactElement {
   );
 }
 
+/** The session's role tag when it is on a team (the terminal bar passes "dark": that bar is dark in both themes). */
+function SessionRole({ id, className }: { id: string; className?: string }): ReactElement | null {
+  const app = useApp();
+  const role = roleOf(app.domain, app.sessions, id);
+  return role !== undefined ? <RoleTag role={role} className={className} /> : null;
+}
+
 function TerminalHeader(): ReactElement {
   const app = useApp();
   const s = app.sessions.find((x) => x.id === app.selected);
@@ -421,6 +429,7 @@ function TerminalHeader(): ReactElement {
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 border-b border-white/10 px-3 text-[#c9d1d9]">
       <span className="text-label font-semibold">{s.name}</span>
+      <SessionRole id={s.id} className="dark" />
       <span className="font-mono text-micro text-[#8b949e]">
         {harnessLabel(s.harness)} · {s.cols}×{s.rows}
         {s.context_pct !== undefined ? ` · ${s.context_pct}% context` : ""}

@@ -16,9 +16,9 @@ import (
 // and who left (each a direction revision, with the reason) and every entry the member wrote while
 // it was there.
 //
-// Each team has one anchor (Team.AnchorID): the member every message reaches, through a digest, and
-// who composes the results and writes the reflection. It is a hub, not a boss: it cannot approve,
-// merge or change the direction. Moving the anchor is a formation change too.
+// Each member's label is derived from the team's tree, never stored or chosen (teamLabel): the LEAD
+// is the root, who composes the results; it is a hub, not a boss, and cannot approve, merge or change
+// the direction.
 
 type formationIn struct {
 	TeamID string                   `json:"team_id"`
@@ -46,7 +46,7 @@ type requestIn struct {
 	Op         string `json:"op"`
 	SkillID    string `json:"skill_id,omitempty"`
 	RepoID     string `json:"repo_id,omitempty"`
-	Member     string `json:"member,omitempty"` // remove, anchor: a member by name or id
+	Member     string `json:"member,omitempty"` // remove: a member by name or id
 	Assignment string `json:"assignment,omitempty"`
 	Reason     string `json:"reason,omitempty"`
 }
@@ -136,9 +136,6 @@ func (p *Pool) newFormation(teamID string, c protocol.FormationChange, state str
 				return protocol.Approval{}, notFound("no active helper agent %s", c.SkillID)
 			}
 			detail = "add " + sk.Name + " (helper agent)"
-			if anchorSkill(*sk) {
-				detail = "add " + sk.Name + " as the team's anchor"
-			}
 		case c.RepoID != "" && c.SkillID == "":
 			r := findRepo(&d, c.RepoID)
 			if r == nil {
@@ -148,18 +145,15 @@ func (p *Pool) newFormation(teamID string, c protocol.FormationChange, state str
 		default:
 			return protocol.Approval{}, invalid("add names a helper agent or a repository (an SME)")
 		}
-	case "remove", "anchor":
+	case "remove":
 		m, err := findMember(t, c.SessionID)
 		if err != nil {
 			return protocol.Approval{}, err
 		}
 		c.SessionID = m.SessionID
 		detail = c.Op + " " + m.Name
-		if c.Op == "anchor" {
-			detail = "make " + m.Name + " the anchor"
-		}
 	default:
-		return protocol.Approval{}, invalid("a formation change is add, remove or anchor")
+		return protocol.Approval{}, invalid("a formation change is add or remove")
 	}
 	if c.Assignment != "" {
 		detail += ": " + c.Assignment
@@ -213,9 +207,7 @@ func (p *Pool) applyFormation(ctx context.Context, a protocol.Approval) (any, er
 		res, err = p.addMember(ctx, a.TeamID, c, by)
 	case "remove":
 		res, err = p.closeHelper(ctx, closeIn{TeamID: a.TeamID, SessionID: c.SessionID, KeepWorktree: true, reason: c.Reason, by: by})
-	case "anchor":
-		res, err = p.setAnchor(a.TeamID, c.SessionID)
-	}
+	} // an older record's request to choose who leads changes nothing: the lead is the tree's root
 	if err == nil {
 		p.resolveApproval(a.ID, "approved")
 	}
@@ -272,39 +264,43 @@ func (p *Pool) addMember(ctx context.Context, teamID string, c protocol.Formatio
 	return m, nil
 }
 
-// anchorOf is the session id of the team's anchor: its current task's anchor while that member is
-// active, else its coordinator, else its main worker.
-func anchorOf(d *protocol.Domain, t *protocol.Team) string {
-	if t.AnchorID != "" {
-		for _, m := range t.Members {
-			if m.SessionID == t.AnchorID && m.State == "active" {
-				return m.SessionID
-			}
+// leadOf is the session id of the team's LEAD: the root of its tree, the main worker, else the first
+// active member with no active parent. "" for a team with no active member.
+func leadOf(t *protocol.Team) string {
+	for _, m := range t.Members {
+		if m.State == "active" && m.Role == "main" {
+			return m.SessionID
 		}
 	}
-	for _, role := range []string{"coordinator", "main"} {
-		for _, m := range t.Members {
-			if m.State == "active" && (role == "coordinator" && m.Coordinator || role == "main" && m.Role == "main") {
-				return m.SessionID
-			}
+	for _, m := range t.Members {
+		if m.State == "active" && treeParent(t, m.SessionID) == "" {
+			return m.SessionID
 		}
 	}
 	return ""
 }
 
-func (p *Pool) setAnchor(teamID, sessionID string) (any, error) {
-	err := p.update(func(st *store.State) error {
-		t := findTeam(&st.Domain, teamID)
-		if t == nil {
-			return notFound("no team %s", teamID)
-		}
-		t.AnchorID = sessionID
-		return nil
-	})
-	if err != nil {
-		return nil, err
+// teamLabel is a member's label, derived, never stored: LEAD for the root of the team's tree (with
+// a repository or without), HELPER for an agent taken from the helper pool, SME for a member the
+// owner added that has a repository behind it (its worktree, or a session working in a known
+// repository), "" for any other member. web/src/views/Formation.tsx mirrors it.
+func teamLabel(st *store.State, t *protocol.Team, m protocol.Member) string {
+	switch {
+	case m.SessionID == leadOf(t):
+		return "LEAD"
+	case m.SkillID != "":
+		return "HELPER"
+	case m.RepoID != "" || m.Worktree != "":
+		return "SME"
 	}
-	return map[string]string{"anchor": sessionID}, nil
+	if i := sessionIndex(st, m.SessionID); i >= 0 && st.Sessions[i].Cwd != "" {
+		for _, r := range st.Domain.Repos {
+			if r.Path != "" && within(st.Sessions[i].Cwd, r.Path) {
+				return "SME"
+			}
+		}
+	}
+	return ""
 }
 
 func assignmentSuffix(a string) string {

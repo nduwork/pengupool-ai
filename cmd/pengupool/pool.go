@@ -318,9 +318,9 @@ func cmdSend(args []string) error {
 }
 
 // cmdTeam: `team request add --skill S|--repo R [--assignment A] [--reason R]` |
-// `team request remove|anchor MEMBER [--reason R]`: a formation change the owner approves.
+// `team request remove MEMBER [--reason R]`: a formation change the owner approves.
 func cmdTeam(args []string) error {
-	usage := errors.New("usage: pengupool team request add --skill S|--repo R [--assignment A] [--reason R] | team request remove|anchor MEMBER [--reason R]")
+	usage := errors.New("usage: pengupool team request add --skill S|--repo R [--assignment A] [--reason R] | team request remove MEMBER [--reason R]")
 	if len(args) < 2 || args[0] != "request" {
 		return usage
 	}
@@ -332,7 +332,7 @@ func cmdTeam(args []string) error {
 	reason := fs.String("reason", "", "why")
 	rest := args[2:]
 	member := ""
-	if op == "remove" || op == "anchor" {
+	if op == "remove" {
 		if len(rest) == 0 || strings.HasPrefix(rest[0], "-") {
 			return usage
 		}

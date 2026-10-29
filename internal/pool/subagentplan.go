@@ -26,7 +26,7 @@ func (p *Pool) subagentPlan(s store.Session, prompt string) string {
 	}
 	d := p.st.State().Domain
 	t := teamOf(&d, s.ID)
-	if t == nil || anchorOf(&d, t) == s.ID || !p.teammateMessage(t, prompt) {
+	if t == nil || leadOf(t) == s.ID || !p.teammateMessage(t, prompt) {
 		return ""
 	}
 	desc := ""
