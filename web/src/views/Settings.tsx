@@ -1069,7 +1069,7 @@ function CustomAgents({ found }: { found: Found | null }): ReactElement {
               aria-label={`Delete ${c.name}`}
               onClick={() => {
                 // A session started from it resumes through it: deleting it leaves that session unable to resume.
-                const using = app.sessions.filter((s) => s.custom === c.id).length;
+                const using = isUnsupported(c) ? 0 : app.sessions.filter((s) => s.custom === c.id).length; // one that starts nothing never resumed
                 if (using > 0 && !window.confirm(`${using} session${using === 1 ? "" : "s"} started from ${c.name} will no longer resume. Delete it?`)) return;
                 void save(list.filter((x) => x.id !== c.id));
               }}

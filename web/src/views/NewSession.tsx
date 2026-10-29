@@ -1,7 +1,7 @@
 import { FolderOpen, GitBranch } from "lucide-react";
 import { useEffect, useState, type ReactElement } from "react";
 
-import { AGENTS, UNSUPPORTED_NOTE, agentOptions, checkFailed, choosePick, harnessLabel, isUnsupported, launchAgent, parentPick, pickable, useApp, usePersisted, type CustomAgent, type Found } from "../app/ctx";
+import { AGENTS, UNSUPPORTED_NOTE, agentOptions, checkFailed, choosePick, harnessLabel, pickReady, isUnsupported, launchAgent, parentPick, pickable, useApp, usePersisted, type CustomAgent, type Found } from "../app/ctx";
 import { localDesktop } from "../app/desktop";
 import { FolderBrowser } from "../components/FolderBrowser";
 import { Button } from "../components/ui/button";
@@ -40,7 +40,8 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
   // Which agents are installed on this machine (version, or why not), and the owner's Custom agents.
   const [found, setFound] = useState<Found | null>(null);
   const [probeFailed, setProbeFailed] = useState(false);
-  const [customs, setCustoms] = useState<CustomAgent[]>([]);
+  const [loaded, setCustoms] = useState<CustomAgent[] | null>(null); // null until settings.get answers
+  const customs = loaded ?? [];
   useEffect(() => {
     void app.conn.request<Found>("harness.probe").then(setFound, () => {
       setProbeFailed(true);
@@ -48,7 +49,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
     });
     void app.conn.request<{ custom_agents?: CustomAgent[] | null }>("settings.get").then(
       (r) => setCustoms(r.custom_agents ?? []),
-      () => undefined,
+      () => setCustoms([]), // a failed read counts as no Custom agents
     );
   }, []);
   // What is shown is what is sent: a remembered pick that is gone gives way to the default Custom
@@ -108,7 +109,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
 
   const valid =
     // Not before the install check answers: until then the pick may still change.
-    (kind === "local" ? path.trim() !== "" : url.trim() !== "" && dest.trim() !== "") && found !== null && harness !== "";
+    (kind === "local" ? path.trim() !== "" : url.trim() !== "" && dest.trim() !== "") && pickReady(found, loaded) && harness !== "";
 
   return (
     <Sheet
@@ -139,13 +140,16 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
           hint={
             found === null
               ? "Checking which agents are installed…"
-              : probeFailed
-                ? "Couldn't check which agents are installed; all are offered."
-                : options.length === 0
+              : options.length === 0
                 ? "No agent is installed here. Install one, or add a Custom agent in Settings › Agents."
-                : custom !== undefined && isUnsupported(custom)
-                  ? `${custom.command} · ${UNSUPPORTED_NOTE}`
-                  : [custom?.command, AGENTS.find((a) => a.id === agent)?.hint, found[agent]?.version].filter((x) => x !== undefined && x !== "").join(" · ")
+                : [
+                    custom?.command,
+                    custom !== undefined && isUnsupported(custom) ? UNSUPPORTED_NOTE : AGENTS.find((a) => a.id === agent)?.hint,
+                    found[agent]?.version,
+                    probeFailed ? "Couldn't check which agents are installed; all are offered." : undefined,
+                  ]
+                    .filter((x) => x !== undefined && x !== "")
+                    .join(" · ")
           }
         >
           Agent

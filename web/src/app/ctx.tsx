@@ -175,6 +175,10 @@ export function choosePick(options: readonly { value: string }[], want: string, 
   return options[0]?.value ?? "";
 }
 
+/** New session may start only once both the install check and the Custom agents have answered: before
+ * that the shown pick may still change (to the default Custom agent, say). */
+export const pickReady = (found: Found | null, customs: readonly CustomAgent[] | null): boolean => found !== null && customs !== null;
+
 /** What a picked option launches: an agent and its model, or a Custom agent. */
 export function launchAgent(choice: string, model: string): { harness: string; model?: string; custom?: string } {
   const m = model.trim();

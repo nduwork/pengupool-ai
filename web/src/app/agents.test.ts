@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkFailed, choosePick, launchAgent, parentPick, pickable, type CustomAgent, type Found } from "./ctx";
+import { checkFailed, choosePick, pickReady, launchAgent, parentPick, pickable, type CustomAgent, type Found } from "./ctx";
 
 const yes = { version: "1.0" };
 const no = { version: "", error: "harness_unavailable: not on PATH" };
@@ -40,5 +40,10 @@ describe("New session's agent list", () => {
     expect(choosePick(options, "gone", customs)).toBe("custom:o");
     expect(choosePick(options, "codex", customs)).toBe("codex");
     expect(choosePick(pickable({ codex: yes }, customs), "", customs)).toBe("codex"); // its agent is not installed
+  });
+  it("waits for both the install check and the Custom agents", () => {
+    expect(pickReady({ claude: yes }, null)).toBe(false);
+    expect(pickReady(null, [])).toBe(false);
+    expect(pickReady({ claude: yes }, [])).toBe(true);
   });
 });
