@@ -39,5 +39,30 @@ func TestMuseStatusFollowsItsEvents(t *testing.T) {
 	step("PermissionRequest", "approval")
 	step("PreToolUse", "approval")
 	step("PostToolUse", "working") // allowed and ran
-	step("TurnEnded", "idle")      // interrupted, no Stop
+	step("Interrupted", "idle")    // no Stop
+	step("UserPromptSubmit", "working")
+	step("TurnFailed", "idle")
+}
+
+// What the owner types while a Muse approved tool runs (still "approval" to the pool) is the owner's.
+func TestMuseApprovalStillCreditsTheOwner(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(Options{Store: st, Exe: "pengupool", RequireOwnerInput: true})
+	_ = st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions,
+			store.Session{ID: "museaaaaaaaa", State: "running", Status: "approval", Harness: harness.Muse},
+			store.Session{ID: "claudeaaaaaa", State: "running", Status: "approval", Harness: harness.Claude})
+		return nil
+	})
+	p.OwnerInput("museaaaaaaaa", "stop, use the other branch")
+	p.OwnerInput("claudeaaaaaa", "1")
+	if !p.ownerSent("museaaaaaaaa", "stop, use the other branch") {
+		t.Fatal("the owner's words in a Muse approval were not credited")
+	}
+	if p.ownerSent("claudeaaaaaa", "1") {
+		t.Fatal("a Claude permission answer was credited as a prompt")
+	}
 }

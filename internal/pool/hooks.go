@@ -154,7 +154,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	}
 
 	switch in.Event {
-	case "Stop", "TurnEnded", "SessionStart", "SessionEnd":
+	case "Stop", "TurnFailed", "Interrupted", "SessionStart", "SessionEnd":
 		// A question or plan tool that was denied or interrupted never reports PostToolUse: its
 		// flag must not outlive the turn or the session (ownerinput.go).
 		p.mu.Lock()
@@ -266,13 +266,19 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		if str("tool_name") == "AskUserQuestion" && s.Harness == harness.Claude {
 			p.askedPicks(s, pl)
 		}
-	case "ToolFailed": // Muse: a tool failed or was denied; the turn goes on
+	case "ToolFailed": // Muse: a tool failed or was denied; the turn goes on. Which one is unknown, so
+		// a permission prompt it answered stays open until the turn ends and expires it.
 		p.setStatus(s.ID, "working")
 		p.asking(s.ID, str("tool_name"), false)
-	case "TurnEnded": // Muse: the turn ended in an error or an interrupt, with no Stop. No triage and
-		// no queue: the owner may be at the prompt; the next Stop delivers it. ponytail: Interrupt is
-		// async, so one that lands after the owner's next prompt shows idle until that turn's next hook.
+		p.turnTool(s.ID)
+	case "TurnFailed", "Interrupted": // Muse: the turn ended in an error or an interrupt, with no Stop
 		p.setStatus(s.ID, "idle")
+		p.turnBroke(s)
+		if in.Event == "TurnFailed" {
+			p.flushQueue(s.ID) // an unattended agent's queue goes on; after an interrupt the owner is at the prompt
+		}
+		// ponytail: Interrupt is async, so one landing after the owner's next prompt reads idle until
+		// that turn's next hook, and meanwhile a message may be typed into the busy session.
 	case "PermissionRequest":
 		// A shell command the owner answered before is answered the same way for them on an autonomous
 		// team (autoAnswer). Otherwise no decision: the harness shows its own dialog in the terminal;

@@ -137,6 +137,28 @@ func (p *Pool) turnEnd(s store.Session, reply, transcript string, stopActive boo
 	return out
 }
 
+// turnBroke closes a turn that ended with no Stop (an error or an interrupt): recorded and its open
+// prompts expired like a Stop's, with no check-in.
+func (p *Pool) turnBroke(s store.Session) {
+	p.mu.Lock()
+	t := p.turns[s.ID]
+	delete(p.turns, s.ID)
+	p.mu.Unlock()
+	if p.db == nil {
+		return
+	}
+	seq, done := p.turnEnded(s, t)
+	if t == nil {
+		return
+	}
+	tt := *t
+	tt.Seq, tt.GateDone = seq, true
+	go func() {
+		defer close(done)
+		p.placeTurn(context.Background(), s, tt, lastReply(s.Transcript))
+	}()
+}
+
 // fromOwner: a turn opened by the owner's prompt, not by a delivered team message or notice, nor a
 // message from a session outside the team.
 func (t turn) fromOwner() bool {

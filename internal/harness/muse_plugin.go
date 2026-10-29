@@ -28,8 +28,8 @@ import (
 const musePluginID = "pengupool"
 
 // museHookEvents are the plugin hooks: the Muse event, and the pool event it reports when that is
-// another name. A failed or denied tool reports ToolFailed; a turn that ended in an error or an
-// interrupt, TurnEnded. Muse admits an Interrupt hook only async.
+// another name. A failed or denied tool reports ToolFailed; a turn that ended in an error,
+// TurnFailed; an interrupted one, Interrupted. Muse admits an Interrupt hook only async.
 var museHookEvents = []struct {
 	id, event, pool string
 	async           bool
@@ -43,8 +43,8 @@ var museHookEvents = []struct {
 	{"notification", "Notification", "", false},
 	{"permission-request", "PermissionRequest", "", false},
 	{"post-tool-use-failure", "PostToolUseFailure", "ToolFailed", false},
-	{"stop-failure", "StopFailure", "TurnEnded", false},
-	{"interrupt", "Interrupt", "TurnEnded", true},
+	{"stop-failure", "StopFailure", "TurnFailed", false},
+	{"interrupt", "Interrupt", "Interrupted", true},
 }
 
 // musePluginDir is the bundle under the store the daemon installs from.

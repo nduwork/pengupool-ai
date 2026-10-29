@@ -44,9 +44,11 @@ func squash(s string) string {
 // OwnerInput is the gateway's word that the owner submitted a prompt in a session, with the text they
 // typed or pasted (gateway/typed.go: an Enter with nothing typed, inside a paste, or after ESC or a
 // backslash is none). A prompt answering a permission dialog, or typed while the agent is still
-// starting, is not a prompt for the agent.
+// starting, is not a prompt for the agent. A Muse "approval" also covers the approved tool's run (its
+// hooks tell the two apart only at PostToolUse), so what the owner types there is credited: an
+// interrupt and a new prompt must still read as the owner's.
 func (p *Pool) OwnerInput(sessionID, text string) {
-	if s, ok := p.session(sessionID); ok && (s.Status == "approval" || s.Status == "starting") {
+	if s, ok := p.session(sessionID); ok && (s.Status == "approval" && s.Harness != harness.Muse || s.Status == "starting") {
 		return
 	}
 	p.mu.Lock()
