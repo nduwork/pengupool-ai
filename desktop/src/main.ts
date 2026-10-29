@@ -158,6 +158,7 @@ function createWindow(): void {
       sandbox: true,
       nodeIntegration: false,
       spellcheck: false,
+      plugins: true, // Chromium's PDF viewer, for the file preview
     },
   });
   if (s.maximized === true) win.maximize();

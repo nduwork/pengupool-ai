@@ -172,6 +172,7 @@ func cmdDaemon(args []string) error {
 	}
 	pl.SetRevoker(srv.Revoke)
 	pool.HTTPAddr = srv.HTTPAddr
+	go pl.HealTailscaleServe() // re-serve after a port change; owner's home only
 	pool.Restarter = func() {
 		logf("restarting to apply listener settings; sessions keep running")
 		lock.Release()
