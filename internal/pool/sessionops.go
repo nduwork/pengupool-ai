@@ -852,19 +852,29 @@ func (p *Pool) repoWorktrees(ctx context.Context, in pathIn) (any, error) {
 	return wts, nil
 }
 
-// repoBranches lists a repository's local branches, its checked-out one first, for New session's
-// New worktree; none for a folder that is not a Git repository.
+// repoBranches lists a repository's local branches for New session's New worktree, its default branch
+// first (origin's HEAD when that branch is here, else main or master, else the checked-out one), so
+// From starts there; none for a folder that is not a Git repository.
 func (p *Pool) repoBranches(ctx context.Context, in pathIn) (any, error) {
 	out, err := exec.CommandContext(ctx, "git", "-C", in.Path, "for-each-ref", "--format=%(HEAD)%(refname:short)", "--sort=-committerdate", "refs/heads").Output()
-	branches := []string{}
+	branches, head := []string{}, ""
 	if err != nil {
 		return branches, nil
 	}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if b, head := strings.CutPrefix(line, "*"); head {
-			branches = append([]string{b}, branches...)
-		} else if b = strings.TrimSpace(line); b != "" {
-			branches = append(branches, b)
+		b, cur := strings.CutPrefix(line, "*")
+		if b = strings.TrimSpace(b); b == "" {
+			continue
+		}
+		if cur {
+			head = b
+		}
+		branches = append(branches, b)
+	}
+	origin, _ := exec.CommandContext(ctx, "git", "-C", in.Path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").Output()
+	for _, d := range []string{strings.TrimPrefix(strings.TrimSpace(string(origin)), "origin/"), "main", "master", head} {
+		if i := slices.Index(branches, d); d != "" && i >= 0 {
+			return append(append([]string{d}, branches[:i]...), branches[i+1:]...), nil
 		}
 	}
 	return branches, nil

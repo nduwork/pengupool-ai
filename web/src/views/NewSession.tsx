@@ -30,12 +30,18 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
   // New worktree: a new branch (its name defaults to pengupool/<session name>) from a branch of the
   // repository, or an existing branch that no other worktree has checked out.
   const [newBranch, setNewBranch] = useState(true);
-  const [branch, setBranch] = useState("");
+  const [branch, setBranch] = useState<string | null>(null); // null: the default name, until the owner types one
   const [from, setFrom] = useState("");
   const [existing, setExisting] = useState("");
   const [branches, setBranches] = useState<string[]>([]);
   const [inUse, setInUse] = useState<Map<string, string>>(new Map());
   useEffect(() => {
+    // Another repository: nothing picked in the last one carries over.
+    setBranch(null);
+    setFrom("");
+    setExisting("");
+    setBranches([]);
+    setInUse(new Map());
     if (kind !== "worktree" || path.trim() === "") return;
     let live = true;
     void app.conn.request<string[]>("repo.branches", { path: path.trim() }).then(
@@ -117,10 +123,18 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
   };
 
   const sessionName = (): string => (name.trim() === "" ? defaultName() : name.trim());
-  const branchName = (): string => (branch.trim() !== "" ? branch.trim() : `pengupool/${sessionName().toLowerCase().replace(/[^a-z0-9._-]+/g, "-")}`);
+  // The default branch name is free: a closed session keeps its branch, so a name in use gets -2, -3…
+  const defaultBranch = (): string => {
+    const base = `pengupool/${sessionName().toLowerCase().replace(/[^a-z0-9._-]+/g, "-")}`;
+    if (!branches.includes(base)) return base;
+    for (let i = 2; ; i++) if (!branches.includes(`${base}-${i}`)) return `${base}-${i}`;
+  };
+  const branchName = (): string => (branch === null ? defaultBranch() : branch.trim());
+  const branchTaken = newBranch && branch !== null && branches.includes(branch.trim());
   const source = () => {
     if (kind === "clone") return { kind, url, dest };
     if (kind === "local") return { kind, path };
+    // repo.branches lists the repository's default branch first, so it is From's default.
     return newBranch ? { kind, path, branch: branchName(), new_branch: true, from: from !== "" ? from : branches[0] } : { kind, path, branch: existing };
   };
 
@@ -137,7 +151,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
 
   const valid =
     // Not before the install check answers: until then the pick may still change.
-    (kind === "clone" ? url.trim() !== "" && dest.trim() !== "" : path.trim() !== "" && (kind === "local" || newBranch || existing !== "")) && pickReady(found, ollamaDefault !== null) && harness !== "";
+    (kind === "clone" ? url.trim() !== "" && dest.trim() !== "" : path.trim() !== "" && (kind === "local" || (branches.length > 0 && (newBranch ? branchName() !== "" && !branchTaken : existing !== "")))) && pickReady(found, ollamaDefault !== null) && harness !== "";
 
   return (
     <Sheet
@@ -202,7 +216,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
               type="button"
               onClick={() => setKind(k)}
               aria-pressed={kind === k}
-              className={cn("flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md", kind === k ? "bg-panel font-medium shadow-sm" : "text-muted-foreground")}
+              className={cn("flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md focus-visible:outline-2 focus-visible:outline-ring", kind === k ? "bg-panel font-medium shadow-sm" : "text-muted-foreground")}
             >
               {icon}
               {label}
@@ -250,19 +264,19 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
                   type="button"
                   onClick={() => setNewBranch(k)}
                   aria-pressed={newBranch === k}
-                  className={cn("flex h-7 flex-1 items-center justify-center rounded-md", newBranch === k ? "bg-panel font-medium shadow-sm" : "text-muted-foreground")}
+                  className={cn("flex h-7 flex-1 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-ring", newBranch === k ? "bg-panel font-medium shadow-sm" : "text-muted-foreground")}
                 >
                   {label}
                 </button>
               ))}
             </div>
             {newBranch ? (
-              <div className="grid grid-cols-2 gap-3">
-                <Label>
+              <div className="grid grid-cols-2 items-start gap-3">
+                <Label hint={branchTaken ? `${branch?.trim()} already exists. Pick another name, or choose it under Existing branch.` : undefined}>
                   Branch
-                  <Input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder={branchName()} className="font-mono" />
+                  <Input value={branchName()} onChange={(e) => setBranch(e.target.value)} aria-invalid={branchTaken} className="font-mono" />
                 </Label>
-                <Label>
+                <Label hint={branches.length === 0 && path.trim() !== "" ? "No branches here. Choose a Git repository with at least one commit." : undefined}>
                   From
                   <Select value={from !== "" ? from : (branches[0] ?? "")} onChange={(e) => setFrom(e.target.value)} disabled={branches.length === 0}>
                     {branches.map((b) => (
@@ -327,7 +341,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
 
         <Label>
           Name
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={valid ? defaultName() : "defaults to the folder"} />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={path.trim() !== "" || kind === "clone" ? defaultName() : "defaults to the folder"} />
         </Label>
         {agent === "claude" ? (
           <p className="rounded-md bg-muted p-2.5 text-caption text-muted-foreground">The first time Claude Code opens a folder it asks whether you trust it. Answer in the terminal below.</p>

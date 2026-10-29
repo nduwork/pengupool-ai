@@ -74,6 +74,12 @@ func TestLaunchInNewWorktree(t *testing.T) {
 
 	got, _ := p.repoBranches(context.Background(), pathIn{Path: repo})
 	if bs := got.([]string); len(bs) != 3 || bs[0] != "main" {
-		t.Fatalf("branches %v: want main, old, pengupool/web with the checked-out one first", bs)
+		t.Fatalf("branches %v: want main, old, pengupool/web with the default branch first", bs)
+	}
+	// With a feature branch checked out in the repository, From still starts at the default branch.
+	git("checkout", "-q", "-b", "feat")
+	got, _ = p.repoBranches(context.Background(), pathIn{Path: repo})
+	if bs := got.([]string); bs[0] != "main" {
+		t.Fatalf("branches %v: the checked-out feature branch came first", bs)
 	}
 }
