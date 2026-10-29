@@ -43,8 +43,8 @@ The device token is, and every call except pairing needs it.
    code (valid for 5 minutes, one use) and the API URL to give the Muse app, for example
    `http://mac.tail1234.ts.net:7787/api/muse/v1`. The URL's host is the Serve name when Serve is
    set up, otherwise this machine's Tailscale name. If it shows `https://<tailnet-name>`, Serve is
-   not set up and either Local network is off (do step 1 first) or Tailscale is not running on
-   this machine.
+   not set up and either Local network is off (do step 1 first), Bind address names one address
+   instead of every interface, or Tailscale is not running on this machine.
 2. In the Muse app, give your Muse the URL and the code. It pairs with:
 
    ```bash
@@ -252,7 +252,7 @@ const typeLine = async (text) => {
 | --- | --- | --- |
 | `403 forbidden host` | The URL's host is not this machine's Tailscale name or Serve name: an IP, a different name, a typo. | Use the URL that Pair a Muse device shows. `tailscale status` on the PenguPool machine shows its name. |
 | Connection refused or times out on port 7787 | Local network is off: the host listens on loopback only. | Settings › Local network on (step 1), or set up Serve and use its HTTPS URL. |
-| Pair a Muse device shows `https://<tailnet-name>` | Serve is not set up, and Local network is off or Tailscale is not running here. | Step 1, check `tailscale status`, then make a new code. |
+| Pair a Muse device shows `https://<tailnet-name>` | Serve is not set up, and Local network is off, Bind address names one address, or Tailscale is not running here. | Step 1 (leave Bind address empty), check `tailscale status`, then make a new code. |
 | `401 unauthorized` | Token missing, mistyped, or revoked; for `/pair`, a wrong or expired code. | Check the `Authorization: Bearer` header. Pair again for a revoked device, or make a new code. |
 | `409` on pairing | A device with that name is already paired. | Make a new code, and pair under another name or revoke the old one first. |
 | `409` on an answer | The ask changed or was already answered. | Read `/next` again. |
