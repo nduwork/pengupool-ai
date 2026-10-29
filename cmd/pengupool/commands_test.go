@@ -138,3 +138,28 @@ func TestHostOffersLostSessionsForRestore(t *testing.T) {
 		t.Fatalf("restore = %v, want only %s (kept %s)", got, lost, kept)
 	}
 }
+
+// A wildcard bind publishes loopback of its family, so the desktop app never dials [::] or 0.0.0.0.
+func TestLocalAddr(t *testing.T) {
+	for in, want := range map[string]string{
+		"[::]:7787":       "[::1]:7787",
+		"0.0.0.0:7787":    "127.0.0.1:7787",
+		"127.0.0.1:7787":  "127.0.0.1:7787",
+		"100.64.0.1:7787": "100.64.0.1:7787",
+	} {
+		if got := localAddr(in); got != want {
+			t.Errorf("localAddr(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The Serve name and the machine's live tailnet name are both phone hosts.
+func TestPhoneHosts(t *testing.T) {
+	got := phoneHosts("https://mac.tail1.ts.net/", "mac.tail1.ts.net")
+	if !slices.Equal(got, []string{"mac.tail1.ts.net", "mac.tail1.ts.net"}) {
+		t.Errorf("phoneHosts = %v", got)
+	}
+	if got := phoneHosts("", "muse-1.tail1.ts.net"); !slices.Equal(got, []string{"", "muse-1.tail1.ts.net"}) {
+		t.Errorf("phoneHosts without Serve = %v", got)
+	}
+}
