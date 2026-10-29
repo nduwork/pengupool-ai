@@ -17,7 +17,7 @@ import { PATH_MIME, UNSAFE_NOTICE, typePath } from "../explorerPaths";
 import { Item, MenuContent, PreviousSheet, RenameSheet, SessionMenu, Sep } from "./actions";
 import { olderThan, type RecordedMessage } from "./olderMessages";
 import { STATE_CELL, TYPE_CHIP, age, askPill, newestByPair, openAsks } from "./asks";
-import { layout, rounded, type Block, type LayoutKind, type TreeNode } from "./layout";
+import { layout, rounded, type Block, type LayoutKind, type Route, type TreeNode } from "./layout";
 import { AgentPool, DND } from "./Pool";
 import { ClosedTeamsSheet, CloseTeamSheet, TeamSettingsSheet } from "./TeamSheets";
 
@@ -29,6 +29,7 @@ import { ClosedTeamsSheet, CloseTeamSheet, TeamSettingsSheet } from "./TeamSheet
 // the options, so status updates restyle cards in place and never move them.
 
 const HOT_MS = 90_000;
+const DIR_COLOR = { down: "#3fb950", up: "#9ecbff" }; // a message to a child, a reply to its parent
 const LAYOUTS: Record<LayoutKind, string> = { org: "Org chart", outline: "Outline", right: "Tree →" };
 
 function sizes(roomy: boolean): { S: { sib: number; rank: number; stack: number; indent: number }; pad: number } {
@@ -135,6 +136,17 @@ export function TeamMap(): ReactElement {
     if (last?.state !== "queued") return undefined;
     return last === down ? "down" : "up";
   };
+  // The lit routes, queued (dashed) or delivered within 90 s (beads), oldest message first so the
+  // newest draws on top where routes share a trunk.
+  const lit = (routes: Route[]): Array<{ r: Route; dir: "down" | "up"; queued: boolean; at: number }> =>
+    routes
+      .flatMap((r) => {
+        const queued = queuedOn(r.from, r.to);
+        const dir = queued ?? hot.get(`${r.from}>${r.to}`);
+        const at = Math.max(...[newest.get(`${r.from}>${r.to}`), newest.get(`${r.to}>${r.from}`)].map((m) => (m === undefined ? 0 : Date.parse(m.at))));
+        return dir === undefined ? [] : [{ r, dir, queued: queued !== undefined, at }];
+      })
+      .sort((a, b) => a.at - b.at);
 
   const pendingLaunch = domain.approvals.filter((a) => a.kind === "launch" && a.state === "pending");
   const flash = (ids: string[]): void => {
@@ -445,31 +457,31 @@ export function TeamMap(): ReactElement {
                         </div>
                         <div className="relative" style={{ width: g.block.w, height: g.block.h }}>
                           <svg className="pointer-events-none absolute inset-0 overflow-visible" width={g.block.w} height={g.block.h}>
-                            {g.block.routes.map((r) => {
-                              const queued = queuedOn(r.from, r.to);
-                              const heat = queued === undefined ? hot.get(`${r.from}>${r.to}`) : undefined;
-                              const d = rounded(r.points);
-                              const dir = queued ?? heat;
-                              const color = dir === "down" ? "#3fb950" : dir === "up" ? "#9ecbff" : "var(--muted-foreground)";
-                              return (
-                                <g key={`${r.from}>${r.to}`}>
-                                  <path
-                                    d={d}
-                                    fill="none"
-                                    strokeLinejoin="round"
-                                    className="transition-[stroke,stroke-width] duration-300"
-                                    stroke={color}
-                                    strokeOpacity={dir === undefined ? 0.75 : 0.6}
-                                    strokeWidth={2}
-                                    strokeDasharray={queued !== undefined ? "4 4" : undefined}
-                                  />
-                                  {heat !== undefined && (
-                                    // Round-capped zero-length dashes are beads; the dash offset runs them the message's way.
-                                    <path d={d} fill="none" stroke={color} strokeWidth={5} strokeLinecap="round" strokeDasharray="0 14" className={`bead-${heat}`} />
-                                  )}
-                                </g>
-                              );
-                            })}
+                            {/* Three layers, so a line that shares a trunk with its siblings is never hidden by them:
+                                every route grey under one opacity (overlaps don't darken), the lit ones on top,
+                                oldest first, then the beads over everything. */}
+                            <g opacity={0.75}>
+                              {g.block.routes.map((r) => (
+                                <path key={`${r.from}>${r.to}`} d={rounded(r.points)} fill="none" strokeLinejoin="round" stroke="var(--muted-foreground)" strokeWidth={2} />
+                              ))}
+                            </g>
+                            {lit(g.block.routes).map(({ r, dir, queued }) => (
+                              <path
+                                key={`${r.from}>${r.to}`}
+                                d={rounded(r.points)}
+                                fill="none"
+                                strokeLinejoin="round"
+                                stroke={DIR_COLOR[dir]}
+                                strokeWidth={2}
+                                strokeDasharray={queued ? "4 4" : undefined}
+                              />
+                            ))}
+                            {lit(g.block.routes)
+                              .filter((x) => !x.queued)
+                              .map(({ r, dir }) => (
+                                // Round-capped zero-length dashes are beads; the dash offset runs them the message's way.
+                                <path key={`${r.from}>${r.to}`} d={rounded(r.points)} fill="none" stroke={DIR_COLOR[dir]} strokeWidth={5} strokeLinecap="round" strokeDasharray="0 14" className={`bead-${dir}`} />
+                              ))}
                           </svg>
                           {g.block.routes.map((r) => {
                             const on = asksOn(r.from, r.to);
