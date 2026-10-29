@@ -198,8 +198,8 @@ func contains(q []protocol.TeamMessage, id string) bool {
 
 func (p *Pool) deliver(m protocol.TeamMessage) {
 	for _, x := range p.st.State().Domain.Messages {
-		if x.ID == m.ID && x.State == "failed" {
-			return // expired meanwhile (dialogs.go): its sender was told, so it is not typed now
+		if x.ID == m.ID && x.State != "queued" {
+			return // expired meanwhile (dialogs.go): its sender was told; or delivered already
 		}
 	}
 	to, ok := p.session(m.To)
@@ -258,20 +258,40 @@ func (p *Pool) messageBody(m protocol.TeamMessage, from store.Session) string {
 
 // intoInbox puts a message to a working Claude session straight into its inbox, where Claude reads it
 // at its next tool round as it does a SendMessage, instead of waiting for the turn to end. It stays
-// queued, now as a native message, until it is in the recipient's turn (nativeArrived). false: the
-// inbox is not known or did not take it, so it waits for the Stop as before.
+// queued, now as a native message, until it is in the recipient's turn (nativeArrived). It is claimed
+// on the record (native) before the write, so a Stop's flush, which skips native messages, never
+// sends it too; a flush that got there first has it, and that counts as handled. false: the session
+// is no longer working, or its inbox is not known or did not take it, so it waits for the Stop.
+// ponytail: like a SendMessage, one that lands after the turn's last tool round opens the next turn
+// with no prompt hook; it is marked at that turn's tool round or Stop.
 func (p *Pool) intoInbox(m protocol.TeamMessage, from store.Session) bool {
+	claim := func(want, to string) (ok, gone bool) {
+		err := p.update(func(st *store.State) error {
+			i := sessionIndex(st, m.To)
+			for j := range st.Domain.Messages {
+				x := &st.Domain.Messages[j]
+				switch {
+				case x.ID != m.ID:
+				case x.State != "queued" || x.Via != want:
+					gone = true // a flush delivered it, or it failed
+				case to == viaHost || i >= 0 && st.Sessions[i].Status == "working":
+					x.Via, ok = to, true
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			p.logf("pool: message %s: %v", m.ID, err)
+		}
+		return ok, gone
+	}
+	if ok, gone := claim(viaHost, viaNative); !ok {
+		return gone
+	}
 	if err := p.deliverClaude(m.To, p.messageBody(m, from)); err != nil {
+		claim(viaNative, viaHost) // back to the Stop's flush
 		return false
 	}
-	_ = p.update(func(st *store.State) error {
-		for i := range st.Domain.Messages {
-			if st.Domain.Messages[i].ID == m.ID {
-				st.Domain.Messages[i].Via = viaNative
-			}
-		}
-		return nil
-	})
 	return true
 }
 

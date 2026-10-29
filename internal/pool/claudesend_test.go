@@ -127,3 +127,57 @@ func TestClaudeToClaudeSend(t *testing.T) {
 		}
 	}
 }
+
+// A Stop's flush and the inbox write race for the same message: whichever comes first sends it, the
+// other leaves it, so the recipient reads it once.
+func TestClaudeInboxAndFlushSendOnce(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(Options{Store: st, Exe: "pengupool"})
+	_ = st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions,
+			store.Session{ID: "leadaaaaaaaa", Name: "lead", Harness: harness.Claude, State: "running", Status: "idle"},
+			store.Session{ID: "webaaaaaaaaa", Name: "web", Harness: harness.Claude, State: "running", Status: "idle"})
+		return nil
+	})
+	in := inbox(t, p, "leadaaaaaaaa")
+	web, _ := p.session("webaaaaaaaaa")
+	count := func() int {
+		n := 0
+		for {
+			select {
+			case <-in:
+				n++
+			case <-time.After(300 * time.Millisecond):
+				return n
+			}
+		}
+	}
+	// The flush first (the recipient's Stop ran while the sender was still deciding), then the write.
+	putMessage(t, p, protocol.TeamMessage{ID: "m1", TeamID: "team1", From: "webaaaaaaaaa", To: "leadaaaaaaaa", Text: "one", State: "queued", At: now(), Via: viaHost, Type: "tell"})
+	p.flushQueue("leadaaaaaaaa")
+	p.setStatus("leadaaaaaaaa", "working")
+	if !p.intoInbox(message(p, "m1"), web) {
+		t.Fatal("a message the flush sent was queued again")
+	}
+	if n := count(); n != 1 {
+		t.Fatalf("flush then write: %d frames", n)
+	}
+	// The write first: the flush leaves it.
+	putMessage(t, p, protocol.TeamMessage{ID: "m2", TeamID: "team1", From: "webaaaaaaaaa", To: "leadaaaaaaaa", Text: "two", State: "queued", At: now(), Via: viaHost, Type: "tell"})
+	if !p.intoInbox(message(p, "m2"), web) {
+		t.Fatal("not written to a working session's inbox")
+	}
+	p.flushQueue("leadaaaaaaaa")
+	if n := count(); n != 1 {
+		t.Fatalf("write then flush: %d frames", n)
+	}
+	// A recipient no longer working is left to its Stop.
+	putMessage(t, p, protocol.TeamMessage{ID: "m3", TeamID: "team1", From: "webaaaaaaaaa", To: "leadaaaaaaaa", Text: "three", State: "queued", At: now(), Via: viaHost, Type: "tell"})
+	p.setStatus("leadaaaaaaaa", "idle")
+	if p.intoInbox(message(p, "m3"), web) || count() != 0 || message(p, "m3").Via != viaHost {
+		t.Fatalf("written to an idle session's inbox: %+v", message(p, "m3"))
+	}
+}
