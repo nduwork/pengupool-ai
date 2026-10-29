@@ -543,6 +543,7 @@ function Connections(): ReactElement {
           </Button>
         </Row>
       </Card>
+      <TailscaleChecklist rev={n} onChanged={() => setN(n + 1)} />
       <MuseDevices onChanged={() => setN(n + 1)} />
       <p className="mt-3 rounded-md bg-warning/10 p-3 text-caption text-warning">
         A group password does not encrypt plain HTTP. Use the local network only when you trust it; new teams get iOS access off while it is on.
@@ -1375,6 +1376,63 @@ function MuseDevices({ onChanged }: { onChanged: () => void }): ReactElement {
           </p>
         ) : null}
       </div>
+    </Card>
+  );
+}
+
+type TailscaleCheck = { id: string; label: string; ok: boolean; detail: string; fix?: { kind: "link" | "button"; label: string; url?: string; action?: string } };
+
+function TailscaleChecklist({ rev, onChanged }: { rev: number; onChanged: () => void }): ReactElement {
+  const app = useApp();
+  const [approveUrl, setApproveUrl] = useState<string | null>(null);
+  const [checks, setChecks] = useState<TailscaleCheck[]>([]);
+  // Its own request: the checks run the Tailscale CLI, which must not slow every settings read.
+  useEffect(() => {
+    void app.call<TailscaleCheck[]>("settings.tailscale").then((r) => setChecks(r ?? []));
+  }, [rev]);
+  if (checks.length === 0) return <></>;
+  return (
+    <Card className="mb-4 px-4">
+      <div className="border-b border-border py-3">
+        <p className="text-label font-medium">Tailscale checklist</p>
+        <p className="text-caption text-muted-foreground">Each step in order. Serve points at this app over your tailnet only, never Funnel.</p>
+      </div>
+      {checks.map((c) => (
+        <Row key={c.id} title={c.label} hint={c.ok ? c.detail : c.detail}>
+          {c.ok ? (
+            <Badge tone="success">ok</Badge>
+          ) : c.fix === undefined ? null : c.fix.kind === "link" ? (
+            <Button size="sm" onClick={() => window.open(c.fix?.url, "_blank", "noopener")}>
+              {c.fix.label}
+            </Button>
+          ) : c.fix.action === "serve" ? (
+            <Button
+              size="sm"
+              onClick={async () => {
+                setApproveUrl(null);
+                const r = await app.call<{ serve?: string; serve_error?: string; serve_approve_url?: string }>("settings.save", { enable_serve: true });
+                if (r === undefined) return;
+                if (r.serve_approve_url !== undefined) setApproveUrl(r.serve_approve_url);
+                else toast(r.serve_error ?? r.serve ?? "Serve updated");
+                onChanged();
+              }}
+            >
+              {c.fix.label}
+            </Button>
+          ) : (
+            <Button size="sm" onClick={() => onChanged()}>
+              {c.fix.label}
+            </Button>
+          )}
+        </Row>
+      ))}
+      {approveUrl !== null ? (
+        <div className="py-3">
+          <Button size="sm" onClick={() => window.open(approveUrl, "_blank", "noopener")}>
+            Approve in Tailscale
+          </Button>
+        </div>
+      ) : null}
     </Card>
   );
 }

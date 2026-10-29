@@ -391,6 +391,7 @@ func (p *Pool) handlers() map[string]handler {
 		"provider.models":       bind(p.providerModels),
 		"ollama.status":         bind(p.ollamaStatus),
 		"provider.activate":     bind(p.providerActivate),
+		"settings.tailscale":    bind(p.settingsTailscale),
 		"settings.get":          bind(p.settingsGet),
 		"settings.save":         bind(p.settingsSave),
 		"sync.get":              bind(p.syncGet),

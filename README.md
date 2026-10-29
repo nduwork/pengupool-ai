@@ -142,6 +142,11 @@ there.
 v0.9.3: tests hold the host to the app's build (the app restarts an older host;
 the daemon writes the version line the app compares). Saving settings no longer
 races a Muse device being revoked. `pengupool new` lists muse again.
+v0.9.4: the file preview shows Mermaid diagrams, PDFs and HTML that runs its own
+scripts again, and follows a file as an agent writes it. The Tailscale setup is back:
+the checklist in Phone connections, the Tailscale app's CLI found when it is not on
+PATH, the approval link when Serve needs one, and Serve re-pointed after the host's
+port changes.
 
 ## Credits
 
