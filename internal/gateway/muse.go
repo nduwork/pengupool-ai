@@ -140,14 +140,15 @@ func writeMuseError(w http.ResponseWriter, err error) {
 	}
 	code := http.StatusBadGateway
 	switch {
+	// First: a device revoked mid-call is "unauthorized: no device", a 401 like any revoked token.
+	case strings.Contains(msg, "unauthorized"):
+		code = http.StatusUnauthorized
 	case strings.Contains(msg, "no ask"), strings.Contains(msg, "no session"), strings.Contains(msg, "no device"), strings.Contains(msg, "not found"):
 		code = http.StatusNotFound
 	case strings.Contains(msg, "changed or expired"), strings.Contains(msg, "no longer pending"), strings.Contains(msg, "is not idle"), strings.Contains(msg, "not running"):
 		code = http.StatusConflict
 	case strings.Contains(msg, "params:"), strings.Contains(msg, "an idempotency key"), strings.Contains(msg, "action is"), strings.Contains(msg, "no words"):
 		code = http.StatusBadRequest
-	case strings.Contains(msg, "unauthorized"):
-		code = http.StatusUnauthorized
 	case strings.Contains(msg, "forbidden"), strings.Contains(msg, "not an agent"):
 		code = http.StatusForbidden
 	}

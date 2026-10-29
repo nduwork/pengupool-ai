@@ -160,7 +160,8 @@ func TestMuseErrorStatus(t *testing.T) {
 		protocol.Errorf(protocol.CodeInvalidArgument, "a device name is required"):        http.StatusBadRequest,
 		protocol.Errorf(protocol.CodeInvalidArgument, "x is not an agent session"):        http.StatusForbidden,
 		protocol.Errorf(protocol.CodeUnauthorized, "bad or expired code"):                 http.StatusUnauthorized,
-		errors.New("worker exploded"): http.StatusBadGateway,
+		protocol.Errorf(protocol.CodeUnauthorized, "no device"):                           http.StatusUnauthorized,
+		errors.New("worker exploded"):                                                     http.StatusBadGateway,
 	} {
 		rec := httptest.NewRecorder()
 		writeMuseError(rec, err)
