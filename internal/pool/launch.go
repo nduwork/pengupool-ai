@@ -30,7 +30,7 @@ type launchIn struct {
 	Harness string   `json:"harness"`
 	Command []string `json:"command,omitempty"`
 	Model   string   `json:"model,omitempty"`
-	Custom  string   `json:"custom,omitempty"` // a Custom agent's id: it decides the harness
+	Via     string   `json:"via,omitempty"` // "ollama": Claude Code through `ollama launch claude`
 	Source  sourceIn `json:"source"`
 	Cols    int      `json:"cols,omitempty"`
 	Rows    int      `json:"rows,omitempty"`
@@ -39,21 +39,11 @@ type launchIn struct {
 // launch starts a main session from a local directory, a clone, or a registered repository.
 // The session is not part of a team; a team is formed from a task or by adding sessions.
 func (p *Pool) launch(ctx context.Context, in launchIn) (any, error) {
-	// A PenguPool session is an agent runtime, or a Custom agent the owner saved; other plain
-	// terminals belong in the user's terminal app.
-	if in.Custom != "" {
-		c, ok := p.customAgent(in.Custom)
-		if !ok {
-			return nil, notFound("no Custom agent %s", in.Custom)
-		}
-		in.Harness, in.Command = c.Starts, nil
-		if c.Starts == "" {
-			in.Harness = harness.Custom
-		}
-	} else if in.Harness == "" {
+	// A PenguPool session is always an agent runtime; plain terminals belong in the user's terminal app.
+	if in.Harness == "" {
 		in.Harness = harness.Claude
 	}
-	if in.Custom == "" && !harness.IsAgent(in.Harness) {
+	if !harness.IsAgent(in.Harness) {
 		return nil, invalid("a PenguPool session runs an agent (%s), not %q", agentIDs(), in.Harness)
 	}
 	repo, err := p.resolveSource(ctx, in.Source)
@@ -65,7 +55,7 @@ func (p *Pool) launch(ctx context.Context, in launchIn) (any, error) {
 		name = p.uniqueName(repo.Name + "-" + in.Harness)
 	}
 	s, err := p.spawn(ctx, spawnReq{
-		Name: name, Harness: in.Harness, Command: in.Command, Model: in.Model, Custom: in.Custom,
+		Name: name, Harness: in.Harness, Command: in.Command, Model: in.Model, Via: in.Via,
 		Cwd: repo.Path, Cols: in.Cols, Rows: in.Rows,
 	})
 	if err != nil {
@@ -77,7 +67,7 @@ func (p *Pool) launch(ctx context.Context, in launchIn) (any, error) {
 type spawnReq struct {
 	ID, Name, Harness, Model, Cwd, Resume string
 	Effort                                string
-	Custom                                string // the Custom agent it starts from (see customagents.go)
+	Via                                   string // the launcher it runs through (see ollama.go)
 	SkillID                               string // a helper's Skill library entry, loaded for this session only
 	TrustFrom                             string // the repository a worktree Cwd was made from (see pretrustFolder)
 	Command                               []string
@@ -109,20 +99,20 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 		}
 	}
 	plain := r.Harness == harness.Shell
-	if strings.HasPrefix(r.Model, ollamaPrefix) {
-		return store.Session{}, invalid("Claude Code on Ollama is a Custom agent now: add one in Settings → Agents")
-	}
 	wrap := ""
-	if r.Custom != "" {
-		c, ok := p.customAgent(r.Custom)
-		if !ok {
-			return store.Session{}, notFound("the Custom agent this session started from was deleted")
+	switch r.Via {
+	case "":
+	case ViaOllama:
+		if r.Harness != harness.Claude {
+			return store.Session{}, invalid("only Claude Code runs on Ollama, not %s", r.Harness)
 		}
-		if c.Starts == "" {
-			r.Harness, r.Command = harness.Custom, customCommand(c)
-		} else {
-			r.Harness, wrap = c.Starts, c.Command
+		var err error
+		if wrap, err = p.ollamaWrap(ctx); err != nil {
+			return store.Session{}, err
 		}
+		r.Model = "" // Ollama's model, named in the wrap
+	default:
+		return store.Session{}, invalid("unknown launcher %q", r.Via)
 	}
 	cmd, env, err := harness.Spec(r.Harness, harness.Params{
 		SessionID: r.ID, Name: r.Name, Cwd: r.Cwd, Exe: p.exe, StoreDir: p.st.Dir(), Wrap: wrap,
@@ -143,10 +133,10 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 		ID: r.ID, Name: r.Name, Cwd: r.Cwd, Harness: r.Harness, Command: cmd, Env: env,
 		Cols: r.Cols, Rows: r.Rows,
 		Decorate: func(s *store.Session) {
-			s.RunLog, s.Custom = runlog, r.Custom
+			s.RunLog, s.Via = runlog, r.Via
 			// Starting until the agent's SessionStart hook says it is up: a first-run dialog (folder
 			// trust, login) must never receive a typed team message.
-			if !plain && r.Harness != harness.Custom { // a command that starts nothing has no hook to say it is up
+			if !plain {
 				s.Status = "starting"
 				s.Branch = gitBranch(r.Cwd)
 			}
@@ -340,7 +330,7 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	}
 	keep := s
 	ns, err := p.spawn(ctx, spawnReq{
-		ID: s.ID, Name: s.Name, Harness: s.Harness, Cwd: s.Cwd, Resume: resumeID, Cols: s.Cols, Rows: s.Rows, SkillID: keep.SkillID, Custom: s.Custom,
+		ID: s.ID, Name: s.Name, Harness: s.Harness, Cwd: s.Cwd, Resume: resumeID, Cols: s.Cols, Rows: s.Rows, SkillID: keep.SkillID, Via: s.Via,
 		Decorate: func(n *store.Session) {
 			n.TeamID, n.Role, n.SkillID, n.ConvID, n.Transcript = keep.TeamID, keep.Role, keep.SkillID, keep.ConvID, keep.Transcript
 			if keep.RunLog != "" {
@@ -404,7 +394,7 @@ func gitBranch(dir string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func (p *Pool) harnessProbe(_ context.Context, _ struct{}) (any, error) {
+func (p *Pool) harnessProbe(ctx context.Context, _ struct{}) (any, error) {
 	out := map[string]map[string]string{}
 	for _, a := range harness.Agents {
 		if a.Hidden {
@@ -418,6 +408,17 @@ func (p *Pool) harnessProbe(_ context.Context, _ struct{}) (any, error) {
 		}
 		out[k] = r
 	}
+	// Claude Code (Ollama): the ollama CLI, and the model it would start.
+	bin, err := harness.LookupOllama(p.env)
+	r := map[string]string{"version": bin} // installed: the CLI's path (an error alongside: no model to start)
+	if err != nil {
+		r["error"] = err.Error()
+	} else if m, err := p.ollamaModel(ctx); err != nil {
+		r["error"] = err.Error()
+	} else {
+		r["model"] = m
+	}
+	out["ollama"] = r
 	return out, nil
 }
 

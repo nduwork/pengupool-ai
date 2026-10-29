@@ -84,7 +84,7 @@ type SessionView struct {
 	Cwd       string   `json:"cwd"`
 	Command   []string `json:"command,omitempty"`
 	Harness   string   `json:"harness,omitempty"`
-	Custom    string   `json:"custom,omitempty"` // the Custom agent it started from
+	Via       string   `json:"via,omitempty"` // the launcher it runs through: "ollama" for Claude Code on Ollama
 	State     string   `json:"state"`
 	ExitCode  *int     `json:"exit_code,omitempty"`
 	Pid       int      `json:"pid,omitempty"`

@@ -1,8 +1,8 @@
-import { Bot, Check, GitBranch, KeyRound, Loader2, Lock, MonitorUp, Network, Pencil, Plus, RefreshCw, Server, Settings2, Smartphone, Sparkles, Terminal, Trash2, Waypoints, X } from "lucide-react";
+import { Bot, Check, GitBranch, KeyRound, Loader2, Lock, MonitorUp, Network, RefreshCw, Server, Settings2, Smartphone, Sparkles, Terminal, Waypoints, X } from "lucide-react";
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { toast } from "sonner";
 
-import { AGENTS, UNSUPPORTED_NOTE, isUnsupported, useApp, usePersisted, type CustomAgent, type Found } from "../app/ctx";
+import { AGENTS, useApp, usePersisted, type Found } from "../app/ctx";
 import { desktop, localDesktop } from "../app/desktop";
 import { Button } from "../components/ui/button";
 import { SCROLLBACK_DEFAULT, clampScrollback } from "../components/termCache";
@@ -16,7 +16,7 @@ import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
 
 // Settings, one subpanel per topic: General (the host, updates, terminal history, the daily backup),
-// Agents (which are installed, Custom agents), Decision model, GitHub (the account and sync), Local
+// Agents (which are installed, Claude Code on Ollama), Decision model, GitHub (the account and sync), Local
 // network, Tailscale, Muse app and SSH hosts.
 
 // [id, label, icon]
@@ -418,7 +418,6 @@ interface SettingsResp {
   tailscale_error?: string;
   store: string;
   executable: string;
-  custom_agents?: CustomAgent[] | null;
   version?: string;
 }
 
@@ -956,7 +955,7 @@ function General(): ReactElement {
   );
 }
 
-/** Which agents are installed here, and the owner's Custom agents. New session offers exactly these. */
+/** Which agents are installed here, and whether Claude Code (Ollama) can start. New session offers exactly these. */
 function Agents(): ReactElement {
   const app = useApp();
   const [r, setR] = useState<Found | null>(null);
@@ -966,10 +965,11 @@ function Agents(): ReactElement {
     void app.call<Found>("harness.probe").then((x) => setR(x ?? null));
   }, [n]);
   const claude = r?.claude;
+  const ollama = r?.ollama;
   return (
     <div>
       <H title="Agents">
-        PenguPool runs the coding agents installed on this machine, each with its own settings for the session; it never changes an agent&apos;s configuration. New session offers the installed ones and your Custom agents.
+        PenguPool runs the coding agents installed on this machine, each with its own settings for the session; it never changes an agent&apos;s configuration. New session offers the installed ones.
       </H>
       <Card className="mb-4 px-4">
         {AGENTS.filter((a) => !a.hidden).map((a) => {
@@ -984,6 +984,22 @@ function Agents(): ReactElement {
             </Row>
           );
         })}
+        <Row
+          title="Claude Code (Ollama)"
+          hint={
+            ollama === undefined
+              ? "Checking…"
+              : ollama.error !== undefined
+                ? ollama.version === "" ? "Claude Code on a local or cloud model, through ollama launch claude. Needs the ollama CLI (ollama.com/download)." : ollama.error
+                : `Claude Code through ollama launch claude, on ${ollama.model ?? "Ollama's default model"} (the model Ollama picks for Claude; change it with ollama launch claude).`
+          }
+        >
+          {ollama === undefined ? (
+            <Loader2 className="size-3.5 animate-spin text-faint" />
+          ) : (
+            <Badge tone={ollama.error === undefined ? "success" : "neutral"}>{ollama.error === undefined ? "ready" : ollama.version === "" ? "not installed" : "not ready"}</Badge>
+          )}
+        </Row>
         <div className="flex items-center gap-2 py-3">
           {claude !== undefined && claude.error !== undefined ? (
             <span className="min-w-0 flex-1 space-y-1 text-caption text-muted-foreground">
@@ -1001,150 +1017,7 @@ function Agents(): ReactElement {
           </Button>
         </div>
       </Card>
-      <CustomAgents found={r} />
     </div>
-  );
-}
-
-/** Custom agents: a name and the command that starts an agent (its hooks follow the command, which
- * ends with "--"), or that starts nothing (a named terminal: no hooks, no teams). Local only. */
-function CustomAgents({ found }: { found: Found | null }): ReactElement {
-  const app = useApp();
-  const [list, setList] = useState<CustomAgent[] | null>(null);
-  const [editing, setEditing] = useState<CustomAgent | null>(null);
-  useEffect(() => {
-    void app.call<SettingsResp>("settings.get").then((r) => setList(r?.custom_agents ?? []));
-  }, []);
-  const save = async (next: CustomAgent[]): Promise<boolean> => {
-    const r = await app.call<{ saved: boolean }>("settings.save", { custom_agents: next });
-    if (r === undefined) return false;
-    setList((await app.call<SettingsResp>("settings.get"))?.custom_agents ?? next);
-    return true;
-  };
-  if (list === null) return <p className="text-label text-faint">Loading…</p>;
-  return (
-    <Card className="px-4">
-      <div className="flex items-center gap-2 border-b border-border py-3">
-        <span className="min-w-0 flex-1">
-          <p className="text-label font-medium">Custom agents</p>
-          <p className="text-caption text-muted-foreground">Anything else, such as <span className="font-mono">ollama launch claude --model qwen3-coder --yes --</span>: name it and give the command that starts it. This machine only.</p>
-        </span>
-        <Button size="sm" onClick={() => setEditing({ id: "", name: "", command: "", starts: "claude" })}>
-          <Plus /> Add
-        </Button>
-      </div>
-      {list.length === 0 ? <p className="py-3 text-caption text-faint">None yet.</p> : null}
-      {list.map((c) => (
-        <Row
-          key={c.id}
-          title={
-            <>
-              {c.name}
-              {c.default === true ? (
-                <Badge className="ml-2" tone="primary">
-                  Default
-                </Badge>
-              ) : null}
-            </>
-          }
-          hint={
-            <>
-              <span className="block break-all font-mono">{c.command}</span>
-              {isUnsupported(c) ? `Starts nothing. ${UNSUPPORTED_NOTE}` : `Starts ${AGENTS.find((a) => a.id === c.starts)?.label ?? c.starts}${found?.[c.starts ?? ""]?.error !== undefined ? " (not installed here)" : ""}.`}
-            </>
-          }
-        >
-          <span className="flex items-center gap-1">
-            {c.default !== true ? (
-              <Button size="sm" variant="ghost" onClick={() => void save(list.map((x) => ({ ...x, default: x.id === c.id })))}>
-                Make default
-              </Button>
-            ) : null}
-            <Button size="icon" variant="ghost" aria-label={`Edit ${c.name}`} onClick={() => setEditing(c)}>
-              <Pencil />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              aria-label={`Delete ${c.name}`}
-              onClick={() => {
-                // A session started from it resumes through it: deleting it leaves that session unable to resume.
-                const using = isUnsupported(c) ? 0 : app.sessions.filter((s) => s.custom === c.id).length; // one that starts nothing never resumed
-                if (using > 0 && !window.confirm(`${using} session${using === 1 ? "" : "s"} started from ${c.name} will no longer resume. Delete it?`)) return;
-                void save(list.filter((x) => x.id !== c.id));
-              }}
-            >
-              <Trash2 />
-            </Button>
-          </span>
-        </Row>
-      ))}
-      {editing !== null ? (
-        <CustomAgentSheet
-          entry={editing}
-          onClose={() => setEditing(null)}
-          onSave={async (e) => {
-            if (await save(editing.id === "" ? [...list, e] : list.map((x) => (x.id === e.id ? e : x)))) setEditing(null);
-          }}
-        />
-      ) : null}
-    </Card>
-  );
-}
-
-function CustomAgentSheet({ entry, onClose, onSave }: { entry: CustomAgent; onClose: () => void; onSave: (e: CustomAgent) => Promise<void> }): ReactElement {
-  const [e, setE] = useState(entry);
-  const starts = e.starts ?? "";
-  const endsRight = starts === "" || /(^|\s)--$/.test(e.command.trim());
-  const cutOff = starts !== "" && /[#\n]/.test(e.command);
-  const ok = e.name.trim() !== "" && e.command.trim() !== "" && endsRight && !cutOff;
-  return (
-    <Sheet
-      title={entry.id === "" ? "Add a Custom agent" : `Edit ${entry.name}`}
-      onClose={onClose}
-      footer={
-        <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button variant="default" disabled={!ok} onClick={() => void onSave({ ...e, starts })}>
-            Save
-          </Button>
-        </>
-      }
-    >
-      <div className="grid grid-cols-1 gap-4">
-        <Label>
-          Name
-          <Input value={e.name} onChange={(x) => setE({ ...e, name: x.target.value })} placeholder="Claude on Ollama" autoFocus />
-        </Label>
-        <Label
-          hint={
-            starts === "" ? (
-              UNSUPPORTED_NOTE
-            ) : cutOff ? (
-              <span className="text-danger">No # comment or second line: it would cut the agent&apos;s own arguments off the command.</span>
-            ) : endsRight ? (
-              "PenguPool adds the agent's own arguments (its hooks, settings and resume) after the command, so it runs as a full agent."
-            ) : (
-              <span className="text-danger">The command must end with -- : the agent&apos;s own arguments follow it.</span>
-            )
-          }
-        >
-          Starts
-          <Select value={starts} onChange={(x) => setE({ ...e, starts: x.target.value })}>
-            {AGENTS.filter((a) => !a.hidden).map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.label}
-              </option>
-            ))}
-            <option value="">Nothing (a named terminal)</option>
-          </Select>
-        </Label>
-        <Label hint="Run in sh from the session's folder.">
-          Command
-          <Input className="font-mono" value={e.command} onChange={(x) => setE({ ...e, command: x.target.value })} placeholder={starts === "" ? "htop" : "ollama launch claude --model qwen3-coder --yes --"} />
-        </Label>
-      </div>
-    </Sheet>
   );
 }
 

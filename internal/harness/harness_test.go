@@ -42,7 +42,7 @@ func TestAgentSpecsWireHooksPerLaunch(t *testing.T) {
 	}
 }
 
-func TestCustomWrapAndNewAgents(t *testing.T) {
+func TestWrapAndNewAgents(t *testing.T) {
 	dir := t.TempDir()
 	for _, k := range []string{Codex, Copilot, OpenCode, Gemini, Claude} {
 		if err := os.WriteFile(filepath.Join(dir, k), []byte("#!/bin/sh\n"), 0o755); err != nil {
@@ -55,18 +55,18 @@ func TestCustomWrapAndNewAgents(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(home, ".gemini", "oauth_creds.json"), []byte(`{}`), 0o600)
 	p := Params{SessionID: "s1", Name: "n", Exe: "/x/pengupool", StoreDir: dir, Env: []string{"PATH=" + dir, "HOME=" + home}}
 
-	// A Custom agent that starts Claude: the owner's command, then Claude's own arguments (its hooks),
-	// with Claude's folder first on PATH so the command runs this Claude.
+	// Claude Code (Ollama): the launcher, then Claude's own arguments (its hooks), with Claude's
+	// folder first on PATH so the launcher runs this Claude.
 	w := p
-	w.Wrap = "OLLAMA_HOST=http://h:1 ollama launch claude --model m --yes --"
+	w.Wrap = "/opt/ollama launch claude --model m --yes --"
 	cmd, env, _ := Spec(Claude, w)
-	if len(cmd) < 5 || cmd[0] != "/bin/sh" || cmd[2] != `exec env OLLAMA_HOST=http://h:1 ollama launch claude --model m --yes -- "$@"` ||
+	if len(cmd) < 5 || cmd[0] != "/bin/sh" || cmd[2] != `exec env /opt/ollama launch claude --model m --yes -- "$@"` ||
 		cmd[4] != "--teammate-mode" || !slices.Contains(cmd, "--settings") || !slices.Contains(env, "PATH="+dir+":"+dir) {
 		t.Fatalf("claude wrapped: %q %v", cmd, env)
 	}
 	// sh passes the arguments after its $0 through "$@" word for word.
 	if out, err := exec.Command("/bin/sh", "-c", `exec printf '%s|' "$@"`, "pp", "a b", "c").Output(); err != nil || string(out) != "a b|c|" {
-		t.Fatalf("arguments after the command keep their words: %q %v", out, err)
+		t.Fatalf("arguments after the launcher keep their words: %q %v", out, err)
 	}
 	cmd, env, _ = Spec(OpenCode, p)
 	if e := strings.Join(env, " "); !strings.Contains(e, `"plugin":["file://`) || cmd[0] != filepath.Join(dir, OpenCode) {

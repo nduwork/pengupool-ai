@@ -117,8 +117,8 @@ type Params struct {
 	Resume    string   // harness conversation id or OMP session file to resume
 	Command   []string // custom command
 	Env       []string // base environment
-	// Wrap is a Custom agent's command that starts this agent (e.g. `ollama launch claude --model m
-	// --yes --`): the agent's own arguments follow it.
+	// Wrap is a launcher that starts this agent (`ollama launch claude --model m --yes --`): the
+	// agent's own arguments follow it.
 	Wrap string
 	// SkillRepo is a helper's skill repository: its skills/ load natively for this one session
 	// (Claude --plugin-dir, pi --skill, OMP a per-run config overlay); nothing is installed. A helper
@@ -141,8 +141,8 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 	if err != nil || p.Wrap == "" || kind == Shell || kind == Custom || kind == "" {
 		return cmd, env, err
 	}
-	// A Custom agent: the owner's command starts the agent and passes it the agent's own arguments
-	// (the command ends with "--"). The agent's folder leads PATH, so the command finds the same one.
+	// A launcher starts the agent and passes it the agent's own arguments (it ends with "--"). The
+	// agent's folder leads PATH, so the launcher finds the same one.
 	env = append(env, "PATH="+filepath.Dir(cmd[0])+string(filepath.ListSeparator)+firstNonEmptyEnv(p.Env, "PATH"))
 	return append([]string{"/bin/sh", "-c", "exec env " + p.Wrap + ` "$@"`, "pengupool"}, cmd[1:]...), env, nil
 }
@@ -334,7 +334,7 @@ func spec(kind string, p Params) ([]string, []string, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		home, err := GeminiHome(p.StoreDir, p.Exe, envValue(p.Env, "HOME"))
+		home, err := GeminiHome(p.StoreDir, p.Exe, EnvValue(p.Env, "HOME"))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -355,7 +355,7 @@ func spec(kind string, p Params) ([]string, []string, error) {
 		}
 		return cmd, append(env, "GEMINI_CLI_HOME="+home), nil
 	case Shell, "":
-		sh := envValue(p.Env, "SHELL")
+		sh := EnvValue(p.Env, "SHELL")
 		if sh == "" {
 			sh = "/bin/zsh"
 		}
@@ -500,7 +500,7 @@ func WriteCopilotPlugin(storeDir, exe string) (string, error) {
 
 // Lookup finds a harness binary on the given environment's PATH.
 func Lookup(kind string, env []string) (string, error) {
-	path := envValue(env, "PATH")
+	path := EnvValue(env, "PATH")
 	if path == "" {
 		path = os.Getenv("PATH")
 	}
@@ -519,6 +519,19 @@ func Lookup(kind string, env []string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("harness_unavailable: %s is not on PATH", kind)
+}
+
+// LookupOllama finds the ollama CLI on PATH, else where its installers put it.
+func LookupOllama(env []string) (string, error) {
+	if bin, err := Lookup("ollama", env); err == nil {
+		return bin, nil
+	}
+	for _, p := range []string{"/opt/homebrew/bin/ollama", "/usr/local/bin/ollama", "/Applications/Ollama.app/Contents/Resources/ollama"} {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("harness_unavailable: Claude Code (Ollama) needs the ollama CLI (https://ollama.com/download)")
 }
 
 // Probe reports the harness version, or why it is unavailable.
@@ -571,13 +584,13 @@ func ClaudeProjectDir(home, cwd string) string {
 
 // firstNonEmptyEnv is env's value for key, else this process's.
 func firstNonEmptyEnv(env []string, key string) string {
-	if v := envValue(env, key); v != "" {
+	if v := EnvValue(env, key); v != "" {
 		return v
 	}
 	return os.Getenv(key)
 }
 
-func envValue(env []string, key string) string {
+func EnvValue(env []string, key string) string {
 	for i := len(env) - 1; i >= 0; i-- {
 		if k, v, ok := strings.Cut(env[i], "="); ok && k == key {
 			return v

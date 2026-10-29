@@ -154,7 +154,7 @@ func (p *Pool) settingsTailscale(_ context.Context, _ struct{}) (any, error) {
 
 func (p *Pool) settingsGet(_ context.Context, _ struct{}) (any, error) {
 	cfg := p.st.Config()
-	out := map[string]any{"network": cfg.Network, "store": p.st.Dir(), "executable": p.exe, "custom_agents": cfg.CustomAgents, "agents": harness.Agents, "version": p.version}
+	out := map[string]any{"network": cfg.Network, "store": p.st.Dir(), "executable": p.exe, "ollama_default": cfg.OllamaDefault, "agents": harness.Agents, "version": p.version}
 	if HTTPAddr != nil {
 		out["bound"] = HTTPAddr()
 	}
@@ -176,8 +176,6 @@ type settingsIn struct {
 	Tailscale   *string `json:"tailscale,omitempty"`
 	EnableServe bool    `json:"enable_serve,omitempty"`
 	Restart     bool    `json:"restart,omitempty"`
-	// CustomAgents, when sent, is the whole list (Settings › Agents).
-	CustomAgents *[]store.CustomAgent `json:"custom_agents,omitempty"`
 }
 
 func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
@@ -191,13 +189,6 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 		}
 		if in.Tailscale != nil {
 			cfg.Network.Tailscale = strings.TrimRight(strings.TrimSpace(*in.Tailscale), "/")
-		}
-		if in.CustomAgents != nil {
-			list, err := checkCustomAgents(*in.CustomAgents)
-			if err != nil {
-				return err
-			}
-			cfg.CustomAgents = list
 		}
 		return nil
 	})

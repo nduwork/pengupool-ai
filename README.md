@@ -2,8 +2,8 @@
 
 PenguPool AI is the PenguPool agent-pool app — a Go host daemon with PTY worker
 sessions, a browser/desktop terminal UI, helper teams and an owner Compass —
-running Claude Code, Muse Code, Codex, pi, OMP and OpenCode side by
-side (and any other agent as a Custom agent), with the Muse app as the owner's remote.
+running Claude Code (account or Ollama), Muse Code, Codex, pi, OMP and
+OpenCode side by side, with the Muse app as the owner's remote.
 
 Say a preference once; every agent starts with it, helpers remember their
 finished work, and you answer waiting sessions from your phone.
@@ -45,9 +45,9 @@ browser UI talk to the daemon over its gateway. Data: `~/.pengupool-ai/v2`
   context); its next session starts with the index and the matches.
 - **Harnesses.** Claude Code, Muse Code (the app installs its PenguPool
   plugin), Codex (the app writes a rule so only the PenguPool CLI leaves the
-  sandbox), pi, OMP and OpenCode. Only agents found installed are offered;
-  anything else (Claude Code on Ollama, say) is a Custom agent: a name and the
-  command that starts it.
+  sandbox), pi, OMP and OpenCode, plus Claude Code (Ollama): Claude through
+  `ollama launch claude` on Ollama's own default model. Only agents found
+  installed are offered.
 
 Supported harnesses: docs/harnesses.md. See DESIGN.md for the dataflows.
 

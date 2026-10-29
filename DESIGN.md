@@ -40,12 +40,12 @@ making the decisions the person would not. What is said in one session is lost i
 | Codex | `-c hooks.*`; the app writes `~/.codex/rules/pengupool.rules` so only the PenguPool CLI runs outside the sandbox | `/compact` summary |
 | pi / OMP | the PenguPool extension (one file for both) | `/compact` summary |
 | OpenCode | a PenguPool plugin, given inline (`OPENCODE_CONFIG_CONTENT`) | `/compact` summary |
-| Custom agent that starts one of these (e.g. `ollama launch claude --model m --yes --`) | the owner's command, then that agent's own arguments and hooks | as that agent |
+| Claude Code (Ollama) | `ollama launch claude --model <Ollama's default> --yes --`, then Claude's own arguments and hooks | as Claude Code |
 
 New session offers the agents installed here (one install check: claude, muse, codex, pi, omp,
-opencode) and the owner's Custom agents (Settings › Agents, this machine only). A Custom agent that
-starts nothing is a named terminal: no hooks, no teams, no Compass, no messages. Copilot and Gemini
-CLI are hidden: their sessions still run and resume, but none are offered.
+opencode), and Claude Code (Ollama) when the ollama CLI is installed too. An agent PenguPool has no
+hooks and messages for is never offered. Copilot and Gemini CLI are hidden: their sessions still run
+and resume, but none are offered.
 
 A plain terminal session stays independent of all of this.
 

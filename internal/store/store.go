@@ -220,7 +220,6 @@ func (s *Store) UpdateConfig(fn func(*Config) error) error {
 	defer s.mu.Unlock()
 	next := s.cfg
 	next.MuseDevices = append([]MuseDevice(nil), s.cfg.MuseDevices...)
-	next.CustomAgents = append([]CustomAgent(nil), s.cfg.CustomAgents...)
 	if err := fn(&next); err != nil {
 		return err
 	}

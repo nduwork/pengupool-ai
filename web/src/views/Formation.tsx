@@ -50,7 +50,7 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
   const [want, setHarness] = useState(change.harness ?? skill?.harness ?? (team.harness || "claude"));
   // What is shown is what is sent: a wanted agent the helper may not run on, or that is not
   // installed, gives way to the first one that is. A helper runs on an installed agent itself.
-  const usable = pickable(found, [], allowed);
+  const usable = pickable(found, allowed);
   const harness = usable.some((o) => o.value === want) ? want : (usable[0]?.value ?? want);
   const agent = harness;
   const [model, setModel] = useState(change.model ?? "");
