@@ -167,6 +167,9 @@ sessions still resume); the "(experimental)" labels.
 v0.9.8: New session and Add member start every agent on its own default model.
 Removed: the Model field in New session and in Add member (`pengupool new --model` still
 works, and a session resumes on its recorded model).
+v0.9.25: New session ▸ New worktree is back: an agent starts in a new worktree of a local
+repository, kept in PenguPool's own folder, on a new branch (`pengupool/<name>` by default) or
+an existing one.
 
 ## Credits
 

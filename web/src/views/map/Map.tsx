@@ -29,7 +29,7 @@ import { ClosedTeamsSheet, CloseTeamSheet, TeamSettingsSheet } from "./TeamSheet
 // the options, so status updates restyle cards in place and never move them.
 
 const HOT_MS = 90_000;
-const DIR_COLOR = { down: "#3fb950", up: "var(--route-up)" }; // a message to a child, a reply to its parent
+const DIR_COLOR = { down: "var(--route-down)", up: "var(--route-up)" }; // a message to a child, a reply to its parent
 const LAYOUTS: Record<LayoutKind, string> = { org: "Org chart", outline: "Outline", right: "Tree →" };
 
 function sizes(roomy: boolean): { S: { sib: number; rank: number; stack: number; indent: number }; pad: number } {
@@ -558,13 +558,13 @@ export function TeamMap(): ReactElement {
 
       <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-0.5 whitespace-nowrap border-t border-border px-3 py-1.5 text-micro text-muted-foreground">
         <Legend color="var(--faint)">parent → child</Legend>
-        <Legend color="#3fb950" thick>
+        <Legend color="var(--route-down)" thick>
           message sent
         </Legend>
         <Legend color="var(--route-up)" thick>
           reply
         </Legend>
-        <Legend color="#f59e0b" thick>
+        <Legend color="var(--route-other)" thick>
           other message
         </Legend>
         <span className="flex items-center gap-1.5">
@@ -634,9 +634,9 @@ export function MessageLog(): ReactElement {
   const edge = (m: TeamMessage): string => {
     const team = app.domain.teams.find((t) => t.id === m.team_id);
     const parent = (id: string): string | undefined => team?.members.find((x) => x.session_id === id)?.parent;
-    if (parent(m.to) === m.from) return "#3fb950";
+    if (parent(m.to) === m.from) return "var(--route-down)";
     if (parent(m.from) === m.to) return "var(--route-up)";
-    return "#f59e0b";
+    return "var(--route-other)";
   };
   const flip =
     (set: (f: (o: Set<string>) => Set<string>) => void) =>
