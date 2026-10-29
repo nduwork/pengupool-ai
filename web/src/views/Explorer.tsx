@@ -203,7 +203,7 @@ export function Explorer({ session }: { session: SessionView | undefined }): Rea
     const taken = new Set(app.sessions.map((x) => x.name));
     let name = base;
     for (let i = 2; taken.has(name); i++) name = `${base}-${i}`;
-    const s = await app.call<SessionView>("session.launch", { name, ...launchAgent("shell", ""), source: { kind: "local", path: absPath(cwd, dir) } });
+    const s = await app.call<SessionView>("session.launch", { name, ...launchAgent("shell"), source: { kind: "local", path: absPath(cwd, dir) } });
     if (s !== undefined) app.select(s.id);
   };
   const copy = (text: string): void => {

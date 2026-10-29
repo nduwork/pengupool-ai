@@ -71,7 +71,7 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
   const close = (): void => app.showDialog(null);
   const [reason, setReason] = useState(change.reason ?? "");
   const [busy, setBusy] = useState(false);
-  // Adding a member starts an agent: the owner picks which one and its model, as in New session.
+  // Adding a member starts an agent: the owner picks which one, as in New session; it starts on its own default model.
   const adding = change.op === "add";
   const skill = app.domain.skills.find((s) => s.id === change.skill_id);
   const allowed = AGENTS.filter((a) => (skill?.requires ?? []).length === 0 || (skill?.requires ?? []).includes(a.id));
@@ -91,8 +91,7 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
   const usable = pickable(found, allowed);
   const harness = usable.some((o) => o.value === want) ? want : (usable[0]?.value ?? want);
   const agent = harness;
-  const [model, setModel] = useState(change.model ?? "");
-  const picked = adding ? launchAgent(harness, model) : {};
+  const picked = adding ? launchAgent(harness) : {};
   const submit = async (): Promise<void> => {
     if (busy || (adding && usable.length === 0)) return;
     setBusy(true);
@@ -138,31 +137,25 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
           </p>
         )}
         {adding ? (
-          <>
-            <Label
-              hintId={hintId}
-              hint={
-                found === null
-                  ? "Checking which agents are installed…"
-                  : usable.length === 0
-                    ? `None of the agents ${skill?.name ?? "it"} runs on is installed here.`
-                    : allowed.length === 1
-                      ? `Only ${allowed[0].label} can run ${skill?.name ?? "this helper"}.`
-                      : [AGENTS.find((a) => a.id === agent)?.hint, found[agent]?.version, probeFailed ? "Couldn't check which agents are installed; all are offered." : undefined]
-                          .filter((x) => x !== undefined && x !== "")
-                          .join(" · ")
-              }
-            >
-              Agent
-              <Select value={harness} onChange={(e) => setHarness(e.target.value)} aria-label="Agent runtime" aria-describedby={hintId} autoFocus>
-                {agentOptions(usable, (id) => (skill?.harness === id ? " (helper's default)" : ""))}
-              </Select>
-            </Label>
-            <Label>
-              Model <span className="font-normal text-faint">optional</span>
-              <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="harness default" />
-            </Label>
-          </>
+          <Label
+            hintId={hintId}
+            hint={
+              found === null
+                ? "Checking which agents are installed…"
+                : usable.length === 0
+                  ? `None of the agents ${skill?.name ?? "it"} runs on is installed here.`
+                  : allowed.length === 1
+                    ? `Only ${allowed[0].label} can run ${skill?.name ?? "this helper"}.`
+                    : [AGENTS.find((a) => a.id === agent)?.hint, found[agent]?.version, probeFailed ? "Couldn't check which agents are installed; all are offered." : undefined]
+                        .filter((x) => x !== undefined && x !== "")
+                        .join(" · ")
+            }
+          >
+            Agent
+            <Select value={harness} onChange={(e) => setHarness(e.target.value)} aria-label="Agent runtime" aria-describedby={hintId} autoFocus>
+              {agentOptions(usable, (id) => (skill?.harness === id ? " (helper's default)" : ""))}
+            </Select>
+          </Label>
         ) : null}
         {approvalId !== undefined ? (
           change.assignment || change.reason ? (
