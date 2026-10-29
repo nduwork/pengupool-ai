@@ -98,7 +98,8 @@ const STATUS: Record<string, { label: string; dot: string; text: string }> = {
   starting: { label: "Starting", dot: "bg-faint animate-pulse", text: "text-muted-foreground" },
   stale: { label: "Stale", dot: "bg-faint", text: "text-muted-foreground" },
   terminal: { label: "Not an agent", dot: "bg-warning", text: "text-warning" },
-  approval: { label: "Needs you", dot: "bg-warning", text: "text-warning" },
+  // Waiting on the owner (a permission prompt or a check-in): red, with a "?" besides the colour.
+  approval: { label: "? Need input", dot: "bg-danger", text: "text-danger" },
   ended: { label: "Ended", dot: "bg-faint", text: "text-faint" },
   exited: { label: "Exited", dot: "bg-faint", text: "text-faint" },
   lost: { label: "Lost", dot: "bg-danger", text: "text-danger" },
@@ -172,6 +173,14 @@ export function sessionStatus(s: { status?: string; state: string; harness?: str
   return st;
 }
 
+/** What a session's card and dot show: "approval" also when it waits on the owner's answer to a
+ * check-in, the condition the Needs-you bar uses (inbox.ts sessionNeeds). */
+export function shownStatus(s: { id: string; status?: string; state: string; harness?: string; active_at?: string; role?: string }, gates: readonly { session_id: string; kind: string }[]): string {
+  const st = sessionStatus(s);
+  if (s.state === "running" && st !== "working" && st !== "lost" && st !== "unreachable" && gates.some((g) => g.session_id === s.id && g.kind === "checkin")) return "approval";
+  return st;
+}
+
 /** How pressing a state is, for a folded group's badge: approval first. */
 export const URGENCY: Record<string, number> = { starting: 1, approval: 5, lost: 4, unreachable: 4, working: 3, idle: 2, terminal: 1, stale: 1, exited: 0, ended: 0 };
 
@@ -184,8 +193,9 @@ export function ctxClass(pct: number): string {
   return pct < 30 ? "text-success" : pct < 60 ? "text-warning" : "text-danger";
 }
 
-export function StatusDot({ status, state, label, harness, active_at, role }: { status?: string; state: string; label?: boolean; harness?: string; active_at?: string; role?: string }): ReactElement {
-  const s = STATUS[sessionStatus({ status, state, harness: harness ?? "claude", active_at, role })] ?? STATUS.idle;
+export function StatusDot({ id, status, state, label, harness, active_at, role }: { id: string; status?: string; state: string; label?: boolean; harness?: string; active_at?: string; role?: string }): ReactElement {
+  const app = useApp();
+  const s = STATUS[shownStatus({ id, status, state, harness: harness ?? "claude", active_at, role }, app.gates)] ?? STATUS.idle;
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-caption", s.text)} title={s.label}>
       <span className={cn("size-2 shrink-0 rounded-full", s.dot)} />
