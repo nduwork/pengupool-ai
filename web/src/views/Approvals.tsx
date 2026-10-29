@@ -191,7 +191,7 @@ function FormationRow({ a }: { a: Approval }): ReactElement {
   const app = useApp();
   const decide = (decision: string): void => void app.call("approval.decide", { id: a.id, decision });
   const by = a.change?.requested_by !== undefined && a.change.requested_by !== "" ? sessionName(app.sessions, a.change.requested_by) : "";
-  // Adding a member starts an agent: the owner picks which one and its model before approving.
+  // Adding a member starts an agent: the owner picks which one before approving.
   const team = app.domain.teams.find((t) => t.id === a.team_id);
   return (
     <div className="grid gap-2 rounded-md p-2 hover:bg-hover">

@@ -173,11 +173,9 @@ export function choosePick(options: readonly Pick[], want: string, ollamaDefault
  * that the shown pick may still change (to Claude Code (Ollama), say). */
 export const pickReady = (found: Found | null, settingsLoaded: boolean): boolean => found !== null && settingsLoaded;
 
-/** What a picked option launches: an agent and its model, or Claude through Ollama on Ollama's model. */
-export function launchAgent(choice: string, model: string): { harness: string; model?: string; via?: string } {
-  const m = model.trim();
-  if (choice === CLAUDE_OLLAMA) return { harness: "claude", via: "ollama" };
-  return { harness: choice, model: m === "" ? undefined : m };
+/** What a picked option launches: an agent on its own default model, or Claude through Ollama on Ollama's model. */
+export function launchAgent(choice: string): { harness: string; via?: string } {
+  return choice === CLAUDE_OLLAMA ? { harness: "claude", via: "ollama" } : { harness: choice };
 }
 
 /** The picker's options, from pickable(). */

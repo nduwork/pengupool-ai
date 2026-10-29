@@ -59,7 +59,6 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
   const onOllama = harness === CLAUDE_OLLAMA;
   const agent = onOllama ? "claude" : harness;
   const hintId = useId();
-  const [model, setModel] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const recent = [...new Set([...app.domain.repos.map((r) => r.path), ...app.sessions.map((s) => s.cwd)])];
@@ -97,7 +96,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
     setBusy(true);
     const s = await app.call<SessionView>("session.launch", {
       name: name.trim() === "" ? defaultName() : name.trim(),
-      ...launchAgent(harness, model),
+      ...launchAgent(harness),
       source: kind === "clone" ? { kind, url, dest } : { kind: "local", path },
     });
     if (s !== undefined && parentId !== undefined) await app.call("team.group", { session_id: s.id, parent_id: parentId });
@@ -242,18 +241,10 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
           </>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
-          <Label>
-            Name
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={valid ? defaultName() : "defaults to the folder"} />
-          </Label>
-          {!onOllama ? ( // Claude Code (Ollama) runs on Ollama's own default model
-            <Label>
-              Model <span className="font-normal text-faint">optional</span>
-              <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="harness default" />
-            </Label>
-          ) : null}
-        </div>
+        <Label>
+          Name
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={valid ? defaultName() : "defaults to the folder"} />
+        </Label>
         {agent === "claude" ? (
           <p className="rounded-md bg-muted p-2.5 text-caption text-muted-foreground">The first time Claude Code opens a folder it asks whether you trust it. Answer in the terminal below.</p>
         ) : null}

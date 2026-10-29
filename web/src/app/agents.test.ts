@@ -29,8 +29,10 @@ describe("New session's agent list", () => {
     expect(pickable(checkFailed(), AGENTS, true).map((o) => o.value)).toEqual(["claude", CLAUDE_OLLAMA, "muse", "codex", "pi", "omp", "opencode"]);
   });
   it("launches Claude Code (Ollama) as Claude via Ollama, on Ollama's model", () => {
-    expect(launchAgent(CLAUDE_OLLAMA, "opus")).toEqual({ harness: "claude", via: "ollama" });
-    expect(launchAgent("codex", " gpt-5 ")).toEqual({ harness: "codex", model: "gpt-5" });
+    expect(launchAgent(CLAUDE_OLLAMA)).toEqual({ harness: "claude", via: "ollama" });
+  });
+  it("launches every agent on its own default model: no model is sent", () => {
+    for (const a of ["claude", "codex", "muse", "pi", "omp", "opencode", "shell"]) expect(launchAgent(a)).toEqual({ harness: a });
   });
   it("a child starts on its parent's agent, through Ollama when its parent was", () => {
     expect(parentPick({ harness: "claude", via: "ollama" })).toBe(CLAUDE_OLLAMA);
