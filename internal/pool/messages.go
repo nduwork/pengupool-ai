@@ -353,9 +353,11 @@ func (p *Pool) markDelivered(ids []string) {
 func (p *Pool) setMessage(id, state, reason string) {
 	_ = p.update(func(st *store.State) error {
 		for i := range st.Domain.Messages {
-			if st.Domain.Messages[i].ID == id {
-				st.Domain.Messages[i].State = state
-				st.Domain.Messages[i].Reason = reason
+			if m := &st.Domain.Messages[i]; m.ID == id {
+				m.State, m.Reason = state, reason
+				if state == "delivered" && m.DeliveredAt == "" {
+					m.DeliveredAt = now()
+				}
 			}
 		}
 		return nil

@@ -81,7 +81,7 @@ message is `queued` until it is in the recipient's turn, then
 | Agent messages, after the time | `· tell` muted, `? ask` semibold, `✓ done` success, `■ blocked` danger |
 | Agent messages, state | `◷ queued` and `✓ delivered` muted, `✕ failed` danger; an open ask adds its age |
 | Map card, bottom-right (the role chip holds top-right) | open-ask pill `? 4m`, hairline and muted; escalated `? 18m ↑`, warning border, semibold. Never red: red is "? Need input" |
-| Map route | the same pill at the route's midpoint (`? 2 · 18m` for several); a route whose newest message is queued stays grey (the message log says queued); beads run in its direction's colour once it arrives (for 90 s from its send time, so one queued longer than that arrives with no beads until the record keeps a delivery time); the legend has no `queued` entry |
+| Map route | the same pill at the route's midpoint (`? 2 · 18m` for several); a route whose newest message is queued stays grey (the message log says queued); beads run in its direction's colour once it arrives (for 90 s from its delivery time, or its send time on records from before 0.9.23); the legend has no `queued` entry |
 | Needs you | `MessagesSquare` row "asker asked recipient: “…” · 18m" with Go on, Reply (the recipient's terminal), Dismiss |
 
 ## The Compass

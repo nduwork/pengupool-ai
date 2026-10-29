@@ -181,3 +181,22 @@ func TestClaudeInboxAndFlushSendOnce(t *testing.T) {
 		t.Fatalf("written to an idle session's inbox: %+v", message(p, "m3"))
 	}
 }
+
+// A delivered message keeps when it was delivered; a second mark leaves the first time.
+func TestDeliveredAt(t *testing.T) {
+	p := testPool(t)
+	putMessage(t, p, protocol.TeamMessage{ID: "m1", TeamID: "team1", From: "a", To: "b", Text: "x", State: "queued", At: "2026-01-01T00:00:00Z"})
+	if m := message(p, "m1"); m.DeliveredAt != "" {
+		t.Fatalf("queued with a delivery time: %+v", m)
+	}
+	p.markDelivered([]string{"m1"})
+	first := message(p, "m1").DeliveredAt
+	if first == "" || first == "2026-01-01T00:00:00Z" {
+		t.Fatalf("delivered at %q", first)
+	}
+	p.update(func(st *store.State) error { st.Domain.Messages[0].DeliveredAt = "2026-01-02T00:00:00Z"; return nil })
+	p.markDelivered([]string{"m1"})
+	if got := message(p, "m1").DeliveredAt; got != "2026-01-02T00:00:00Z" {
+		t.Fatalf("a second mark moved the delivery time to %q", got)
+	}
+}
