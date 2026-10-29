@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/harness"
@@ -39,12 +40,16 @@ func (p *Pool) promptTyped(s store.Session) {
 }
 
 // watchHooks flags each running agent the owner prompted hooklessAfter ago that has sent no hook since
-// it launched. All in memory: a daemon restart checks the next prompt again.
+// it launched. The flag is in memory; a hook seen before a daemon restart still counts through the
+// session's stored ActiveAt, which every hook but Status writes.
 func (p *Pool) watchHooks(now time.Time) {
 	for _, s := range p.st.State().Sessions {
 		p.mu.Lock()
 		prompt, hook := p.promptAt[s.ID], p.hookAt[s.ID]
 		p.mu.Unlock()
+		if s.ActiveAt.After(hook) { // stored, so a hooked agent stays clear across a daemon restart
+			hook = s.ActiveAt
+		}
 		want := harness.IsAgent(s.Harness) && s.State == "running" && prompt.After(s.StartedAt) &&
 			!hook.After(s.StartedAt) && now.Sub(prompt) >= hooklessAfter
 		if want == s.HooksMissing {
@@ -52,7 +57,7 @@ func (p *Pool) watchHooks(now time.Time) {
 		}
 		p.setSession(s.ID, func(x *store.Session) { x.HooksMissing = want })
 		if want {
-			p.logLine(s.ID, "hooks: none from "+s.Harness+" since launch, 2m after the first prompt; no Compass or team context reaches it")
+			p.logLine(s.ID, "hooks: none from "+s.Harness+" since launch, "+fmt.Sprintf("%.0fm", hooklessAfter.Minutes())+" after the first prompt; no Compass or team context reaches it")
 		}
 	}
 }

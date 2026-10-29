@@ -102,3 +102,23 @@ func TestHooksMissingNoFalseAlarm(t *testing.T) {
 		}
 	}
 }
+
+// After a daemon restart the pool's memory is empty, but a session whose hooks arrived before it is
+// not flagged when the owner types into a long tool run: its stored ActiveAt counts.
+func TestHooksMissingAfterDaemonRestart(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(Options{Store: st, Exe: "pengupool"})
+	_ = st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions, store.Session{ID: "claudeaaaaaa", Name: "c", State: "running", Status: "working", Harness: harness.Claude,
+			StartedAt: time.Now().Add(-time.Hour), ActiveAt: time.Now().Add(-time.Minute)})
+		return nil
+	})
+	p.OwnerInput("claudeaaaaaa", "also check the loader")
+	p.watchHooks(time.Now().Add(3 * time.Minute))
+	if s, _ := p.session("claudeaaaaaa"); s.HooksMissing {
+		t.Fatal("a hooked agent was flagged after a daemon restart")
+	}
+}
