@@ -18,12 +18,12 @@ import (
 // nextStepTimeout bounds the per-turn route question: it runs inside the prompt hook.
 const nextStepTimeout = 1500 * time.Millisecond
 
-// nextStepNote is triage before the anchor's next step (research-002): one typed question, who should
-// do the work this turn asks for, the anchor or a member whose routing description covers it. A firm
+// nextStepNote is triage before the LEAD's next step (research-002): one typed question, who should
+// do the work this turn asks for, the LEAD or a member whose routing description covers it. A firm
 // answer (calibrated, p >= the delegate threshold, a member) is a note plus a binding hold: guardRoute
-// refuses the anchor's working tools for the whole turn until it messages that member. Any other
+// refuses the LEAD's working tools for the whole turn until it messages that member. Any other
 // answer, or none, binds nothing; a hedged one only names the likely member. ponytail: one Choice per
-// anchor turn, no cache or budget of its own; add size/parallel questions when the record shows the
+// LEAD's turn, no cache or budget of its own; add size/parallel questions when the record shows the
 // note routing quick or blocking steps.
 func (p *Pool) nextStepNote(s store.Session, prompt string) string {
 	who, note := p.routeTurn(s, prompt)
@@ -40,7 +40,7 @@ func (p *Pool) nextStepNote(s store.Session, prompt string) string {
 	return note
 }
 
-// routeTurn is the member session triage binds the anchor's turn to ("" for none) and the note ("" for none).
+// routeTurn is the member session triage binds the LEAD's turn to ("" for none) and the note ("" for none).
 func (p *Pool) routeTurn(s store.Session, prompt string) (who, note string) {
 	// A notice or triage's own words is not a step, and a few words are an answer (a check-in's "go
 	// ahead"), not a task: neither waits on the model. A teammate's message is a step.
@@ -50,10 +50,10 @@ func (p *Pool) routeTurn(s store.Session, prompt string) (who, note string) {
 	}
 	d := p.st.State().Domain
 	t := teamOf(&d, s.ID)
-	if t == nil || anchorOf(&d, t) != s.ID {
+	if t == nil || leadOf(t) != s.ID {
 		return "", ""
 	}
-	options := map[string]string{"self": "the anchor itself: coordinating, answering the owner, or work no member's description covers"}
+	options := map[string]string{"self": "the LEAD itself: coordinating, answering the owner, or work no member's description covers"}
 	ids := map[string]string{} // member name → session id
 	for _, m := range t.Members {
 		if m.State != "active" || m.SessionID == s.ID || !p.mayTalk(s.ID, m.SessionID) {
@@ -86,9 +86,9 @@ func (p *Pool) routeTurn(s store.Session, prompt string) (who, note string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), nextStepTimeout)
 	res, err := dec.Decide(ctx, decision.Request{
-		State: map[string]any{"task": redactSecrets(t.Goal), "turn_prompt": prompt, "anchor": s.Name},
+		State: map[string]any{"task": redactSecrets(t.Goal), "turn_prompt": prompt, "lead": s.Name},
 		Questions: []decision.Question{{Name: "route", Type: decision.Choice, Options: options,
-			Instructions: "Who should do the work this turn asks for next? If the owner's message itself says who should do it (the anchor itself, or a member by name), pick that. Otherwise pick a member when its description covers the work, the work is more than one quick command, and the member is not busy with something else; otherwise self."}},
+			Instructions: "Who should do the work this turn asks for next? If the owner's message itself says who should do it (the LEAD itself, or a member by name), pick that. Otherwise pick a member when its description covers the work, the work is more than one quick command, and the member is not busy with something else; otherwise self."}},
 	})
 	cancel()
 	a, ok := res.Answers["route"]
@@ -222,7 +222,7 @@ func (p *Pool) sentTo(cmd, name string) bool {
 	return false
 }
 
-// guardRoute is triage's hold (research-002): in a turn triage firmly routed to a member, the anchor's
+// guardRoute is triage's hold (research-002): in a turn triage firmly routed to a member, the LEAD's
 // working tools are refused for the whole turn. Only a message to that member releases it (SendMessage
 // to its session, or `pengupool send` naming it); reads and read-only shell commands pass, and the
 // owner can override in words (that skips the route question). State resets at the next prompt and Stop.

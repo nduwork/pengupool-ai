@@ -389,9 +389,6 @@ func (p *Pool) regroup(_ context.Context, in groupIn) (moved []string, from, to 
 				}
 			}
 			cur.Members = out
-			if cur.AnchorID != "" && in[cur.AnchorID] {
-				cur.AnchorID = ""
-			}
 			if activeMembers(cur) <= 1 {
 				dissolve(st, cur)
 			}

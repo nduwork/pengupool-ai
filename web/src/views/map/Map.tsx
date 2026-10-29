@@ -5,12 +5,12 @@ import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import { URGENCY, ctxClass, harnessLabel, isShell, sessionStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
 import { Button } from "../../components/ui/button";
-import { Badge, Empty, Select, Tip } from "../../components/ui/controls";
+import { Badge, Empty, RoleTag, Select, Tip, type Role } from "../../components/ui/controls";
 import { cn } from "../../lib/utils";
 import type { SessionView } from "../../protocol/control";
 import type { Team, TeamMessage } from "../../protocol/domain";
 import { ProposalSheet } from "../Approvals";
-import { FormationSheet, anchorOf } from "../Formation";
+import { FormationSheet, leadOf, roleOf } from "../Formation";
 import { SessionHover, UnreadDot } from "./SessionBits";
 import { NewSessionDialog } from "../NewSession";
 import { PATH_MIME, UNSAFE_NOTICE, typePath } from "../explorerPaths";
@@ -142,7 +142,7 @@ export function TeamMap(): ReactElement {
     }
   };
 
-  // A session dropped on a group's frame or title joins that group under its anchor; dropped on the
+  // A session dropped on a group's frame or title joins that group under its LEAD; dropped on the
   // Ungrouped column it leaves its group and keeps running. Both stop here, so the canvas drop (which
   // splits a session off as a group of its own) does not also run.
   const frameDrop = (e: React.DragEvent, team: Team | undefined): void => {
@@ -152,8 +152,8 @@ export function TeamMap(): ReactElement {
     e.stopPropagation();
     if (team === undefined) void app.call("team.group", { session_id: sid, ungroup: true });
     else {
-      const anchor = anchorOf(domain, team);
-      if (anchor !== undefined && anchor !== sid) void app.call("team.group", { session_id: sid, parent_id: anchor });
+      const lead = leadOf(team);
+      if (lead !== "" && lead !== sid) void app.call("team.group", { session_id: sid, parent_id: lead });
     }
   };
   const frameOver = (e: React.DragEvent): void => {
@@ -250,14 +250,12 @@ export function TeamMap(): ReactElement {
             style={{ left: box.x, top: box.y, width: box.w, height: box.h, borderColor: tone(st) }}
           >
             {/* As v1 drew it: the state in its colour, the name, then harness · context · repo, then the step in hand. */}
-            {team !== undefined && anchorOf(domain, team) === s.id ? (
-              <span
-                className="absolute right-2 top-1.5 rounded-[2px] border border-current px-[3px] text-[8px] leading-[11px] tracking-[0.08em] text-muted-foreground opacity-70"
-                title="The anchor: the hub of this task's communication"
-              >
-                ANCHOR
-              </span>
-            ) : null}
+            {(() => {
+              const role = team !== undefined ? roleOf(domain, app.sessions, s.id) : undefined;
+              return role !== undefined ? (
+                <RoleTag role={role} className="absolute right-2 top-1.5 rounded-[2px] px-[3px] text-[8px] leading-[11px] tracking-[0.08em] uppercase" />
+              ) : null;
+            })()}
             <span className="flex items-center gap-1.5 font-semibold" style={{ color: tone(st) }}>
               {SYMBOL[st] ?? "·"} {style.label}
               <UnreadDot id={s.id} />
@@ -606,8 +604,15 @@ export function MessageLog(): ReactElement {
                 className={cn("flex w-full gap-x-2 rounded py-0.5 text-left font-mono text-[11.5px] hover:bg-accent/40 focus-visible:outline focus-visible:outline-1", full && "flex-wrap")}
               >
                 <span className="shrink-0 text-faint">{new Date(m.at).toLocaleTimeString()}</span>
-                <Badge>agent</Badge>
-                <span className={cn("font-semibold", full ? "shrink-0" : "min-w-0 shrink truncate")} style={{ color: edge(m) }}>
+                {(() => {
+                  const from = roleOf(app.domain, app.sessions, m.from);
+                  return from !== undefined ? <RoleTag role={from} /> : <Badge>agent</Badge>;
+                })()}
+                <span
+                  className={cn("font-semibold", full ? "shrink-0" : "min-w-0 shrink truncate")}
+                  style={{ color: edge(m) }}
+                  title={`${roleWord(roleOf(app.domain, app.sessions, m.from))} → ${roleWord(roleOf(app.domain, app.sessions, m.to))}`}
+                >
                   {name(m.from)} → {name(m.to)}
                 </span>
                 <span
@@ -725,3 +730,5 @@ export function useChains(): Record<string, Chain> {
   }, []);
   return chains;
 }
+
+const roleWord = (r: Role | undefined): string => (r === undefined ? "Member" : r === "sme" ? "SME" : r[0].toUpperCase() + r.slice(1));

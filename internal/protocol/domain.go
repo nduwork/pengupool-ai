@@ -151,9 +151,6 @@ type Team struct {
 	// Goal is the team's job. The team is the unit and its goal evolves: the owner edits it in
 	// place, and each edit is a direction change on the record.
 	Goal string `json:"goal,omitempty"`
-	// AnchorID is the member every message reaches (as a digest) and who composes the results: a
-	// hub, not a boss. Empty: the coordinator, else the main worker.
-	AnchorID string `json:"anchor_id,omitempty"`
 	// CostBy is what each member session spent while on the team, in USD, as its harness reports it.
 	CostBy map[string]float64 `json:"cost_by,omitempty"`
 	// BudgetUSD is the owner's budget for the team's job; 0: none set (the app shows an estimate).
@@ -184,12 +181,12 @@ type Approval struct {
 }
 
 // FormationChange is one change to who is on a team: add a member (a skill as a freelancer, or a
-// repository as an SME), remove one, or move the task's anchor.
+// repository as an SME) or remove one. Who leads is not a change: the LEAD is the tree's root.
 type FormationChange struct {
-	Op          string `json:"op"` // add | remove | anchor
+	Op          string `json:"op"` // add | remove
 	SkillID     string `json:"skill_id,omitempty"`
 	RepoID      string `json:"repo_id,omitempty"`
-	SessionID   string `json:"session_id,omitempty"` // remove, anchor
+	SessionID   string `json:"session_id,omitempty"` // remove
 	Assignment  string `json:"assignment,omitempty"`
 	Reason      string `json:"reason,omitempty"`
 	RequestedBy string `json:"requested_by,omitempty"` // a member session id; empty: the owner

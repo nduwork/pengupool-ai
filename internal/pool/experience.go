@@ -88,13 +88,13 @@ func (p *Pool) doneReport(m protocol.TeamMessage) {
 	p.mu.Unlock()
 }
 
-// reportsTo is the member a helper reports to: its parent on the team's tree, or the anchor when it
-// is at the top. "" for the anchor itself.
+// reportsTo is the member a helper reports to: its parent on the team's tree, or the LEAD when it
+// is at the top. "" for the LEAD itself.
 func reportsTo(d *protocol.Domain, t *protocol.Team, id string) string {
 	if up := treeParent(t, id); up != "" {
 		return up
 	}
-	if a := anchorOf(d, t); a != id {
+	if a := leadOf(t); a != id {
 		return a
 	}
 	return ""

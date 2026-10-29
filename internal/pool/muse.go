@@ -100,7 +100,7 @@ func (p *Pool) museAsks() []museAsk {
 		}
 		sid := a.SessionID
 		if sid == "" {
-			sid = p.museAnchorSession(a.TeamID)
+			sid = p.museLeadSession(a.TeamID)
 		}
 		s, ok := p.session(sid)
 		if !ok || s.State != "running" {
@@ -139,15 +139,15 @@ func (p *Pool) museAsks() []museAsk {
 	return out
 }
 
-// museAnchorSession is the running session an approval without one belongs
-// to: the team's anchor, else its first running member.
-func (p *Pool) museAnchorSession(teamID string) string {
+// museLeadSession is the running session an approval without one belongs
+// to: the team's LEAD, else its first running member.
+func (p *Pool) museLeadSession(teamID string) string {
 	st := p.st.State()
 	for _, t := range st.Domain.Teams {
 		if t.ID != teamID || t.State != "active" {
 			continue
 		}
-		if id := anchorOf(&st.Domain, &t); id != "" {
+		if id := leadOf(&t); id != "" {
 			if s, ok := p.session(id); ok && s.State == "running" {
 				return id
 			}

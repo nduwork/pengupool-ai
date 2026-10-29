@@ -427,7 +427,7 @@ func TestOwnerChoicesInTheApp(t *testing.T) {
 	}
 	_ = st.Update(func(s *store.State) error {
 		s.Domain.Approvals = append(s.Domain.Approvals,
-			protocol.Approval{ID: "ap1", Kind: "formation", TeamID: "team1", State: "pending", Detail: "app: add web", Change: &protocol.FormationChange{Op: "anchor", SessionID: "webaaaaaaaaa"}},
+			protocol.Approval{ID: "ap1", Kind: "formation", TeamID: "team1", State: "pending", Detail: "app: add web", Change: &protocol.FormationChange{Op: "anchor", SessionID: "webaaaaaaaaa"}}, // an older record's request to choose the lead: approving it changes nothing
 			protocol.Approval{ID: "ap2", Kind: "formation", TeamID: "team1", State: "pending", Detail: "app: add a third"})
 		return nil
 	})

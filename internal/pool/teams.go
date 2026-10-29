@@ -679,9 +679,9 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 			return nil, conflict("%s already assists this team", sk.Name)
 		}
 	}
-	anchor := anchorSkill(*sk)
+	hub := teamHubSkill(*sk)
 	repo := findRepo(&d, team.RepoID)
-	if !anchor && repo == nil {
+	if !hub && repo == nil {
 		return nil, invalid("the team has no work repository (a manual group); helpers need one")
 	}
 	task := protocol.Task{Title: team.Name, Objective: team.Goal}
@@ -699,8 +699,8 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	pm := protocol.ProposedMember{SkillID: sk.ID, Name: slug(sk.Name), Role: "helper", Assignment: assignment, Harness: ag, Model: in.Model}
 	var m protocol.Member
 	var err error
-	if anchor {
-		m, err = p.startAnchor(ctx, team, *sk, pm)
+	if hub {
+		m, err = p.startHub(ctx, team, *sk, pm)
 	} else {
 		m, err = p.startMember(ctx, team, *repo, task, pm, headCommit(repo.Path))
 	}
@@ -723,23 +723,18 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	}
 	p.logLine(m.SessionID, "team: placed as helper in "+team.Name)
 	p.forEachMember(team.ID, func(s string) { p.logLine(s, "team: "+m.Name+" joined as helper") })
-	if anchor { // approved with the add: an anchor agent anchors the team it joins
-		if _, err := p.setAnchor(team.ID, m.SessionID); err != nil {
-			p.logf("pool: make %s the anchor: %v", m.Name, err)
-		}
-	}
 	return m, nil
 }
 
-// anchorSkill: a skill agent that anchors a team (the marketplace's team-hub-agent), known by its
+// teamHubSkill: a skill agent that coordinates a team (the marketplace's team-lead-agent), known by its
 // team-hub skill. It owns no repository and edits no code.
-func anchorSkill(sk protocol.Skill) bool { return slices.Contains(sk.Capabilities, "team-hub") }
+func teamHubSkill(sk protocol.Skill) bool { return slices.Contains(sk.Capabilities, "team-hub") }
 
-// startAnchor starts an anchor agent with no worktree, so it can anchor a group with no work
-// repository, or with several of which none should anchor. It works in a scratch folder of its own,
+// startHub starts a team-hub agent with no worktree, so it can join a group with no work
+// repository, or with several of which none is its own. It works in a scratch folder of its own,
 // <store>/work/<team>/<member>, so nothing it or its agent drops in its working directory lands in
 // its skill repository; its skills load from sk.Path (the context names it, Claude gets --plugin-dir).
-func (p *Pool) startAnchor(ctx context.Context, team *protocol.Team, sk protocol.Skill, pm protocol.ProposedMember) (protocol.Member, error) {
+func (p *Pool) startHub(ctx context.Context, team *protocol.Team, sk protocol.Skill, pm protocol.ProposedMember) (protocol.Member, error) {
 	id := protocol.NewID()
 	cwd := filepath.Join(p.workDir(team.ID), slug(pm.Name))
 	if err := os.MkdirAll(cwd, 0o755); err != nil {
@@ -1222,10 +1217,10 @@ func (p *Pool) teamDelete(_ context.Context, in teamIDIn) (any, error) {
 	}); err != nil {
 		return nil, err
 	}
-	// Its anchor's scratch folders (t.ID is the id the store gave it, never a path).
+	// Its team-hub agents' scratch folders (t.ID is the id the store gave it, never a path).
 	return nil, os.RemoveAll(p.workDir(t.ID))
 }
 
-// workDir is the scratch folder of a team's members that work outside any repository (its anchor):
+// workDir is the scratch folder of a team's members that work outside any repository (team-hub agents):
 // <store>/work/<team id>.
 func (p *Pool) workDir(teamID string) string { return filepath.Join(p.st.Dir(), "work", teamID) }
