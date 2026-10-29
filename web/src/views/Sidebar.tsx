@@ -155,7 +155,7 @@ export function Sidebar(): ReactElement {
                         )}
                         style={{ paddingLeft: 28 + Math.min(depth, 4) * 12 }}
                       >
-                        <StatusDot status={s.status} state={s.state} harness={s.harness} active_at={s.active_at} role={s.role} />
+                        <StatusDot id={s.id} status={s.status} state={s.state} harness={s.harness} active_at={s.active_at} role={s.role} />
                         <span className="truncate">{s.name}</span>
                         <span className="ml-auto shrink-0 text-micro text-faint">{s.role === "helper" ? "helper" : s.context_pct !== undefined ? `${s.context_pct}%` : harnessLabel(s.harness)}</span>
                       </button>

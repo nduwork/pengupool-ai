@@ -3,7 +3,7 @@ import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
-import { URGENCY, ctxClass, harnessLabel, isShell, sessionStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
+import { URGENCY, ctxClass, harnessLabel, isShell, shownStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
 import { Button } from "../../components/ui/button";
 import { Badge, Empty, Select, Tip } from "../../components/ui/controls";
 import { cn } from "../../lib/utils";
@@ -196,7 +196,7 @@ export function TeamMap(): ReactElement {
   };
 
   const card = (s: SessionView, box: { x: number; y: number; w: number; h: number }, opts: { teamId?: string; hidden?: string[]; hasKids: boolean; lone?: boolean }): ReactElement => {
-    const st = sessionStatus(s);
+    const st = shownStatus(s, app.gates);
     const style = statusStyle(st);
     const team = opts.teamId !== undefined ? domain.teams.find((t) => t.id === opts.teamId) : undefined;
     const member = team?.members.find((m) => m.session_id === s.id);
@@ -204,7 +204,7 @@ export function TeamMap(): ReactElement {
     const urgent = (opts.hidden ?? [])
       .map((id) => byId.get(id))
       .filter((x): x is SessionView => x !== undefined)
-      .map(sessionStatus)
+      .map((x) => shownStatus(x, app.gates))
       .sort((a, b) => (URGENCY[b] ?? 0) - (URGENCY[a] ?? 0))[0];
     const repoName = s.cwd.split("/").filter(Boolean).pop() ?? "";
     return (
@@ -242,6 +242,7 @@ export function TeamMap(): ReactElement {
               "group absolute flex cursor-default flex-col justify-center rounded-md border-[1.5px] bg-panel px-2.5 py-1.5 text-left text-[10px] leading-[14px] outline-none transition-[border-color,border-width]",
               "hover:border-2 focus-visible:ring-2 focus-visible:ring-ring",
               opts.lone === true && "border-dashed",
+              st === "approval" && "border-2", // waiting on the owner: a red outline, thicker so it reads in both themes
               selected === s.id && "ring-2 ring-primary ring-offset-2 ring-offset-background",
               dropTarget === s.id && "ring-2 ring-primary",
               flashIds.includes(s.id) && "ring-4 ring-success",
@@ -259,7 +260,8 @@ export function TeamMap(): ReactElement {
               </span>
             ) : null}
             <span className="flex items-center gap-1.5 font-semibold" style={{ color: tone(st) }}>
-              {SYMBOL[st] ?? "·"} {style.label}
+              {SYMBOL[st] !== undefined ? `${SYMBOL[st]} ` : ""}
+              {style.label}
               <UnreadDot id={s.id} />
             </span>
             <span className="line-clamp-2 pr-8 text-[12px] font-semibold text-foreground [overflow-wrap:anywhere]">{s.name}</span>
@@ -680,9 +682,10 @@ export function StepLine({ chain }: { chain: Chain }): ReactElement {
 
 /** v1's state colours: green active, amber waiting on you, red lost, grey otherwise. */
 function tone(st: string): string {
-  return st === "working" ? "var(--success)" : st === "idle" || st === "approval" || st === "terminal" ? "var(--warning)" : st === "lost" || st === "unreachable" ? "var(--danger)" : "var(--faint)";
+  return st === "working" ? "var(--success)" : st === "idle" || st === "terminal" ? "var(--warning)" : st === "approval" || st === "lost" || st === "unreachable" ? "var(--danger)" : "var(--faint)";
 }
-const SYMBOL: Record<string, string> = { working: "●", idle: "◷", approval: "!", starting: "◌", stale: "○", terminal: "!", ended: "■", exited: "■", lost: "✕", unreachable: "✕" };
+// approval has none: its label starts with "?".
+const SYMBOL: Record<string, string> = { working: "●", idle: "◷", starting: "◌", stale: "○", terminal: "!", ended: "■", exited: "■", lost: "✕", unreachable: "✕" };
 
 /** Card padding plus border, left and right: the width a card's text gets is the card's minus this. */
 const CARD_INSET = 23;
