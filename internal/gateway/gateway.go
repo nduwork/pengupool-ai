@@ -383,8 +383,9 @@ func (s *Server) handle(ctx context.Context, fc frameConn, remote string) {
 	s.handlePhone(ctx, fc, remote, false, false)
 }
 
-// phoneRequest reports a tokenless request a phone may make: through a Tailscale Serve name, or
-// from another host on a LAN listener.
+// phoneRequest reports a tokenless request a phone may make: on a PhoneHosts name (the Tailscale
+// Serve name, or this machine's own tailnet name; Serve's proxy arrives from loopback with that
+// Host), or from another host on a LAN listener. Either way the connection is view-only.
 func (s *Server) phoneRequest(r *http.Request) bool {
 	host := r.Host
 	if h, _, err := net.SplitHostPort(r.Host); err == nil {

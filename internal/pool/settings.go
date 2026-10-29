@@ -276,6 +276,38 @@ func tailscaleName() (string, error) {
 	return strings.TrimSuffix(st.Self.DNSName, "."), nil
 }
 
+// lookupTailnetName is tailscaleName; a test stands in for the CLI.
+var lookupTailnetName = tailscaleName
+
+var tailnetName struct {
+	sync.Mutex
+	name    string
+	at      time.Time
+	running bool
+}
+
+// TailnetName is this machine's own Tailscale DNS name, or "" off a tailnet. It never blocks a
+// request: it returns the last answer and refreshes one older than a minute in the background. A
+// failed lookup (tailscaled restarting, busy) keeps the last name: the token still gates every call.
+func TailnetName() string {
+	t := &tailnetName
+	t.Lock()
+	defer t.Unlock()
+	if !t.running && time.Since(t.at) > time.Minute {
+		t.running = true
+		go func() {
+			name, err := lookupTailnetName()
+			t.Lock()
+			if err == nil {
+				t.name = name
+			}
+			t.at, t.running = time.Now(), false
+			t.Unlock()
+		}()
+	}
+	return t.name
+}
+
 // tailscaleFix is the one fix a failing checklist row offers: a link to
 // open, or a button that runs an action.
 type tailscaleFix struct {

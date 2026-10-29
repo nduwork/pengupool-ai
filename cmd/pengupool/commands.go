@@ -178,11 +178,7 @@ func cmdDaemon(args []string) error {
 		Authorize:  pl.Authorize,
 		OwnerInput: pl.OwnerInput,
 		InSession:  pl.InAgentSession,
-		PhoneHosts: func() []string {
-			ts := st.Config().Network.Tailscale
-			ts = strings.TrimPrefix(strings.TrimPrefix(ts, "https://"), "http://")
-			return []string{strings.TrimSuffix(ts, "/")}
-		},
+		PhoneHosts: func() []string { return phoneHosts(st.Config().Network.Tailscale, pool.TailnetName()) },
 	})
 	if err != nil {
 		return err
@@ -190,6 +186,7 @@ func cmdDaemon(args []string) error {
 	pl.SetRevoker(srv.Revoke)
 	pool.HTTPAddr = srv.HTTPAddr
 	go pl.HealTailscaleServe() // re-serve after a port change; owner's home only
+	pool.TailnetName()         // look the name up now, so the first remote call already matches it
 	pool.Restarter = func() {
 		logf("restarting to apply listener settings; sessions keep running")
 		lock.Release()
@@ -205,10 +202,10 @@ func cmdDaemon(args []string) error {
 	go func() {
 		for range 200 {
 			if bound := srv.HTTPAddr(); bound != "" {
-				os.WriteFile(filepath.Join(dir, "run", "hub.addr"), []byte(bound+"\n"), 0o600)
+				os.WriteFile(filepath.Join(dir, "run", "hub.addr"), []byte(localAddr(bound)+"\n"), 0o600)
 				logf("host listening on %s", bound)
 				logf("unix socket %s", srv.SocketPath())
-				logf("browser app: %s", browserURL(dir, bound))
+				logf("browser app: %s", browserURL(dir, localAddr(bound)))
 				return
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -222,6 +219,33 @@ func cmdDaemon(args []string) error {
 		return nil
 	case err := <-serveErr:
 		return err
+	}
+}
+
+// phoneHosts are the Host names a phone or remote device may use: the Tailscale Serve name set up
+// in Settings, and this machine's own live tailnet name for plain HTTP over the LAN listener.
+func phoneHosts(serve, tailnet string) []string {
+	serve = strings.TrimPrefix(strings.TrimPrefix(serve, "https://"), "http://")
+	return []string{strings.TrimSuffix(serve, "/"), tailnet}
+}
+
+// localAddr is how a client on this machine reaches a listener bound at bound: a wildcard bind
+// is not an address to dial, so it becomes loopback of the same family on the same port. A dual-stack
+// [::] (what Go reports for 0.0.0.0 on macOS) becomes [::1], not 127.0.0.1: another host may hold
+// 127.0.0.1 on the same port, and the more specific bind would take the connection. An IPv4-only
+// 0.0.0.0 becomes 127.0.0.1.
+// ponytail: an IPv4-only host with another host on 127.0.0.1:<port> still dials the wrong one; the
+// desktop's owner check refuses it, so it fails closed. Fall back to a free port if that ever happens.
+func localAddr(bound string) string {
+	host, port, err := net.SplitHostPort(bound)
+	ip := net.ParseIP(host)
+	switch {
+	case err != nil || ip == nil || !ip.IsUnspecified():
+		return bound
+	case ip.To4() != nil:
+		return net.JoinHostPort("127.0.0.1", port)
+	default:
+		return net.JoinHostPort("::1", port)
 	}
 }
 

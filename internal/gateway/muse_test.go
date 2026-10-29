@@ -123,3 +123,30 @@ func TestMuseSayValidation(t *testing.T) {
 		t.Fatalf("blank say = %d %s (pool called: %v)", code, body, called)
 	}
 }
+
+// The machine's own live tailnet name reaches the API over plain HTTP; a lookalike name is refused
+// before the token check, and the token still gates every call.
+func TestMuseTailnetNameHost(t *testing.T) {
+	srv, _ := newTestServerOpts(t, Options{Sessions: &fakeSessions{},
+		PhoneHosts: func() []string { return []string{"", "muse-1.tail1234.ts.net"} }})
+	for host, want := range map[string]int{
+		"muse-1.tail1234.ts.net":          http.StatusUnauthorized,
+		"MUSE-1.tail1234.ts.net":          http.StatusUnauthorized,
+		"muse-1.tail1234.ts.net.evil.com": http.StatusForbidden,
+		"evil-muse-1.tail1234.ts.net":     http.StatusForbidden,
+		"muse-2.tail1234.ts.net":          http.StatusForbidden,
+		"":                                http.StatusForbidden,
+	} {
+		_, port, _ := strings.Cut(srv.HTTPAddr(), ":")
+		req, _ := http.NewRequest(http.MethodGet, "http://"+srv.HTTPAddr()+"/api/muse/v1/sessions", nil)
+		req.Host = host + ":" + port
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Errorf("Host %q = %d, want %d", host, resp.StatusCode, want)
+		}
+	}
+}
