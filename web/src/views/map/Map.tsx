@@ -111,7 +111,7 @@ export function TeamMap(): ReactElement {
   const ungrouped = sessions.filter((s) => !inTeam.has(s.id) && !isShell(s));
   const parentOf = (teamId: string, id: string): string | undefined => domain.teams.find((t) => t.id === teamId)?.members.find((m) => m.session_id === id)?.parent;
 
-  // Lit edges: the latest message on a tree line within 90 s that is no longer queued, green down, milky
+  // Lit edges: the latest message on a tree line within 90 s that is no longer queued, green down,
   // blue up; a queued one leaves its line plain grey (the message log says it is queued). The 90 s count
   // from its delivery, so one that waited in the queue still arrives with beads.
   const hot = new Map<string, "down" | "up">();
