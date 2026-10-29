@@ -272,13 +272,18 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		p.asking(s.ID, str("tool_name"), false)
 		p.turnTool(s.ID)
 	case "TurnFailed", "Interrupted": // Muse: the turn ended in an error or an interrupt, with no Stop
+		// Interrupt is async: one landing after the owner's next prompt must not close that new turn.
+		// ponytail: it still reads idle until that turn's next hook, and meanwhile a message may be
+		// typed into the busy session; the window is the hook's spawn delay. A turn interrupted in
+		// its first second reads working until its next hook.
+		if in.Event == "Interrupted" && p.turnSince(s.ID, entered.Add(-time.Second)) {
+			break
+		}
 		p.setStatus(s.ID, "idle")
 		p.turnBroke(s)
 		if in.Event == "TurnFailed" {
 			p.flushQueue(s.ID) // an unattended agent's queue goes on; after an interrupt the owner is at the prompt
 		}
-		// ponytail: Interrupt is async, so one landing after the owner's next prompt reads idle until
-		// that turn's next hook, and meanwhile a message may be typed into the busy session.
 	case "PermissionRequest":
 		// A shell command the owner answered before is answered the same way for them on an autonomous
 		// team (autoAnswer). Otherwise no decision: the harness shows its own dialog in the terminal;

@@ -155,8 +155,16 @@ func (p *Pool) turnBroke(s store.Session) {
 	tt.Seq, tt.GateDone = seq, true
 	go func() {
 		defer close(done)
-		p.placeTurn(context.Background(), s, tt, lastReply(s.Transcript))
+		p.placeTurn(context.Background(), s, tt, "") // no complete reply: none to choose from next
 	}()
+}
+
+// turnSince reports whether the session's open turn started after at.
+func (p *Pool) turnSince(id string, at time.Time) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	t := p.turns[id]
+	return t != nil && t.Start.After(at)
 }
 
 // fromOwner: a turn opened by the owner's prompt, not by a delivered team message or notice, nor a

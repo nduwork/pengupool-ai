@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/store"
@@ -39,8 +40,17 @@ func TestMuseStatusFollowsItsEvents(t *testing.T) {
 	step("PermissionRequest", "approval")
 	step("PreToolUse", "approval")
 	step("PostToolUse", "working") // allowed and ran
-	step("Interrupted", "idle")    // no Stop
+	age := func() {                // the turn ran a while before it was interrupted
+		p.mu.Lock()
+		if t := p.turns["museaaaaaaaa"]; t != nil {
+			t.Start = t.Start.Add(-time.Minute)
+		}
+		p.mu.Unlock()
+	}
+	age()
+	step("Interrupted", "idle") // no Stop
 	step("UserPromptSubmit", "working")
+	step("Interrupted", "working") // late: the owner's new turn is not closed by it
 	step("TurnFailed", "idle")
 }
 
