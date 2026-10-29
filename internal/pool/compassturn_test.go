@@ -32,7 +32,9 @@ func TestWordingIsOfferedInTheSameTurn(t *testing.T) {
 		}
 		return out.(HookOut).Stdout
 	}
-	ask := func() { p.askWording(agentdb.Signal{SessionID: "claudeaaaaaa", Kind: "preference", Words: "bug fixes go before features"}, nil, 0) }
+	ask := func() {
+		p.askWording(agentdb.Signal{SessionID: "claudeaaaaaa", Kind: "preference", Words: "bug fixes go before features"}, nil, 0)
+	}
 	status := func() string { s, _ := p.session("claudeaaaaaa"); return s.Status }
 
 	// At the turn's next tool round.
@@ -62,4 +64,42 @@ func TestWordingIsOfferedInTheSameTurn(t *testing.T) {
 	if err := wordWith(t, p, "claudeaaaaaa", compassWordIn{None: true}); err != nil {
 		t.Fatalf("the offered wording could not be answered: %v", err)
 	}
+
+	// The usual case: triage reads the owner's words with the reply, after the Stop. The wording comes
+	// at once as a notice, not at the next prompt.
+	var notices []string
+	p.testNotice = func(_, text string) error { notices = append(notices, text); return nil }
+	hook("UserPromptSubmit", map[string]any{"prompt": "yes, bug fixes go before features"})
+	hook("Stop", map[string]any{"stop_hook_active": false})
+	ask()
+	if len(notices) != 1 || !strings.Contains(notices[0], "[PenguPool compass]") {
+		t.Fatalf("not offered after the turn: %q", notices)
+	}
+	if out := hook("PostToolUse", map[string]any{"tool_name": "Bash"}); strings.Contains(out, "[PenguPool compass]") {
+		t.Fatal("offered again in the notice's own turn")
+	}
+}
+
+// A wording asked while another ends (a session's end, an answer) is never read outside the lock.
+func TestWordingAskedWhileAnotherEnds(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(Options{Store: st, Exe: "pengupool"})
+	_ = st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions, store.Session{ID: "claudeaaaaaa", Name: "c", State: "running", Status: "working", Harness: harness.Claude})
+		return nil
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 200 {
+			p.wordingEnded("claudeaaaaaa")
+		}
+	}()
+	for range 200 {
+		p.askWording(agentdb.Signal{SessionID: "claudeaaaaaa", Kind: "said", Words: "small releases first"}, nil, 0)
+	}
+	<-done
 }

@@ -14,6 +14,8 @@ import (
 
 	"github.com/nduwork/pengupool-ai/internal/agentdb"
 	"github.com/nduwork/pengupool-ai/internal/decision"
+	"github.com/nduwork/pengupool-ai/internal/harness"
+	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
@@ -485,13 +487,48 @@ func (p *Pool) askWording(sig agentdb.Signal, cands []agentdb.Line, gateID int64
 		p.wording = map[string]*wording{}
 	}
 	old := p.wording[sig.SessionID]
-	p.wording[sig.SessionID] = &wording{sig: sig, cands: cands, gate: gateID, id: fmt.Sprintf("%x", sha256.Sum256([]byte(sig.Words+p.at().String())))[:8]}
+	w := &wording{sig: sig, cands: cands, gate: gateID, id: fmt.Sprintf("%x", sha256.Sum256([]byte(sig.Words+p.at().String())))[:8]}
+	p.wording[sig.SessionID] = w
 	p.mu.Unlock()
 	if old != nil {
 		p.logLine(sig.SessionID, "compass: wording "+old.id+" replaced unworded (waits in the ledger)")
 		p.unworded(old)
 	}
-	p.logLine(sig.SessionID, "compass: wording "+p.wording[sig.SessionID].id+" asked")
+	p.logLine(sig.SessionID, "compass: wording "+w.id+" asked")
+	p.wordingAtIdle(sig.SessionID)
+}
+
+// wordingAtIdle offers a wording whose turn already ended at once, as a PenguPool notice in a turn of
+// its own: triage reads the owner's words with the turn's reply, so a preference the owner said is
+// mostly asked for after the Stop, and would otherwise wait for the session's next prompt. Once per
+// wording (wordingNow), only to an idle session; a working one gets it in its turn.
+func (p *Pool) wordingAtIdle(id string) {
+	s, ok := p.session(id)
+	if !ok || s.Status != "idle" {
+		return
+	}
+	note := strings.TrimSpace(p.wordingNow(id, "right after the turn (a notice)"))
+	if note == "" {
+		return
+	}
+	var err error
+	switch a, _ := harness.Find(s.Harness); {
+	case p.testNotice != nil:
+		err = p.testNotice(id, note)
+	case s.Harness == harness.Claude:
+		err = p.deliverClaude(id, note)
+	case sendsGoAhead(s.Harness):
+		err = p.deliverOMP(id, protocol.NewID(), note)
+	case a.Typed:
+		err = p.typeInto(id, pasted(note))
+	default:
+		return // no way in: the next prompt carries it
+	}
+	if err != nil {
+		p.logLine(id, "compass: the wording notice failed: "+err.Error())
+		return
+	}
+	p.turnStart(id, note) // a notice's turn, not the owner's: it asks for no wording of its own
 }
 
 // wordingNow is the wording's first offer, inside the turn the owner's words opened: "" when there is

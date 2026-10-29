@@ -266,9 +266,10 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		if str("tool_name") == "AskUserQuestion" && s.Harness == harness.Claude {
 			p.askedPicks(s, pl)
 		}
-		// The owner's words this turn may be waiting to be worded: offered now, while the turn runs.
+		// The owner's words may be waiting to be worded (an answer to a question or a check-in, asked
+		// while the turn runs): offered at the next tool round, whichever turn that is.
 		if s.Harness == harness.Claude {
-			if note := p.wordingNow(s.ID, "in the turn (tool round)"); note != "" {
+			if note := p.wordingNow(s.ID, "at the next tool round"); note != "" {
 				return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 					"hookEventName": "PostToolUse", "additionalContext": note}}), nil
 			}
@@ -338,9 +339,10 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			p.journalTurnEnd(s.ID) // continued: working again
 			return out, nil
 		}
-		// A wording not yet offered goes on the turn once, before it ends: a harness that can continue
-		// a turn words the owner's words while they are fresh. At most once per wording (wordingNow),
-		// and never on a turn this hook already continued.
+		// A wording asked during the turn and not yet offered goes on the turn once, before it ends: a
+		// harness that can continue a turn words the owner's words while they are fresh. At most once
+		// per wording (wordingNow), and never on a turn this hook already continued. One asked after the
+		// Stop (a preference triage reads with the reply) comes as a notice instead (wordingAtIdle).
 		if stopContinues(s.Harness) && !active {
 			if note := strings.TrimSpace(p.wordingNow(s.ID, "at the turn's end (one continuation)")); note != "" {
 				p.turnStart(s.ID, note)
