@@ -111,6 +111,33 @@ async function firstRunDoctor(): Promise<void> {
   }
 }
 
+// ---- the run's sessions ------------------------------------------------------------------------
+
+/** Quitting to install an update: the host leaves its sessions running for the updated app. */
+let handingOver = false;
+
+type Restorable = { id: string; name: string; harness: string; agent: boolean };
+
+/** At start, offers the sessions the last run ended with (a quit, crash or power loss). */
+async function askRestore(): Promise<void> {
+  if ((await host.ensure()) === null) return;
+  const last = await host.rpc<Restorable[] | null>("run.restorable", {}).catch(() => null);
+  if (last === null || last.length === 0) return;
+  const agents = last.filter((s) => s.agent);
+  const terminals = last.length - agents.length;
+  const r = await dialog.showMessageBox({
+    type: "question",
+    message: `Restore ${last.length === 1 ? "the session" : `the ${last.length} sessions`} from your last run?`,
+    detail:
+      last.map((s) => `• ${s.name}${s.agent ? "" : " (terminal)"}`).join("\n") +
+      (terminals > 0 ? "\n\nA terminal cannot be restored; agents resume their conversations." : "\n\nAgents resume their conversations."),
+    buttons: agents.length > 0 ? ["Restore all", "Don't restore"] : ["OK"],
+    defaultId: 0,
+    cancelId: agents.length > 0 ? 1 : 0,
+  });
+  await host.rpc(agents.length > 0 && r.response === 0 ? "run.restore" : "run.dismiss", {}).catch((e: unknown) => console.error("restore:", e));
+}
+
 // ---- window state -------------------------------------------------------------------------------
 
 interface WinState {
@@ -283,6 +310,7 @@ function installUpdate(dmg: string): void {
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   spawn("/bin/sh", [script], { detached: true, stdio: "ignore", env }).unref();
+  handingOver = true; // the updated app's host adopts this run's sessions
   app.quit();
 }
 
@@ -353,13 +381,26 @@ if (!single) {
     menu();
     createWindow();
     void firstRunDoctor();
+    void askRestore();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
   });
-  // The host and its sessions keep running; on macOS the app stays in the Dock like other apps.
+  // On macOS the app stays in the Dock like other apps; the run ends when the app quits.
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
+  });
+  // The run's host ends with the app, and its sessions with it (recorded for the next run's restore
+  // question); quitting to install an update hands them over to the updated app's host instead.
+  let ended = false;
+  app.on("before-quit", (e) => {
+    if (ended) return;
+    e.preventDefault();
+    ended = true;
+    void host
+      .quit(handingOver)
+      .catch((err: unknown) => console.error("ending the host:", err))
+      .finally(() => app.quit());
   });
 }
 

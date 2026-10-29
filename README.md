@@ -31,8 +31,12 @@ pengupool-ai experiment            # with-vs-without the owner's lines
 pengupool-ai version
 ```
 
-Sessions are PTY workers that outlive the daemon; the desktop app and the
-browser UI talk to the daemon over its gateway. Data: `~/.pengupool-ai/v2`
+Each run of the desktop app starts and owns its host (`daemon --owner-pid`): quitting
+the app ends the host and its sessions, and the next start asks whether to restore
+them. Quitting to install an update (or `make install`) hands the sessions over: they
+keep running and the updated app's host adopts them. A host started by hand
+(`pengupool-ai daemon`) is standalone; its PTY workers outlive it. The desktop app and
+the browser UI talk to the host over its gateway. Data: `~/.pengupool-ai/v2`
 (`PENGUPOOL_HOME` moves it).
 
 ## Compass, journal, harnesses
@@ -147,6 +151,11 @@ scripts again, and follows a file as an agent writes it. The Tailscale setup is 
 the checklist in Phone connections, the Tailscale app's CLI found when it is not on
 PATH, the approval link when Serve needs one, and Serve re-pointed after the host's
 port changes.
+v0.9.5: each run of the app starts and owns its host, so the host is always the
+app's build. Quitting the app ends the host and its sessions; the next start asks
+whether to restore them (agents resume their conversations). Installing an update
+hands the running sessions over to the updated app instead. A host the app did not
+start is stopped when the app starts.
 
 ## Credits
 

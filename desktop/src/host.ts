@@ -1,14 +1,14 @@
-// The PenguPool host (the Go daemon) as the desktop app sees it: find the running one for this
-// store when it is this build (restart it when it is not: after an update installed by hand the
-// old daemon still runs, and the new renderer asks it for requests it does not know), or start
-// the bundled binary with the user's login-shell PATH. The host is never tied to the app's
-// lifetime: quitting the app leaves it, and every session, running.
+// The PenguPool host (the Go daemon) as the desktop app sees it. Each run of the app starts and owns
+// its own host (`daemon --owner-pid`), from the bundled binary with the user's login-shell PATH, so
+// the host is always the app's build. Quitting the app ends the host and its sessions; the next run
+// asks to restore them. Quitting to install an update hands the sessions over instead: the host
+// exits and leaves them running for the updated app's host to adopt.
 import { execFile, spawn } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { hostOutdated, isStoreDaemon, readHostVersion } from "./hostversion";
+import { isStoreDaemon } from "./hostversion";
 
 export interface HostConnection {
   url: string;
@@ -61,6 +61,9 @@ export async function userEnv(): Promise<NodeJS.ProcessEnv> {
 export class Host {
   constructor(private readonly binary: string) {}
 
+  /** The host this run started; 0 before it has one. */
+  private own = 0;
+
   get cli(): string {
     return this.binary;
   }
@@ -86,27 +89,26 @@ export class Host {
     return { url: u.origin, token };
   }
 
-  /** Starts the host detached from the app; its output goes to logs/daemon.log. */
+  /** Starts this run's host, detached from the app's process group but ending with the app's run;
+   *  its output goes to logs/daemon.log. */
   async start(): Promise<void> {
     const dir = storeDir();
     mkdirSync(join(dir, "logs"), { recursive: true });
     const log = openSync(join(dir, "logs", "daemon.log"), "a");
-    const child = spawn(this.binary, ["daemon", "--store", dir], {
+    const child = spawn(this.binary, ["daemon", "--store", dir, "--owner-pid", String(process.pid)], {
       env: await userEnv(),
       detached: true,
       stdio: ["ignore", log, log],
     });
     child.unref();
+    this.own = child.pid ?? 0;
   }
 
   /**
-   * Finds the host or starts it, waiting up to 20 s for its health check. A running host that is
-   * not this build is restarted once, so the renderer never talks to requests the host does not
-   * know; sessions keep running across the restart. A host of this store that holds its lock but
-   * does not answer (one run from a disk image since ejected cannot load its own code) is stopped
-   * first, or the new one could never take the lock: only after a second miss 3 s later, so a host
-   * that is slow or still starting is left to answer. One ensure runs at a time; a second caller
-   * gets the first one's answer instead of stopping the host it is starting.
+   * This run's host: started on first use, waiting up to 20 s for its health check. A host this run
+   * did not start (a standalone `pengupool daemon`, or one a previous run left) is stopped first, so
+   * the app never talks to a host of another build. One ensure runs at a time; a second caller gets
+   * the first one's answer instead of starting a second host.
    */
   ensure(): Promise<HostConnection | null> {
     this.pending ??= this.ensureOnce().finally(() => (this.pending = undefined));
@@ -115,48 +117,39 @@ export class Host {
 
   private pending?: Promise<HostConnection | null>;
 
-  private async ensureOnce(retried = false): Promise<HostConnection | null> {
-    let found = await this.probe();
-    if (found === null) {
-      if (!existsSync(this.binary)) throw new Error(`the bundled host is missing at ${this.binary}`);
-      if ((await this.hostPids()).length > 0) {
-        await new Promise((r) => setTimeout(r, 3000));
-        found = await this.probe();
-      }
+  private async ensureOnce(): Promise<HostConnection | null> {
+    if (this.own > 0 && signal(this.own, 0)) {
+      const found = await this.probe();
+      if (found !== null) return found;
     }
-    if (found === null) {
-      if ((await this.stop()) > 0) console.error("local host did not answer; stopped it (sessions keep running)");
-      await this.start();
-      for (let i = 0; i < 100 && found === null; i++) {
-        await new Promise((r) => setTimeout(r, 200));
-        found = await this.probe();
-      }
-      if (found === null) return null;
+    if (!existsSync(this.binary)) throw new Error(`the bundled host is missing at ${this.binary}`);
+    if ((await this.stop(await this.hostPids())) > 0) console.error("stopped a host this run did not start");
+    await this.start();
+    for (let i = 0; i < 100; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      const c = await this.probe();
+      if (c !== null) return c;
     }
-    if (!retried && (await this.outdated())) {
-      console.error("local host is not this build; restarting it (sessions keep running)");
-      await this.stop();
-      await this.waitDown();
-      return this.ensureOnce(true);
-    }
-    return found;
+    return null;
   }
 
-  /** Whether the running host is not the bundled build. A missing bundled version leaves the healthy host alone. */
-  private async outdated(): Promise<boolean> {
-    const bundled = await run(this.binary, ["version"], process.env, 3000);
-    if (bundled === null) return false;
-    return hostOutdated(readHostVersion(storeDir()), bundled.trim());
+  /**
+   * Ends this run's host. Its sessions end with it and are recorded for the next run's restore
+   * question; with handOver (quitting to install an update) the host exits and leaves them running
+   * for the next host to adopt.
+   */
+  async quit(handOver = false): Promise<void> {
+    if (this.own <= 0) return;
+    const pid = this.own;
+    this.own = 0;
+    await this.stop([pid], handOver ? "SIGUSR1" : "SIGTERM", 30_000);
   }
 
-  /** Stops this store's host: the lock file's pid and any process pgrep finds for this binary's
-   * daemon, each only when ps shows a PenguPool daemon of this store (a reused pid, a wrapper or an
-   * editor whose command line merely names one are left alone). One that has not exited after 5 s
-   * is killed: a host whose code is gone cannot handle SIGTERM. Returns how many it stopped. */
-  private async stop(): Promise<number> {
-    const hosts: number[] = [];
-    for (const pid of await this.hostPids()) if (signal(pid, "SIGTERM")) hosts.push(pid);
-    for (let i = 0; i < 50 && hosts.some((pid) => signal(pid, 0)); i++) await new Promise((r) => setTimeout(r, 100));
+  /** Stops hosts: sig, then SIGKILL for one still there after grace ms. Returns how many it stopped.
+   *  A host whose code is gone (its disk image ejected) cannot handle a signal. */
+  private async stop(pids: number[], sig: NodeJS.Signals = "SIGTERM", grace = 5000): Promise<number> {
+    const hosts = pids.filter((pid) => signal(pid, sig));
+    for (let i = 0; i < grace / 100 && hosts.some((pid) => signal(pid, 0)); i++) await new Promise((r) => setTimeout(r, 100));
     for (const pid of hosts) if (signal(pid, 0)) signal(pid, "SIGKILL");
     return hosts.length;
   }
@@ -182,10 +175,6 @@ export class Host {
     return out;
   }
 
-  private async waitDown(): Promise<void> {
-    for (let i = 0; i < 50 && (await this.probe()) !== null; i++) await new Promise((r) => setTimeout(r, 100));
-  }
-
   /** Runs a pool request on this machine's host through the CLI; it rejects with the host's message. */
   rpc<T>(type: string, params: unknown): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -203,10 +192,9 @@ export class Host {
     });
   }
 
-  /** Stops the host (sessions keep running and are adopted again) and starts it fresh. */
+  /** Starts a fresh host for this run; the sessions are handed over and keep running. */
   async restart(): Promise<HostConnection | null> {
-    await this.stop();
-    await this.waitDown();
+    await this.quit(true);
     return this.ensure();
   }
 }

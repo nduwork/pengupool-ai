@@ -64,20 +64,24 @@ CLI="$DEST/Contents/Resources/bin/pengupool"
 
 APP_WAS_OPEN=
 pgrep -f "PenguPool AI.app/Contents/MacOS/PenguPool AI" >/dev/null && APP_WAS_OPEN=1
-osascript -e 'tell application id "com.nduwork.pengupool-ai" to quit' >/dev/null 2>&1 || true
-sleep 1
-# The running host keeps serving from the old binary; stop it so the new one takes over. Its
-# sessions keep running and are adopted by the new host. The lock file names the host that owns
-# the store however it was started; pgrep also finds one started through the CLI link.
+# Like an in-app update: the app's host hands its sessions over (SIGUSR1: it exits and leaves them
+# running) and the reopened app's host adopts them. A standalone host (`pengupool daemon` without
+# --owner-pid) leaves its sessions running on SIGTERM. The lock file names the host that owns the
+# store however it was started; pgrep also finds one started through the CLI link.
+# ponytail: the app is quit right after the hand-over; if it starts a host in between, that host ends
+# the sessions on quit and the next run offers to restore them.
 OLD=$(pgrep -f "PenguPool AI.app/Contents/Resources/bin/pengupool daemon|\.local/bin/pengupool-ai daemon" || true)
 LOCKED=$(cat "$STORE/daemon.lock" 2>/dev/null || true)
 if [ -n "$LOCKED" ] && ps -o command= -p "$LOCKED" 2>/dev/null | grep -q "pengupool.* daemon"; then
   OLD="$OLD $LOCKED"
 fi
 OLD=$(echo $OLD | tr ' ' '\n' | sort -u | tr '\n' ' ')
+for p in $OLD; do
+  if ps -o command= -p "$p" 2>/dev/null | grep -q -- "--owner-pid"; then kill -USR1 "$p"; else kill "$p"; fi
+done
+osascript -e 'tell application id "com.nduwork.pengupool-ai" to quit' >/dev/null 2>&1 || true
 if [ -n "${OLD% }" ]; then
-  echo "stopping host: pid $OLD"
-  kill $OLD
+  echo "stopping host: pid $OLD (its sessions keep running)"
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     LEFT=; for p in $OLD; do kill -0 "$p" 2>/dev/null && LEFT="$LEFT $p"; done
     [ -z "$LEFT" ] && break
@@ -87,34 +91,20 @@ if [ -n "${OLD% }" ]; then
     echo "the running host (pid$LEFT) did not stop; nothing was installed. Stop it ('kill$LEFT') and run make install again." >&2
     exit 1
   fi
+  # The sessions were handed over (a standalone host does not write the marker itself).
+  mkdir -p "$STORE/run" && date -u +%Y-%m-%dT%H:%M:%SZ >"$STORE/run/handover"
 fi
+sleep 1
 rm -rf "$DEST"
 ditto "$APP" "$DEST"
 ln -sfn "$CLI" "$HOME/.local/bin/pengupool-ai"
 echo "installed $DEST"
 echo "cli: $HOME/.local/bin/pengupool-ai (host)"
 
-# Start the new host the way the app does (desktop/src/host.ts userEnv): detached, with the PATH of
-# an interactive login shell, so `claude`, `omp` and `git` resolve as in a terminal (~/.zshrc often
-# adds ~/.local/bin), and not this terminal's other variables, which may be an agent session's.
-mkdir -p "$STORE/logs"
-SH="${SHELL:-/bin/zsh}"
-BASE="HOME=$HOME USER=$USER LOGNAME=${LOGNAME:-$USER} SHELL=$SH TERM=${TERM:-xterm-256color}"
-USERPATH=$(env -i $BASE "$SH" -l -i -c 'printf "__PATH__%s" "$PATH"' </dev/null 2>/dev/null | sed -n 's/.*__PATH__//p')
-[ -n "$USERPATH" ] || USERPATH="$PATH"
-env -i $BASE PATH="$USERPATH" nohup "$CLI" daemon --store "$STORE" >>"$STORE/logs/daemon.log" 2>&1 </dev/null &
-NEW=
-for _ in $(seq 1 40); do
-  NEW=$(cat "$STORE/daemon.lock" 2>/dev/null || true)
-  [ -n "$NEW" ] && ps -o command= -p "$NEW" 2>/dev/null | grep -q "^$CLI daemon" && "$CLI" web --store "$STORE" >/dev/null 2>&1 && break
-  NEW=
-  sleep 0.5
-done
-if [ -z "$NEW" ]; then
-  echo "the new host did not start; see $STORE/logs/daemon.log" >&2
-  exit 1
-fi
-echo "host: pid $NEW, $("$CLI" version)"
+# Each run of the app starts its own host: reopen the app, whose host adopts the sessions.
 if [ -n "$APP_WAS_OPEN" ]; then
   env -u ELECTRON_RUN_AS_NODE open "$DEST"
+  echo "reopened the app; its host adopts the running sessions"
+else
+  echo "open PenguPool AI to start its host"
 fi

@@ -101,6 +101,9 @@ type State struct {
 	Secrets map[string]string `json:"secrets,omitempty"`
 	// Offsets are transcript offsets already consumed, by session id.
 	Offsets map[string]int64 `json:"offsets,omitempty"`
+	// Restore lists the sessions that were running when the last app-owned run ended (quit, crash,
+	// power loss); the next run asks the owner to restore them or start fresh, then clears it.
+	Restore []string `json:"restore,omitempty"`
 }
 
 // Listener describes where the daemon accepts connections.
@@ -185,6 +188,7 @@ func (s State) Clone() State {
 	}
 	c.Secrets = maps.Clone(s.Secrets)
 	c.Offsets = maps.Clone(s.Offsets)
+	c.Restore = append([]string(nil), s.Restore...)
 	return c
 }
 

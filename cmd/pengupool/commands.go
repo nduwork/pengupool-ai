@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -30,8 +31,7 @@ func logf(format string, args ...any) {
 }
 
 // hostVersionFile, under the store directory, is the version line the running daemon wrote at
-// startup. The desktop app compares it with its bundled host and restarts one that is not its
-// own build.
+// startup: which build serves the store, for the owner and `pengupool doctor` to read.
 const hostVersionFile = "run/host.version"
 
 // writeHostVersion records the running host's build for the desktop app.
@@ -40,6 +40,37 @@ func writeHostVersion(dir, line string) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, hostVersionFile), []byte(line+"\n"), 0o600)
+}
+
+// handoverFile marks sessions an app-owned host left running for the next host: the app quit to
+// install an update. handoverTTL bounds it: an update that failed and was never reopened leaves
+// workers the next run ends and offers to restore, as after a crash.
+const (
+	handoverFile = "run/handover"
+	handoverTTL  = 10 * time.Minute
+)
+
+// tookOver reports, and consumes, a recent hand-over to this host.
+func tookOver(dir string) bool {
+	path := filepath.Join(dir, handoverFile)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	_ = os.Remove(path)
+	at, err := time.Parse(time.RFC3339, strings.TrimSpace(string(b)))
+	return err == nil && time.Since(at) < handoverTTL
+}
+
+// runningIDs are the sessions the record says are running.
+func runningIDs(st *store.Store) []string {
+	var ids []string
+	for _, s := range st.State().Sessions {
+		if s.State == "running" {
+			ids = append(ids, s.ID)
+		}
+	}
+	return ids
 }
 
 // hubSessions adapts *hub.Hub to the gateway's session interface. The adapter lives here, in the
@@ -86,6 +117,7 @@ func cmdDaemon(args []string) error {
 	storeFlag := fs.String("store", "", "store directory")
 	httpAddr := fs.String("http", "127.0.0.1:7787", "HTTP address for the browser app")
 	lan := fs.Bool("lan", false, "listen on the LAN, not only loopback")
+	ownerPID := fs.Int("owner-pid", 0, "the desktop app run this host belongs to: it ends, with its sessions, when that process does")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -124,16 +156,53 @@ func cmdDaemon(args []string) error {
 		return err
 	}
 	defer lock.Release()
-	// The desktop app restarts a host that is not its own build: after an update installed by
-	// hand the old daemon still runs, and the new renderer asks it for requests it does not
-	// know. The version line the app compares against lives here, next to the address and the
-	// token; a daemon that predates this file reads as another build.
+	// Which build serves the store, next to the address and the token.
 	if err := writeHostVersion(dir, versionLine()); err != nil {
 		logf("host version: %v", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// An app-owned host lives as long as the app's run: when the app quits, crashes or is killed,
+	// the host ends and takes its sessions with it, so no host outlives the build that started it.
+	if *ownerPID > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		go func() {
+			for ctx.Err() == nil {
+				if syscall.Kill(*ownerPID, 0) == syscall.ESRCH {
+					logf("the app (pid %d) is gone; ending this run", *ownerPID)
+					cancel()
+					return
+				}
+				time.Sleep(time.Second)
+			}
+		}()
+	}
+	// The sessions recorded running when this host starts are from a run that ended without its
+	// shutdown (a crash, power loss): an app-owned host offers them to the owner to restore.
+	wasRunning := runningIDs(st)
+	// A restart to apply listener settings (pool.Restarter), or a host the app handed its sessions to
+	// before installing an update (handOver), continues the same run: adopt its sessions.
+	sameRun := os.Getenv("PENGUPOOL_SAME_RUN") == "1" || tookOver(dir)
+	os.Unsetenv("PENGUPOOL_SAME_RUN")
+	var handover atomic.Bool
+	if *ownerPID > 0 {
+		usr1 := make(chan os.Signal, 1)
+		signal.Notify(usr1, syscall.SIGUSR1)
+		go func() {
+			if _, ok := <-usr1; ok {
+				logf("handing the sessions over to the next host (an update); they keep running")
+				if err := os.WriteFile(filepath.Join(dir, handoverFile), []byte(time.Now().UTC().Format(time.RFC3339)), 0o600); err != nil {
+					logf("hand over: %v; the sessions end with this run", err)
+				} else {
+					handover.Store(true)
+				}
+				stop()
+			}
+		}()
+	}
 
 	h, err := hub.New(hub.Options{Store: st, Executable: selfPath(), Logf: logf})
 	if err != nil {
@@ -147,6 +216,21 @@ func cmdDaemon(args []string) error {
 	nodes := node.New(st, selfPath(), logf)
 	nodes.Version = versionLine()
 	pl := pool.New(pool.Options{Store: st, Hub: h, Exe: selfPath(), Logf: logf, Nodes: nodes, Version: Version, RequireOwnerInput: true})
+	if *ownerPID > 0 && !sameRun {
+		pl.MarkRestore(wasRunning)
+		pl.EndRun(ctx) // workers a killed host left behind belong to no run now
+	}
+	if *ownerPID > 0 {
+		defer func() {
+			if handover.Load() {
+				return // the workers keep running for the next host to adopt
+			}
+			// The run is over: end its sessions, recorded for the next run's question.
+			ectx, ecancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer ecancel()
+			pl.EndRun(ectx)
+		}()
+	}
 	go pl.Run(ctx)
 	srv, err := gateway.New(gateway.Options{
 		SocketPath: hubSocket(dir),
@@ -176,7 +260,7 @@ func cmdDaemon(args []string) error {
 	pool.Restarter = func() {
 		logf("restarting to apply listener settings; sessions keep running")
 		lock.Release()
-		if err := syscall.Exec(selfPath(), os.Args, os.Environ()); err != nil {
+		if err := syscall.Exec(selfPath(), os.Args, append(os.Environ(), "PENGUPOOL_SAME_RUN=1")); err != nil {
 			logf("restart failed: %v", err)
 			os.Exit(1)
 		}
