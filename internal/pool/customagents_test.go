@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -39,7 +40,7 @@ func TestMigrateAgentModels(t *testing.T) {
 	}
 	first, second := cfg.CustomAgents[0], cfg.CustomAgents[1]
 	if first.Starts != "claude" || !first.Default || second.Default ||
-		first.Command != "env OLLAMA_HOST=http://box:11434 ollama launch claude --model qwen3-coder --yes --" ||
+		first.Command != "OLLAMA_HOST=http://box:11434 ollama launch claude --model qwen3-coder --yes --" ||
 		!strings.Contains(second.Command, "--model glm --yes --") || first.Name != "Claude Code (Ollama: qwen3-coder)" {
 		t.Fatalf("entries: %+v", cfg.CustomAgents)
 	}
@@ -57,6 +58,15 @@ func TestMigrateAgentModels(t *testing.T) {
 	if n := len(st.Config().CustomAgents); n != 2 {
 		t.Fatalf("migrated twice: %d entries", n)
 	}
+	// A start that stopped before the old setting was dropped redoes the rest, reusing the entries.
+	_ = st.UpdateConfig(func(c *store.Config) error {
+		c.AgentModels = &store.AgentModels{OllamaURL: "http://box:11434/", OllamaModel: "qwen3-coder", Ollama: []string{"claude"}}
+		return nil
+	})
+	p.MigrateAgentModels()
+	if c := st.Config(); len(c.CustomAgents) != 2 || c.AgentModels != nil {
+		t.Fatalf("redone migration: %+v", c)
+	}
 }
 
 // A store with no Ollama setting migrates nothing.
@@ -72,6 +82,15 @@ func TestMigrateNothing(t *testing.T) {
 }
 
 func TestCheckCustomAgents(t *testing.T) {
+	// Ids stay unique and at most one entry is the default.
+	two, err := checkCustomAgents([]store.CustomAgent{{ID: "a", Name: "x", Command: "a", Default: true}, {ID: "a", Name: "y", Command: "b", Default: true}})
+	if err != nil || two[0].ID == two[1].ID || !two[0].Default || two[1].Default {
+		t.Fatalf("%+v %v", two, err)
+	}
+	// A command that starts nothing runs as written, a leading VAR=value included.
+	if out, err := exec.Command(customCommand(store.CustomAgent{Command: "FOO=bar printenv FOO"})[0], customCommand(store.CustomAgent{Command: "FOO=bar printenv FOO"})[1:]...).Output(); err != nil || string(out) != "bar\n" {
+		t.Fatalf("custom command: %q %v", out, err)
+	}
 	ok, err := checkCustomAgents([]store.CustomAgent{
 		{Name: " Ollama ", Command: "ollama launch claude --model m --yes --", Starts: "claude"},
 		{Name: "htop", Command: "htop"},
@@ -86,6 +105,7 @@ func TestCheckCustomAgents(t *testing.T) {
 		"no name":     {{Command: "htop"}},
 		"same name":   {{Name: "x", Command: "a"}, {Name: "X", Command: "b"}},
 		"not a agent": {{Name: "x", Command: "a --", Starts: "bash"}},
+		"comment":     {{Name: "x", Command: "ollama launch claude # x --", Starts: "claude"}},
 	} {
 		if _, err := checkCustomAgents(c); err == nil {
 			t.Errorf("%s: accepted", name)

@@ -142,6 +142,9 @@ export const isUnsupported = (c: CustomAgent): boolean => (c.starts ?? "") === "
 /** The installed-agents check (harness.probe): a version, or why it is not there. */
 export type Found = Record<string, { version: string; error?: string }>;
 
+/** When the install check itself fails, every agent is offered, as if installed: a failed check never blocks a launch. */
+export const checkFailed = (): Found => Object.fromEntries(AGENTS.map((a) => [a.id, { version: "" }]));
+
 /** What a picker offers: installed agents only (once the check answered), then each Custom agent. */
 export function pickable(found: Found | null, customs: readonly CustomAgent[] = [], agents: readonly { id: string; label: string; hidden: boolean }[] = AGENTS): { value: string; label: string; agent?: string }[] {
   const out: { value: string; label: string; agent?: string }[] = [];

@@ -144,7 +144,7 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 	// A Custom agent: the owner's command starts the agent and passes it the agent's own arguments
 	// (the command ends with "--"). The agent's folder leads PATH, so the command finds the same one.
 	env = append(env, "PATH="+filepath.Dir(cmd[0])+string(filepath.ListSeparator)+firstNonEmptyEnv(p.Env, "PATH"))
-	return append([]string{"/bin/sh", "-c", "exec " + p.Wrap + ` "$@"`, "pengupool"}, cmd[1:]...), env, nil
+	return append([]string{"/bin/sh", "-c", "exec env " + p.Wrap + ` "$@"`, "pengupool"}, cmd[1:]...), env, nil
 }
 
 func spec(kind string, p Params) ([]string, []string, error) {

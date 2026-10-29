@@ -1,7 +1,7 @@
 import { FolderOpen, GitBranch } from "lucide-react";
 import { useEffect, useState, type ReactElement } from "react";
 
-import { AGENTS, UNSUPPORTED_NOTE, agentOptions, harnessLabel, isUnsupported, launchAgent, pickable, useApp, usePersisted, type CustomAgent, type Found } from "../app/ctx";
+import { AGENTS, UNSUPPORTED_NOTE, agentOptions, checkFailed, harnessLabel, isUnsupported, launchAgent, pickable, useApp, usePersisted, type CustomAgent, type Found } from "../app/ctx";
 import { localDesktop } from "../app/desktop";
 import { FolderBrowser } from "../components/FolderBrowser";
 import { Button } from "../components/ui/button";
@@ -39,7 +39,7 @@ export function NewSessionDialog({ onClose, initialPath, parentId }: { onClose: 
   const [found, setFound] = useState<Found | null>(null);
   const [customs, setCustoms] = useState<CustomAgent[]>([]);
   useEffect(() => {
-    void app.conn.request<Found>("harness.probe").then(setFound, () => setFound({}));
+    void app.conn.request<Found>("harness.probe").then(setFound, () => setFound(checkFailed()));
     void app.conn.request<{ custom_agents?: CustomAgent[] | null }>("settings.get").then(
       (r) => setCustoms(r.custom_agents ?? []),
       () => undefined,

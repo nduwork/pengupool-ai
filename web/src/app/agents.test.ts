@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { launchAgent, pickable, type CustomAgent, type Found } from "./ctx";
+import { checkFailed, launchAgent, pickable, type CustomAgent, type Found } from "./ctx";
 
 const yes = { version: "1.0" };
 const no = { version: "", error: "harness_unavailable: not on PATH" };
@@ -20,6 +20,9 @@ describe("New session's agent list", () => {
   });
   it("offers nothing until the install check answers", () => {
     expect(pickable(null, [{ id: "t", name: "htop", command: "htop" }]).map((o) => o.value)).toEqual(["custom:t"]);
+  });
+  it("a failed install check blocks nothing", () => {
+    expect(pickable(checkFailed()).map((o) => o.value)).toEqual(["claude", "muse", "codex", "pi", "omp", "opencode"]);
   });
   it("launches a Custom agent by its id", () => {
     expect(launchAgent("custom:o", "")).toEqual({ harness: "", custom: "o", model: undefined });

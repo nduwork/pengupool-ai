@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 
-import { AGENTS, agentOptions, launchAgent, pickable, skillName, useApp, type Found } from "../app/ctx";
+import { AGENTS, agentOptions, checkFailed, launchAgent, pickable, skillName, useApp, type Found } from "../app/ctx";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import { Input, Label, Select, Textarea } from "../components/ui/controls";
@@ -45,7 +45,7 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
   const allowed = AGENTS.filter((a) => (skill?.requires ?? []).length === 0 || (skill?.requires ?? []).includes(a.id));
   const [found, setFound] = useState<Found | null>(null);
   useEffect(() => {
-    if (adding) void app.conn.request<Found>("harness.probe").then(setFound, () => setFound({}));
+    if (adding) void app.conn.request<Found>("harness.probe").then(setFound, () => setFound(checkFailed()));
   }, [adding]);
   const [want, setHarness] = useState(change.harness ?? skill?.harness ?? (team.harness || "claude"));
   // What is shown is what is sent: a wanted agent the helper may not run on, or that is not

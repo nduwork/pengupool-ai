@@ -58,7 +58,7 @@ func TestCustomWrapAndNewAgents(t *testing.T) {
 	// A Custom agent that starts Claude: the owner's command, then Claude's own arguments (its hooks),
 	// with Claude's folder first on PATH so the command runs this Claude.
 	w := p
-	w.Wrap = "env OLLAMA_HOST=http://h:1 ollama launch claude --model m --yes --"
+	w.Wrap = "OLLAMA_HOST=http://h:1 ollama launch claude --model m --yes --"
 	cmd, env, _ := Spec(Claude, w)
 	if len(cmd) < 5 || cmd[0] != "/bin/sh" || cmd[2] != `exec env OLLAMA_HOST=http://h:1 ollama launch claude --model m --yes -- "$@"` ||
 		cmd[4] != "--teammate-mode" || !slices.Contains(cmd, "--settings") || !slices.Contains(env, "PATH="+dir+":"+dir) {
