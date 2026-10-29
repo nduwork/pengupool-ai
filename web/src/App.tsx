@@ -25,7 +25,7 @@ import { Settings } from "./views/Settings";
 import { Sidebar } from "./views/Sidebar";
 import { SkillLibrary } from "./views/SkillLibrary";
 import { isUnread, markViewed, type Viewed } from "./views/lanes";
-import { sessionNeeds, type OpenGate } from "./views/inbox";
+import { askNeeds, sessionNeeds, type OpenGate } from "./views/inbox";
 import { Handle } from "./views/Page";
 import { Workbench, usePanelRefs } from "./views/Workspace";
 
@@ -160,21 +160,22 @@ export function App(): ReactElement {
   const seen = useRef(new Set<string>());
   useEffect(() => {
     const pending = view.domain.approvals.filter((a) => a.state === "pending" && a.kind !== "permission");
-    desktop?.setBadge(pending.length + sessionNeeds(view.sessions, gates).length);
+    desktop?.setBadge(pending.length + sessionNeeds(view.sessions, gates).length + askNeeds(view.domain.messages, view.sessions).length);
     for (const a of pending) {
       if (seen.current.has(a.id)) continue;
       seen.current.add(a.id);
       desktop?.notify("Team launch ready", a.detail ?? "Review the proposal");
     }
-  }, [view.domain.approvals, view.sessions, gates]);
+  }, [view.domain.approvals, view.domain.messages, view.sessions, gates]);
 
   // A session starting to need you (a permission prompt, a lost connection) notifies on the transition only; finished work never does.
   const asking = useRef(new Set<string>());
   useEffect(() => {
-    const list = sessionNeeds(view.sessions, gates);
-    for (const n of list) if (!asking.current.has(n.session)) desktop?.notify(`${n.name} needs you`, n.kind === "checkin" ? `${n.name} asks: ${n.text}` : `${n.name} ${n.text}`);
-    asking.current = new Set(list.map((n) => n.session));
-  }, [view.sessions, gates]);
+    const list = [...sessionNeeds(view.sessions, gates), ...askNeeds(view.domain.messages, view.sessions)];
+    const words = (n: (typeof list)[number]): string => (n.kind === "checkin" ? `${n.name} asks: ${n.text}` : n.kind === "ask" ? `${n.name} asked ${n.toName ?? ""}: ${n.text}` : `${n.name} ${n.text}`);
+    for (const n of list) if (!asking.current.has(n.key ?? n.session)) desktop?.notify(`${n.name} needs you`, words(n));
+    asking.current = new Set(list.map((n) => n.key ?? n.session));
+  }, [view.sessions, view.domain.messages, gates]);
 
   // Unread dots: output since the owner last viewed a session (the selected one is always read).
   const [viewed, setViewed] = usePersisted<Viewed>("viewed", {});

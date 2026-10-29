@@ -16,6 +16,7 @@ import { NewSessionDialog } from "../NewSession";
 import { PATH_MIME, UNSAFE_NOTICE, typePath } from "../explorerPaths";
 import { Item, MenuContent, PreviousSheet, RenameSheet, SessionMenu, Sep } from "./actions";
 import { olderThan, type RecordedMessage } from "./olderMessages";
+import { STATE_CELL, TYPE_CHIP, age, askPill, newestByPair, openAsks } from "./asks";
 import { layout, rounded, type Block, type LayoutKind, type TreeNode } from "./layout";
 import { AgentPool, DND } from "./Pool";
 import { ClosedTeamsSheet, CloseTeamSheet, TeamSettingsSheet } from "./TeamSheets";
@@ -119,6 +120,19 @@ export function TeamMap(): ReactElement {
     if (parentOf(team.id, m.to) === m.from) hot.set(`${m.from}>${m.to}`, "down");
     else if (parentOf(team.id, m.from) === m.to) hot.set(`${m.to}>${m.from}`, "up");
   }
+
+  // Open asks: a pill on the asker's card and on the route between asker and recipient. A route whose
+  // newest message is still queued is drawn dashed until it arrives.
+  const asks = openAsks(domain.messages);
+  const asksOn = (a: string, b: string): TeamMessage[] => asks.filter((x) => (x.from === a && x.to === b) || (x.from === b && x.to === a));
+  const newest = newestByPair(domain.messages);
+  const queuedOn = (parent: string, child: string): "down" | "up" | undefined => {
+    const down = newest.get(`${parent}>${child}`);
+    const up = newest.get(`${child}>${parent}`);
+    const last = down === undefined ? up : up === undefined || Date.parse(down.at) >= Date.parse(up.at) ? down : up;
+    if (last?.state !== "queued") return undefined;
+    return last === down ? "down" : "up";
+  };
 
   const pendingLaunch = domain.approvals.filter((a) => a.kind === "launch" && a.state === "pending");
   const flash = (ids: string[]): void => {
@@ -256,6 +270,10 @@ export function TeamMap(): ReactElement {
               return role !== undefined ? (
                 <RoleTag role={role} className="absolute right-2 top-1.5 rounded-[2px] px-[3px] text-[8px] leading-[11px] tracking-[0.08em] uppercase" />
               ) : null;
+            })()}
+            {(() => {
+              const mine = asks.filter((a) => a.from === s.id);
+              return mine.length > 0 ? <AskPill asks={mine} name={(id) => byId.get(id)?.name ?? id.slice(0, 8)} className="absolute bottom-1.5 right-2" /> : null;
             })()}
             <span className="flex items-center gap-1.5 font-semibold" style={{ color: tone(st) }}>
               {SYMBOL[st] !== undefined ? `${SYMBOL[st]} ` : ""}
@@ -427,9 +445,11 @@ export function TeamMap(): ReactElement {
                         <div className="relative" style={{ width: g.block.w, height: g.block.h }}>
                           <svg className="pointer-events-none absolute inset-0 overflow-visible" width={g.block.w} height={g.block.h}>
                             {g.block.routes.map((r) => {
-                              const heat = hot.get(`${r.from}>${r.to}`);
+                              const queued = queuedOn(r.from, r.to);
+                              const heat = queued === undefined ? hot.get(`${r.from}>${r.to}`) : undefined;
                               const d = rounded(r.points);
-                              const color = heat === "down" ? "#3fb950" : heat === "up" ? "#9ecbff" : "var(--muted-foreground)";
+                              const dir = queued ?? heat;
+                              const color = dir === "down" ? "#3fb950" : dir === "up" ? "#9ecbff" : "var(--muted-foreground)";
                               return (
                                 <g key={`${r.from}>${r.to}`}>
                                   <path
@@ -438,8 +458,9 @@ export function TeamMap(): ReactElement {
                                     strokeLinejoin="round"
                                     className="transition-[stroke,stroke-width] duration-300"
                                     stroke={color}
-                                    strokeOpacity={heat === undefined ? 0.75 : 0.6}
+                                    strokeOpacity={dir === undefined ? 0.75 : 0.6}
                                     strokeWidth={2}
+                                    strokeDasharray={queued !== undefined ? "4 4" : undefined}
                                   />
                                   {heat !== undefined && (
                                     // Round-capped zero-length dashes are beads; the dash offset runs them the message's way.
@@ -449,6 +470,20 @@ export function TeamMap(): ReactElement {
                               );
                             })}
                           </svg>
+                          {g.block.routes.map((r) => {
+                            const on = asksOn(r.from, r.to);
+                            if (on.length === 0) return null;
+                            const [x, y] = r.points[Math.floor(r.points.length / 2)];
+                            return (
+                              <AskPill
+                                key={`ask:${r.from}>${r.to}`}
+                                asks={on}
+                                name={(id) => byId.get(id)?.name ?? id.slice(0, 8)}
+                                className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
+                                style={{ left: x, top: y }}
+                              />
+                            );
+                          })}
                           {Object.entries(g.block.cards).map(([id, box]) => {
                             const s = byId.get(id);
                             if (s === undefined) {
@@ -525,6 +560,9 @@ export function TeamMap(): ReactElement {
         <Legend color="#f59e0b" thick>
           other message
         </Legend>
+        <Legend color="var(--muted-foreground)" dashed>
+          queued
+        </Legend>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2.5 w-4 rounded-sm border border-dashed border-faint" /> ungrouped
         </span>
@@ -534,11 +572,36 @@ export function TeamMap(): ReactElement {
   );
 }
 
-function Legend({ color, thick, children }: { color: string; thick?: boolean; children: string }): ReactElement {
+/** Open asks as a pill: "? 4m", "? 2 · 18m", "? 18m ↑" once escalated to the owner. */
+function AskPill({ asks, name, className, style }: { asks: TeamMessage[]; name: (id: string) => string; className?: string; style?: React.CSSProperties }): ReactElement {
+  const { text, escalated } = askPill(asks, Date.now());
+  const oldest = asks.reduce((o, a) => (Date.parse(a.at) < Date.parse(o.at) ? a : o));
+  const minutes = Math.floor((Date.now() - Date.parse(oldest.at)) / 60000);
+  const label =
+    (asks.length > 1 ? `${asks.length} open asks, the oldest ${minutes} minutes` : `Open ask to ${name(oldest.to)}, ${minutes} minutes`) +
+    (escalated ? ", sent to you" : "");
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={cn(
+        "rounded-[2px] bg-panel px-[3px] text-[8px] leading-[11px] tabular-nums whitespace-nowrap",
+        escalated ? "border-[1.5px] border-warning font-semibold text-warning" : "border border-border text-muted-foreground",
+        className,
+      )}
+      style={style}
+    >
+      {text}
+    </span>
+  );
+}
+
+function Legend({ color, thick, dashed, children }: { color: string; thick?: boolean; dashed?: boolean; children: string }): ReactElement {
   return (
     <span className="flex items-center gap-1.5">
       <svg width="18" height="8" aria-hidden>
-        <path d="M0,4 H18" stroke={color} strokeWidth={thick === true ? 3 : 1.75} />
+        <path d="M0,4 H18" stroke={color} strokeWidth={thick === true ? 3 : 1.75} strokeDasharray={dashed === true ? "4 4" : undefined} />
       </svg>
       {children}
     </span>
@@ -553,6 +616,7 @@ export function MessageLog(): ReactElement {
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const [older, setOlder] = useState<Record<string, RecordedMessage[]>>({});
   const msgs = [...app.domain.messages].reverse().slice(0, 60);
+  const openIds = new Set(openAsks(app.domain.messages).map((a) => a.id));
   const name = (id: string): string => app.sessions.find((s) => s.id === id)?.name ?? id.slice(0, 8);
   const groups = new Map<string, TeamMessage[]>();
   for (const m of msgs) groups.set(m.team_id, [...(groups.get(m.team_id) ?? []), m]);
@@ -606,6 +670,7 @@ export function MessageLog(): ReactElement {
                 className={cn("flex w-full gap-x-2 rounded py-0.5 text-left font-mono text-[11.5px] hover:bg-accent/40 focus-visible:outline focus-visible:outline-1", full && "flex-wrap")}
               >
                 <span className="shrink-0 text-faint">{new Date(m.at).toLocaleTimeString()}</span>
+                <span className={cn("w-[9ch] shrink-0", TYPE_CHIP[m.type ?? "tell"]?.className)}>{TYPE_CHIP[m.type ?? "tell"]?.text ?? m.type}</span>
                 {(() => {
                   const from = roleOf(app.domain, app.sessions, m.from);
                   return from !== undefined ? <RoleTag role={from} /> : <Badge>agent</Badge>;
@@ -627,7 +692,13 @@ export function MessageLog(): ReactElement {
                 >
                   {m.text}
                 </span>
-                <span className="shrink-0 text-faint">{m.state}</span>
+                <span
+                  className={cn("shrink-0", STATE_CELL[m.state]?.className ?? "text-faint")}
+                  title={m.state === "queued" ? `Queued: not yet in ${name(m.to)}'s turn` : m.state === "delivered" ? `Delivered to ${name(m.to)}'s turn` : m.state === "failed" ? `Failed: ${m.reason ?? ""}` : undefined}
+                >
+                  {STATE_CELL[m.state]?.text ?? m.state}
+                  {openIds.has(m.id) ? ` · ? ${age(m.at, Date.now())}` : ""}
+                </span>
               </button>
             );
           })}

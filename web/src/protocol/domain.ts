@@ -157,9 +157,20 @@ export interface TeamMessage {
   from: string;
   to: string;
   text: string;
+  /** queued | delivered | failed */
   state: string;
   reason?: string;
   at: string;
+  /** host | native (Claude's own SendMessage) | channel; absent: host. */
+  via?: string;
+  /** tell | ask | done | blocked; absent: tell. */
+  type?: string;
+  /** The ask this answers. */
+  reply_to?: string;
+  /** An ask that waited too long went to triage, then to the owner's Needs you. */
+  escalated_at?: string;
+  /** An ask the owner or triage closed without the recipient's answer. */
+  settled_at?: string;
 }
 
 export interface NodeView {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionView } from "../protocol/control";
-import { ARCHIVE_MS, reconcileInbox, sessionNeeds, type Need, type OpenGate } from "./inbox";
+import type { TeamMessage } from "../protocol/domain";
+import { ARCHIVE_MS, askNeeds, reconcileInbox, sessionNeeds, type Need, type OpenGate } from "./inbox";
 
 const s = (name: string, status: string, state = "running"): SessionView => ({ id: name, name, state, status, harness: "claude" }) as SessionView;
 const need = (session: string, text = "waiting on a permission prompt"): Need => ({ session, name: session, kind: "permission", text });
@@ -51,5 +52,20 @@ describe("reconcileInbox", () => {
     expect(fallback.text).toBe("Approve Bash: python3 - <<'EOF'?");
     expect(fallback.detail).toBe("Bash: " + long);
     expect(one(g(undefined, "Bash: " + "a".repeat(200))).text.length).toBeLessThan(100);
+  });
+});
+
+describe("askNeeds", () => {
+  const ask = (id: string, m: Partial<TeamMessage> = {}): TeamMessage => ({ id, team_id: "t", from: "a", to: "b", text: "which port?", state: "delivered", at: "2026-10-29T10:00:00Z", type: "ask", ...m });
+  it("lists only escalated open asks whose asker still runs", () => {
+    const out = askNeeds([ask("1", { escalated_at: "x" }), ask("2"), ask("3", { escalated_at: "x", settled_at: "y" }), ask("4", { escalated_at: "x", from: "gone" })], [s("a", "idle"), s("b", "working"), s("gone", "idle", "exited")]);
+    expect(out.map((n) => [n.key, n.name, n.toName])).toEqual([["ask:1", "a", "b"]]);
+  });
+  it("keeps a check-in and an ask from one session apart in the inbox", () => {
+    const checkin: Need = { session: "a", name: "a", kind: "checkin", text: "Shall I go on?" };
+    const [askNeed] = askNeeds([ask("1", { escalated_at: "x" })], [s("a", "idle"), s("b", "idle")]);
+    const out = reconcileInbox([], [checkin, askNeed], 100);
+    expect(out.map((e) => e.kind).sort()).toEqual(["ask", "checkin"]);
+    expect(reconcileInbox(out, [checkin], 200).find((e) => e.kind === "ask")?.resolvedAt).toBe(200);
   });
 });
