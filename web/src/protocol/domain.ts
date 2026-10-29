@@ -171,6 +171,8 @@ export interface TeamMessage {
   escalated_at?: string;
   /** An ask the owner or triage closed without the recipient's answer. */
   settled_at?: string;
+  /** When it reached the recipient; records from before 0.9.23 have none. */
+  delivered_at?: string;
 }
 
 export interface NodeView {
