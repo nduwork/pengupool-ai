@@ -1810,28 +1810,6 @@ func writableAfter(t *testing.T, st *store.Store) {
 	t.Cleanup(func() { _ = setWritable(filepath.Join(st.Dir(), "skills"), true) })
 }
 
-// A session picks Claude Code on Ollama with the model "ollama/<model>" ("ollama/" takes the
-// configured model); any other model runs on the agent's own account.
-func TestOllamaPickedPerSession(t *testing.T) {
-	st, err := store.Open(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := New(Options{Store: st, Exe: "pengupool"})
-	if o := p.ollamaFor("claude", "ollama/qwen3-coder"); o == nil || o.Model != "qwen3-coder" || o.URL != "http://127.0.0.1:11434" {
-		t.Fatalf("picked: %+v", o)
-	}
-	if p.ollamaFor("claude", "ollama/") != nil || p.ollamaFor("claude", "sonnet") != nil {
-		t.Fatal("ran on Ollama without a model, or for a plain model")
-	}
-	cfg := st.Config()
-	cfg.AgentModels.OllamaModel = "nimble"
-	_ = st.SaveConfig(cfg)
-	if o := p.ollamaFor("claude", "ollama/"); o == nil || o.Model != "nimble" {
-		t.Fatalf("configured model: %+v", o)
-	}
-}
-
 // Closing a helper on the map just closes it: off the team and the map, its worktree kept while it
 // holds work, the leave on the team's record.
 func TestCloseHelperFromMap(t *testing.T) {

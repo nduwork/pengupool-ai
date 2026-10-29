@@ -120,7 +120,7 @@ func TestDecideLimits(t *testing.T) {
 func TestDecideWithoutModel(t *testing.T) {
 	p, _ := twoTeams(t) // the test store configures no provider
 	_, err := ask(p, "planaaaaaaaa", okPack)
-	if protocol.CodeOf(err) != protocol.CodeNoDecider || !strings.Contains(err.Error(), "Settings → Models & agents") {
+	if protocol.CodeOf(err) != protocol.CodeNoDecider || !strings.Contains(err.Error(), "Settings → Decision model") {
 		t.Fatalf("no provider: %v", err)
 	}
 }

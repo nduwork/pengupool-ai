@@ -43,10 +43,9 @@ type Agent struct {
 	// Typed agents have no inbox PenguPool can write to: a team message is pasted into the
 	// terminal (bracketed paste, then Enter) when the agent's Stop hook says it is idle.
 	Typed bool `json:"typed"`
-	// Ollama: the agent can run on a local Ollama model per launch (no subscription needed).
-	Ollama bool `json:"ollama"`
-	// Experimental agents work but are not where PenguPool's support is focused (Claude Code is).
-	Experimental bool `json:"experimental"`
+	// Hidden agents are not offered (New session, the install check) but still run and resume the
+	// sessions already started on them.
+	Hidden bool `json:"hidden,omitempty"`
 	// EarlyStart agents fire SessionStart before their login and trust dialogs, so they count as
 	// ready only after their first finished turn.
 	EarlyStart bool `json:"-"`
@@ -55,24 +54,17 @@ type Agent struct {
 	HookOutCap int `json:"-"`
 }
 
-// Agents are the supported runtimes, in menu order: Claude Code (on its account or on Ollama) is
-// the focus, the others are experimental. Any of them can share a team with any other:
+// Agents are the supported runtimes, in menu order. Any of them can share a team with any other:
 // team messages go through PenguPool, which delivers each in the recipient's own way.
 var Agents = []Agent{
-	{ID: Claude, Label: "Claude Code", Hint: "Anthropic's coding agent", Compact: "/compact", Clear: "/clear", Ollama: true},
+	{ID: Claude, Label: "Claude Code", Hint: "Anthropic's coding agent", Compact: "/compact", Clear: "/clear"},
 	{ID: Muse, Label: "Muse Code", Hint: "Meta's coding agent", Typed: true, HookOutCap: 12 << 10},
-	{ID: OMP, Label: "OMP", Hint: "oh-my-pi agent", Compact: "/compact", Clear: "/new", Ollama: true, Experimental: true},
-	{ID: Pi, Label: "pi", Hint: "pi coding agent", Compact: "/compact", Clear: "/new", Ollama: true, Experimental: true},
-	{ID: OpenCode, Label: "OpenCode", Hint: "open-source coding agent", Compact: "/compact", Clear: "/new", Ollama: true, Experimental: true},
-	{ID: Codex, Label: "Codex", Hint: "OpenAI's coding agent", Compact: "/compact", Clear: "/new", Typed: true, Ollama: true, Experimental: true},
-	{ID: Copilot, Label: "GitHub Copilot", Hint: "GitHub Copilot CLI", Compact: "/compact", Clear: "/clear", Typed: true, Ollama: true, Experimental: true},
-	{ID: Gemini, Label: "Gemini CLI", Hint: "Google's agent (Google login; no Ollama)", Compact: "/compress", Clear: "/clear", Typed: true, EarlyStart: true, Experimental: true},
-}
-
-// Ollama runs an agent on a model served by Ollama, set per launch: no global config is edited.
-type Ollama struct {
-	URL   string // e.g. http://127.0.0.1:11434
-	Model string // e.g. deepseek-v4.1-flash:cloud
+	{ID: Codex, Label: "Codex", Hint: "OpenAI's coding agent", Compact: "/compact", Clear: "/new", Typed: true},
+	{ID: Pi, Label: "pi", Hint: "pi coding agent", Compact: "/compact", Clear: "/new"},
+	{ID: OMP, Label: "OMP", Hint: "oh-my-pi agent", Compact: "/compact", Clear: "/new"},
+	{ID: OpenCode, Label: "OpenCode", Hint: "open-source coding agent", Compact: "/compact", Clear: "/new"},
+	{ID: Copilot, Label: "GitHub Copilot", Hint: "GitHub Copilot CLI", Compact: "/compact", Clear: "/clear", Typed: true, Hidden: true},
+	{ID: Gemini, Label: "Gemini CLI", Hint: "Google's agent (Google login)", Compact: "/compress", Clear: "/clear", Typed: true, EarlyStart: true, Hidden: true},
 }
 
 // Find returns the agent with this id.
@@ -125,7 +117,9 @@ type Params struct {
 	Resume    string   // harness conversation id or OMP session file to resume
 	Command   []string // custom command
 	Env       []string // base environment
-	Ollama    *Ollama  // run on this Ollama model instead of the agent's own account
+	// Wrap is a Custom agent's command that starts this agent (e.g. `ollama launch claude --model m
+	// --yes --`): the agent's own arguments follow it.
+	Wrap string
 	// SkillRepo is a helper's skill repository: its skills/ load natively for this one session
 	// (Claude --plugin-dir, pi --skill, OMP a per-run config overlay); nothing is installed. A helper
 	// works outside it (a worktree or a scratch folder), so the agents that ask before reading
@@ -143,6 +137,17 @@ type Params struct {
 
 // Spec returns the command and environment for a launch.
 func Spec(kind string, p Params) ([]string, []string, error) {
+	cmd, env, err := spec(kind, p)
+	if err != nil || p.Wrap == "" || kind == Shell || kind == Custom || kind == "" {
+		return cmd, env, err
+	}
+	// A Custom agent: the owner's command starts the agent and passes it the agent's own arguments
+	// (the command ends with "--"). The agent's folder leads PATH, so the command finds the same one.
+	env = append(env, "PATH="+filepath.Dir(cmd[0])+string(filepath.ListSeparator)+firstNonEmptyEnv(p.Env, "PATH"))
+	return append([]string{"/bin/sh", "-c", "exec " + p.Wrap + ` "$@"`, "pengupool"}, cmd[1:]...), env, nil
+}
+
+func spec(kind string, p Params) ([]string, []string, error) {
 	env := append(append([]string(nil), p.Env...),
 		"PENGUPOOL_SESSION_ID="+p.SessionID,
 		"PENGUPOOL_SESSION="+p.SessionID, // steps.sh keys its workflow tracker by this when the harness sets nothing
@@ -158,16 +163,7 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 			return nil, nil, err
 		}
 		cmd := []string{bin, "--teammate-mode", "in-process", "--name", p.Name, "--settings", ClaudeSettings(p.Exe)}
-		if o := p.Ollama; o != nil {
-			// Ollama's own launcher sets everything Claude Code needs to run on it (the API address,
-			// the model for every tier and subagents, the compact window); its Claude is ours.
-			ollama, err := LookupOllama(p.Env)
-			if err != nil {
-				return nil, nil, err
-			}
-			env = append(env, "OLLAMA_HOST="+o.URL, "PATH="+filepath.Dir(bin)+string(filepath.ListSeparator)+firstNonEmptyEnv(p.Env, "PATH"))
-			cmd = append([]string{ollama, "launch", "claude", "--model", o.Model, "--yes", "--"}, cmd[1:]...)
-		} else if p.Model != "" {
+		if p.Model != "" {
 			cmd = append(cmd, "--model", p.Model)
 		}
 		if p.Effort != "" {
@@ -212,9 +208,7 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 			return nil, nil, err
 		}
 		cmd := []string{bin, "--hook=" + ext}
-		if p.Ollama != nil {
-			cmd = append(cmd, "--model=ollama/"+p.Ollama.Model)
-		} else if p.Model != "" {
+		if p.Model != "" {
 			cmd = append(cmd, "--model="+p.Model)
 		}
 		if p.Effort != "" {
@@ -241,9 +235,7 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 			return nil, nil, err
 		}
 		cmd := []string{bin, "-e", ext}
-		if p.Ollama != nil {
-			cmd = append(cmd, "--provider", "ollama", "--model", p.Ollama.Model)
-		} else if p.Model != "" {
+		if p.Model != "" {
 			cmd = append(cmd, "--model", p.Model)
 		}
 		if p.Effort != "" {
@@ -272,11 +264,7 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 			hook := shellQuote(p.Exe) + " hook codex " + ev
 			cmd = append(cmd, "-c", fmt.Sprintf("hooks.%s=[{hooks=[{type=\"command\",command=%s,timeout=15}]}]", ev, strconv.Quote(hook)))
 		}
-		if o := p.Ollama; o != nil {
-			cmd = append(cmd, "-c", `model_provider="pengupool-ollama"`,
-				"-c", fmt.Sprintf(`model_providers.pengupool-ollama={name="Ollama",base_url=%s,wire_api="responses"}`, strconv.Quote(o.URL+"/v1/")),
-				"-m", o.Model)
-		} else if p.Model != "" {
+		if p.Model != "" {
 			cmd = append(cmd, "-m", p.Model)
 		}
 		if p.Effort != "" {
@@ -298,11 +286,7 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 		} else {
 			cmd = append(cmd, "--session-id", p.SessionID, "--name", p.Name)
 		}
-		if o := p.Ollama; o != nil {
-			// Copilot's bring-your-own-provider settings, pointed at Ollama's OpenAI-compatible API.
-			env = append(env, "COPILOT_PROVIDER_BASE_URL="+o.URL+"/v1", "COPILOT_PROVIDER_API_KEY=",
-				"COPILOT_PROVIDER_WIRE_API=responses", "COPILOT_MODEL="+o.Model)
-		} else if p.Model != "" {
+		if p.Model != "" {
 			cmd = append(cmd, "--model", p.Model)
 		}
 		if p.SkillRepo != "" {
@@ -324,14 +308,7 @@ func Spec(kind string, p Params) ([]string, []string, error) {
 		// Inline config: layered over the user's opencode.json, never written into it.
 		cfg := map[string]any{"plugin": []string{"file://" + plugin}}
 		cmd := []string{bin}
-		if o := p.Ollama; o != nil {
-			cfg["provider"] = map[string]any{"ollama": map[string]any{
-				"npm": "@ai-sdk/openai-compatible", "name": "Ollama",
-				"options": map[string]any{"baseURL": o.URL + "/v1"},
-				"models":  map[string]any{o.Model: map[string]any{"name": o.Model}},
-			}}
-			cmd = append(cmd, "--model", "ollama/"+o.Model)
-		} else if p.Model != "" {
+		if p.Model != "" {
 			cmd = append(cmd, "--model", p.Model)
 		}
 		if p.Resume != "" {
@@ -590,19 +567,6 @@ func ClaudeProjectDir(home, cwd string) string {
 		}
 	}
 	return filepath.Join(home, ".claude", "projects", b.String())
-}
-
-// LookupOllama finds the ollama CLI on PATH, else where its installers put it.
-func LookupOllama(env []string) (string, error) {
-	if bin, err := Lookup("ollama", env); err == nil {
-		return bin, nil
-	}
-	for _, p := range []string{"/opt/homebrew/bin/ollama", "/usr/local/bin/ollama", "/Applications/Ollama.app/Contents/Resources/ollama"} {
-		if st, err := os.Stat(p); err == nil && !st.IsDir() {
-			return p, nil
-		}
-	}
-	return "", fmt.Errorf("harness_unavailable: Claude Code on Ollama needs the ollama CLI (https://ollama.com/download)")
 }
 
 // firstNonEmptyEnv is env's value for key, else this process's.

@@ -75,7 +75,9 @@ type Session struct {
 	CostUSD float64 `json:"cost_usd,omitempty"`
 	// Model is the model it last reported; JobStart is when its current piece of work began (the
 	// first prompt after its last log entry), recorded on that entry.
-	Model      string    `json:"model,omitempty"`
+	Model string `json:"model,omitempty"`
+	// Custom is the Custom agent it was started from: a resume runs that entry's command again.
+	Custom     string    `json:"custom,omitempty"`
 	JobStart   time.Time `json:"job_start,omitempty"`
 	Branch     string    `json:"branch,omitempty"`
 	RunLog     string    `json:"run_log,omitempty"`
@@ -119,8 +121,11 @@ type Config struct {
 	Listener  Listener       `json:"listener"`
 	Decision  DecisionConfig `json:"decision"`
 	Network   Network        `json:"network"`
-	// AgentModels routes agents to a local Ollama model per launch.
-	AgentModels AgentModels `json:"agent_models"`
+	// AgentModels is the old Claude-on-Ollama setting: read once and turned into a Custom agent
+	// (pool.MigrateAgentModels), then dropped.
+	AgentModels *AgentModels `json:"agent_models,omitempty"`
+	// CustomAgents are the owner's named commands that start an agent, or nothing (local only).
+	CustomAgents []CustomAgent `json:"custom_agents,omitempty"`
 	// Sync shares the Compass and the helpers' experience through a private GitHub repository.
 	Sync Sync `json:"sync"`
 	// MuseDevices are paired Muse app devices: name, token hash, created and last seen. Tokens
@@ -140,12 +145,24 @@ type Sync struct {
 	Repo        string `json:"repo,omitempty"`         // owner/name, recorded once created
 }
 
-// AgentModels: the agents listed in Ollama run on OllamaModel at OllamaURL instead of their own
-// account. It is passed per launch; no agent's global config is edited.
+// AgentModels: the agents listed in Ollama ran on OllamaModel at OllamaURL instead of their own
+// account. Only read, to migrate it.
 type AgentModels struct {
 	OllamaURL   string   `json:"ollama_url,omitempty"`
 	OllamaModel string   `json:"ollama_model,omitempty"`
 	Ollama      []string `json:"ollama,omitempty"`
+}
+
+// CustomAgent is a named command the owner saved. Starts is the agent it launches (its hooks,
+// settings and resume are appended after Command, which then ends with "--"), or "" for a command
+// run as written: no hooks, no teams, no Compass, no messages. Default marks the entry New session
+// starts on (set by the migration of "every Claude Code session on Ollama").
+type CustomAgent struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Command string `json:"command"`
+	Starts  string `json:"starts,omitempty"`
+	Default bool   `json:"default,omitempty"`
 }
 
 // ProviderConfig is one saved decision provider. KeyRef names where the key lives:

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 
-import { AGENTS, CLAUDE_OLLAMA, agentOptions, launchAgent, skillName, useApp } from "../app/ctx";
+import { AGENTS, agentOptions, launchAgent, pickable, skillName, useApp, type Found } from "../app/ctx";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import { Input, Label, Select, Textarea } from "../components/ui/controls";
@@ -43,40 +43,20 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
   const adding = change.op === "add";
   const skill = app.domain.skills.find((s) => s.id === change.skill_id);
   const allowed = AGENTS.filter((a) => (skill?.requires ?? []).length === 0 || (skill?.requires ?? []).includes(a.id));
-  const [found, setFound] = useState<Record<string, { version: string; error?: string }> | null>(null);
+  const [found, setFound] = useState<Found | null>(null);
   useEffect(() => {
-    if (adding) void app.conn.request<Record<string, { version: string; error?: string }>>("harness.probe").then(setFound, () => setFound({}));
+    if (adding) void app.conn.request<Found>("harness.probe").then(setFound, () => setFound({}));
   }, [adding]);
-  const missing = (id: string): boolean => (id === CLAUDE_OLLAMA ? missing("claude") : found !== null && found[id] !== undefined && found[id].error !== undefined);
   const [want, setHarness] = useState(change.harness ?? skill?.harness ?? (team.harness || "claude"));
   // What is shown is what is sent: a wanted agent the helper may not run on, or that is not
-  // installed, gives way to the first one that is.
-  const usable = allowed.filter((a) => !missing(a.id));
-  const harness = usable.some((a) => a.id === launchAgent(want, "").harness) ? want : (usable[0]?.id ?? want);
-  const agent = launchAgent(harness, "").harness;
+  // installed, gives way to the first one that is. A helper runs on an installed agent itself.
+  const usable = pickable(found, [], allowed);
+  const harness = usable.some((o) => o.value === want) ? want : (usable[0]?.value ?? want);
+  const agent = harness;
   const [model, setModel] = useState(change.model ?? "");
-  // Which agents run on a local Ollama model (Settings → Models & agents → Agents on this machine), as New session shows it.
-  const [models, setModels] = useState<{
-    ollama_model?: string;
-    ollama?: string[] | null;
-  } | null>(null);
-  useEffect(() => {
-    if (adding)
-      void app.conn
-        .request<{
-          agent_models?: { ollama_model?: string; ollama?: string[] | null };
-        }>("settings.get")
-        .then(
-          (r) => setModels(r.agent_models ?? null),
-          () => undefined,
-        );
-  }, [adding]);
-  const onOllama =
-    harness === CLAUDE_OLLAMA ? model.trim() || models?.ollama_model || "name a model below" : (models?.ollama ?? []).includes(harness) ? model.trim() || models?.ollama_model || "" : "";
-  const needsModel = harness === CLAUDE_OLLAMA && model.trim() === "" && (models?.ollama_model ?? "") === "";
   const picked = adding ? launchAgent(harness, model) : {};
   const submit = async (): Promise<void> => {
-    if (busy || (adding && (missing(harness) || usable.length === 0 || needsModel))) return;
+    if (busy || (adding && usable.length === 0)) return;
     setBusy(true);
     const r =
       approvalId !== undefined
@@ -101,7 +81,7 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
           <Button variant="ghost" onClick={close}>
             Cancel
           </Button>
-          <Button variant="default" disabled={busy || (adding && (missing(harness) || usable.length === 0 || needsModel))} onClick={() => void submit()}>
+          <Button variant="default" disabled={busy || (adding && usable.length === 0)} onClick={() => void submit()}>
             {adding ? (busy ? "Adding…" : approvalId !== undefined ? "Approve and add" : "Add member") : busy ? "Applying…" : "Approve change"}
           </Button>
         </>
@@ -131,17 +111,17 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
                     ? `None of the agents ${skill?.name ?? "it"} runs on is installed here.`
                     : allowed.length === 1
                       ? `Only ${allowed[0].label} can run ${skill?.name ?? "this helper"}.`
-                      : (found[agent]?.error ?? `${AGENTS.find((a) => a.id === agent)?.hint ?? ""} · ${found[agent]?.version ?? ""}${onOllama !== "" ? ` · runs on Ollama: ${onOllama}` : ""}`)
+                      : `${AGENTS.find((a) => a.id === agent)?.hint ?? ""} · ${found[agent]?.version ?? ""}`
               }
             >
               Agent
               <Select value={harness} onChange={(e) => setHarness(e.target.value)} aria-label="Agent runtime" autoFocus>
-                {agentOptions(allowed, missing, (id) => (skill?.harness === id ? " (helper's default)" : ""))}
+                {agentOptions(usable, (id) => (skill?.harness === id ? " (helper's default)" : ""))}
               </Select>
             </Label>
             <Label>
-              Model <span className="font-normal text-faint">{needsModel ? "required" : "optional"}</span>
-              <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder={harness === CLAUDE_OLLAMA ? (models?.ollama_model ?? "an Ollama model, e.g. qwen3-coder") : "harness default"} />
+              Model <span className="font-normal text-faint">optional</span>
+              <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="harness default" />
             </Label>
           </>
         ) : null}

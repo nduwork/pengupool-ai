@@ -110,49 +110,68 @@ const STATUS: Record<string, { label: string; dot: string; text: string }> = {
 const STALE_MS = 10 * 60 * 1000;
 
 /** The agent runtimes PenguPool runs (mirrors harness.Agents on the host). Any of them can share a
- * team: messages go through PenguPool, which delivers each in the recipient's own way. */
-// Claude Code (on its account or on Ollama) is what PenguPool supports first; the others are experimental.
+ * team: messages go through PenguPool, which delivers each in the recipient's own way. Hidden ones are
+ * not offered; their old sessions still run and resume. */
 export const AGENTS = [
-  { id: "claude", label: "Claude Code", hint: "Anthropic's coding agent", clear: "/clear", experimental: false },
-  { id: "muse", label: "Muse Code", hint: "Meta's coding agent", clear: "", experimental: false },
-  { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", experimental: true },
-  { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", experimental: true },
-  { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", experimental: true },
-  { id: "copilot", label: "GitHub Copilot", hint: "GitHub Copilot CLI", clear: "/clear", experimental: true },
-  { id: "opencode", label: "OpenCode", hint: "open-source coding agent", clear: "/new", experimental: true },
-  { id: "gemini", label: "Gemini CLI", hint: "Google's agent (Google login)", clear: "/clear", experimental: true },
+  { id: "claude", label: "Claude Code", hint: "Anthropic's coding agent", clear: "/clear", hidden: false },
+  { id: "muse", label: "Muse Code", hint: "Meta's coding agent", clear: "", hidden: false },
+  { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", hidden: false },
+  { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", hidden: false },
+  { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", hidden: false },
+  { id: "opencode", label: "OpenCode", hint: "open-source coding agent", clear: "/new", hidden: false },
+  { id: "copilot", label: "GitHub Copilot", hint: "GitHub Copilot CLI", clear: "/clear", hidden: true },
+  { id: "gemini", label: "Gemini CLI", hint: "Google's agent (Google login)", clear: "/clear", hidden: true },
 ] as const;
 
-/** The picker's choice for Claude Code on an Ollama model, launched with `ollama launch claude`. */
-export const CLAUDE_OLLAMA = "claude-ollama";
+/** A Custom agent the owner saved (Settings › Agents): a command that starts an agent, or nothing. */
+export interface CustomAgent {
+  id: string;
+  name: string;
+  command: string;
+  /** The agent it starts (its hooks follow the command, which ends with "--"); unset: nothing. */
+  starts?: string;
+  /** New session starts on it (moved from "every Claude Code session on Ollama"). */
+  default?: boolean;
+}
 
-/** What a picked agent launches: Claude on Ollama is Claude with the model "ollama/<model>" ("ollama/" for the configured one). */
-export function launchAgent(choice: string, model: string): { harness: string; model?: string } {
+/** The note on anything PenguPool does not support for messages and hooks: a Custom agent that starts nothing. */
+export const UNSUPPORTED_NOTE = "PenguPool does not support it for messages or hooks: no teams, no Compass, no messages.";
+
+export const isUnsupported = (c: CustomAgent): boolean => (c.starts ?? "") === "";
+
+/** The installed-agents check (harness.probe): a version, or why it is not there. */
+export type Found = Record<string, { version: string; error?: string }>;
+
+/** What a picker offers: installed agents only (once the check answered), then each Custom agent. */
+export function pickable(found: Found | null, customs: readonly CustomAgent[] = [], agents: readonly { id: string; label: string; hidden: boolean }[] = AGENTS): { value: string; label: string; agent?: string }[] {
+  const out: { value: string; label: string; agent?: string }[] = [];
+  for (const a of agents) {
+    if (a.hidden || found === null || found[a.id] === undefined || found[a.id].error !== undefined) continue;
+    out.push({ value: a.id, label: a.label, agent: a.id });
+  }
+  for (const c of customs) {
+    const starts = c.starts ?? "";
+    if (starts !== "" && (found === null || found[starts] === undefined || found[starts].error !== undefined)) continue;
+    out.push({ value: `custom:${c.id}`, label: c.name, agent: starts === "" ? undefined : starts });
+  }
+  return out;
+}
+
+/** What a picked option launches: an agent and its model, or a Custom agent. */
+export function launchAgent(choice: string, model: string): { harness: string; model?: string; custom?: string } {
   const m = model.trim();
-  if (choice === CLAUDE_OLLAMA) return { harness: "claude", model: `ollama/${m}` };
+  if (choice.startsWith("custom:")) return { harness: "", custom: choice.slice(7), model: m === "" ? undefined : m };
   return { harness: choice, model: m === "" ? undefined : m };
 }
 
-/** The agent picker's options, Claude Code on Ollama right after Claude Code. */
-export function agentOptions(agents: readonly { id: string; label: string; experimental: boolean }[], missing: (id: string) => boolean, note: (id: string) => string = () => ""): ReactElement[] {
-  const out: ReactElement[] = [];
-  for (const a of agents) {
-    out.push(
-      <option key={a.id} value={a.id} disabled={missing(a.id)}>
-        {a.label}
-        {a.experimental ? " (experimental)" : ""}
-        {missing(a.id) ? " — not installed" : ""}
-        {note(a.id)}
-      </option>,
-    );
-    if (a.id === "claude")
-      out.push(
-        <option key={CLAUDE_OLLAMA} value={CLAUDE_OLLAMA} disabled={missing("claude")}>
-          Claude Code (Ollama){missing("claude") ? " — not installed" : ""}
-        </option>,
-      );
-  }
-  return out;
+/** The picker's options, from pickable(). */
+export function agentOptions(options: readonly { value: string; label: string }[], note: (value: string) => string = () => ""): ReactElement[] {
+  return options.map((o) => (
+    <option key={o.value} value={o.value}>
+      {o.label}
+      {note(o.value)}
+    </option>
+  ));
 }
 
 /** A raw terminal tab: the owner's login shell, on no team and with no agent (shell.open). */

@@ -341,11 +341,12 @@ export function ProposalSheet({ taskId }: { taskId: string }): ReactElement {
                     return req.length === 0 || req.includes(task.harness) ? <option value="">Team default ({harnessLabel(task.harness)})</option> : null;
                   })()}
                   {AGENTS.filter((a) => {
+                    if (a.hidden) return false;
                     const req = app.domain.skills.find((x) => x.id === m.skill_id)?.requires ?? [];
                     return req.length === 0 || req.includes(a.id);
                   }).map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.label}{a.experimental ? " (experimental)" : ""}
+                      {a.label}
                     </option>
                   ))}
                 </Select>

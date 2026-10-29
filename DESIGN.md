@@ -36,10 +36,16 @@ making the decisions the person would not. What is said in one session is lost i
 | Harness | Hooks into PenguPool | Journal body |
 |---|---|---|
 | Claude Code (account) | `--settings` hooks | `/compact` summary |
-| Claude Code on Ollama | `ollama launch claude`, same hooks | `/compact` summary |
 | Muse Code | a PenguPool plugin bundle, installed and approved by the app (real home only); `--trust-workspace` for sessions PenguPool launches | the Done report (Muse has no manual compaction) |
 | Codex | `-c hooks.*`; the app writes `~/.codex/rules/pengupool.rules` so only the PenguPool CLI runs outside the sandbox | `/compact` summary |
-| OMP / pi | the PenguPool extension; the binary path can be set in Settings | `/compact` summary |
+| pi / OMP | the PenguPool extension (one file for both) | `/compact` summary |
+| OpenCode | a PenguPool plugin, given inline (`OPENCODE_CONFIG_CONTENT`) | `/compact` summary |
+| Custom agent that starts one of these (e.g. `ollama launch claude --model m --yes --`) | the owner's command, then that agent's own arguments and hooks | as that agent |
+
+New session offers the agents installed here (one install check: claude, muse, codex, pi, omp,
+opencode) and the owner's Custom agents (Settings › Agents, this machine only). A Custom agent that
+starts nothing is a named terminal: no hooks, no teams, no Compass, no messages. Copilot and Gemini
+CLI are hidden: their sessions still run and resume, but none are offered.
 
 A plain terminal session stays independent of all of this.
 
@@ -85,7 +91,7 @@ queued, no transcript, the timeout, or no `/compact`), the Done report is the en
 ## Muse app API
 
 The owner's phone reaches waiting sessions through the Muse app's agent, over Tailscale Serve (Settings ▸
-Phone connections walks the setup: installed, logged in, HTTPS, Serve, reachable). Every call arrives on
+Tailscale walks the setup: installed, logged in, HTTPS, Serve, reachable). Every call arrives on
 the Tailscale host name; every call but `/pair` carries a per-device bearer token. The app's own token
 never works here, and a device token works nowhere else.
 

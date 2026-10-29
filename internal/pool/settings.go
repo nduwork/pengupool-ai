@@ -52,7 +52,7 @@ func (p *Pool) dropRetiredProviders() {
 		p.logf("pool: decision models no longer supported (%s): %v", strings.Join(gone, ", "), err)
 		return
 	}
-	p.logf("pool: removed decision models no longer supported: %s; set one in Settings → Models & agents", strings.Join(gone, ", "))
+	p.logf("pool: removed decision models no longer supported: %s; set one in Settings → Decision model", strings.Join(gone, ", "))
 }
 
 func (p *Pool) providers(_ context.Context, _ struct{}) (any, error) {
@@ -147,14 +147,14 @@ var Restarter func()
 var HTTPAddr func() string
 
 // settingsTailscale is the Tailscale checklist, on its own: it runs the CLI and a probe (seconds when
-// Tailscale is slow), so only the Phone connections panel asks for it, never every settings read.
+// Tailscale is slow), so only the Tailscale panel asks for it, never every settings read.
 func (p *Pool) settingsTailscale(_ context.Context, _ struct{}) (any, error) {
 	return p.tailscaleChecks(), nil
 }
 
 func (p *Pool) settingsGet(_ context.Context, _ struct{}) (any, error) {
 	cfg := p.st.Config()
-	out := map[string]any{"network": cfg.Network, "store": p.st.Dir(), "executable": p.exe, "agent_models": cfg.AgentModels, "agents": harness.Agents, "version": p.version}
+	out := map[string]any{"network": cfg.Network, "store": p.st.Dir(), "executable": p.exe, "custom_agents": cfg.CustomAgents, "agents": harness.Agents, "version": p.version}
 	if HTTPAddr != nil {
 		out["bound"] = HTTPAddr()
 	}
@@ -171,12 +171,13 @@ func (p *Pool) settingsGet(_ context.Context, _ struct{}) (any, error) {
 }
 
 type settingsIn struct {
-	LAN         *bool              `json:"lan,omitempty"`
-	LANAddr     *string            `json:"lan_addr,omitempty"`
-	Tailscale   *string            `json:"tailscale,omitempty"`
-	EnableServe bool               `json:"enable_serve,omitempty"`
-	Restart     bool               `json:"restart,omitempty"`
-	AgentModels *store.AgentModels `json:"agent_models,omitempty"`
+	LAN         *bool   `json:"lan,omitempty"`
+	LANAddr     *string `json:"lan_addr,omitempty"`
+	Tailscale   *string `json:"tailscale,omitempty"`
+	EnableServe bool    `json:"enable_serve,omitempty"`
+	Restart     bool    `json:"restart,omitempty"`
+	// CustomAgents, when sent, is the whole list (Settings › Agents).
+	CustomAgents *[]store.CustomAgent `json:"custom_agents,omitempty"`
 }
 
 func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
@@ -191,14 +192,12 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 		if in.Tailscale != nil {
 			cfg.Network.Tailscale = strings.TrimRight(strings.TrimSpace(*in.Tailscale), "/")
 		}
-		if am := in.AgentModels; am != nil {
-			for _, id := range am.Ollama {
-				if a, ok := harness.Find(id); !ok || !a.Ollama {
-					return invalid("%s cannot run on Ollama", id)
-				}
+		if in.CustomAgents != nil {
+			list, err := checkCustomAgents(*in.CustomAgents)
+			if err != nil {
+				return err
 			}
-			am.OllamaURL, am.OllamaModel = strings.TrimSpace(am.OllamaURL), strings.TrimSpace(am.OllamaModel)
-			cfg.AgentModels = *am
+			cfg.CustomAgents = list
 		}
 		return nil
 	})
@@ -908,38 +907,5 @@ func listProviderModels(ctx context.Context, typ string, pc store.ProviderConfig
 		out = append(out, m.Name)
 	}
 	slices.Sort(out)
-	return out, nil
-}
-
-type ollamaStatusIn struct {
-	URL string `json:"url,omitempty"`
-}
-
-// ollamaStatus is what Claude Code on Ollama needs from this machine: the ollama CLI (it launches
-// Claude) and the server answering at the address.
-func (p *Pool) ollamaStatus(ctx context.Context, in ollamaStatusIn) (any, error) {
-	url := strings.TrimRight(firstNonEmpty(in.URL, p.st.Config().AgentModels.OllamaURL, "http://127.0.0.1:11434"), "/")
-	out := map[string]any{"url": url}
-	if bin, err := harness.LookupOllama(p.env); err != nil {
-		out["cli_error"] = err.Error()
-	} else {
-		out["cli"] = bin
-	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/api/version", nil)
-	if err != nil {
-		return nil, invalid("%v", err)
-	}
-	var v struct {
-		Version string `json:"version"`
-	}
-	if resp, err := http.DefaultClient.Do(req); err != nil {
-		out["server_error"] = "Ollama is not answering at " + url
-	} else {
-		_ = json.NewDecoder(resp.Body).Decode(&v)
-		resp.Body.Close()
-		out["version"] = v.Version
-	}
 	return out, nil
 }
