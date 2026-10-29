@@ -944,18 +944,19 @@ func TestWorkerFlowControlPauseResume(t *testing.T) {
 	t.Logf("paused at %d bytes", pausedAt)
 
 	// Acknowledging the accepted bytes resumes the stream, and it continues without a gap.
-	const maxRounds = 10
-	for round := range maxRounds {
+	// Until all of it, or a deadline: a quiet window is not the end, the agent may just be slow on
+	// a loaded machine.
+	// The output's end is an absolute offset: received leaves out what the attach snapshot already
+	// held, which is more on a loaded machine (the agent starts before the client attaches).
+	const outputEnd = 15000 * 42 // the PTY writes each \n as \r\n
+	deadline := time.Now().Add(15 * time.Second)
+	for round := 0; next < outputEnd && time.Now().Before(deadline); round++ {
 		c.sendFrame(protocol.FrameAck, 1, next, nil)
-		before := received
 		read(c.drainIdle(idleWindow))
-		if received == before {
-			break
-		}
 		t.Logf("round %d: %d bytes", round, received)
 	}
-	if received < totalOutput {
-		t.Fatalf("received %d bytes after resume rounds, want all %d", received, totalOutput)
+	if next != outputEnd {
+		t.Fatalf("output reached byte %d after resume rounds, want all %d", next, outputEnd)
 	}
 	if received == pausedAt {
 		t.Fatalf("ack-driven resume never delivered more than the first %d bytes", pausedAt)
@@ -1305,8 +1306,9 @@ func TestWorkerExitArrivesAfterTheLastOwedByte(t *testing.T) {
 	if outputAfterExit {
 		t.Fatal("output arrived after session.exit")
 	}
-	if received < 600000 {
-		t.Fatalf("received %d bytes, want the whole %d byte output before the exit", received, 600000)
+	// An absolute offset: received leaves out what the attach snapshot already held.
+	if next != 15000*42 { // the PTY writes each \n as \r\n
+		t.Fatalf("session.exit came after byte %d, want the whole %d byte output before it", next, 15000*42)
 	}
 }
 
@@ -1567,4 +1569,88 @@ func TestWorkerSpecFromFD(t *testing.T) {
 	case <-time.After(testTimeout):
 		t.Fatal("worker did not return after cancellation")
 	}
+}
+
+// TestWorkerExitWaitsForASlowReader: the PTY read loop is still appending the child's last bytes
+// well past the drain grace (a loaded machine); session.exit still comes after every one of them.
+func TestWorkerExitWaitsForASlowReader(t *testing.T) {
+	ptyReadDelay = 300 * time.Millisecond // longer than outputDrainGrace, on every read
+	defer func() { ptyReadDelay = 0 }()
+	const total = 300 * 42 // the PTY writes each \n as \r\n
+	tw := startWorker(t, []string{"/bin/sh", "-c", `i=0; while [ $i -lt 300 ]; do printf '0123456789012345678901234567890123456789\n'; i=$((i+1)); done`})
+	c := dialWorker(t, tw.sock)
+	c.hello()
+	next := c.attach(1, true, nil).Offset
+	c.readSnapshot()
+	sawExit := false
+	for round := 0; round < 100 && !sawExit; round++ {
+		for _, f := range c.drainIdle(idleWindow) {
+			switch f.Header.Type {
+			case protocol.FrameOutput:
+				if sawExit {
+					t.Fatal("output arrived after session.exit")
+				}
+				next = f.Header.Seq + uint64(len(f.Payload))
+			case protocol.FrameControl:
+				if decodeControl(t, f).Type == protocol.TypeSessionExit {
+					sawExit = true
+				}
+			}
+		}
+		c.sendFrame(protocol.FrameAck, 1, next, nil)
+	}
+	if !sawExit {
+		t.Fatal("session.exit never arrived")
+	}
+	if next != total {
+		t.Fatalf("session.exit came after byte %d of %d", next, total)
+	}
+}
+
+// TestWorkerExitDoesNotWaitForASilentGrandchild: a background process that keeps the PTY slave
+// open but prints nothing does not hold session.exit back past the drain grace.
+func TestWorkerExitDoesNotWaitForASilentGrandchild(t *testing.T) {
+	tw := startWorker(t, []string{"/bin/sh", "-c", `sleep 30 & sleep 1; echo started`})
+	c := dialWorker(t, tw.sock)
+	c.hello()
+	c.attach(1, true, nil)
+	c.readSnapshot()
+	start := time.Now()
+	for time.Since(start) < 3*time.Second {
+		for _, f := range c.drainIdle(idleWindow) {
+			if f.Header.Type == protocol.FrameControl && decodeControl(t, f).Type == protocol.TypeSessionExit {
+				return
+			}
+		}
+	}
+	t.Fatal("session.exit waited on a silent grandchild")
+}
+
+// TestWorkerExitWaitsForAReaderStillWaking: the read loop sat in Read long before the child's last
+// bytes, and is slow to wake for them; its old wait does not count as the PTY being drained.
+func TestWorkerExitWaitsForAReaderStillWaking(t *testing.T) {
+	ptyWakeDelay = 100 * time.Millisecond // under outputDrainGrace: a slow schedule, not a stuck one
+	defer func() { ptyWakeDelay = 0 }()
+	tw := startWorker(t, []string{"/bin/sh", "-c", `sleep 1; printf 'last line\n'`})
+	c := dialWorker(t, tw.sock)
+	c.hello()
+	c.attach(1, true, nil)
+	c.readSnapshot()
+	var out strings.Builder
+	for start := time.Now(); time.Since(start) < 5*time.Second; {
+		for _, f := range c.drainIdle(idleWindow) {
+			switch f.Header.Type {
+			case protocol.FrameOutput:
+				out.Write(f.Payload)
+			case protocol.FrameControl:
+				if decodeControl(t, f).Type == protocol.TypeSessionExit {
+					if !strings.Contains(out.String(), "last line") {
+						t.Fatalf("session.exit came before the last line: %q", out.String())
+					}
+					return
+				}
+			}
+		}
+	}
+	t.Fatal("session.exit never arrived")
 }

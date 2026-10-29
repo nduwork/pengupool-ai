@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -44,9 +45,12 @@ const (
 	// termGrace is how long a signalled worker waits for its child to be reaped before it is
 	// killed outright.
 	termGrace = 2 * time.Second
-	// outputDrainGrace is how long the worker waits after the child exits for the PTY read loop to
-	// append the bytes the child left behind, so session.exit is the last thing a client sees.
+	// outputDrainGrace: after the child exits, session.exit waits until the PTY read loop has
+	// appended every byte the child left behind (EOF), or has waited this long on an empty PTY (a
+	// grandchild holds the slave open), so session.exit is the last thing a client sees.
 	outputDrainGrace = 250 * time.Millisecond
+	// outputDrainMax bounds that wait while a grandchild keeps writing.
+	outputDrainMax = 5 * time.Second
 	// ptyInQueue is how many client input frames may wait for the PTY writer goroutine.
 	ptyInQueue = 32
 	// maxQueuedBytes is how many bytes one connection may have queued or in flight on its socket
@@ -165,6 +169,9 @@ type worker struct {
 	done     chan struct{} // closed once the worker starts shutting down
 	reapedCh chan struct{} // closed once the child has been waited for
 	ptyDone  chan struct{} // closed once the PTY read loop has stopped
+	// readWait is when the PTY read loop began waiting in Read (unix nanoseconds), 0 while it is
+	// appending what it read: the PTY is drained once it has waited a while.
+	readWait atomic.Int64
 
 	mu       sync.Mutex
 	ring     *Ring
@@ -328,7 +335,15 @@ func (w *worker) readPTY() {
 	defer close(w.ptyDone)
 	buf := make([]byte, readChunk)
 	for {
+		w.readWait.Store(time.Now().UnixNano())
 		n, err := w.ptmx.Read(buf)
+		if ptyWakeDelay > 0 {
+			time.Sleep(ptyWakeDelay)
+		}
+		w.readWait.Store(0)
+		if ptyReadDelay > 0 {
+			time.Sleep(ptyReadDelay)
+		}
 		if n > 0 {
 			w.onOutput(buf[:n])
 		}
@@ -427,12 +442,9 @@ func (w *worker) waitChild() {
 	at := time.Now().UTC()
 
 	// Let the PTY read loop append whatever the child left behind, so the exit message is the last
-	// thing an attached client sees. A grandchild holding the slave open cannot hold the worker
-	// hostage: the wait is bounded.
-	select {
-	case <-w.ptyDone:
-	case <-time.After(outputDrainGrace):
-	}
+	// thing an attached client sees: until it reads EOF, or has waited outputDrainGrace on an empty
+	// PTY. A grandchild holding the slave open cannot hold the worker hostage: the wait is bounded.
+	w.drainOutput(time.Now().Add(outputDrainMax))
 
 	w.mu.Lock()
 	w.exited = true
@@ -459,6 +471,32 @@ func (w *worker) waitChild() {
 	w.mu.Unlock()
 	w.checkDone()
 }
+
+// drainOutput waits for the PTY read loop to finish appending the child's output, or to sit idle
+// on an empty PTY for outputDrainGrace since the child exited, or for the deadline, or for the
+// worker's shutdown. Idle counts from the exit at the earliest: a read loop blocked in Read long
+// before it has yet to wake for the child's last bytes.
+func (w *worker) drainOutput(deadline time.Time) {
+	exited := time.Now()
+	tick := time.NewTicker(outputDrainGrace / 5)
+	defer tick.Stop()
+	for {
+		select {
+		case <-w.ptyDone:
+			return
+		case <-w.done:
+			return
+		case <-tick.C:
+		}
+		if since := w.readWait.Load(); since != 0 && time.Since(time.Unix(0, max(since, exited.UnixNano()))) >= outputDrainGrace || time.Now().After(deadline) {
+			return
+		}
+	}
+}
+
+// ptyReadDelay slows the PTY read loop down by this much per read, and ptyWakeDelay its waking
+// from a Read that returned: tests only, to hold output back past the child's exit.
+var ptyReadDelay, ptyWakeDelay time.Duration
 
 // exitCode reports how a child ended the way a shell does: a child that died from a signal has no
 // exit status, so 128+signal is reported instead of the -1 the process state carries.
