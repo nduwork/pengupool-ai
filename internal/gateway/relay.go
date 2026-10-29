@@ -195,19 +195,18 @@ func (a *attachment) close() {
 	}
 }
 
-// forward relays a client frame to the attached worker. It reports whether a session was attached.
-func (c *conn) forward(f protocol.Frame) bool {
+// forward relays a client frame to the attached worker. With nothing attached the frame is dropped.
+func (c *conn) forward(f protocol.Frame) {
 	c.mu.Lock()
 	att := c.att
 	c.mu.Unlock()
 	if att == nil {
-		return false
+		return
 	}
 	if err := att.send(f); err != nil {
 		c.srv.logf("gateway: %s: relay to session %s: %v", c.remote, att.sessionID, err)
 		c.dropAttachment(att)
 	}
-	return true
 }
 
 func (c *conn) attach(ctx context.Context, msg *protocol.Message) {
