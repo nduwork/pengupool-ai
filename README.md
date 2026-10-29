@@ -154,6 +154,16 @@ app quit and an update, and are not asked about.
 v0.9.6: the restore question after a reboot also offers Start fresh: the stopped sessions
 leave the map and a team with none of its members running is closed (under Closed groups).
 Nothing is deleted on disk; scrollback, worktrees, team notes and journals stay.
+v0.9.7: team roles LEAD, SME and HELPER replace the anchor (old anchor data is ignored).
+Settings is grouped by topic (General, Agents, Decision model, GitHub, Local network,
+Tailscale, Muse app, SSH hosts). New session offers installed agents only, plus Claude Code
+(Ollama): Claude through `ollama launch claude` on Ollama's own default model (a missing model
+is refused with the `ollama pull` to run). A session waiting on you reads "? Need input" with
+a red outline. Muse sessions become ready when their prompt shows, so team messages reach them.
+Removed: Set anchor; the Claude Code on Ollama card (address, model, "every session on
+Ollama", which moves to New session's default); per-session Ollama models; Ollama for helpers,
+team members and the other agents; GitHub Copilot and Gemini CLI from the pickers (their old
+sessions still resume); the "(experimental)" labels.
 
 ## Credits
 
