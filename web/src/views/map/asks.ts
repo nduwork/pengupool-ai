@@ -35,8 +35,8 @@ export const STATE_CELL: Record<string, { text: string; className: string }> = {
   failed: { text: "✕ failed", className: "text-danger" },
 };
 
-/** The newest message between each pair, keyed "from>to" in the route's own direction: a queued
- *  one draws the line dashed until it arrives. */
+/** The newest message between each pair, keyed "from>to" in the route's own direction: it orders the
+ *  map's lit routes, newest on top. */
 export function newestByPair(ms: TeamMessage[]): Map<string, TeamMessage> {
   const out = new Map<string, TeamMessage>();
   for (const m of ms) if (m.from !== "") out.set(`${m.from}>${m.to}`, m);

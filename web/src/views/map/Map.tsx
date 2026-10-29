@@ -111,40 +111,32 @@ export function TeamMap(): ReactElement {
   const ungrouped = sessions.filter((s) => !inTeam.has(s.id) && !isShell(s));
   const parentOf = (teamId: string, id: string): string | undefined => domain.teams.find((t) => t.id === teamId)?.members.find((m) => m.session_id === id)?.parent;
 
-  // Lit edges: the latest message on a tree line within 90 s, green down, milky blue up. ponytail: the
+  // Lit edges: the latest message on a tree line within 90 s that is no longer queued, green down, milky
+  // blue up; a queued one leaves its line plain grey (the message log says it is queued). ponytail: the
   // 90 s count from the send time, so a message queued longer than that arrives with no beads; count
   // from its delivery once the record keeps one.
   const hot = new Map<string, "down" | "up">();
   const now = Date.now();
   for (const m of domain.messages) {
-    if (now - Date.parse(m.at) > HOT_MS) continue;
+    if (m.state === "queued" || now - Date.parse(m.at) > HOT_MS) continue;
     const team = domain.teams.find((t) => t.id === m.team_id);
     if (team === undefined) continue;
     if (parentOf(team.id, m.to) === m.from) hot.set(`${m.from}>${m.to}`, "down");
     else if (parentOf(team.id, m.from) === m.to) hot.set(`${m.to}>${m.from}`, "up");
   }
 
-  // Open asks: a pill on the asker's card and on the route between asker and recipient. A route whose
-  // newest message is still queued is drawn dashed until it arrives.
+  // Open asks: a pill on the asker's card and on the route between asker and recipient.
   const asks = openAsks(domain.messages);
   const asksOn = (a: string, b: string): TeamMessage[] => asks.filter((x) => (x.from === a && x.to === b) || (x.from === b && x.to === a));
-  const newest = newestByPair(domain.messages);
-  const queuedOn = (parent: string, child: string): "down" | "up" | undefined => {
-    const down = newest.get(`${parent}>${child}`);
-    const up = newest.get(`${child}>${parent}`);
-    const last = down === undefined ? up : up === undefined || Date.parse(down.at) >= Date.parse(up.at) ? down : up;
-    if (last?.state !== "queued") return undefined;
-    return last === down ? "down" : "up";
-  };
-  // The lit routes, queued (dashed) or delivered within 90 s (beads), oldest message first so the
-  // newest draws on top where routes share a trunk.
-  const lit = (routes: Route[]): Array<{ r: Route; dir: "down" | "up"; queued: boolean; at: number }> =>
+  const newest = newestByPair(domain.messages.filter((m) => m.state !== "queued")); // orders the lit routes
+  // The lit routes, a message arrived within 90 s (beads), oldest message first so the newest draws
+  // on top where routes share a trunk.
+  const lit = (routes: Route[]): Array<{ r: Route; dir: "down" | "up"; at: number }> =>
     routes
       .flatMap((r) => {
-        const queued = queuedOn(r.from, r.to);
-        const dir = queued ?? hot.get(`${r.from}>${r.to}`);
+        const dir = hot.get(`${r.from}>${r.to}`);
         const at = Math.max(...[newest.get(`${r.from}>${r.to}`), newest.get(`${r.to}>${r.from}`)].map((m) => (m === undefined ? 0 : Date.parse(m.at))));
-        return dir === undefined ? [] : [{ r, dir, queued: queued !== undefined, at }];
+        return dir === undefined ? [] : [{ r, dir, at }];
       })
       .sort((a, b) => a.at - b.at);
 
@@ -471,23 +463,20 @@ export function TeamMap(): ReactElement {
                                 <path key={`${r.from}>${r.to}`} d={rounded(r.points)} fill="none" strokeLinejoin="round" stroke="var(--muted-foreground)" strokeWidth={2} />
                               ))}
                             </g>
-                            {lit(g.block.routes).map(({ r, dir, queued }) => (
-                              <path
-                                key={`${r.from}>${r.to}`}
-                                d={rounded(r.points)}
-                                fill="none"
-                                strokeLinejoin="round"
-                                stroke={DIR_COLOR[dir]}
-                                strokeWidth={2}
-                                strokeDasharray={queued ? "4 4" : undefined}
-                              />
-                            ))}
-                            {lit(g.block.routes)
-                              .filter((x) => !x.queued)
-                              .map(({ r, dir }) => (
-                                // Round-capped zero-length dashes are beads; the dash offset runs them the message's way.
-                                <path key={`${r.from}>${r.to}`} d={rounded(r.points)} fill="none" stroke={DIR_COLOR[dir]} strokeWidth={5} strokeLinecap="round" strokeDasharray="0 14" className={`bead-${dir}`} />
-                              ))}
+                            {(() => {
+                              const on = lit(g.block.routes).map((x) => ({ ...x, d: rounded(x.r.points) }));
+                              return (
+                                <>
+                                  {on.map(({ r, dir, d }) => (
+                                    <path key={`${r.from}>${r.to}`} d={d} fill="none" strokeLinejoin="round" stroke={DIR_COLOR[dir]} strokeWidth={2} />
+                                  ))}
+                                  {on.map(({ r, dir, d }) => (
+                                    // Round-capped zero-length dashes are beads; the dash offset runs them the message's way.
+                                    <path key={`${r.from}>${r.to}`} d={d} fill="none" stroke={DIR_COLOR[dir]} strokeWidth={5} strokeLinecap="round" strokeDasharray="0 14" className={`bead-${dir}`} />
+                                  ))}
+                                </>
+                              );
+                            })()}
                           </svg>
                           {g.block.routes.map((r) => {
                             const on = asksOn(r.from, r.to);
@@ -579,9 +568,6 @@ export function TeamMap(): ReactElement {
         <Legend color="#f59e0b" thick>
           other message
         </Legend>
-        <Legend color="var(--muted-foreground)" dashed>
-          queued
-        </Legend>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2.5 w-4 rounded-sm border border-dashed border-faint" /> ungrouped
         </span>
@@ -623,11 +609,11 @@ function AskPill({ asks, name, className, style }: { asks: TeamMessage[]; name: 
   );
 }
 
-function Legend({ color, thick, dashed, children }: { color: string; thick?: boolean; dashed?: boolean; children: string }): ReactElement {
+function Legend({ color, thick, children }: { color: string; thick?: boolean; children: string }): ReactElement {
   return (
     <span className="flex items-center gap-1.5">
       <svg width="18" height="8" aria-hidden>
-        <path d="M0,4 H18" stroke={color} strokeWidth={thick === true ? 3 : 1.75} strokeDasharray={dashed === true ? "4 4" : undefined} />
+        <path d="M0,4 H18" stroke={color} strokeWidth={thick === true ? 3 : 1.75} />
       </svg>
       {children}
     </span>
