@@ -95,7 +95,7 @@ func (p *Pool) subagentPlan(s store.Session, prompt string) string {
 		use = " Use effort " + effort + "."
 	}
 	p.logLine(s.ID, fmt.Sprintf("triage: subagent plan kind=%s model=%s effort=%s", kind, model, effort))
-	return fmt.Sprintf("\n[PenguPool triage] Subagent plan (the owner's decision model): %s.%s Tell it to send its result straight to %s (SendMessage, or `%s send --to %s` on a shell) and to return only \"done, sent to %s\" to you; then add a short follow-up only if something is missing.\n",
+	return fmt.Sprintf("\n[PenguPool triage] Subagent plan (the owner's decision model): %s.%s Tell it to send its result straight to %s (`%s send --to %s`, or SendMessage) and to return only \"done, sent to %s\" to you; then add a short follow-up only if something is missing.\n",
 		plan, use, parent, p.exe, parent, parent)
 }
 

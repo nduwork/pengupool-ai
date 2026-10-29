@@ -16,11 +16,12 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
-// Team messages through the host: between a parent and a child on the team's tree that run different
-// agents (two Claude Code sessions use SendMessage, which the host only checks). A message waits while its
-// recipient is working or waiting for an approval and is delivered at the next adapter-confirmed
-// idle (Claude's Stop hook, OMP's agent_end), through the harness's own inbound path — never as
-// keystrokes into the PTY.
+// Team messages through the host: between a parent and a child on the team's tree, whatever agents
+// they run (a Claude Code session's own SendMessage is still checked and recorded). A message waits
+// while its recipient is working or waiting for an approval and is delivered at the next
+// adapter-confirmed idle (Claude's Stop hook, OMP's agent_end), through the harness's own inbound
+// path — never as keystrokes into the PTY. A working Claude session gets it in its inbox at once
+// (intoInbox), since Claude reads its inbox at each tool round.
 
 const maxMessage = 4 << 10
 const keepMessages = 300
@@ -104,8 +105,6 @@ func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
 			return invalid("%q names more than one member; use the session id", in.To)
 		case hits[0].SessionID == in.From:
 			return invalid("a session cannot message itself")
-		case native(*st, in.From, hits[0].SessionID):
-			return invalid("you and %s both run Claude Code: send it with your SendMessage tool, to %q", firstNonEmpty(hits[0].Name, in.To), firstNonEmpty(hits[0].Name, in.To))
 		case channel == "" && !adjacent(&st.Domain, in.From, hits[0].SessionID):
 			up := "the owner"
 			if t != nil {
@@ -143,9 +142,11 @@ func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
 	p.logLine(in.From, line)
 	p.logLine(toSession.ID, line)
 	p.doneReport(msg) // a done report is kept as the helper's journal entry
-	if toSession.Status == "idle" {
+	switch {
+	case toSession.Status == "idle":
 		p.deliver(msg)
-	} else {
+	case toSession.Status == "working" && toSession.Harness == harness.Claude && p.intoInbox(msg, from):
+	default:
 		p.mu.Lock()
 		p.pending[toSession.ID] = append(p.pending[toSession.ID], msg)
 		p.mu.Unlock()
@@ -207,18 +208,7 @@ func (p *Pool) deliver(m protocol.TeamMessage) {
 		p.setMessage(m.ID, "failed", "recipient is gone")
 		return
 	}
-	body := fmt.Sprintf("[PenguPool team message from %s (%s)] %s\n\nTo reply, run this shell command (do not just print it): %s send --to %q \"<your reply>\"",
-		from.Name, from.Role, m.Text, p.exe, from.Name)
-	if m.Type == "ask" {
-		body = fmt.Sprintf("[PenguPool team message from %s (%s), an ask waiting for your answer] %s\n\nTo answer, run this shell command (do not just print it): %s send --to %q --reply-to %s \"<your answer>\"",
-			from.Name, from.Role, m.Text, p.exe, from.Name, m.ID)
-	}
-	if d := p.st.State().Domain; m.From != "" && !sameTeam(&d, m.From, m.To) {
-		body = strings.Replace(body, "[PenguPool team message from "+from.Name+" ("+from.Role+")", outsideLabel+from.Name+", outside your team, on a channel the owner opened", 1)
-	}
-	if m.From == "" { // a PenguPool notice: information, nobody to reply to
-		body = "[PenguPool notice; information, not the owner's instructions] " + m.Text
-	}
+	body := p.messageBody(m, from)
 	var err error
 	switch to.Harness {
 	case harness.Claude:
@@ -247,6 +237,42 @@ func (p *Pool) deliver(m protocol.TeamMessage) {
 	// no prompt hook. The recipient was idle, so a turn still open is stale (an interrupted one).
 	p.turnStart(m.To, body)
 	p.bumpTurn(m.To) // the recipient has something new: no go-ahead for what it asked before (gates.go)
+}
+
+// messageBody is a message as its recipient reads it: who sent it and how to answer.
+func (p *Pool) messageBody(m protocol.TeamMessage, from store.Session) string {
+	body := fmt.Sprintf("[PenguPool team message from %s (%s)] %s\n\nTo reply, run this shell command (do not just print it): %s send --to %q \"<your reply>\"",
+		from.Name, from.Role, m.Text, p.exe, from.Name)
+	if m.Type == "ask" {
+		body = fmt.Sprintf("[PenguPool team message from %s (%s), an ask waiting for your answer] %s\n\nTo answer, run this shell command (do not just print it): %s send --to %q --reply-to %s \"<your answer>\"",
+			from.Name, from.Role, m.Text, p.exe, from.Name, m.ID)
+	}
+	if d := p.st.State().Domain; m.From != "" && !sameTeam(&d, m.From, m.To) {
+		body = strings.Replace(body, "[PenguPool team message from "+from.Name+" ("+from.Role+")", outsideLabel+from.Name+", outside your team, on a channel the owner opened", 1)
+	}
+	if m.From == "" { // a PenguPool notice: information, nobody to reply to
+		body = "[PenguPool notice; information, not the owner's instructions] " + m.Text
+	}
+	return body
+}
+
+// intoInbox puts a message to a working Claude session straight into its inbox, where Claude reads it
+// at its next tool round as it does a SendMessage, instead of waiting for the turn to end. It stays
+// queued, now as a native message, until it is in the recipient's turn (nativeArrived). false: the
+// inbox is not known or did not take it, so it waits for the Stop as before.
+func (p *Pool) intoInbox(m protocol.TeamMessage, from store.Session) bool {
+	if err := p.deliverClaude(m.To, p.messageBody(m, from)); err != nil {
+		return false
+	}
+	_ = p.update(func(st *store.State) error {
+		for i := range st.Domain.Messages {
+			if st.Domain.Messages[i].ID == m.ID {
+				st.Domain.Messages[i].Via = viaNative
+			}
+		}
+		return nil
+	})
+	return true
 }
 
 // pasted wraps a message as one bracketed paste on a single line, so a terminal agent takes it as

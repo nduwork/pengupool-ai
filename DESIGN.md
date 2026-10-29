@@ -68,8 +68,10 @@ everywhere except the map, where the outlined role chip on each card is uppercas
 
 ## Team messages
 
-Every message between members is on one record, whatever carries it (`via`: host, channel, or
-native for Claude's own SendMessage). A message is `queued` until it is in the recipient's turn, then
+Every member sends with `pengupool send`, whatever agent it runs, and every message is on one record,
+whatever carries it (`via`: host, channel, or native for one in a Claude session's own inbox: Claude's
+SendMessage, still checked and recorded, or a host message put there while the session works). A
+message is `queued` until it is in the recipient's turn, then
 `delivered`, or `failed`. Its type is tell, ask, done or blocked (`send --type`, or the first line
 `Done:`, `Ask:`, `Blocked:`). An ask stays open until the recipient sends the asker anything; one open
 15 minutes goes to triage, and to Needs you only when triage can't settle it: `escalated_at` is set then, never while triage weighs it. No colour stands alone: each cue has a glyph or a word.
