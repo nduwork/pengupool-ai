@@ -137,27 +137,25 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
           </p>
         )}
         {adding ? (
-          <>
-            <Label
-              hintId={hintId}
-              hint={
-                found === null
-                  ? "Checking which agents are installed…"
-                  : usable.length === 0
-                    ? `None of the agents ${skill?.name ?? "it"} runs on is installed here.`
-                    : allowed.length === 1
-                      ? `Only ${allowed[0].label} can run ${skill?.name ?? "this helper"}.`
-                      : [AGENTS.find((a) => a.id === agent)?.hint, found[agent]?.version, probeFailed ? "Couldn't check which agents are installed; all are offered." : undefined]
-                          .filter((x) => x !== undefined && x !== "")
-                          .join(" · ")
-              }
-            >
-              Agent
-              <Select value={harness} onChange={(e) => setHarness(e.target.value)} aria-label="Agent runtime" aria-describedby={hintId} autoFocus>
-                {agentOptions(usable, (id) => (skill?.harness === id ? " (helper's default)" : ""))}
-              </Select>
-            </Label>
-          </>
+          <Label
+            hintId={hintId}
+            hint={
+              found === null
+                ? "Checking which agents are installed…"
+                : usable.length === 0
+                  ? `None of the agents ${skill?.name ?? "it"} runs on is installed here.`
+                  : allowed.length === 1
+                    ? `Only ${allowed[0].label} can run ${skill?.name ?? "this helper"}.`
+                    : [AGENTS.find((a) => a.id === agent)?.hint, found[agent]?.version, probeFailed ? "Couldn't check which agents are installed; all are offered." : undefined]
+                        .filter((x) => x !== undefined && x !== "")
+                        .join(" · ")
+            }
+          >
+            Agent
+            <Select value={harness} onChange={(e) => setHarness(e.target.value)} aria-label="Agent runtime" aria-describedby={hintId} autoFocus>
+              {agentOptions(usable, (id) => (skill?.harness === id ? " (helper's default)" : ""))}
+            </Select>
+          </Label>
         ) : null}
         {approvalId !== undefined ? (
           change.assignment || change.reason ? (
