@@ -331,7 +331,8 @@ func (c *conn) detach(msg *protocol.Message) {
 	att := c.att
 	c.mu.Unlock()
 	if att == nil {
-		c.sendError(msg.ID, protocol.Errorf(protocol.CodeNotFound, "no session attached"))
+		// Already detached: the session was closed, or its worker went, and the relay dropped. The
+		// pane's detach is then done, not an error, which every other attached pane would show.
 		return
 	}
 	f, err := controlFrame(msg)
