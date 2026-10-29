@@ -61,11 +61,13 @@ make dist            # PenguPool-AI-<version>-mac-arm64.dmg
 
 ## Muse app
 
-Settings › Tailscale walks the setup (installed, logged in,
-HTTPS, Serve, reachable), then Settings › Muse app › "Pair a Muse device" shows the API URL and a
+With Local network on, the Muse app reaches this machine on its own Tailscale name over the
+tailnet (`http://<machine>.<tailnet>.ts.net:7787`); Tailscale Serve (Settings › Tailscale) is the
+HTTPS alternative. Settings › Muse app › "Pair a Muse device" shows the API URL and a
 6-digit code for the Muse app. The Muse app then walks waiting sessions one
 card at a time — Allow, Deny or Chat — over `/api/muse/v1` (contract in
-DESIGN.md, spec at `/api/muse/v1/openapi.json`).
+DESIGN.md, spec at `/api/muse/v1/openapi.json`). Step by step, with curl examples and the owner
+WebSocket API for agent clients: [docs/muse-app-management.md](docs/muse-app-management.md).
 
 ## Status
 
@@ -170,6 +172,10 @@ works, and a session resumes on its recorded model).
 v0.9.25: New session ▸ New worktree is back: an agent starts in a new worktree of a local
 repository, kept in PenguPool's own folder, on a new branch (`pengupool/<name>` by default) or
 an existing one.
+v0.9.28: The Muse app reaches PenguPool on this machine's own Tailscale name, without Serve
+(Local network on); the pairing URL names it. With Local network on, the desktop app no longer
+sits at Reconnecting. Pairing a name already paired, or with no name, says so (409, 400) instead
+of 502. New guide: docs/muse-app-management.md.
 
 ## Credits
 

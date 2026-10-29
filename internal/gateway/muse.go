@@ -6,19 +6,21 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
 // The Muse app API: the owner's phone reads one waiting session at a time
-// and answers or chats with it. Every call arrives over Tailscale Serve on
-// a PhoneHosts host; every call but /pair carries a per-device bearer
-// token. The bootstrap token never works here, and a device token works
+// and answers or chats with it. Every call arrives on a PhoneHosts host
+// (this machine's tailnet name, or the Serve name); every call but /pair
+// carries a per-device bearer token. The bootstrap token never works here, and a device token works
 // nowhere else.
 
 // museRPCTimeout bounds one pool call from the HTTP layer.
@@ -148,6 +150,16 @@ func writeMuseError(w http.ResponseWriter, err error) {
 		code = http.StatusUnauthorized
 	case strings.Contains(msg, "forbidden"), strings.Contains(msg, "not an agent"):
 		code = http.StatusForbidden
+	}
+	// Anything else the caller can fix (a duplicate or missing device name) is not a server fault.
+	var pe *protocol.Error
+	if code == http.StatusBadGateway && errors.As(err, &pe) {
+		switch pe.Code {
+		case protocol.CodeConflict:
+			code = http.StatusConflict
+		case protocol.CodeInvalidArgument:
+			code = http.StatusBadRequest
+		}
 	}
 	http.Error(w, msg, code)
 }
