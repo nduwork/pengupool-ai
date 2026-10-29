@@ -1,4 +1,4 @@
-import { Archive, BookOpen, FoldVertical, History, UnfoldVertical, Layers, ListTree, Minus, Pencil, Plus, RefreshCw, Rocket, Scan, Settings2, Users, X } from "lucide-react";
+import { Archive, BookOpen, FoldVertical, History, UnfoldVertical, Layers, ListTree, Minus, Pencil, Plus, RefreshCw, Rocket, Scan, Settings2, Unplug, Users, X } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
@@ -247,7 +247,7 @@ export function TeamMap(): ReactElement {
             tabIndex={0}
             draggable
             aria-current={selected === s.id}
-            aria-label={`${s.name}, ${style.label}${mine.length > 0 ? `, ${askLabel(mine, askName)}` : ""}`}
+            aria-label={`${s.name}, ${style.label}${s.hooks_missing === true ? ", PenguPool's hooks aren't reaching it" : ""}${mine.length > 0 ? `, ${askLabel(mine, askName)}` : ""}`}
             onClick={() => app.select(s.id)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
@@ -296,6 +296,12 @@ export function TeamMap(): ReactElement {
             <span className="line-clamp-2 pr-8 text-[12px] font-semibold text-foreground [overflow-wrap:anywhere]">{s.name}</span>
             <span className={cn("truncate text-muted-foreground", mine.length > 1 ? "pr-[4.5rem]" : mine.length > 0 && "pr-10")}>
               {harnessLabel(s.harness)}
+              {s.hooks_missing === true ? (
+                <span className="ml-1 inline-flex items-center gap-0.5 align-bottom text-foreground">
+                  <Unplug className="size-2.5 shrink-0" aria-hidden />
+                  no hooks
+                </span>
+              ) : null}
               {s.context_pct !== undefined ? (
                 <>
                   {" · "}

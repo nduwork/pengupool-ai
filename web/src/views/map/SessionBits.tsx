@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement } from "react";
 
-import { harnessLabel, shownStatus, statusStyle, useApp } from "../../app/ctx";
+import { Unplug } from "lucide-react";
+import { harnessLabel, HOOKS_LONG, hooksAction, shownStatus, statusStyle, useApp } from "../../app/ctx";
 import type { SessionView } from "../../protocol/control";
 import { parseRunLog } from "../runlog";
 
@@ -31,6 +32,12 @@ export function SessionHover({ s }: { s: SessionView }): ReactElement {
       <span className={statusStyle(shownStatus(s, app.gates)).text}>
         {statusStyle(shownStatus(s, app.gates)).label} · {harnessLabel(s.harness)}
       </span>
+      {s.hooks_missing === true ? (
+        <span className="flex items-start gap-1 text-foreground">
+          <Unplug className="mt-0.5 size-3 shrink-0" aria-hidden />
+          {HOOKS_LONG} {hooksAction(s.harness)}
+        </span>
+      ) : null}
       {last !== "" ? <span className="line-clamp-3 text-muted-foreground [overflow-wrap:anywhere]">{last}</span> : null}
       {s.branch !== undefined && s.branch !== "" ? <span className="font-mono text-muted-foreground">{s.branch}</span> : null}
       <span className="truncate font-mono text-faint">{s.cwd}</span>

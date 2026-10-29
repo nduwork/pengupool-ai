@@ -472,6 +472,7 @@ func (p *Pool) readyLoop(ctx context.Context) {
 		case <-t.C:
 			p.readyByPrompt()
 			p.watchStartup()
+			p.watchHooks(time.Now())
 		}
 	}
 }

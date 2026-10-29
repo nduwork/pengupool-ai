@@ -135,6 +135,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	if !ok {
 		return HookOut{}, nil // not a pool session: say nothing
 	}
+	p.hookArrived(s, in.Event)
 	if pl != nil {
 		copilotTool(pl)
 	}

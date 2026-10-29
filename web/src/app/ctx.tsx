@@ -246,6 +246,13 @@ export function ago(iso: string | undefined): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
+/** The "no hooks" note's long text, and what the owner can do about it. */
+export const HOOKS_LONG = "PenguPool's hooks aren't reaching this agent: no Compass or team context.";
+export function hooksAction(h: string | undefined): string {
+  const check = h === "muse" ? "check that the PenguPool plugin is installed and approved" : "check its PenguPool install (Settings ▸ Agents)";
+  return `Restart the session. If it stays, update ${harnessLabel(h)} or ${check}.`;
+}
+
 export function harnessLabel(h: string | undefined): string {
   return AGENTS.find((a) => a.id === h)?.label ?? { shell: "Shell", custom: "Command" }[h ?? "shell"] ?? h ?? "Shell";
 }

@@ -103,6 +103,8 @@ type SessionView struct {
 	RunLog     string `json:"run_log,omitempty"`
 	ActiveAt   string `json:"active_at,omitempty"`
 	Summary    string `json:"summary,omitempty"`
+
+	HooksMissing bool `json:"hooks_missing,omitempty"` // prompted 2+ min ago, and no hook since launch
 }
 
 // Message is one control message. Every message carries ID and Type; the remaining fields are
