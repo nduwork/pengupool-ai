@@ -110,7 +110,9 @@ export function TeamMap(): ReactElement {
   const ungrouped = sessions.filter((s) => !inTeam.has(s.id) && !isShell(s));
   const parentOf = (teamId: string, id: string): string | undefined => domain.teams.find((t) => t.id === teamId)?.members.find((m) => m.session_id === id)?.parent;
 
-  // Lit edges: the latest message on a tree line within 90 s, green down, milky blue up.
+  // Lit edges: the latest message on a tree line within 90 s, green down, milky blue up. ponytail: the
+  // 90 s count from the send time, so a message queued longer than that arrives with no beads; count
+  // from its delivery once the record keeps one.
   const hot = new Map<string, "down" | "up">();
   const now = Date.now();
   for (const m of domain.messages) {
@@ -221,6 +223,8 @@ export function TeamMap(): ReactElement {
       .map((x) => shownStatus(x, app.gates))
       .sort((a, b) => (URGENCY[b] ?? 0) - (URGENCY[a] ?? 0))[0];
     const repoName = s.cwd.split("/").filter(Boolean).pop() ?? "";
+    const mine = asks.filter((a) => a.from === s.id);
+    const askName = (id: string): string => byId.get(id)?.name ?? id.slice(0, 8);
     return (
       <ContextMenu.Root key={s.id}>
         <Tip side="right" label={<SessionHover s={s} />}>
@@ -231,7 +235,7 @@ export function TeamMap(): ReactElement {
             tabIndex={0}
             draggable
             aria-current={selected === s.id}
-            aria-label={`${s.name}, ${style.label}`}
+            aria-label={`${s.name}, ${style.label}${mine.length > 0 ? `, ${askLabel(mine, askName)}` : ""}`}
             onClick={() => app.select(s.id)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
@@ -271,17 +275,14 @@ export function TeamMap(): ReactElement {
                 <RoleTag role={role} className="absolute right-2 top-1.5 rounded-[2px] px-[3px] text-[8px] leading-[11px] tracking-[0.08em] uppercase" />
               ) : null;
             })()}
-            {(() => {
-              const mine = asks.filter((a) => a.from === s.id);
-              return mine.length > 0 ? <AskPill asks={mine} name={(id) => byId.get(id)?.name ?? id.slice(0, 8)} className="absolute bottom-1.5 right-2" /> : null;
-            })()}
+            {mine.length > 0 ? <AskPill asks={mine} name={askName} className="absolute bottom-1.5 right-2" /> : null}
             <span className="flex items-center gap-1.5 font-semibold" style={{ color: tone(st) }}>
               {SYMBOL[st] !== undefined ? `${SYMBOL[st]} ` : ""}
               {style.label}
               <UnreadDot id={s.id} />
             </span>
             <span className="line-clamp-2 pr-8 text-[12px] font-semibold text-foreground [overflow-wrap:anywhere]">{s.name}</span>
-            <span className="truncate text-muted-foreground">
+            <span className={cn("truncate text-muted-foreground", mine.length > 0 && "pr-10")}>
               {harnessLabel(s.harness)}
               {s.context_pct !== undefined ? (
                 <>
@@ -573,13 +574,19 @@ export function TeamMap(): ReactElement {
 }
 
 /** Open asks as a pill: "? 4m", "? 2 · 18m", "? 18m ↑" once escalated to the owner. */
-function AskPill({ asks, name, className, style }: { asks: TeamMessage[]; name: (id: string) => string; className?: string; style?: React.CSSProperties }): ReactElement {
-  const { text, escalated } = askPill(asks, Date.now());
+/** What the pill says in words: for its title, and for the card's own label, which hides the pill's. */
+function askLabel(asks: TeamMessage[], name: (id: string) => string): string {
   const oldest = asks.reduce((o, a) => (Date.parse(a.at) < Date.parse(o.at) ? a : o));
   const minutes = Math.floor((Date.now() - Date.parse(oldest.at)) / 60000);
-  const label =
-    (asks.length > 1 ? `${asks.length} open asks, the oldest ${minutes} minutes` : `Open ask to ${name(oldest.to)}, ${minutes} minutes`) +
-    (escalated ? ", sent to you" : "");
+  return (
+    (asks.length > 1 ? `${asks.length} open asks, the oldest ${minutes} minutes` : `open ask to ${name(oldest.to)}, ${minutes} minutes`) +
+    (asks.some((a) => a.escalated_at !== undefined) ? ", sent to you" : "")
+  );
+}
+
+function AskPill({ asks, name, className, style }: { asks: TeamMessage[]; name: (id: string) => string; className?: string; style?: React.CSSProperties }): ReactElement {
+  const { text, escalated } = askPill(asks, Date.now());
+  const label = askLabel(asks, name);
   return (
     <span
       role="img"
@@ -670,7 +677,7 @@ export function MessageLog(): ReactElement {
                 className={cn("flex w-full gap-x-2 rounded py-0.5 text-left font-mono text-[11.5px] hover:bg-accent/40 focus-visible:outline focus-visible:outline-1", full && "flex-wrap")}
               >
                 <span className="shrink-0 text-faint">{new Date(m.at).toLocaleTimeString()}</span>
-                <span className={cn("w-[9ch] shrink-0", TYPE_CHIP[m.type ?? "tell"]?.className)}>{TYPE_CHIP[m.type ?? "tell"]?.text ?? m.type}</span>
+                <span className={cn("w-[10ch] shrink-0 whitespace-nowrap", TYPE_CHIP[m.type ?? "tell"]?.className)}>{TYPE_CHIP[m.type ?? "tell"]?.text ?? m.type}</span>
                 {(() => {
                   const from = roleOf(app.domain, app.sessions, m.from);
                   return from !== undefined ? <RoleTag role={from} /> : <Badge>agent</Badge>;

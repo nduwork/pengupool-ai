@@ -48,9 +48,13 @@ export function ApprovalsBell(): ReactElement {
               <p className="px-2 pb-1 pt-2 text-label font-semibold">Inbox</p>
               {inbox.map((e) => (
                 <button key={e.key ?? e.session} type="button" onClick={() => app.select(e.session)} className="flex w-full items-center gap-2 rounded-md p-2 text-left text-label hover:bg-hover">
-                  <ShieldQuestion className={e.resolvedAt === undefined ? "size-4 shrink-0 text-warning" : "size-4 shrink-0 text-faint"} />
+                  {e.kind === "ask" ? (
+                    <MessagesSquare className={e.resolvedAt === undefined ? "size-4 shrink-0 text-warning" : "size-4 shrink-0 text-faint"} />
+                  ) : (
+                    <ShieldQuestion className={e.resolvedAt === undefined ? "size-4 shrink-0 text-warning" : "size-4 shrink-0 text-faint"} />
+                  )}
                   <span className={e.resolvedAt === undefined ? "min-w-0 flex-1 truncate" : "min-w-0 flex-1 truncate text-muted-foreground"}>
-                    <strong className="font-semibold">{e.name}</strong> {e.text}
+                    <strong className="font-semibold">{e.name}</strong> {e.kind === "ask" ? `asked ${e.toName ?? ""}: “${e.text}”` : e.text}
                   </span>
                   <span className="shrink-0 text-caption text-faint">{e.resolvedAt === undefined ? ago(new Date(e.at).toISOString()) : "resolved"}</span>
                 </button>
@@ -114,7 +118,12 @@ export function NeedsYouBar(): ReactElement | null {
 function NeedRole({ id }: { id: string }): ReactElement | null {
   const app = useApp();
   const role = roleOf(app.domain, app.sessions, id);
-  return role !== undefined ? <RoleTag role={role} className="align-middle" /> : null;
+  return role !== undefined ? (
+    <>
+      {" "}
+      <RoleTag role={role} className="align-middle" />
+    </>
+  ) : null;
 }
 
 /** A member's ask nobody answered and triage could not settle: go on without the answer, answer it
@@ -127,8 +136,10 @@ function AskRow({ n }: { n: Need }): ReactElement | null {
   return (
     <div className="flex items-center gap-2 text-label">
       <MessagesSquare className="size-4 shrink-0 text-warning" />
-      <span className="min-w-0 flex-1 truncate" title={a.text}>
-        <strong className="font-semibold">{n.name}</strong> <NeedRole id={a.from} /> asked <strong className="font-semibold">{n.toName}</strong> <NeedRole id={a.to} />: “{a.text}” ·{" "}
+      <span className="min-w-0 flex-1 truncate" title={`${n.name} asked ${n.toName ?? ""}: ${a.text}`}>
+        <strong className="font-semibold">{n.name}</strong>
+        <NeedRole id={a.from} /> asked <strong className="font-semibold">{n.toName}</strong>
+        <NeedRole id={a.to} />: “{a.text}” ·{" "}
         {age(a.at, Date.now())}
       </span>
       <Button size="sm" variant="default" onClick={() => settle("go_on")}>
@@ -159,7 +170,8 @@ function NeedRow({ n }: { n: Need }): ReactElement {
       <div className="flex items-center gap-2">
         {checkin ? <MessageCircleQuestion className="size-4 shrink-0 text-warning" /> : <ShieldQuestion className="size-4 shrink-0 text-warning" />}
         <span className="min-w-0 flex-1 truncate" title={n.text}>
-          <strong className="font-semibold">{n.name}</strong> <NeedRole id={n.session} /> {checkin ? "asks: " : ""}
+          <strong className="font-semibold">{n.name}</strong>
+          <NeedRole id={n.session} /> {checkin ? "asks: " : ""}
           {n.text}
         </span>
         {n.gate?.floor === true ? <Badge tone="danger">floor</Badge> : null}

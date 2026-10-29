@@ -15,8 +15,8 @@ import (
 // blocked. `pengupool send --type` names it; a message without one (and Claude's SendMessage, which
 // has no flag) is typed by its first line: "Done:", "Ask:" or "Blocked:", else tell.
 // An ask stays open until its recipient sends the asker anything, or a message answers it by
-// reply_to. One open past askWait is escalated: triage goes on for the owner when it is sure the
-// owner would; otherwise it waits in Needs you. ponytail: a recipient that went idle without
+// reply_to. One open past askWait goes to triage, which goes on for the owner when it is sure the
+// owner would; otherwise it is escalated and waits in Needs you. ponytail: a recipient that went idle without
 // answering waits out askWait too; telling that apart needs a delivery time on the record.
 
 // Via: host and channel messages travel through PenguPool, native ones through Claude's own
@@ -64,59 +64,70 @@ func askOpen(ms []protocol.TeamMessage, i int) bool {
 	return true
 }
 
-// sweepAsks escalates the open asks that waited too long, each once.
+// sweepAsks hands the asks that waited too long to triage, each once at a time. One triage does not
+// settle is escalated: it waits in the owner's Needs you, so the owner is never shown an ask triage
+// then closes. A daemon that stops mid-triage leaves it unescalated, and the next one triages it again.
 func (p *Pool) sweepAsks(at time.Time) {
-	st := p.st.State()
-	ms := st.Domain.Messages
+	ms := p.st.State().Domain.Messages
 	for i, m := range ms {
-		if m.EscalatedAt != "" || !askOpen(ms, i) {
+		if m.EscalatedAt != "" || !askOpen(ms, i) || !olderThan(m.At, at, askWait) {
 			continue
 		}
-		if !olderThan(m.At, at, askWait) {
+		if _, busy := p.triaging.LoadOrStore(m.ID, true); busy {
 			continue
 		}
-		to, _ := sessionByID(&st, m.To)
-		claimed := false
-		_ = p.update(func(st *store.State) error {
-			for j := range st.Domain.Messages {
-				if x := &st.Domain.Messages[j]; x.ID == m.ID && x.EscalatedAt == "" {
-					x.EscalatedAt, claimed = store.RFC3339(at), true
-				}
+		go func() {
+			defer p.triaging.Delete(m.ID)
+			if !p.triageAsk(m) {
+				p.escalateAsk(m)
 			}
-			return nil
-		})
-		if claimed {
-			p.logLine(m.From, "ask: no answer from "+firstNonEmpty(to.Name, m.To)+"; escalated")
-			go p.triageAsk(m)
+		}()
+	}
+}
+
+// escalateAsk passes an ask triage did not settle on to the owner.
+func (p *Pool) escalateAsk(m protocol.TeamMessage) {
+	escalated := false
+	_ = p.update(func(st *store.State) error {
+		for j := range st.Domain.Messages {
+			if x := &st.Domain.Messages[j]; x.ID == m.ID && x.EscalatedAt == "" && x.SettledAt == "" {
+				x.EscalatedAt, escalated = now(), true
+			}
 		}
+		return nil
+	})
+	if escalated {
+		to, _ := p.session(m.To)
+		p.logLine(m.From, "ask: no answer from "+firstNonEmpty(to.Name, m.To)+"; escalated")
 	}
 }
 
 // triageAsk lets triage go on for the owner when it is sure the owner would have the asker carry on
-// on its own judgement. Otherwise the ask waits in the owner's Needs you.
-func (p *Pool) triageAsk(m protocol.TeamMessage) {
+// on its own judgement; it reports whether it did.
+func (p *Pool) triageAsk(m protocol.TeamMessage) bool {
 	prov := p.decider()
 	if prov == nil || floorHit(m.Text) != "" {
-		return
+		return false
 	}
 	from, _ := p.session(m.From)
 	to, _ := p.session(m.To)
 	rules, uids := p.ownerRules(tailRunes(redact(m.Text), 800))
 	if len(uids) == 0 { // an empty Compass guides nothing
-		return
+		return false
 	}
 	state := map[string]any{"asker": from.Name, "recipient": to.Name, "question": gateText(m.Text, 1500),
 		"owner_decisions_and_rules": rules}
 	res, err := p.ask(prov, state, []decision.Question{{Name: "proceed", Type: decision.Predicate,
 		Instructions: "The asker asked the recipient this question and got no answer. Would the owner, by their decisions and rules, have the asker go on with its own best judgement instead of waiting?"}})
 	if err != nil {
-		return
+		return false
 	}
 	a := res.Answers["proceed"]
 	if !res.Calibrated || a.Yes < 0.5 || a.Confidence < decision.Thresholds["proceed"] {
-		return
+		return false
 	}
 	p.goOnAsk(m.ID, fmt.Sprintf("[PenguPool triage] No answer from %s. Go on with your best judgement and say what you assumed (p=%.2f, the owner's decision model).", firstNonEmpty(to.Name, m.To), a.Confidence))
+	return true
 }
 
 type settleIn struct {

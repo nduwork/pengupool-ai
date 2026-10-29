@@ -87,6 +87,7 @@ type Pool struct {
 	renames           map[string]string   // session id → a name to type into Claude at its next idle point (guarded by mu)
 	syncMu            sync.Mutex          // one Skill library sync at a time
 	logged            sync.Map            // catalog warnings already logged, so a list or refresh does not repeat them
+	triaging          sync.Map            // ask id → true while triage weighs it, so a sweep starts it once
 	// cloneMu: clones being registered hold it shared; the orphan clean-up takes it alone, so it
 	// never removes a clone between its clone and its registration.
 	cloneMu sync.RWMutex

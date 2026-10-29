@@ -122,6 +122,16 @@ func TestTheCapKeepsOpenAsks(t *testing.T) {
 	}
 }
 
+// sweep runs one sweep and waits for the triage it started.
+func sweep(p *Pool, at time.Time) {
+	p.sweepAsks(at)
+	for busy := true; busy; {
+		busy = false
+		p.triaging.Range(func(any, any) bool { busy = true; return false })
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // An ask nobody answers is escalated once; with no decision model triage settles nothing, and the
 // owner's Go on or Dismiss closes it. Agents cannot settle one.
 func TestAskEscalatesAndTheOwnerSettlesIt(t *testing.T) {
@@ -132,7 +142,7 @@ func TestAskEscalatesAndTheOwnerSettlesIt(t *testing.T) {
 	// queued while the recipient worked, delivered at its idle: it has only just got it
 	putMessage(t, p, protocol.TeamMessage{ID: "ask3", TeamID: "team1", From: "planaaaaaaaa", To: "leadaaaaaaaa", Text: "Ask: which db?", Type: "ask", State: "delivered", At: store.RFC3339(time.Now().Add(-2 * time.Minute))})
 	_ = p.update(func(st *store.State) error { st.Sessions[0].Status = "idle"; return nil })
-	p.sweepAsks(time.Now())
+	sweep(p, time.Now())
 	if m := message(p, "ask3"); m.EscalatedAt != "" {
 		t.Fatal("an ask the idle recipient has only just got was escalated")
 	}
@@ -143,9 +153,15 @@ func TestAskEscalatesAndTheOwnerSettlesIt(t *testing.T) {
 		t.Fatal("a fresh ask was escalated")
 	}
 	first := message(p, "ask1").EscalatedAt
-	p.sweepAsks(time.Now().Add(time.Hour))
+	sweep(p, time.Now().Add(time.Hour))
 	if m := message(p, "ask1"); m.EscalatedAt != first || m.SettledAt != "" {
 		t.Fatalf("escalated twice, or settled without a decision model: %+v", m)
+	}
+	putMessage(t, p, protocol.TeamMessage{ID: "ask4", TeamID: "team1", From: "webaaaaaaaaa", To: "leadaaaaaaaa", Text: "Ask: which disk?", Type: "ask", State: "delivered", At: old})
+	p.settleAsk("ask4")
+	p.escalateAsk(message(p, "ask4")) // triage went on meanwhile: the owner is not asked
+	if message(p, "ask4").EscalatedAt != "" {
+		t.Fatal("a settled ask was escalated")
 	}
 
 	raw, _ := json.Marshal(settleIn{ID: "ask1", Action: "dismiss"})
