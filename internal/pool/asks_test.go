@@ -258,6 +258,27 @@ func TestNativeMessagesArriveInTheRecipientsTurn(t *testing.T) {
 	}
 }
 
+// The sender records a SendMessage only once the socket took it, so an idle recipient's prompt comes
+// first and finds nothing; a turn that answers without a tool round still counts it at its Stop.
+func TestNativeMessageRecordedAfterThePromptArrivesAtStop(t *testing.T) {
+	p, _ := twoTeams(t)
+	_ = p.update(func(st *store.State) error {
+		st.Sessions[0].Harness, st.Sessions[0].Status = "claude", "idle" // lead
+		return nil
+	})
+	p.setInbox("webaaaaaaaaa", claudeInbox{Socket: "/tmp/x.sock"})
+	prompt(t, p, "leadaaaaaaaa", `<cross-session-message from="uds:/tmp/x.sock" from-name="weba">released</cross-session-message>`)
+	putMessage(t, p, protocol.TeamMessage{ID: "n1", TeamID: "team1", From: "webaaaaaaaaa", To: "leadaaaaaaaa", Text: "released", State: "queued", At: now(), Via: viaNative, Type: "tell"})
+	time.Sleep(1100 * time.Millisecond)
+	b, _ := json.Marshal(map[string]any{"stop_hook_active": false, "last_assistant_message": "Noted."})
+	if _, err := p.hookEvent(context.Background(), hookIn{SessionID: "leadaaaaaaaa", Harness: "claude", Event: "Stop", Payload: b}); err != nil {
+		t.Fatal(err)
+	}
+	if m := message(p, "n1"); m.State != "delivered" {
+		t.Fatalf("a message the turn answered stayed %s", m.State)
+	}
+}
+
 // Provenance: a team message, relayed, native or an escalated ask's go on, never reads as the owner's
 // prompt, even when its words are the owner's, and never spends the owner's credit.
 func TestATeamMessageIsNeverTheOwnersInput(t *testing.T) {

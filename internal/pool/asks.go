@@ -218,9 +218,10 @@ func (p *Pool) goOnAsk(id, text string) {
 
 // nativeArrived marks the SendMessage messages to a Claude session delivered once they are in its
 // turn: a cross-session prompt from their sender (from, its session id), and everything that sender
-// sent before it; or, with no sender, a tool round, which carries the messages that came in while the
-// turn ran. ponytail: a message that lands between the last tool round and Stop counts at the
-// next round or prompt.
+// sent before it; or, with no sender, a tool round or the turn's Stop, which carry the messages that
+// came in while the turn ran. The sender's PostToolUse records a message only after the socket took
+// it, so an idle recipient's prompt usually comes first and finds nothing yet: its Stop counts it.
+// ponytail: one recorded under a second before that Stop counts at the next round or prompt.
 func (p *Pool) nativeArrived(id, from string, at time.Time) {
 	st := p.st.State()
 	var ids []string
