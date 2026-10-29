@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -95,6 +96,7 @@ func withUnsetEnv(t *testing.T, key string) {
 // A non-home store never reaches the installer: the exec entry points
 // stay untouched, so no test can install into the owner's muse home.
 func TestEnsureMusePluginSkipsTempStore(t *testing.T) {
+	museSkipLogged = sync.Once{} // logged once per process: this test is the first
 	oldLook, oldRun := museLookPath, museRun
 	museLookPath = func([]string) (string, error) { t.Error("lookpath called for a temp store"); return "", nil }
 	museRun = func(_ context.Context, _ string, _ ...string) error {
