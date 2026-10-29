@@ -2,13 +2,13 @@ package pool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -31,6 +31,7 @@ type launchIn struct {
 	Harness string   `json:"harness"`
 	Command []string `json:"command,omitempty"`
 	Model   string   `json:"model,omitempty"`
+	Via     string   `json:"via,omitempty"` // "ollama": Claude Code through `ollama launch claude`
 	Source  sourceIn `json:"source"`
 	Cols    int      `json:"cols,omitempty"`
 	Rows    int      `json:"rows,omitempty"`
@@ -55,7 +56,7 @@ func (p *Pool) launch(ctx context.Context, in launchIn) (any, error) {
 		name = p.uniqueName(repo.Name + "-" + in.Harness)
 	}
 	s, err := p.spawn(ctx, spawnReq{
-		Name: name, Harness: in.Harness, Command: in.Command, Model: in.Model,
+		Name: name, Harness: in.Harness, Command: in.Command, Model: in.Model, Via: in.Via,
 		Cwd: repo.Path, Cols: in.Cols, Rows: in.Rows,
 	})
 	if err != nil {
@@ -67,6 +68,7 @@ func (p *Pool) launch(ctx context.Context, in launchIn) (any, error) {
 type spawnReq struct {
 	ID, Name, Harness, Model, Cwd, Resume string
 	Effort                                string
+	Via                                   string // the launcher it runs through (see ollama.go)
 	SkillID                               string // a helper's Skill library entry, loaded for this session only
 	TrustFrom                             string // the repository a worktree Cwd was made from (see pretrustFolder)
 	Command                               []string
@@ -98,13 +100,24 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 		}
 	}
 	plain := r.Harness == harness.Shell
-	ollama := p.ollamaFor(r.Harness, r.Model)
-	if ollama == nil && strings.HasPrefix(r.Model, ollamaPrefix) {
-		return store.Session{}, invalid("name the Ollama model to run %s on, or set one in Settings → Agents on this machine", r.Harness)
+	wrap := ""
+	switch r.Via {
+	case "":
+	case ViaOllama:
+		if r.Harness != harness.Claude {
+			return store.Session{}, invalid("only Claude Code runs on Ollama, not %s", r.Harness)
+		}
+		var err error
+		if wrap, err = p.ollamaWrap(ctx); err != nil {
+			return store.Session{}, err
+		}
+		r.Model = "" // Ollama's model, named in the wrap
+	default:
+		return store.Session{}, invalid("unknown launcher %q", r.Via)
 	}
 	cmd, env, err := harness.Spec(r.Harness, harness.Params{
-		SessionID: r.ID, Name: r.Name, Cwd: r.Cwd, Exe: p.exe, StoreDir: p.st.Dir(),
-		Model: r.Model, Effort: r.Effort, Resume: r.Resume, Command: r.Command, Env: p.env, Ollama: ollama,
+		SessionID: r.ID, Name: r.Name, Cwd: r.Cwd, Exe: p.exe, StoreDir: p.st.Dir(), Wrap: wrap,
+		Model: r.Model, Effort: r.Effort, Resume: r.Resume, Command: r.Command, Env: p.env,
 		SkillRepo: p.skillRepo(r.SkillID), ReadDirs: r.ReadDirs,
 	})
 	if plain {
@@ -121,7 +134,7 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 		ID: r.ID, Name: r.Name, Cwd: r.Cwd, Harness: r.Harness, Command: cmd, Env: env,
 		Cols: r.Cols, Rows: r.Rows,
 		Decorate: func(s *store.Session) {
-			s.RunLog = runlog
+			s.RunLog, s.Via = runlog, r.Via
 			// Starting until the agent's SessionStart hook says it is up: a first-run dialog (folder
 			// trust, login) must never receive a typed team message.
 			if !plain {
@@ -318,7 +331,7 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	}
 	keep := s
 	ns, err := p.spawn(ctx, spawnReq{
-		ID: s.ID, Name: s.Name, Harness: s.Harness, Cwd: s.Cwd, Resume: resumeID, Cols: s.Cols, Rows: s.Rows, SkillID: keep.SkillID,
+		ID: s.ID, Name: s.Name, Harness: s.Harness, Cwd: s.Cwd, Resume: resumeID, Cols: s.Cols, Rows: s.Rows, SkillID: keep.SkillID, Via: s.Via,
 		Decorate: func(n *store.Session) {
 			n.TeamID, n.Role, n.SkillID, n.ConvID, n.Transcript = keep.TeamID, keep.Role, keep.SkillID, keep.ConvID, keep.Transcript
 			if keep.RunLog != "" {
@@ -382,18 +395,41 @@ func gitBranch(dir string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func (p *Pool) harnessProbe(_ context.Context, _ struct{}) (any, error) {
+func (p *Pool) harnessProbe(ctx context.Context, _ struct{}) (any, error) {
 	out := map[string]map[string]string{}
 	for _, a := range harness.Agents {
+		if a.Hidden {
+			continue
+		}
 		k := a.ID
 		v, err := harness.Probe(k, p.env)
 		r := map[string]string{"version": v}
 		if err != nil {
-			r["error"] = err.Error()
+			r["error"] = probeNote(err)
 		}
 		out[k] = r
 	}
+	// Claude Code (Ollama): the ollama CLI, and the model it would start.
+	bin, err := harness.LookupOllama(p.env)
+	r := map[string]string{"version": bin} // installed: the CLI's path (an error alongside: no model to start)
+	if err != nil {
+		r["error"] = probeNote(err)
+	} else if m, err := p.ollamaModel(ctx); err != nil {
+		r["error"] = probeNote(err)
+	} else {
+		r["model"] = m
+	}
+	out["ollama"] = r
 	return out, nil
+}
+
+// probeNote is an install check's error as the owner reads it: the message, without its code.
+func probeNote(err error) string {
+	var pe *protocol.Error
+	if errors.As(err, &pe) {
+		return pe.Message
+	}
+	return strings.TrimPrefix(err.Error(), "harness_unavailable: ")
 }
 
 // agentIDs lists the supported agent runtimes for error messages.
@@ -403,29 +439,6 @@ func agentIDs() string {
 		ids[i] = a.ID
 	}
 	return strings.Join(ids, ", ")
-}
-
-// ollamaPrefix marks a session's model as an Ollama model: "ollama/qwen3-coder".
-const ollamaPrefix = "ollama/"
-
-// ollamaFor returns the Ollama model an agent runs on, or nil for its own account: the session's
-// pick ("ollama/<model>", "ollama/" for the configured model), or every launch of an agent the
-// owner put on Ollama in Settings. A model named at launch replaces the configured one.
-func (p *Pool) ollamaFor(kind, model string) *harness.Ollama {
-	am := p.st.Config().AgentModels
-	a, ok := harness.Find(kind)
-	picked, onOllama := strings.CutPrefix(model, ollamaPrefix)
-	if onOllama {
-		model = picked
-	}
-	if !ok || !a.Ollama || !onOllama && !slices.Contains(am.Ollama, kind) {
-		return nil
-	}
-	o := &harness.Ollama{URL: strings.TrimRight(firstNonEmpty(am.OllamaURL, "http://127.0.0.1:11434"), "/"), Model: firstNonEmpty(model, am.OllamaModel)}
-	if o.Model == "" {
-		return nil
-	}
-	return o
 }
 
 // skillRepo is the checkout of a Skill library entry, or "" when there is none on disk.

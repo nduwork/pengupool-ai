@@ -84,6 +84,7 @@ type SessionView struct {
 	Cwd       string   `json:"cwd"`
 	Command   []string `json:"command,omitempty"`
 	Harness   string   `json:"harness,omitempty"`
+	Via       string   `json:"via,omitempty"` // the launcher it runs through: "ollama" for Claude Code on Ollama
 	State     string   `json:"state"`
 	ExitCode  *int     `json:"exit_code,omitempty"`
 	Pid       int      `json:"pid,omitempty"`

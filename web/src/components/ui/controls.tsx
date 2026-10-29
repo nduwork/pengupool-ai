@@ -25,11 +25,17 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   return <select ref={ref} className={cn(field, "h-8 pr-7", className)} {...p} />;
 });
 
-export function Label({ className, children, hint, ...p }: LabelHTMLAttributes<HTMLLabelElement> & { hint?: ReactNode }): React.ReactElement {
+/** A field with its caption. hintId names the caption, for the field's aria-describedby (an aria-label
+ * on the field replaces the label, so the caption is not read otherwise). */
+export function Label({ className, children, hint, hintId, ...p }: LabelHTMLAttributes<HTMLLabelElement> & { hint?: ReactNode; hintId?: string }): React.ReactElement {
   return (
     <label className={cn("grid gap-1.5 text-label font-medium text-foreground", className)} {...p}>
       {children}
-      {hint !== undefined ? <span className="text-caption font-normal text-muted-foreground">{hint}</span> : null}
+      {hint !== undefined ? (
+        <span id={hintId} className="text-caption font-normal text-muted-foreground">
+          {hint}
+        </span>
+      ) : null}
     </label>
   );
 }

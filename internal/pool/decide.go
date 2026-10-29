@@ -97,7 +97,7 @@ func (p *Pool) decisionAsk(ctx context.Context, c gateway.Caller, in askIn) (any
 	}
 	prov := p.decider()
 	if prov == nil {
-		return nil, protocol.Errorf(protocol.CodeNoDecider, "no decision model: set one in Settings → Models & agents")
+		return nil, protocol.Errorf(protocol.CodeNoDecider, "no decision model: set one in Settings → Decision model")
 	}
 	if err := p.askAllowed(firstNonEmpty(in.SessionID, "owner"), time.Now()); err != nil {
 		return nil, err

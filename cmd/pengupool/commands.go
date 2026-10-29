@@ -162,6 +162,7 @@ func cmdDaemon(args []string) error {
 	nodes := node.New(st, selfPath(), logf)
 	nodes.Version = versionLine()
 	pl := pool.New(pool.Options{Store: st, Hub: h, Exe: selfPath(), Logf: logf, Nodes: nodes, Version: Version, RequireOwnerInput: true})
+	pl.MigrateAgentModels()
 	pl.MarkLost(wasRunning)
 	go pl.Run(ctx)
 	srv, err := gateway.New(gateway.Options{

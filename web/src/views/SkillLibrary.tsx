@@ -333,9 +333,9 @@ function AddSkill(): ReactElement {
               Harness
               <Select value={f.harness} onChange={set("harness")}>
                 <option value="">Any</option>
-                {AGENTS.map((a) => (
+                {AGENTS.filter((a) => !a.hidden).map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.label}{a.experimental ? " (experimental)" : ""}
+                    {a.label}
                   </option>
                 ))}
               </Select>
@@ -561,9 +561,9 @@ function Overview({ s }: { s: Skill }): ReactElement {
             Preferred agent
             <Select value={f.harness} onChange={(e) => setF({ ...f, harness: e.target.value })}>
               <option value="">Any</option>
-              {AGENTS.map((a) => (
+              {AGENTS.filter((a) => !a.hidden).map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.label}{a.experimental ? " (experimental)" : ""}
+                  {a.label}
                 </option>
               ))}
             </Select>
@@ -572,7 +572,7 @@ function Overview({ s }: { s: Skill }): ReactElement {
             <legend className="mb-1 font-medium">Only runs on</legend>
             <p className="text-caption text-faint">Leave all unchecked when any agent can run it.</p>
             <div className="flex flex-wrap gap-3">
-              {AGENTS.map((a) => (
+              {AGENTS.filter((a) => !a.hidden).map((a) => (
                 <label key={a.id} className="flex items-center gap-1.5">
                   <input
                     type="checkbox"

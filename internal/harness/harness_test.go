@@ -2,6 +2,7 @@ package harness
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -41,9 +42,9 @@ func TestAgentSpecsWireHooksPerLaunch(t *testing.T) {
 	}
 }
 
-func TestOllamaAndNewAgents(t *testing.T) {
+func TestWrapAndNewAgents(t *testing.T) {
 	dir := t.TempDir()
-	for _, k := range []string{Codex, Copilot, OpenCode, Gemini, Claude, "ollama"} {
+	for _, k := range []string{Codex, Copilot, OpenCode, Gemini, Claude} {
 		if err := os.WriteFile(filepath.Join(dir, k), []byte("#!/bin/sh\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -52,24 +53,23 @@ func TestOllamaAndNewAgents(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(home, ".gemini"), 0o700)
 	_ = os.WriteFile(filepath.Join(home, ".gemini", "settings.json"), []byte(`{"hooks":{"AfterAgent":[{"hooks":[{"type":"command","command":"mine"}]}]}}`), 0o600)
 	_ = os.WriteFile(filepath.Join(home, ".gemini", "oauth_creds.json"), []byte(`{}`), 0o600)
-	o := &Ollama{URL: "http://127.0.0.1:11434", Model: "deepseek-v4.1-flash:cloud"}
-	p := Params{SessionID: "s1", Name: "n", Exe: "/x/pengupool", StoreDir: dir, Env: []string{"PATH=" + dir, "HOME=" + home}, Ollama: o}
+	p := Params{SessionID: "s1", Name: "n", Exe: "/x/pengupool", StoreDir: dir, Env: []string{"PATH=" + dir, "HOME=" + home}}
 
-	cmd, _, _ := Spec(Codex, p)
-	if line := strings.Join(cmd, " "); !strings.Contains(line, `base_url="http://127.0.0.1:11434/v1/"`) || !strings.Contains(line, "-m deepseek-v4.1-flash:cloud") {
-		t.Fatalf("codex ollama: %s", line)
+	// Claude Code (Ollama): the launcher, then Claude's own arguments (its hooks), with Claude's
+	// folder first on PATH so the launcher runs this Claude.
+	w := p
+	w.Wrap = "/opt/ollama launch claude --model m --yes --"
+	cmd, env, _ := Spec(Claude, w)
+	if len(cmd) < 5 || cmd[0] != "/bin/sh" || cmd[2] != `exec env /opt/ollama launch claude --model m --yes -- "$@"` ||
+		cmd[4] != "--teammate-mode" || !slices.Contains(cmd, "--settings") || !slices.Contains(env, "PATH="+dir+":"+dir) {
+		t.Fatalf("claude wrapped: %q %v", cmd, env)
 	}
-	_, env, _ := Spec(Copilot, p)
-	if e := strings.Join(env, " "); !strings.Contains(e, "COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:11434/v1") || !strings.Contains(e, "COPILOT_MODEL=deepseek-v4.1-flash:cloud") {
-		t.Fatalf("copilot ollama env: %s", e)
-	}
-	cmd, env, _ = Spec(Claude, p) // through Ollama's own launcher, which runs this Claude
-	if line := strings.Join(cmd, " "); !strings.HasPrefix(line, filepath.Join(dir, "ollama")+" launch claude --model deepseek-v4.1-flash:cloud --yes -- --teammate-mode in-process") ||
-		!slices.Contains(env, "OLLAMA_HOST=http://127.0.0.1:11434") || !strings.Contains(strings.Join(env, " "), "PATH="+dir) {
-		t.Fatalf("claude ollama: %v %v", cmd, env)
+	// sh passes the arguments after its $0 through "$@" word for word.
+	if out, err := exec.Command("/bin/sh", "-c", `exec printf '%s|' "$@"`, "pp", "a b", "c").Output(); err != nil || string(out) != "a b|c|" {
+		t.Fatalf("arguments after the launcher keep their words: %q %v", out, err)
 	}
 	cmd, env, _ = Spec(OpenCode, p)
-	if e := strings.Join(env, " "); !strings.Contains(e, `"plugin":["file://`) || !strings.Contains(e, `"baseURL":"http://127.0.0.1:11434/v1"`) || cmd[len(cmd)-1] != "ollama/deepseek-v4.1-flash:cloud" {
+	if e := strings.Join(env, " "); !strings.Contains(e, `"plugin":["file://`) || cmd[0] != filepath.Join(dir, OpenCode) {
 		t.Fatalf("opencode: %v %s", cmd, e)
 	}
 	_, env, err := Spec(Gemini, p)

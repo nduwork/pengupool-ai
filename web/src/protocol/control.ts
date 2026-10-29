@@ -66,6 +66,8 @@ export interface SessionView {
   cwd: string;
   command?: string[];
   harness?: string;
+  /** The launcher it runs through: "ollama" for Claude Code (Ollama). */
+  via?: string;
   state: string;
   exit_code?: number;
   pid?: number;

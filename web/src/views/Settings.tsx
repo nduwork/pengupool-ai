@@ -1,8 +1,8 @@
-import { Bot, Check, KeyRound, Loader2, Lock, MonitorUp, Network, RefreshCw, Server, Settings2, Sparkles, X } from "lucide-react";
+import { Bot, Check, GitBranch, KeyRound, Loader2, Lock, MonitorUp, Network, RefreshCw, Server, Settings2, Smartphone, Sparkles, Terminal, Waypoints, X } from "lucide-react";
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { toast } from "sonner";
 
-import { useApp, usePersisted } from "../app/ctx";
+import { AGENTS, useApp, usePersisted, type Found } from "../app/ctx";
 import { desktop, localDesktop } from "../app/desktop";
 import { Button } from "../components/ui/button";
 import { SCROLLBACK_DEFAULT, clampScrollback } from "../components/termCache";
@@ -15,17 +15,20 @@ import { UpdateSheet } from "./Update";
 import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
 
-// Settings: General (agents on this machine, the optional GitHub account, the host, updates),
-// Models & agents (decision model), phone connections (LAN, Tailscale Serve), SSH
-// hosts and sync.
+// Settings, one subpanel per topic: General (the host, updates, terminal history, the daily backup),
+// Agents (which are installed, Claude Code on Ollama), Decision model, GitHub (the account and sync), Local
+// network, Tailscale, Muse app and SSH hosts.
 
 // [id, label, icon]
 const SECTIONS: Array<[string, string, ReactElement]> = [
   ["general", "General", <Settings2 key="s" />],
-  ["models", "Models & agents", <Sparkles key="p" />],
-  ["connections", "Phone connections", <Network key="c" />],
+  ["agents", "Agents", <Terminal key="a" />],
+  ["models", "Decision model", <Sparkles key="p" />],
+  ["github", "GitHub", <GitBranch key="g" />],
+  ["network", "Local network", <Network key="c" />],
+  ["tailscale", "Tailscale", <Waypoints key="t" />],
+  ["muse", "Muse app", <Smartphone key="m" />],
   ["nodes", "SSH hosts", <Server key="n" />],
-  ["sync", "Sync", <RefreshCw key="b" />],
 ];
 
 export function Settings(): ReactElement {
@@ -55,12 +58,14 @@ export function Settings(): ReactElement {
         </nav>
         <div className="min-w-0 flex-1 overflow-auto">
           <div className="mx-auto max-w-3xl p-6">
-            {section === "general" ? <Harnesses /> : null}
-            {section === "general" ? <TerminalHistory /> : null}
+            {section === "general" ? <General /> : null}
+            {section === "agents" ? <Agents /> : null}
             {section === "models" ? <Providers /> : null}
-            {section === "connections" ? <Connections /> : null}
+            {section === "github" ? <GitHub /> : null}
+            {section === "network" ? <LocalNetwork /> : null}
+            {section === "tailscale" ? <Tailscale /> : null}
+            {section === "muse" ? <MuseApp /> : null}
             {section === "nodes" ? <Nodes /> : null}
-            {section === "sync" ? <Sync /> : null}
           </div>
         </div>
       </div>
@@ -413,24 +418,7 @@ interface SettingsResp {
   tailscale_error?: string;
   store: string;
   executable: string;
-  agent_models?: AgentModels;
-  agents?: { id: string; label: string; ollama: boolean; experimental?: boolean }[];
   version?: string;
-}
-
-interface AgentModels {
-  ollama_url?: string;
-  ollama_model?: string;
-  ollama?: string[] | null;
-}
-
-/** Developer settings show with `localStorage["pengupool.dev"] = "1"`. */
-function devMode(): boolean {
-  try {
-    return localStorage.getItem("pengupool.dev") === "1";
-  } catch {
-    return false;
-  }
 }
 
 function useSettings(n: number): SettingsResp | null {
@@ -442,7 +430,7 @@ function useSettings(n: number): SettingsResp | null {
   return s;
 }
 
-function Row({ title, hint, children }: { title: string; hint?: ReactNode; children: ReactNode }): ReactElement {
+function Row({ title, hint, children }: { title: ReactNode; hint?: ReactNode; children: ReactNode }): ReactElement {
   return (
     <div className="flex items-start gap-4 border-b border-border py-3 last:border-0">
       <div className="min-w-0 flex-1">
@@ -478,7 +466,8 @@ function TerminalHistory(): ReactElement {
   );
 }
 
-function Connections(): ReactElement {
+/** The local network: where the host listens, and whether phones on this network may connect. */
+function LocalNetwork(): ReactElement {
   const app = useApp();
   const [n, setN] = useState(0);
   const s = useSettings(n);
@@ -487,7 +476,7 @@ function Connections(): ReactElement {
   const port = s.bound?.split(":").pop() ?? "7787";
   return (
     <div>
-      <H title="Phone connections">
+      <H title="Local network">
         No pairing. Phones see only teams that allow iOS access; a group password gates a team&apos;s screens, history and input. A phone is always view-only on the screen.
       </H>
       <Card className="px-4">
@@ -527,6 +516,24 @@ function Connections(): ReactElement {
             </Button>
           </div>
         </Row>
+      </Card>
+      <p className="mt-3 rounded-md bg-warning/10 p-3 text-caption text-warning">
+        A group password does not encrypt plain HTTP. Use the local network only when you trust it; new teams get iOS access off while it is on.
+      </p>
+    </div>
+  );
+}
+
+/** Tailscale: Serve over the owner's tailnet, and the setup checklist. */
+function Tailscale(): ReactElement {
+  const app = useApp();
+  const [n, setN] = useState(0);
+  const s = useSettings(n);
+  if (s === null) return <p className="text-label text-faint">Loading…</p>;
+  return (
+    <div>
+      <H title="Tailscale">Reach this machine from your phone anywhere, over your private tailnet. PenguPool never uses Funnel.</H>
+      <Card className="mb-4 px-4">
         <Row title="Tailscale" hint={s.tailscale_name !== undefined ? `This machine is ${s.tailscale_name} on your tailnet. Serve uses your private tailnet only, never Funnel.` : s.tailscale_error}>
           <Button
             disabled={s.tailscale_name === undefined}
@@ -544,10 +551,17 @@ function Connections(): ReactElement {
         </Row>
       </Card>
       <TailscaleChecklist rev={n} onChanged={() => setN(n + 1)} />
-      <MuseDevices onChanged={() => setN(n + 1)} />
-      <p className="mt-3 rounded-md bg-warning/10 p-3 text-caption text-warning">
-        A group password does not encrypt plain HTTP. Use the local network only when you trust it; new teams get iOS access off while it is on.
-      </p>
+    </div>
+  );
+}
+
+/** The Muse app: the devices paired to answer waiting sessions. */
+function MuseApp(): ReactElement {
+  const [n, setN] = useState(0);
+  return (
+    <div>
+      <H title="Muse app">Pair a phone running the Muse app; it walks waiting sessions one card at a time. Each device has its own token, revocable here.</H>
+      <MuseDevices key={n} onChanged={() => setN(n + 1)} />
     </div>
   );
 }
@@ -909,71 +923,16 @@ function KeyChoice({ checked, onSelect, title, children }: { checked: boolean; o
   );
 }
 
-type Probe = Record<string, { version: string; error?: string }>;
-
 const CLAUDE_INSTALL = "curl -fsSL https://claude.ai/install.sh | bash";
 
-function Harnesses(): ReactElement {
-  const app = useApp();
-  const [r, setR] = useState<Probe | null>(null);
-  const [n, setN] = useState(0);
+/** The host: its data, its command-line tool, a restart, updates; how far terminals scroll back; the daily backup. */
+function General(): ReactElement {
   const s = useSettings(0);
-  useEffect(() => {
-    setR(null);
-    void app.call<Probe>("harness.probe").then((x) => setR(x ?? null));
-  }, [n]);
-  const claude = r?.claude;
-  const others = (s?.agents ?? []).filter((a) => a.experimental === true);
   return (
     <div>
-      <H title="Agents on this machine">
-        PenguPool runs coding agents in your folders. Set up Claude Code on your Anthropic account, or on a model Ollama serves. PenguPool starts an agent with its own settings for each session and never changes the agent&apos;s configuration.
-      </H>
-      <Card className="mb-4 p-4">
-        <div className="mb-2 flex items-center gap-2">
-          <p className="flex-1 text-label font-medium">Claude Code</p>
-          {claude === undefined ? <Loader2 className="size-3.5 animate-spin text-faint" /> : <Badge tone={claude.error === undefined ? "success" : "danger"}>{claude.error === undefined ? "installed" : "not installed"}</Badge>}
-        </div>
-        {claude === undefined ? null : claude.error === undefined ? (
-          <div className="flex items-center gap-3">
-            <p className="flex-1 text-caption text-muted-foreground">{claude.version}. It asks you to sign in to your Anthropic account in its first session.</p>
-            <Button size="sm" variant="default" onClick={() => app.showDialog(<NewSessionDialog onClose={() => app.showDialog(null)} />)}>
-              New session
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-2 text-caption text-muted-foreground">
-            <p>Install it from a terminal with Anthropic&apos;s installer, then check again:</p>
-            <Cmd text={CLAUDE_INSTALL} />
-            <Button size="sm" onClick={() => setN(n + 1)}>
-              <RefreshCw /> Check again
-            </Button>
-          </div>
-        )}
-      </Card>
-      {s !== null ? <ClaudeOnOllama s={s} claude={claude} /> : null}
-      <details className="mb-4 rounded-lg border border-border px-4 py-2">
-        <summary className="cursor-pointer py-1 text-label font-medium">
-          Other agents <span className="font-normal text-muted-foreground">(experimental)</span>
-        </summary>
-        <p className="py-2 text-caption text-muted-foreground">Not yet tested with PenguPool: sessions, teams and approvals may not work fully. Each signs in with its own account in its first session.</p>
-        {others.map((a) => {
-          const v = r?.[a.id];
-          return (
-            <Row key={a.id} title={`${a.label} (experimental)`} hint={v === undefined ? "Checking…" : (v.error ?? v.version)}>
-              <span className="flex items-center gap-3">
-                {s !== null && devMode() && a.ollama ? <OllamaSwitch s={s} id={a.id} label={a.label} /> : null}
-                {v !== undefined ? <Badge tone={v.error === undefined ? "success" : "neutral"}>{v.error === undefined ? "installed" : "not installed"}</Badge> : null}
-              </span>
-            </Row>
-          );
-        })}
-      </details>
-      <div className="mb-8 mt-8">
-        <GitHubAccount />
-      </div>
+      <H title="General" />
       {s !== null ? (
-        <Card className="px-4">
+        <Card className="mb-4 px-4">
           <Row title="Data folder" hint={s.store}>
             <Button size="sm" disabled={localDesktop === undefined} onClick={() => localDesktop?.revealPath(s.store)}>
               Reveal
@@ -990,6 +949,85 @@ function Harnesses(): ReactElement {
           <About version={s.version} />
         </Card>
       ) : null}
+      <TerminalHistory />
+      <DailyBackup />
+    </div>
+  );
+}
+
+/** Which agents are installed here, and whether Claude Code (Ollama) can start. New session offers exactly these. */
+function Agents(): ReactElement {
+  const app = useApp();
+  const [r, setR] = useState<Found | null>(null);
+  const [failed, setFailed] = useState(false); // the check itself failed: nothing is known
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    setR(null);
+    setFailed(false);
+    void app.call<Found>("harness.probe").then((x) => {
+      setR(x ?? null);
+      setFailed(x === undefined);
+    });
+  }, [n]);
+  const claude = r?.claude;
+  // Claude Code (Ollama): ready, or why not (no ollama CLI, no Claude Code, Ollama down or no model).
+  const ollama = r === null ? undefined : (r.ollama ?? { version: "", error: "" });
+  const ollamaHint =
+    ollama === undefined
+      ? undefined
+      : ollama.version === "" && ollama.error !== undefined
+        ? "Claude Code on a local or cloud model, through ollama launch claude. Needs the ollama CLI (ollama.com/download)."
+        : claude?.error !== undefined
+          ? "Needs Claude Code."
+          : (ollama.error ?? `Claude Code through ollama launch claude, on ${ollama.model ?? "Ollama's default model"} (the model Ollama picks for Claude; change it with ollama launch claude).`);
+  const ollamaBadge = ollama === undefined ? "" : ollama.version === "" && ollama.error !== undefined ? "not installed" : claude?.error !== undefined || ollama.error !== undefined ? "not ready" : "ready";
+  const status = (badge: string, ok: boolean): ReactElement =>
+    failed ? (
+      <Badge tone="neutral">unknown</Badge>
+    ) : badge === "" ? (
+      <Loader2 className="size-3.5 animate-spin text-faint" />
+    ) : (
+      <Badge tone={ok ? "success" : "neutral"}>{badge}</Badge>
+    );
+  return (
+    <div>
+      <H title="Agents">
+        PenguPool runs the coding agents installed on this machine, each with its own settings for the session; it never changes an agent&apos;s configuration. New session offers the installed ones.
+      </H>
+      <Card className="mb-4 px-4">
+        {failed ? <p className="border-b border-border py-3 text-caption text-danger">Couldn&apos;t check which agents are installed. Check again, or start a session: New session offers them all.</p> : null}
+        {AGENTS.filter((a) => !a.hidden).map((a) => {
+          const v = r?.[a.id];
+          return (
+            <Row
+              key={a.id}
+              title={a.label}
+              hint={failed ? "Not checked." : v === undefined ? "Checking…" : (v.error ?? (a.id === "claude" ? `${v.version}. It asks you to sign in to your Anthropic account in its first session.` : v.version))}
+            >
+              {status(v === undefined ? "" : v.error === undefined ? "installed" : "not installed", v?.error === undefined)}
+            </Row>
+          );
+        })}
+        <Row title="Claude Code (Ollama)" hint={failed ? "Not checked." : (ollamaHint ?? "Checking…")}>
+          {status(ollamaBadge, ollamaBadge === "ready")}
+        </Row>
+        <div className="flex items-center gap-2 py-3">
+          {claude !== undefined && claude.error !== undefined ? (
+            <span className="min-w-0 flex-1 space-y-1 text-caption text-muted-foreground">
+              <span className="block">Claude Code installs from a terminal with Anthropic&apos;s installer:</span>
+              <Cmd text={CLAUDE_INSTALL} />
+            </span>
+          ) : (
+            <span className="flex-1" />
+          )}
+          <Button size="sm" onClick={() => setN(n + 1)}>
+            <RefreshCw /> Check again
+          </Button>
+          <Button size="sm" variant="default" onClick={() => app.showDialog(<NewSessionDialog onClose={() => app.showDialog(null)} />)}>
+            New session
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -1012,116 +1050,6 @@ function Cmd({ text }: { text: string }): ReactElement {
         Copy
       </Button>
     </span>
-  );
-}
-
-interface OllamaStatus {
-  url: string;
-  cli?: string;
-  cli_error?: string;
-  version?: string;
-  server_error?: string;
-}
-
-/** Claude Code on a model Ollama serves (`ollama launch claude`): each thing it needs, checked, and the model it runs on. */
-function ClaudeOnOllama({ s, claude }: { s: SettingsResp; claude?: { version: string; error?: string } }): ReactElement {
-  const app = useApp();
-  const [am, setAm] = useState<AgentModels>(s.agent_models ?? {});
-  const [st, setSt] = useState<OllamaStatus | null>(null);
-  const [n, setN] = useState(0);
-  const url = am.ollama_url ?? "";
-  useEffect(() => {
-    setSt(null);
-    const t = window.setTimeout(() => void app.call<OllamaStatus>("ollama.status", { url }).then((x) => setSt(x ?? null)), 400);
-    return () => window.clearTimeout(t);
-  }, [url, n]);
-  const save = async (next: AgentModels): Promise<void> => {
-    setAm(next);
-    if ((await app.call("settings.save", { agent_models: next })) !== undefined) toast.success("Saved; applies to sessions started from now on");
-  };
-  const always = (am.ollama ?? []).includes("claude");
-  const steps: Array<[string, boolean | undefined, ReactNode]> = [
-    ["Claude Code installed", claude === undefined ? undefined : claude.error === undefined, "See above."],
-    ["Ollama installed", st === null ? undefined : st.cli !== undefined, st?.cli ?? "Download it from ollama.com/download; it launches Claude Code on the model."],
-    [
-      "Ollama running",
-      st === null ? undefined : st.server_error === undefined,
-      st?.server_error === undefined ? `Version ${st?.version ?? "?"} at ${st?.url ?? ""}` : `${st.server_error}. Open the Ollama app, or run ollama serve.`,
-    ],
-    ["A model picked", (am.ollama_model ?? "") !== "", "Below: a model Ollama serves that can call tools, which Claude Code needs."],
-  ];
-  const ready = steps.every(([, ok]) => ok === true);
-  return (
-    <Card className="mb-4 p-4">
-      <div className="mb-1 flex items-center gap-2">
-        <p className="flex-1 text-label font-medium">Claude Code on Ollama</p>
-        <Badge tone={ready ? "success" : "neutral"}>{ready ? "ready" : "not set up"}</Badge>
-      </div>
-      <p className="mb-3 text-caption text-muted-foreground">Runs Claude Code on a local or Ollama cloud model, with no Anthropic account. PenguPool never installs Ollama or pulls models.</p>
-      <ol className="mb-3 space-y-1.5">
-        {steps.map(([title, ok, hint]) => (
-          <li key={title} className="flex gap-2 text-label">
-            {ok === undefined ? <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin text-faint" /> : ok ? <Check className="mt-0.5 size-3.5 shrink-0 text-success" /> : <X className="mt-0.5 size-3.5 shrink-0 text-danger" />}
-            <span className="min-w-0">
-              {title}
-              <span className="block break-words text-caption text-muted-foreground">{hint}</span>
-            </span>
-          </li>
-        ))}
-      </ol>
-      <div className="grid grid-cols-1 gap-3">
-        <Label hint="Ollama's address.">
-          Address
-          <Input className="font-mono" value={url} placeholder="http://127.0.0.1:11434" onChange={(e) => setAm({ ...am, ollama_url: e.target.value })} onBlur={() => void save(am)} />
-        </Label>
-        <ProviderModel
-          type="ollama"
-          typedKey=""
-          hasKey={st !== null && st.server_error === undefined}
-          address={st?.url}
-          value={am.ollama_model ?? ""}
-          onChange={(m) => void save({ ...am, ollama_model: m })}
-          capability="tools"
-          noun="models that call tools"
-          hint={
-            st !== null && st.server_error === undefined
-              ? "Ollama serves no model that can call tools. Pull one (ollama pull qwen3-coder), or sign in for cloud models (ollama signin)."
-              : "Start Ollama to list its models."
-          }
-        />
-        <div className="flex items-center gap-3">
-          <LabeledSwitch
-            checked={always}
-            label="Run every Claude Code session on Ollama"
-            onCheckedChange={(v) => void save({ ...am, ollama: v ? [...new Set([...(am.ollama ?? []), "claude"])] : (am.ollama ?? []).filter((x) => x !== "claude") })}
-          />
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setN(n + 1)}>
-            <RefreshCw /> Check again
-          </Button>
-        </div>
-        <p className="text-caption text-faint">{always ? "Every Claude Code session runs on the model above." : "Off: Claude Code uses your Anthropic account; pick Claude Code (Ollama) in New session to run one session on the model above."}</p>
-      </div>
-    </Card>
-  );
-}
-
-/** Developer only: an experimental agent on the Ollama model above, for testing PenguPool without agent accounts. */
-function OllamaSwitch({ s, id, label }: { s: SettingsResp; id: string; label: string }): ReactElement {
-  const app = useApp();
-  const [on, setOn] = useState((s.agent_models?.ollama ?? []).includes(id));
-  return (
-    <Switch
-      checked={on}
-      label={`${label} on Ollama`}
-      onCheckedChange={async (v) => {
-        // Read fresh: the Claude card may have changed the list since this page loaded.
-        const cur = (await app.call<SettingsResp>("settings.get"))?.agent_models ?? {};
-        const list = new Set(cur.ollama ?? []);
-        if (v) list.add(id);
-        else list.delete(id);
-        if ((await app.call("settings.save", { agent_models: { ...cur, ollama: [...list] } })) !== undefined) setOn(v);
-      }}
-    />
   );
 }
 
@@ -1160,7 +1088,37 @@ interface SyncView {
   status: { last_snapshot?: string; last_push?: string; last_checked?: string; last_error?: string; running: boolean; compact_suggested?: boolean; compact_reason?: string };
 }
 
-/** The Compass, helper experience and the team records: a daily snapshot here, and a private GitHub repository. */
+/** The daily snapshot on this machine of the Compass, helper experience and the team records. Always on. */
+function DailyBackup(): ReactElement {
+  const app = useApp();
+  const [b, setB] = useState<SyncView | null>(null);
+  useEffect(() => {
+    void app.call<SyncView>("sync.get").then((r) => setB(r ?? null));
+  }, []);
+  if (b === null) return <></>;
+  return (
+    <Card className="mb-4 px-4">
+      <Row title="Daily backup" hint={`The Compass, helpers' experience and team records: the last 14 days, in ${b.local_dir}. Always on.`}>
+        <span className="text-label text-muted-foreground">{b.status.last_snapshot !== undefined ? shortTime(b.status.last_snapshot) : "Not yet"}</span>
+      </Row>
+    </Card>
+  );
+}
+
+/** GitHub: the account PenguPool uses, and the sync of the record through a private repository. */
+function GitHub(): ReactElement {
+  return (
+    <div>
+      <H title="GitHub" />
+      <div className="mb-4">
+        <GitHubAccount />
+      </div>
+      <Sync />
+    </div>
+  );
+}
+
+/** Sync with GitHub: the Compass, helper experience and the team records, through a private repository. */
 function Sync(): ReactElement {
   const app = useApp();
   const [b, setB] = useState<SyncView | null>(null);
@@ -1181,20 +1139,16 @@ function Sync(): ReactElement {
   const st = b.status;
   return (
     <div>
-      <H title="Sync">
-        The Compass and helpers&apos; experience. With GitHub on, PenguPool syncs the record through a private repository your account can push to, created on the first sync
-        when it is new. Apart from that it always keeps a backup: a snapshot a day on this machine.
-      </H>
+      <p className="mb-2 text-label text-muted-foreground">
+        The Compass and helpers&apos; experience: with sync on, PenguPool syncs the record through a private repository your account can push to, created on the first sync when it is new.
+      </p>
       <Card className="px-4">
-        <Row title="Daily backup" hint={`The last 14 days, in ${b.local_dir}. Always on.`}>
-          <span className="text-label text-muted-foreground">{st.last_snapshot !== undefined ? shortTime(st.last_snapshot) : "Not yet"}</span>
-        </Row>
         <Row
           title="Sync with GitHub"
           hint={
             b.repo !== undefined
               ? `To github.com/${b.repo} (private), only when something changed.`
-              : "Needs the GitHub account in Settings → General. Creates the private repository below when it is new."
+              : "Needs the GitHub account above. Creates the private repository below when it is new."
           }
         >
           <Switch

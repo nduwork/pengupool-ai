@@ -111,49 +111,84 @@ const STATUS: Record<string, { label: string; dot: string; text: string }> = {
 const STALE_MS = 10 * 60 * 1000;
 
 /** The agent runtimes PenguPool runs (mirrors harness.Agents on the host). Any of them can share a
- * team: messages go through PenguPool, which delivers each in the recipient's own way. */
-// Claude Code (on its account or on Ollama) is what PenguPool supports first; the others are experimental.
+ * team: messages go through PenguPool, which delivers each in the recipient's own way. Hidden ones are
+ * not offered; their old sessions still run and resume. */
 export const AGENTS = [
-  { id: "claude", label: "Claude Code", hint: "Anthropic's coding agent", clear: "/clear", experimental: false },
-  { id: "muse", label: "Muse Code", hint: "Meta's coding agent", clear: "", experimental: false },
-  { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", experimental: true },
-  { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", experimental: true },
-  { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", experimental: true },
-  { id: "copilot", label: "GitHub Copilot", hint: "GitHub Copilot CLI", clear: "/clear", experimental: true },
-  { id: "opencode", label: "OpenCode", hint: "open-source coding agent", clear: "/new", experimental: true },
-  { id: "gemini", label: "Gemini CLI", hint: "Google's agent (Google login)", clear: "/clear", experimental: true },
+  { id: "claude", label: "Claude Code", hint: "Anthropic's coding agent", clear: "/clear", hidden: false },
+  { id: "muse", label: "Muse Code", hint: "Meta's coding agent", clear: "", hidden: false },
+  { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", hidden: false },
+  { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", hidden: false },
+  { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", hidden: false },
+  { id: "opencode", label: "OpenCode", hint: "open-source coding agent", clear: "/new", hidden: false },
+  { id: "copilot", label: "GitHub Copilot", hint: "GitHub Copilot CLI", clear: "/clear", hidden: true },
+  { id: "gemini", label: "Gemini CLI", hint: "Google's agent (Google login)", clear: "/clear", hidden: true },
 ] as const;
 
-/** The picker's choice for Claude Code on an Ollama model, launched with `ollama launch claude`. */
+/** The picker's choice for Claude Code (Ollama): a full Claude session launched through `ollama launch
+ * claude` on the model Ollama itself would preselect. */
 export const CLAUDE_OLLAMA = "claude-ollama";
 
-/** What a picked agent launches: Claude on Ollama is Claude with the model "ollama/<model>" ("ollama/" for the configured one). */
-export function launchAgent(choice: string, model: string): { harness: string; model?: string } {
+/** The installed-agents check (harness.probe): a version, or why it is not there. "ollama" is the
+ * ollama CLI (its path as the version), with the model it would start, or why none can start. */
+export type Found = Record<string, { version: string; error?: string; model?: string }>;
+
+/** When the install check itself fails, every agent is offered, as if installed: a failed check never blocks a launch. */
+export const checkFailed = (): Found => Object.fromEntries([...AGENTS.map((a) => a.id), "ollama"].map((id) => [id, { version: "" }]));
+
+type Pick = { value: string; label: string; agent: string; disabled?: string };
+
+const installed = (found: Found, id: string): boolean => found[id] !== undefined && found[id].error === undefined;
+
+/** What a picker offers: installed agents only (once the check answered), and with ollama Claude Code
+ * (Ollama) right after Claude Code; when Ollama has no model to start, it is shown disabled with why. */
+export function pickable(found: Found | null, agents: readonly { id: string; label: string; hidden: boolean }[] = AGENTS, ollama = false): Pick[] {
+  const out: Pick[] = [];
+  if (found === null) return out;
+  for (const a of agents) {
+    if (a.hidden || !installed(found, a.id)) continue;
+    out.push({ value: a.id, label: a.label, agent: a.id });
+    const o = found.ollama;
+    if (ollama && a.id === "claude" && o !== undefined && (o.error === undefined || o.version !== ""))
+      out.push({ value: CLAUDE_OLLAMA, label: "Claude Code (Ollama)", agent: "claude", disabled: o.error });
+  }
+  return out;
+}
+
+/** What New session starts on for a child: its parent's agent, through Ollama when the parent was. */
+export function parentPick(parent: { harness?: string; via?: string } | undefined): string | undefined {
+  if (parent?.harness === "claude" && parent.via === "ollama") return CLAUDE_OLLAMA;
+  return AGENTS.some((a) => a.id === parent?.harness) ? parent?.harness : undefined;
+}
+
+/** What is shown is what is sent: the wanted pick while it can start, else Claude Code (Ollama) when it
+ * is the default (moved from "every Claude Code session on Ollama"), else the first that can start. */
+export function choosePick(options: readonly Pick[], want: string, ollamaDefault: boolean): string {
+  const ok = (v: string): boolean => options.some((o) => o.value === v && o.disabled === undefined);
+  if (ok(want)) return want;
+  if (ollamaDefault && ok(CLAUDE_OLLAMA)) return CLAUDE_OLLAMA;
+  return options.find((o) => o.disabled === undefined)?.value ?? "";
+}
+
+/** New session may start only once both the install check and the settings have answered: before
+ * that the shown pick may still change (to Claude Code (Ollama), say). */
+export const pickReady = (found: Found | null, settingsLoaded: boolean): boolean => found !== null && settingsLoaded;
+
+/** What a picked option launches: an agent and its model, or Claude through Ollama on Ollama's model. */
+export function launchAgent(choice: string, model: string): { harness: string; model?: string; via?: string } {
   const m = model.trim();
-  if (choice === CLAUDE_OLLAMA) return { harness: "claude", model: `ollama/${m}` };
+  if (choice === CLAUDE_OLLAMA) return { harness: "claude", via: "ollama" };
   return { harness: choice, model: m === "" ? undefined : m };
 }
 
-/** The agent picker's options, Claude Code on Ollama right after Claude Code. */
-export function agentOptions(agents: readonly { id: string; label: string; experimental: boolean }[], missing: (id: string) => boolean, note: (id: string) => string = () => ""): ReactElement[] {
-  const out: ReactElement[] = [];
-  for (const a of agents) {
-    out.push(
-      <option key={a.id} value={a.id} disabled={missing(a.id)}>
-        {a.label}
-        {a.experimental ? " (experimental)" : ""}
-        {missing(a.id) ? " — not installed" : ""}
-        {note(a.id)}
-      </option>,
-    );
-    if (a.id === "claude")
-      out.push(
-        <option key={CLAUDE_OLLAMA} value={CLAUDE_OLLAMA} disabled={missing("claude")}>
-          Claude Code (Ollama){missing("claude") ? " — not installed" : ""}
-        </option>,
-      );
-  }
-  return out;
+/** The picker's options, from pickable(). */
+export function agentOptions(options: readonly Pick[], note: (value: string) => string = () => ""): ReactElement[] {
+  return options.map((o) => (
+    <option key={o.value} value={o.value} disabled={o.disabled !== undefined}>
+      {o.label}
+      {o.disabled !== undefined ? " — not ready" : ""}
+      {note(o.value)}
+    </option>
+  ));
 }
 
 /** A raw terminal tab: the owner's login shell, on no team and with no agent (shell.open). */

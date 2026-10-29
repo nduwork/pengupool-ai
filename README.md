@@ -2,8 +2,8 @@
 
 PenguPool AI is the PenguPool agent-pool app — a Go host daemon with PTY worker
 sessions, a browser/desktop terminal UI, helper teams and an owner Compass —
-running Claude Code (account or Ollama), Muse Code, Codex and OMP/pi side by
-side, with the Muse app as the owner's remote.
+running Claude Code (account or Ollama), Muse Code, Codex, pi, OMP and
+OpenCode side by side, with the Muse app as the owner's remote.
 
 Say a preference once; every agent starts with it, helpers remember their
 finished work, and you answer waiting sessions from your phone.
@@ -21,7 +21,7 @@ From source: `make install` (Go 1.26.1 + Node 22 required).
 
 ```bash
 pengupool-ai daemon [--store DIR] [--http ADDR] [--lan]   # state, sessions, browser app
-pengupool-ai new [--name N] [--cwd DIR] [--harness claude|muse|omp|pi|codex|copilot]
+pengupool-ai new [--name N] [--cwd DIR] [--harness claude|muse|codex|pi|omp|opencode]
 pengupool-ai ls [--json]
 pengupool-ai attach <session>
 pengupool-ai kill <session>
@@ -43,10 +43,11 @@ browser UI talk to the daemon over its gateway. Data: `~/.pengupool-ai/v2`
   once on first start.
 - **Journal.** A helper's `Done:` report becomes an entry (its compacted
   context); its next session starts with the index and the matches.
-- **Harnesses.** Claude Code, Claude Code on Ollama, Muse Code (the app
-  installs its PenguPool plugin), Codex (the app writes a rule so only the
-  PenguPool CLI leaves the sandbox), OMP and pi. Only agents found installed
-  are offered; Terminal runs any other.
+- **Harnesses.** Claude Code, Muse Code (the app installs its PenguPool
+  plugin), Codex (the app writes a rule so only the PenguPool CLI leaves the
+  sandbox), pi, OMP and OpenCode, plus Claude Code (Ollama): Claude through
+  `ollama launch claude` on Ollama's own default model. Only agents found
+  installed are offered.
 
 Supported harnesses: docs/harnesses.md. See DESIGN.md for the dataflows.
 
@@ -60,8 +61,8 @@ make dist            # PenguPool-AI-<version>-mac-arm64.dmg
 
 ## Muse app
 
-Settings › Phone connections walks the Tailscale setup (installed, logged in,
-HTTPS, Serve, reachable), then "Pair a Muse device" shows the API URL and a
+Settings › Tailscale walks the setup (installed, logged in,
+HTTPS, Serve, reachable), then Settings › Muse app › "Pair a Muse device" shows the API URL and a
 6-digit code for the Muse app. The Muse app then walks waiting sessions one
 card at a time — Allow, Deny or Chat — over `/api/muse/v1` (contract in
 DESIGN.md, spec at `/api/muse/v1/openapi.json`).

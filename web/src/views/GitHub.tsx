@@ -64,7 +64,7 @@ function Avatar({ login }: { login: string }): ReactElement {
   return <img src={`https://github.com/${encodeURIComponent(login)}.png?size=64`} alt="" className="size-8 shrink-0 rounded-full bg-muted" />;
 }
 
-/** Settings → General → GitHub account. */
+/** Settings → GitHub → the account. */
 export function GitHubAccount(): ReactElement {
   const app = useApp();
   const [s, set, reload] = useGitHub();
