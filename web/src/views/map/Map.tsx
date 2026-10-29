@@ -22,14 +22,14 @@ import { AgentPool, DND } from "./Pool";
 import { ClosedTeamsSheet, CloseTeamSheet, TeamSettingsSheet } from "./TeamSheets";
 
 // The live map, as v1 drew it: each team laid out as a tree in its own frame (Org chart, Outline or
-// Tree →), right-angled lines that light green when a parent messages a child and milky blue for
+// Tree →), right-angled lines that light green when a parent messages a child and blue for
 // the reply, ungrouped sessions stacked in a column on the right, folding to a lead, drag a card onto
 // another to group it there or onto the canvas to ungroup, a right-click menu on every card and on
 // the background, and the Skill agent pool drawer. Layout depends only on the topology and
 // the options, so status updates restyle cards in place and never move them.
 
 const HOT_MS = 90_000;
-const DIR_COLOR = { down: "#3fb950", up: "#9ecbff" }; // a message to a child, a reply to its parent
+const DIR_COLOR = { down: "#3fb950", up: "var(--route-up)" }; // a message to a child, a reply to its parent
 const LAYOUTS: Record<LayoutKind, string> = { org: "Org chart", outline: "Outline", right: "Tree →" };
 
 function sizes(roomy: boolean): { S: { sib: number; rank: number; stack: number; indent: number }; pad: number } {
@@ -562,7 +562,7 @@ export function TeamMap(): ReactElement {
         <Legend color="#3fb950" thick>
           message sent
         </Legend>
-        <Legend color="#9ecbff" thick>
+        <Legend color="var(--route-up)" thick>
           reply
         </Legend>
         <Legend color="#f59e0b" thick>
@@ -636,7 +636,7 @@ export function MessageLog(): ReactElement {
     const team = app.domain.teams.find((t) => t.id === m.team_id);
     const parent = (id: string): string | undefined => team?.members.find((x) => x.session_id === id)?.parent;
     if (parent(m.to) === m.from) return "#3fb950";
-    if (parent(m.from) === m.to) return "#9ecbff";
+    if (parent(m.from) === m.to) return "var(--route-up)";
     return "#f59e0b";
   };
   const flip =

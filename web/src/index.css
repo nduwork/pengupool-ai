@@ -63,6 +63,7 @@
   --warning: #b45309;
   --danger: #c0262d;
   --info: #2563eb;
+  --route-up: #2563eb; /* the Map's reply line, beads and message text */
   --terminal: #0d1117;
   /* Workflow lanes, one per member: distinct at a glance, quiet beside the text. */
   --lane-1: #0b7f8f;
@@ -93,6 +94,7 @@
   --warning: #fbbf24;
   --danger: #f87171;
   --info: #60a5fa;
+  --route-up: #9ecbff;
   --terminal: #0d1117;
   --lane-1: #2ec4b6;
   --lane-2: #8b94ff;
