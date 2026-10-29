@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/harness"
+	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
@@ -128,6 +129,57 @@ func (p *Pool) clearRestore() error {
 		st.Restore = nil
 		return nil
 	})
+}
+
+// runFresh is the owner's "start fresh": instead of restoring, the stopped sessions leave the map.
+// A team none of whose members still runs is closed (it stays under Closed groups, where the owner
+// can delete it); a stopped member of a team that still runs is kept. Nothing is deleted on disk:
+// scrollback, worktrees, team notes, journals and the Compass stay.
+func (p *Pool) runFresh(_ context.Context, _ struct{}) (any, error) {
+	var closed []string
+	removed := 0
+	if err := p.update(func(st *store.State) error {
+		gone := map[string]bool{}
+		for _, r := range p.restorableIn(st, st.Restore) {
+			gone[r.ID] = true
+		}
+		st.Restore = nil
+		if len(gone) == 0 {
+			return nil
+		}
+		for i := range st.Domain.Teams {
+			t := &st.Domain.Teams[i]
+			if t.State != "active" || !slices.ContainsFunc(t.Members, func(m protocol.Member) bool { return gone[m.SessionID] }) {
+				continue
+			}
+			if slices.ContainsFunc(t.Members, func(m protocol.Member) bool {
+				j := sessionIndex(st, m.SessionID)
+				return m.State == "active" && j >= 0 && st.Sessions[j].State == "running"
+			}) {
+				continue
+			}
+			dissolve(st, t)
+			for k := range st.Domain.Approvals { // as teamClose: a closed team's requests change nothing
+				if a := &st.Domain.Approvals[k]; a.Kind == "formation" && a.TeamID == t.ID && a.State == "pending" {
+					a.State = "denied"
+				}
+			}
+			closed = append(closed, t.ID)
+		}
+		n := len(st.Sessions)
+		st.Sessions = slices.DeleteFunc(st.Sessions, func(s store.Session) bool {
+			return gone[s.ID] && teamOf(&st.Domain, s.ID) == nil
+		})
+		removed = n - len(st.Sessions)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	for _, id := range closed {
+		p.recordFormation(id, protocol.FormationChange{Op: "remove", Reason: "started fresh"}, "start fresh")
+		p.revokeTeam(id)
+	}
+	return map[string]int{"sessions": removed, "teams": len(closed)}, nil
 }
 
 // runDismiss is the owner's "don't restore": it forgets the question and deletes nothing.
