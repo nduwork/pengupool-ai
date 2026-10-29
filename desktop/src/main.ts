@@ -111,6 +111,31 @@ async function firstRunDoctor(): Promise<void> {
   }
 }
 
+// ---- restore after a reboot ----------------------------------------------------------------------
+
+type Restorable = { id: string; name: string; harness: string; agent: boolean };
+
+/** At start, offers the sessions a reboot or crash ended while they were running. Sessions whose
+ *  workers survived (an app quit or update) keep running and are never asked about. */
+async function askRestore(): Promise<void> {
+  if ((await host.ensure()) === null) return;
+  const lost = await host.rpc<Restorable[] | null>("run.restorable", {}).catch(() => null);
+  if (lost === null || lost.length === 0) return;
+  const agents = lost.filter((s) => s.agent);
+  const r = await dialog.showMessageBox({
+    type: "question",
+    message: `Restore ${lost.length === 1 ? "the session" : `the ${lost.length} sessions`} that stopped?`,
+    detail:
+      "These were running when the computer restarted or PenguPool's host stopped:\n" +
+      lost.map((s) => `• ${s.name}${s.agent ? "" : " (terminal)"}`).join("\n") +
+      (agents.length < lost.length ? "\n\nA terminal cannot be restored; agents resume their conversations." : "\n\nAgents resume their conversations."),
+    buttons: agents.length > 0 ? ["Restore all", "Don't restore"] : ["OK"],
+    defaultId: 0,
+    cancelId: agents.length > 0 ? 1 : 0,
+  });
+  await host.rpc(agents.length > 0 && r.response === 0 ? "run.restore" : "run.dismiss", {}).catch((e: unknown) => console.error("restore:", e));
+}
+
 // ---- window state -------------------------------------------------------------------------------
 
 interface WinState {
@@ -353,6 +378,7 @@ if (!single) {
     menu();
     createWindow();
     void firstRunDoctor();
+    void askRestore();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
