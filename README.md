@@ -21,7 +21,7 @@ From source: `make install` (Go 1.26.1 + Node 22 required).
 
 ```bash
 pengupool-ai daemon [--store DIR] [--http ADDR] [--lan]   # state, sessions, browser app
-pengupool-ai new [--name N] [--cwd DIR] [--harness claude|muse|omp|pi|codex]
+pengupool-ai new [--name N] [--cwd DIR] [--harness claude|muse|omp|pi|codex|copilot]
 pengupool-ai ls [--json]
 pengupool-ai attach <session>
 pengupool-ai kill <session>
@@ -139,6 +139,9 @@ v0.9.2: the app again restarts a host that is not its own build (and one that ho
 the store but does not answer), so after an update the host runs the new version;
 0.9.0 had lost this. `make install` replaces the app in /Applications when it is
 there.
+v0.9.3: tests hold the host to the app's build (the app restarts an older host;
+the daemon writes the version line the app compares). Saving settings no longer
+races a Muse device being revoked. `pengupool new` lists muse again.
 
 ## Credits
 

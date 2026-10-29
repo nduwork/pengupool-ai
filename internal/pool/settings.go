@@ -172,26 +172,29 @@ type settingsIn struct {
 }
 
 func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
-	cfg := p.st.Config()
-	if in.LAN != nil {
-		cfg.Network.LAN = *in.LAN
-	}
-	if in.LANAddr != nil {
-		cfg.Network.LANAddr = strings.TrimSpace(*in.LANAddr)
-	}
-	if in.Tailscale != nil {
-		cfg.Network.Tailscale = strings.TrimRight(strings.TrimSpace(*in.Tailscale), "/")
-	}
-	if am := in.AgentModels; am != nil {
-		for _, id := range am.Ollama {
-			if a, ok := harness.Find(id); !ok || !a.Ollama {
-				return nil, invalid("%s cannot run on Ollama", id)
-			}
+	// One locked read-modify-write: a Muse device revoked meanwhile stays revoked.
+	err := p.st.UpdateConfig(func(cfg *store.Config) error {
+		if in.LAN != nil {
+			cfg.Network.LAN = *in.LAN
 		}
-		am.OllamaURL, am.OllamaModel = strings.TrimSpace(am.OllamaURL), strings.TrimSpace(am.OllamaModel)
-		cfg.AgentModels = *am
-	}
-	if err := p.st.SaveConfig(cfg); err != nil {
+		if in.LANAddr != nil {
+			cfg.Network.LANAddr = strings.TrimSpace(*in.LANAddr)
+		}
+		if in.Tailscale != nil {
+			cfg.Network.Tailscale = strings.TrimRight(strings.TrimSpace(*in.Tailscale), "/")
+		}
+		if am := in.AgentModels; am != nil {
+			for _, id := range am.Ollama {
+				if a, ok := harness.Find(id); !ok || !a.Ollama {
+					return invalid("%s cannot run on Ollama", id)
+				}
+			}
+			am.OllamaURL, am.OllamaModel = strings.TrimSpace(am.OllamaURL), strings.TrimSpace(am.OllamaModel)
+			cfg.AgentModels = *am
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	res := map[string]any{"saved": true}
