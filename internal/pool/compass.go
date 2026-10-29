@@ -14,6 +14,8 @@ import (
 
 	"github.com/nduwork/pengupool-ai/internal/agentdb"
 	"github.com/nduwork/pengupool-ai/internal/decision"
+	"github.com/nduwork/pengupool-ai/internal/harness"
+	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
@@ -472,22 +474,87 @@ type wording struct {
 const maxOffers = 3
 
 // askWording queues sig's wording for the session that got the prompt (one at a time: a newer
-// signal replaces an older one, which waits in the ledger); wordingNote delivers it at the session's
-// next prompts. cands are the lines the agent may link the owner's words to.
-// ponytail: in memory, so a restart drops it (it is not in the ledger yet); an agent that never
-// answers is given up on after maxOffers prompts.
+// signal replaces an older one, which waits in the ledger). It is offered first inside the turn the
+// owner's words opened (wordingNow: the turn's next tool round, else one continuation at its Stop),
+// then at the session's next prompts (wordingNote). cands are the lines the agent may link the
+// owner's words to. Each wording's fate is in the session's run log, by its id: asked, offered,
+// worded or answered none, replaced, given up, or the session ended first.
+// ponytail: in memory, so a restart drops it (it is not in the ledger yet): its id then has
+// "asked" and no later line; an agent that never answers is given up on after maxOffers.
 func (p *Pool) askWording(sig agentdb.Signal, cands []agentdb.Line, gateID int64) {
 	p.mu.Lock()
 	if p.wording == nil {
 		p.wording = map[string]*wording{}
 	}
 	old := p.wording[sig.SessionID]
-	p.wording[sig.SessionID] = &wording{sig: sig, cands: cands, gate: gateID, id: fmt.Sprintf("%x", sha256.Sum256([]byte(sig.Words+p.at().String())))[:8]}
+	w := &wording{sig: sig, cands: cands, gate: gateID, id: fmt.Sprintf("%x", sha256.Sum256([]byte(sig.Words+p.at().String())))[:8]}
+	p.wording[sig.SessionID] = w
 	p.mu.Unlock()
 	if old != nil {
+		p.logLine(sig.SessionID, "compass: wording "+old.id+" replaced unworded (waits in the ledger)")
 		p.unworded(old)
 	}
-	p.logLine(sig.SessionID, "compass: wording asked")
+	p.logLine(sig.SessionID, "compass: wording "+w.id+" asked")
+	p.wordingAtIdle(sig.SessionID)
+}
+
+// wordingAtIdle offers a wording whose turn already ended at once, as a PenguPool notice in a turn of
+// its own: triage reads the owner's words with the turn's reply, so a preference the owner said is
+// mostly asked for after the Stop, and would otherwise wait for the session's next prompt. Once per
+// wording (wordingNow), only to an idle session; a working one gets it in its turn.
+func (p *Pool) wordingAtIdle(id string) {
+	s, ok := p.session(id)
+	if !ok || s.Status != "idle" {
+		return
+	}
+	note := strings.TrimSpace(p.wordingNow(id, "right after the turn (a notice)"))
+	if note == "" {
+		return
+	}
+	var err error
+	switch a, _ := harness.Find(s.Harness); {
+	case p.testNotice != nil:
+		err = p.testNotice(id, note)
+	case s.Harness == harness.Claude:
+		err = p.deliverClaude(id, note)
+	case sendsGoAhead(s.Harness):
+		err = p.deliverOMP(id, protocol.NewID(), note)
+	case a.Typed:
+		err = p.typeInto(id, pasted(note))
+	default:
+		return // no way in: the next prompt carries it
+	}
+	if err != nil {
+		p.logLine(id, "compass: the wording notice failed: "+err.Error())
+		return
+	}
+	p.turnStart(id, note) // a notice's turn, not the owner's: it asks for no wording of its own
+	p.bumpTurn(id)        // a go-ahead decided for the previous turn no longer fires on top of it
+}
+
+// wordingNow is the wording's first offer, inside the turn the owner's words opened: "" when there is
+// none waiting or it was offered already, so a turn gets at most one.
+func (p *Pool) wordingNow(id, where string) string {
+	p.mu.Lock()
+	w := p.wording[id]
+	first := w != nil && w.offers == 0
+	p.mu.Unlock()
+	if !first {
+		return ""
+	}
+	return p.wordingOffer(id, where)
+}
+
+// wordingEnded gives up a wording whose session ended before answering it.
+func (p *Pool) wordingEnded(id string) {
+	p.mu.Lock()
+	w := p.wording[id]
+	delete(p.wording, id)
+	p.mu.Unlock()
+	if w != nil {
+		p.logLine(id, fmt.Sprintf("compass: wording %s not answered: the session ended (offered %d times; waits in the ledger)", w.id, w.offers))
+		p.unworded(w)
+	}
 }
 
 // unworded lets w's signal wait without a line: in the ledger, or for a check-in's answer as a
@@ -523,7 +590,9 @@ func (p *Pool) gateWorded(w *wording, rule string) {
 
 // wordingNote asks the session to word the owner's last words, at its next prompts; after maxOffers
 // it gives up and the signal waits in the ledger.
-func (p *Pool) wordingNote(id string) string {
+func (p *Pool) wordingNote(id string) string { return p.wordingOffer(id, "at a prompt") }
+
+func (p *Pool) wordingOffer(id, where string) string {
 	p.mu.Lock()
 	w := p.wording[id]
 	if w == nil {
@@ -533,12 +602,13 @@ func (p *Pool) wordingNote(id string) string {
 	if w.offers >= maxOffers {
 		delete(p.wording, id)
 		p.mu.Unlock()
-		p.logLine(id, "compass: wording not answered (waits in the ledger)")
+		p.logLine(id, "compass: wording "+w.id+" not answered (waits in the ledger)")
 		p.unworded(w)
 		return ""
 	}
 	w.offers++
 	p.mu.Unlock()
+	p.logLine(id, "compass: wording "+w.id+" offered "+where)
 	exe := firstNonEmpty(p.exe, "pengupool")
 	if w.gate != 0 {
 		q := ""
@@ -641,6 +711,7 @@ func (p *Pool) compassWord(_ context.Context, in compassWordIn) (any, error) {
 		name = s.Name
 	}
 	if in.None {
+		p.logLine(in.SessionID, "compass: wording "+w.id+" answered: none")
 		if w.gate != 0 {
 			p.gateWorded(w, "")
 		} else {
@@ -648,7 +719,7 @@ func (p *Pool) compassWord(_ context.Context, in compassWordIn) (any, error) {
 		}
 		return map[string]string{"detail": "dropped"}, nil
 	}
-	p.logLine(in.SessionID, "compass: worded by "+name)
+	p.logLine(in.SessionID, "compass: wording "+w.id+" worded by "+name)
 	if w.gate != 0 {
 		p.gateWorded(w, clipRunes(gateText(oneLine(ls[0].Body), 400), 400))
 		return map[string]string{"detail": "noted"}, nil

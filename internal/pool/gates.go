@@ -194,8 +194,8 @@ func (p *Pool) promptArrived(s store.Session, owner bool) <-chan struct{} {
 
 // turnEnded counts a tracked turn's end and returns its number, and the channel its triage closes
 // (when the turn is placed). Permission prompts still open are over (expired): which way the owner
-// went is unknown. Check-ins still pending are over too, unless the owner opened this turn: the
-// owner's reply settles those.
+// went is unknown. Check-ins still pending are over too, unless the owner opened this turn (the
+// owner's reply settles those) or the Compass did (a wording turn asks the owner nothing).
 func (p *Pool) turnEnded(s store.Session, t *turn) (uint64, chan struct{}) {
 	g := p.gs(s.ID)
 	g.mu.Lock()
@@ -211,7 +211,7 @@ func (p *Pool) turnEnded(s store.Session, t *turn) (uint64, chan struct{}) {
 	if err := p.db.ExpireGates(s.ID, "permission"); err != nil {
 		p.logf("pool: expire %s's gates: %v", s.Name, err)
 	}
-	if t == nil || !t.fromOwner() {
+	if t == nil || !t.fromOwner() && !t.fromWording() {
 		if err := p.db.ExpireGates(s.ID, "checkin"); err != nil {
 			p.logf("pool: expire %s's gates: %v", s.Name, err)
 		}

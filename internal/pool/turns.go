@@ -181,6 +181,10 @@ func (t turn) fromOutside() bool {
 	return ok || strings.HasPrefix(t.Prompt, outsideLabel)
 }
 
+// fromWording: a turn PenguPool opened to ask for the owner's words to be worded (a notice or a Stop
+// continuation). It settles nothing the owner was asked, so their pending check-ins stay open.
+func (t turn) fromWording() bool { return strings.HasPrefix(t.Prompt, "[PenguPool compass]") }
+
 // fromNotice: a PenguPool notice or a message from outside the team, information rather than a request.
 func (t turn) fromNotice() bool {
 	return t.fromOutside() || strings.HasPrefix(t.Prompt, "[PenguPool notice")
