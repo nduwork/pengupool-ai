@@ -33,10 +33,11 @@ DRY = os.environ.get("HATCH_HOOK_DRY_RUN") == "1"
 
 def observe():
     """obs: {sessions: {id: {name, status}}, ask, ask_detail}; sessions stays empty when unreachable."""
-    obs = {"sessions": {}, "ask": False, "refused": False}
+    obs = {"sessions": {}, "ask": False, "refused": False, "reachable": False}
     try:
         code, res = pp.api("GET", "/sessions")
         obs["refused"] = code == 401
+        obs["reachable"] = code == 200  # an empty list is still an answer
         if code == 200:
             for s in res or []:
                 st = "waiting on you" if s.get("waiting") else s.get("status") or s.get("state", "?")
@@ -74,7 +75,7 @@ def main():
         return 0
 
     obs = observe()
-    reachable = bool(obs["sessions"]) or obs["ask"]
+    reachable = obs["reachable"]
     changes = []
 
     if prev is None:

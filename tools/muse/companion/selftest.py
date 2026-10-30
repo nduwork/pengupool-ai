@@ -71,10 +71,13 @@ assert "web &lt;b&gt;" in out and "? Need input" in out and "Active" in out and 
 assert out.index("lead") < out.index("web &lt;b&gt;") and "padding-left:32px" in out, "web under lead"
 assert "Ungrouped" in out and "badge" not in out and "· app" not in out, "rows show the name"
 obs = detect.observe()
-assert obs["ask"] and obs["sessions"]["web1"]["status"] == "waiting on you" and obs["sessions"]["lead1"]["status"] == "working", obs
+assert obs["reachable"] and obs["ask"] and obs["sessions"]["web1"]["status"] == "waiting on you" and obs["sessions"]["lead1"]["status"] == "working", obs
 pp.api = lambda method, path, body=None: (401, {"error": "unauthorized"})
 obs = detect.observe()
-assert obs["refused"] and not obs["sessions"], obs
+assert obs["refused"] and not obs["reachable"] and not obs["sessions"], obs
+pp.api = lambda method, path, body=None: (200, []) if path == "/sessions" else (204, None)
+obs = detect.observe()
+assert obs["reachable"] and not obs["sessions"] and not obs["ask"], "no sessions is not unreachable"
 print("gadget and detect ok")
 """
 

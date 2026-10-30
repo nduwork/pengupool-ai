@@ -11,6 +11,7 @@
 #
 #   ./install-host.sh            # port 7790
 #   PORT=7791 ./install-host.sh  # another port
+#   MC_API=https://<name> ./install-host.sh   # with Tailscale Serve and Local network off
 #
 # Idempotent: re-running refreshes the code and reloads the agent.
 set -euo pipefail
@@ -54,6 +55,7 @@ cat > "$PLIST" <<EOF
   <key>EnvironmentVariables</key>
   <dict>
     <key>MC_PORT</key><string>$PORT</string>
+$( [ -n "${MC_API:-}" ] && echo "    <key>MC_API</key><string>$MC_API</string>" )
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>WorkingDirectory</key><string>$DEST</string>

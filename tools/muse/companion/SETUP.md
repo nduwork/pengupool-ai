@@ -161,7 +161,7 @@ cd tools/muse/companion && ./install-host.sh   # PORT=7791 changes the port
 
 It needs Node 22+ on that machine, and Local network on (it calls the
 device API at `http://<this machine's Tailscale name>:7787`; with
-Serve instead, set `MC_API=https://<name>` in the plist). launchd keeps it
+Serve instead, run it as `MC_API=https://<name> ./install-host.sh`). launchd keeps it
 running, it binds to the machine's Tailscale address only, and it reads
 `/api/muse/v1/sessions` with that device token; it never holds the
 owner's app token. Every request but `/health` needs the site key the
