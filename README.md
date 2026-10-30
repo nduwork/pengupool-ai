@@ -203,8 +203,9 @@ carries a key without which every page is 404. `/sessions` also gives each runni
 (working, idle...).
 v0.9.34: Removed: the team group password backend, unused since v0.9.32 took away the browser
 phone view: the team.lock and team.unlock calls, the phone unlock check and the stored password
-verifiers. A state.json from an older version still loads; its stored verifiers are ignored and
-gone at the next save, with no error. A team's iOS access still decides whether paired devices see
+verifiers. A state.json from an older version still loads; its stored verifiers are ignored, with
+no error, and gone from state.json at the next save and from its backup, state.json.bak, at the
+save after (backups you made yourself keep them). A team's iOS access still decides whether paired devices see
 it.
 
 ## Credits
