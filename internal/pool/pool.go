@@ -152,7 +152,6 @@ func New(o Options) *Pool {
 	p := &Pool{
 		st: o.Store, hub: o.Hub, exe: o.Exe, env: env, logf: logf, nodes: o.Nodes, version: o.Version,
 		msgSock: map[string]claudeInbox{}, crossOK: map[sessionPair]time.Time{}, injected: map[string]map[string]string{},
-
 		lastInput: map[string]time.Time{}, pending: map[string][]protocol.TeamMessage{},
 		ownerEnter: map[string][]credit{}, requireOwnerInput: o.RequireOwnerInput,
 		museCodes: map[string]*musePairCode{}, museAnswered: map[string]museAnswerDone{}, museInflight: map[string]bool{},
