@@ -45,54 +45,32 @@ func TestDetectSecret(t *testing.T) {
 	}
 }
 
-func TestGroupAccess(t *testing.T) {
-	v, err := makeVerifier("hunter22")
-	if err != nil || !checkVerifier(v, "hunter22") || checkVerifier(v, "nope") {
-		t.Fatalf("verifier: %v", err)
+// A state from before the group password went loads as it is: the verifiers and password_set are
+// ignored, and the next save drops them. iOS access still switches per team.
+func TestGroupPasswordGone(t *testing.T) {
+	dir := t.TempDir()
+	old := `{"version":1,"node_id":"n1","sessions":[],"domain":{"teams":[{"id":"t1","name":"app","state":"active","ios_access":true,"password_set":true,"members":[]}]},"secrets":{"t1":"scrypt$32768$8$1$c2FsdA$a2V5"}}`
+	if err := os.WriteFile(filepath.Join(dir, store.StateFile), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	st, err := store.Open(t.TempDir())
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatalf("an old state with verifiers: %v", err)
+	}
+	p := New(Options{Store: st, Exe: "pengupool"})
+	off := false
+	if _, err := p.teamPolicy(context.Background(), policyIn{TeamID: "t1", IOSAccess: &off}); err != nil {
+		t.Fatal(err)
+	}
+	if st.State().Domain.Teams[0].IOSAccess {
+		t.Error("iOS access did not switch off")
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, store.StateFile))
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := New(Options{Store: st, Exe: "pengupool"})
-	_ = st.Update(func(s *store.State) error {
-		s.Sessions = append(s.Sessions,
-			store.Session{ID: "a", Name: "a", TeamID: "open", State: "running", Cwd: "/secret/a"},
-			store.Session{ID: "b", Name: "b", TeamID: "hidden", State: "running"},
-			store.Session{ID: "c", Name: "c", TeamID: "locked", State: "running", Cwd: "/secret/c"})
-		s.Domain.Teams = []protocol.Team{
-			{ID: "open", State: "active", IOSAccess: true},
-			{ID: "hidden", State: "active", IOSAccess: false},
-			{ID: "locked", State: "active", IOSAccess: true, PasswordSet: true},
-		}
-		s.Secrets = map[string]string{"locked": v}
-		return nil
-	})
-	phone := gateway.Caller{ConnectionID: "k", Kind: protocol.KindIOS}
-	f := p.Filter(phone, st.State())
-	if len(f.Sessions) != 2 || f.Secrets != nil {
-		t.Fatalf("phone sees %d sessions", len(f.Sessions))
-	}
-	for _, s := range f.Sessions {
-		if s.ID == "c" && s.Cwd != "" {
-			t.Error("a locked group leaked its workspace")
-		}
-	}
-	if p.Authorize(phone, "b") == nil || p.Authorize(phone, "c") == nil || p.Authorize(phone, "a") != nil {
-		t.Error("attach checks")
-	}
-	if _, err := p.teamUnlock(nil, phone, []byte(`{"team_id":"locked","password":"hunter22"}`)); err != nil {
-		t.Fatal(err)
-	}
-	if p.Authorize(phone, "c") != nil {
-		t.Error("unlock did not open the group")
-	}
-	other := gateway.Caller{ConnectionID: "z", Kind: protocol.KindIOS}
-	if p.Authorize(other, "c") == nil {
-		t.Error("an unlock leaked to another connection")
-	}
-	if p.Authorize(gateway.Caller{Kind: protocol.KindBrowser}, "b") != nil {
-		t.Error("the desktop owner was restricted")
+	if strings.Contains(string(raw), "scrypt") || strings.Contains(string(raw), "password_set") {
+		t.Errorf("the saved state kept the group password: %s", raw)
 	}
 }
 

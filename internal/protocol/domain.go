@@ -154,12 +154,11 @@ type Team struct {
 	// CostBy is what each member session spent while on the team, in USD, as its harness reports it.
 	CostBy map[string]float64 `json:"cost_by,omitempty"`
 	// BudgetUSD is the owner's budget for the team's job; 0: none set (the app shows an estimate).
-	BudgetUSD   float64  `json:"budget_usd,omitempty"`
-	Members     []Member `json:"members"`
-	State       string   `json:"state"` // active | closed
-	IOSAccess   bool     `json:"ios_access"`
-	PasswordSet bool     `json:"password_set"`
-	CreatedAt   string   `json:"created_at"`
+	BudgetUSD float64  `json:"budget_usd,omitempty"`
+	Members   []Member `json:"members"`
+	State     string   `json:"state"` // active | closed
+	IOSAccess bool     `json:"ios_access"`
+	CreatedAt string   `json:"created_at"`
 }
 
 // Approval is an urgent owner decision: a team launch, a change to who is on a team (formation),

@@ -224,12 +224,6 @@ func (c *conn) attach(ctx context.Context, msg *protocol.Message) {
 		c.sendError(msg.ID, protocol.Errorf(protocol.CodeUnavailable, "no worker manager is configured"))
 		return
 	}
-	if c.srv.opts.Authorize != nil {
-		if err := c.srv.opts.Authorize(c.caller(), msg.SessionID); err != nil {
-			c.sendError(msg.ID, err)
-			return
-		}
-	}
 	c.mu.Lock()
 	attached := c.att != nil
 	c.mu.Unlock()

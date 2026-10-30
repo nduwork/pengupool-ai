@@ -83,7 +83,7 @@ func TestBindSession(t *testing.T) {
 			}
 		}
 	}
-	// a phone is never an agent: it reaches iosAllowed requests only
+	// a phone is never an agent: without a paired device it reaches nothing
 	if _, err := p.RPC(t.Context(), gateway.Caller{Phone: true}, "search", req("leadaaaaaaaa")); err == nil || !strings.Contains(err.Error(), "for the owner") {
 		t.Errorf("a phone called an agent request: %v", err)
 	}

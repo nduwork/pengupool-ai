@@ -106,9 +106,9 @@ type State struct {
 	Nodes     []Node    `json:"nodes"`
 	Sessions  []Session `json:"sessions"`
 
-	// Pool records; Secrets holds password verifiers keyed by team id and never leaves the host.
-	Domain  protocol.Domain   `json:"domain"`
-	Secrets map[string]string `json:"secrets,omitempty"`
+	// Pool records. (A "secrets" key from before v0.9.34, the group password verifiers, is ignored
+	// on load and gone at the next save.)
+	Domain protocol.Domain `json:"domain"`
 	// Offsets are transcript offsets already consumed, by session id.
 	Offsets map[string]int64 `json:"offsets,omitempty"`
 	// Restore lists the sessions a reboot, crash or killed worker ended while they were running; the
@@ -199,7 +199,6 @@ func (s State) Clone() State {
 		c.Domain = protocol.Domain{}
 		_ = json.Unmarshal(b, &c.Domain)
 	}
-	c.Secrets = maps.Clone(s.Secrets)
 	c.Offsets = maps.Clone(s.Offsets)
 	c.Restore = append([]string(nil), s.Restore...)
 	return c

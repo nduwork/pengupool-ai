@@ -23,7 +23,7 @@ import (
 // The Muse app API's pool side: paired devices, one-card-at-a-time asks,
 // answers through the same paths as the app's buttons, and chat through
 // the owner's input path (so the Compass learns). Thin wrappers over the
-// existing RPCs; the allowed actions are a fixed list like iosAllowed.
+// existing RPCs; the allowed actions are a fixed list (museAllowed).
 
 // museAllowed are the pool requests a paired Muse device may call. The
 // gateway only routes them with a valid device token; the owner-only
