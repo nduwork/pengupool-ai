@@ -420,6 +420,8 @@ func (p *Pool) handlers() map[string]handler {
 		"muse.say":              p.museSay,
 		"muse.sessions":         p.museSessions,
 		"muse.compass":          p.museCompass,
+		"muse.action":           p.museAction,
+		"muse.member":           p.museMember,
 		"muse.pair":             p.musePair,
 		"muse.pairCode":         p.musePairCode,
 		"muse.devices":          p.museDevices,

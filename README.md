@@ -183,6 +183,11 @@ v0.9.30: An agent can put a question only you can settle to you directly (`pengu
 [--option A]... "question"`). It waits for your answer, given in the app's Approvals or from a
 paired Muse device: one of its options, or a reply in your own words. Other agents cannot answer it. An ask left
 unanswered for 15 minutes expires, and the agent goes on with a safe default of its own.
+v0.9.31: A paired Muse device manages your agent teams: `/sessions` shows each session's team,
+role, parent and assignment; a member's ask the team left to you waits on `/next` (go on, reply,
+dismiss); `POST /sessions/{id}/action` stops, interrupts or resumes an agent session, with no
+error when it already is so; `POST /teams/{id}/members` asks for a team change that waits for
+your allow. Teams without iOS access stay hidden, and no agent can use any of it.
 
 ## Credits
 

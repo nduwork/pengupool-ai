@@ -30,7 +30,7 @@ import (
 // pairing calls below stay owner-only.
 var museAllowed = map[string]bool{
 	"muse.next": true, "muse.answer": true, "muse.say": true,
-	"muse.sessions": true, "muse.compass": true,
+	"muse.sessions": true, "muse.compass": true, "muse.action": true, "muse.member": true,
 }
 
 // musePairCode is one pending pairing window.
@@ -144,6 +144,7 @@ func (p *Pool) museAsks() []museAsk {
 			}
 		}
 	}
+	out = append(out, p.museTeamAsks()...)
 	// Oldest first: insertion order and waiting order diverge after a
 	// restart replays the store, and the app shows the same order.
 	sort.Slice(out, func(i, j int) bool { return out[i].at.Before(out[j].at) })
@@ -238,6 +239,9 @@ func (p *Pool) museCard(a museAsk) *museCard {
 		}
 		actions = append(actions, museAction{ID: "reply", Label: "Reply"})
 	}
+	if a.kind == "team-ask" { // a member's ask the team left to the owner, as the app's Needs you offers it
+		actions = []museAction{{ID: "go_on", Label: "Go on"}, {ID: "reply", Label: "Reply"}, {ID: "dismiss", Label: "Dismiss"}}
+	}
 	return &museCard{
 		Session: s.ID, Team: a.teamID, Title: title, Description: desc,
 		AskID: a.id, PayloadHash: payloadHash(a.payload), Actions: actions,
@@ -277,7 +281,7 @@ func (p *Pool) museAnswer(ctx context.Context, c gateway.Caller, raw json.RawMes
 	if c.Device == "" {
 		return nil, protocol.Errorf(protocol.CodeUnauthorized, "no device")
 	}
-	if in.Action != "allow" && in.Action != "deny" && !strings.HasPrefix(in.AskID, "ask:") {
+	if in.Action != "allow" && in.Action != "deny" && !strings.HasPrefix(in.AskID, "ask:") && !strings.HasPrefix(in.AskID, "teamask:") {
 		return nil, invalid("action is allow or deny")
 	}
 	if in.IdempotencyKey == "" {
@@ -318,6 +322,8 @@ func (p *Pool) museAnswer(ctx context.Context, c gateway.Caller, raw json.RawMes
 		res, err = p.museAnswerGate(id, in)
 	case "ask":
 		res, err = p.museAnswerAsk(c, id, in)
+	case "teamask":
+		res, err = p.museAnswerTeamAsk(ctx, id, in)
 	default:
 		return nil, notFound("no ask %s", in.AskID)
 	}
@@ -522,6 +528,12 @@ type museSessionView struct {
 	Waiting bool   `json:"waiting"`
 	// Question is what the agent asks in its terminal now, if anything (answered there, not here).
 	Question string `json:"question,omitempty"`
+	// Its place on a team, if on one: the team, LEAD | SME | HELPER, the member it hangs under, its job.
+	Team       string `json:"team,omitempty"`
+	TeamID     string `json:"team_id,omitempty"`
+	Role       string `json:"role,omitempty"`
+	Parent     string `json:"parent,omitempty"`
+	Assignment string `json:"assignment,omitempty"`
 }
 
 func (p *Pool) museSessions(_ context.Context, c gateway.Caller, _ json.RawMessage) (any, error) {
@@ -541,15 +553,19 @@ func (p *Pool) museSessions(_ context.Context, c gateway.Caller, _ json.RawMessa
 		if !p.museVisible(s.ID) {
 			continue
 		}
-		title := s.Name
-		for _, t := range st.Domain.Teams {
+		v := museSessionView{Session: s.ID, Title: s.Name, State: string(s.State), Waiting: waiting[s.ID], Question: s.View().Question}
+		for i := range st.Domain.Teams {
+			t := &st.Domain.Teams[i]
 			for _, m := range t.Members {
 				if m.SessionID == s.ID && t.Name != "" {
-					title += " · " + t.Name
+					v.Title += " · " + t.Name // as before: every team it was on
+				}
+				if m.SessionID == s.ID && m.State == "active" && t.State == "active" {
+					v.Team, v.TeamID, v.Role, v.Parent, v.Assignment = t.Name, t.ID, teamLabel(&st, t, m), m.Parent, m.Assignment
 				}
 			}
 		}
-		out = append(out, museSessionView{Session: s.ID, Title: title, State: string(s.State), Waiting: waiting[s.ID], Question: s.View().Question})
+		out = append(out, v)
 	}
 	if out == nil {
 		out = []museSessionView{}
