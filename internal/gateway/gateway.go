@@ -754,11 +754,15 @@ func (s *Server) hostGuard(next http.Handler) http.Handler {
 // local reports a request from this machine itself, or an SSH forward to it: a loopback peer that
 // did not come through a proxy. Tailscale Serve proxies the tailnet from loopback and passes the
 // client's Host on, so its forwarding headers, not the Host, give it away; a local client that
-// sends them only shuts itself out.
+// sends them only shuts itself out. A raw TCP forward to the port carries no headers, so it is
+// local, like an SSH forward: whoever sets one up opens the app to its far end (still token-gated).
 func (s *Server) local(r *http.Request) bool {
 	peer, _, err := net.SplitHostPort(r.RemoteAddr)
 	ip := net.ParseIP(peer)
-	proxied := r.Header.Get("X-Forwarded-For") != "" || r.Header.Get("X-Forwarded-Host") != "" || r.Header.Get("Forwarded") != ""
+	proxied := false
+	for _, h := range []string{"X-Forwarded-For", "X-Forwarded-Host", "Forwarded", "X-Real-Ip"} {
+		proxied = proxied || len(r.Header.Values(h)) > 0
+	}
 	return err == nil && ip != nil && ip.IsLoopback() && !proxied && !s.phoneHost(r)
 }
 

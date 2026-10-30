@@ -193,7 +193,9 @@ name, Tailscale Serve) only the paired-device API and the health check answer; t
 WebSocket and every other route are 404 there, reachable on this machine or through an SSH
 port forward. Removed: the browser phone view (the app opened without the token from a phone or
 another machine on the network), and with it the team's group password, which only that view
-asked for. Phones use a paired Muse device.
+asked for. Phones use a paired Muse device. A raw TCP forward you set up to the port (SSH,
+socat, Serve in TCP mode) counts as this machine, as an SSH forward does; PenguPool's own Serve is
+the HTTPS kind.
 
 ## Credits
 

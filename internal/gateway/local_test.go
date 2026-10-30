@@ -24,6 +24,10 @@ func TestNetworkGetsDeviceAPIOnly(t *testing.T) {
 			r.RemoteAddr = fwd
 			r.Header.Set("X-Forwarded-For", "100.64.0.9")
 		}
+		if fwd, ok := strings.CutPrefix(r.RemoteAddr, "realip:"); ok { // a proxy that sets only X-Real-IP, even empty
+			r.RemoteAddr = fwd
+			r.Header["X-Real-Ip"] = []string{""}
+		}
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
 		return w.Code
@@ -48,6 +52,7 @@ func TestNetworkGetsDeviceAPIOnly(t *testing.T) {
 		{"serve ws", "127.0.0.1:5000", "box.tail1.ts.net", "/ws", 404},
 		{"serve with a loopback host", "serve:127.0.0.1:5000", "127.0.0.1:1", "/", 404},
 		{"serve with localhost", "serve:127.0.0.1:5000", "localhost:" + port, "/ws", 404},
+		{"real-ip proxy", "realip:127.0.0.1:5000", "127.0.0.1:1", "/", 404},
 		{"serve to the device API", "serve:127.0.0.1:5000", "box.tail1.ts.net", "/api/muse/v1/openapi.json", 200},
 		{"tailnet openapi", "100.64.0.9:5000", "box.tail1.ts.net", "/api/muse/v1/openapi.json", 200},
 		{"tailnet sessions without token", "100.64.0.9:5000", "box.tail1.ts.net", "/api/muse/v1/sessions", 401},
