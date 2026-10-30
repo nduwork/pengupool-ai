@@ -17,7 +17,7 @@ import (
 )
 
 // Version of the prototype. It is not the protocol version; that is protocol.Version.
-const Version = "0.9.37"
+const Version = "0.9.38"
 
 const help = `usage: pengupool <command> [options]
 
@@ -53,6 +53,10 @@ const help = `usage: pengupool <command> [options]
         {"pending": ID}: run "ask --wait ID" to go on waiting. The owner may pick an option or reply
         in their own words. Unanswered for 15 minutes, it expires: {"expired": …}; go on with a
         safe default.
+  ask answer ASK_ID (--option N | --words "...")
+        (inside a parent's session) carry the owner's answer, typed in this session, to a direct
+        child's waiting ask; only in a turn the owner's own prompt opened, for an ask your previous
+        reply showed.
   compass word [--supports UID]... [--contradicts UID]... [--line "preference|restriction :: BODY :: WHEN"]... | compass word --none
         (inside a session asked to) say which Compass lines the owner's last words support or go
         against and word up to 3 new lasting preferences, or say they hold none. Only the session

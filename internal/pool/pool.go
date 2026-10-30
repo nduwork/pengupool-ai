@@ -289,10 +289,11 @@ var terminalAllowed = map[string]bool{"session.launch": true, "node.list": true,
 // session PenguPool asked words the owner's preference once (compass.word).
 var agentAllowed = map[string]bool{
 	"hook.event": true, "message.send": true, "team.request": true, "search": true, "memory.search": true, "experience.search": true, "experience.show": true,
-	"compass.word": true, // an asked session words the owner's preference once (compassWord)
-	"decision.ask": true, // asks the owner's decision model typed questions; it decides nothing for the owner
-	"ask.create":   true, // puts a question to the owner; only the owner or a paired device answers it
-	"ask.wait":     true, // waits for the answer to the session's own ask
+	"compass.word":         true, // an asked session words the owner's preference once (compassWord)
+	"decision.ask":         true, // asks the owner's decision model typed questions; it decides nothing for the owner
+	"ask.create":           true, // puts a question to the owner; only the owner or a paired device answers it
+	"ask.wait":             true, // waits for the answer to the session's own ask
+	"ask.answer_for_owner": true, // carries the owner's own words in this session to a child's ask (askAnswerFor)
 }
 
 func (p *Pool) handlers() map[string]handler {
@@ -374,6 +375,7 @@ func (p *Pool) handlers() map[string]handler {
 		"approval.decide":       p.approvalDecide,
 		"ask.create":            bind(p.agentAsk),
 		"ask.wait":              bind(p.askWait),
+		"ask.answer_for_owner":  bind(p.askAnswerFor),
 		"ask.answer":            p.askAnswer,
 		"team.place_helper":     bind(p.placeHelperRPC),
 		"team.formation":        bind(p.teamFormation),

@@ -224,6 +224,12 @@ history once, on attach. Memory: 112 bytes a cell, so about 27 MB per session at
 the phone and Muse API. Known limit: Claude Code repaints its live area in place (synchronized
 output), and those repaints never become history lines, here or in any terminal
 (stablyai/orca#18490).
+v0.9.38: The owner can answer a child's waiting ask from the lead's session. The lead's context lists
+its direct children's asks, and `pengupool ask answer ASK_ID (--option N | --words "...")` carries the
+owner's answer. It is accepted only in a turn the owner's own typed prompt opened, for a direct child's
+ask made before that prompt that the lead's previous reply showed. A teammate's message, triage or a
+notice answers nothing. The answer is recorded as the owner's ("owner via <session>") with the owner's
+words; harness permission prompts are not covered.
 
 ## Credits
 

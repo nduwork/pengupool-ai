@@ -115,6 +115,7 @@ func (p *Pool) buildContextCap(id string, compassCap int) string {
 			b.WriteString("\nWhen your job is finished, start your report to your parent with `Done:` and a one-line title (`Done: fixed the login redirect`), then the details (or send it with `--type done`). PenguPool keeps a report like that as an entry of your past work, and may type your agent's compact command once you are idle. A question or a progress note does not start with `Done:`.\n")
 		}
 	}
+	b.WriteString(p.childAsks(&st, t, id))
 	b.WriteString(p.renderNotes(id))
 	return b.String()
 }
