@@ -67,7 +67,7 @@ HTTPS alternative. Settings › Muse app › "Pair a Muse device" shows the API 
 6-digit code for the Muse app. The Muse app then walks waiting sessions one
 card at a time — Allow, Deny or Chat — over `/api/muse/v1` (contract in
 DESIGN.md, spec at `/api/muse/v1/openapi.json`). Step by step, with curl examples and the owner
-WebSocket API for agent clients: [docs/muse-app-management.md](docs/muse-app-management.md).
+WebSocket API for agent clients: [tools/muse/muse-app-management.md](tools/muse/muse-app-management.md).
 
 ## Status
 
@@ -175,7 +175,7 @@ an existing one.
 v0.9.28: The Muse app reaches PenguPool on this machine's own Tailscale name, without Serve
 (Local network on); the pairing URL names it. With Local network on, the desktop app no longer
 sits at Reconnecting. Pairing a name already paired, or with no name, says so (409, 400) instead
-of 502. New guide: docs/muse-app-management.md.
+of 502. New guide: tools/muse/muse-app-management.md.
 v0.9.29: A session waiting on you shows what it asks (the permission, the question and its
 choices, or the plan to approve) on hover in the app, in `session.list` and in the Muse app's
 session list. It is still answered in the session's terminal.
