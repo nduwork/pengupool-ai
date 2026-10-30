@@ -167,11 +167,14 @@ as a notice at its next turn.
 
 ## 5. What a paired device can and cannot do
 
-A device token can list sessions, read and answer waiting asks (agents' own questions included),
-send words to a session, and read the Compass. It sees sessions on no team, and teams with **Allow iOS access** switched on (team
+A device token can list sessions (with each one's team, role, parent and assignment), read and
+answer waiting asks (agents' own questions, and a member's ask the team left to you: go on,
+reply or dismiss), send words to a session, stop, interrupt or resume an agent session
+(`POST /sessions/{id}/action`), ask for a member to join or leave a team (`POST
+/teams/{id}/members`: it waits on `/next` for your allow, like a LEAD's request), and read the Compass. It sees sessions on no team, and teams with **Allow iOS access** switched on (team
 sheet on the map). It skips a team's phone password, because it is your own paired device.
 
-A device token cannot read a session's screen, start or stop sessions, change settings, or pair
+A device token cannot read a session's screen, start new sessions, change settings, or pair
 other devices. It works nowhere but `/api/muse/v1`, and the app's own token never works there.
 An agent's permission prompts stay in its terminal: the Muse app answers PenguPool's asks (team
 launches, check-ins), not the agent's own tool prompts.

@@ -126,6 +126,28 @@ func TestMuseSayValidation(t *testing.T) {
 	}
 }
 
+// A session action and a team change reach the pool with the id from the path, as the device.
+func TestMuseTeamRoutes(t *testing.T) {
+	var got []string
+	srv, token := museTestServer(t, func(_ context.Context, c Caller, typ string, raw json.RawMessage) (any, error) {
+		got = append(got, c.Device+" "+typ+" "+string(raw))
+		return map[string]string{"state": "pending"}, nil
+	})
+	base := "http://" + srv.HTTPAddr() + "/api/muse/v1"
+	if code, body, _ := museReq(t, http.MethodPost, base+"/sessions/s1/action", token, `{"action":"stop"}`); code != 200 {
+		t.Fatalf("action = %d %s", code, body)
+	}
+	if code, body, _ := museReq(t, http.MethodPost, base+"/teams/team1/members", token, `{"skill":"planner","team":"other"}`); code != 200 {
+		t.Fatalf("members = %d %s", code, body)
+	}
+	if code, _, _ := museReq(t, http.MethodPost, base+"/teams/team1/other", token, `{}`); code != 404 {
+		t.Fatalf("unknown team route = %d", code)
+	}
+	if len(got) != 2 || got[0] != `phone1 muse.action {"action":"stop","session":"s1"}` || !strings.Contains(got[1], `muse.member`) || !strings.Contains(got[1], `"team":"team1"`) {
+		t.Fatalf("pool saw %q", got)
+	}
+}
+
 // The machine's own live tailnet name reaches the API over plain HTTP; a lookalike name is refused
 // before the token check, and the token still gates every call.
 func TestMuseTailnetNameHost(t *testing.T) {

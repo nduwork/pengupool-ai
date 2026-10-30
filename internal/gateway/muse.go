@@ -175,6 +175,7 @@ func (s *Server) museRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/muse/v1/sessions/", s.handleMuseSessionSay)
 	mux.HandleFunc("/api/muse/v1/sessions", s.handleMuseSessions)
 	mux.HandleFunc("/api/muse/v1/compass", s.handleMuseCompass)
+	mux.HandleFunc("/api/muse/v1/teams/", s.handleMuseTeam)
 	mux.HandleFunc("/api/muse/v1/openapi.json", s.handleMuseOpenAPI)
 }
 
@@ -278,8 +279,8 @@ func (s *Server) handleMuseAsk(w http.ResponseWriter, r *http.Request) {
 	s.logf("owner via %s: answered %s", device, id)
 }
 
-// handleMuseSessionSay sends the owner's words to one session:
-// /api/muse/v1/sessions/{id}/say.
+// handleMuseSessionSay sends the owner's words to one session (/api/muse/v1/sessions/{id}/say),
+// or stops, interrupts or resumes it (/api/muse/v1/sessions/{id}/action).
 func (s *Server) handleMuseSessionSay(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -292,7 +293,7 @@ func (s *Server) handleMuseSessionSay(w http.ResponseWriter, r *http.Request) {
 	rest, found := strings.CutPrefix(r.URL.Path, "/api/muse/v1/sessions/")
 	id, action, ok := strings.Cut(rest, "/")
 	// A blank id (%20, slashes) never reaches the pool.
-	if !found || !ok || action != "say" || strings.TrimSpace(id) == "" {
+	if !found || !ok || action != "say" && action != "action" || strings.TrimSpace(id) == "" {
 		http.Error(w, "no session", http.StatusBadRequest)
 		return
 	}
@@ -302,8 +303,37 @@ func (s *Server) handleMuseSessionSay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body["session"] = id
+	if action == "action" {
+		s.museCall(w, r, device, "muse.action", body)
+		return
+	}
 	s.museCall(w, r, device, "muse.say", body)
 	s.logf("owner via %s: said to %s", device, id)
+}
+
+// handleMuseTeam asks for a change to who is on a team: /api/muse/v1/teams/{id}/members.
+func (s *Server) handleMuseTeam(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	device, ok := s.museAuth(w, r, true)
+	if !ok {
+		return
+	}
+	rest, found := strings.CutPrefix(r.URL.Path, "/api/muse/v1/teams/")
+	id, what, ok := strings.Cut(rest, "/")
+	if !found || !ok || what != "members" || strings.TrimSpace(id) == "" {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	body, ok := museBody(r)
+	if !ok {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	body["team"] = id
+	s.museCall(w, r, device, "muse.member", body)
 }
 
 // handleMuseSessions lists visible sessions.
@@ -364,8 +394,8 @@ const museOpenAPI = `{
     },
     "/asks/{id}/answer": {
       "post": {
-        "summary": "Answer one card. A tap works exactly like clicking the prompt's button in the PenguPool app. An agent's own ask (ask_id ask:...) is answered with one of its card's actions: option:N for a choice, or reply with text in the owner's words; the waiting agent gets the answer.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"action": {"type": "string", "description": "allow or deny; for an agent's ask, option:N or reply"}, "text": {"type": "string", "description": "the reply, for action reply"}, "payload_hash": {"type": "string"}, "idempotency_key": {"type": "string"}}, "required": ["action", "payload_hash", "idempotency_key"]}}}}
+        "summary": "Answer one card. A tap works exactly like clicking the prompt's button in the PenguPool app. An agent's own ask (ask_id ask:...) is answered with one of its card's actions: option:N for a choice, or reply with text in the owner's words; the waiting agent gets the answer. A member's ask the team left to the owner (ask_id teamask:...) takes go_on (the asker goes on without the answer), dismiss (closed, nobody told), or reply with text (sent to the asker as the owner's answer).",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"action": {"type": "string", "description": "allow or deny; for an agent's ask, option:N or reply; for a member's ask, go_on, dismiss or reply"}, "text": {"type": "string", "description": "the reply, for action reply"}, "payload_hash": {"type": "string"}, "idempotency_key": {"type": "string"}}, "required": ["action", "payload_hash", "idempotency_key"]}}}}
       }
     },
     "/sessions/{id}/say": {
@@ -374,8 +404,20 @@ const museOpenAPI = `{
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"words": {"type": "string"}}, "required": ["words"]}}}}
       }
     },
+    "/sessions/{id}/action": {
+      "post": {
+        "summary": "Stop, interrupt (the agent's Esc) or resume one agent session. A session already in the state asked for is no error: the response gives its state.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["stop", "interrupt", "resume"]}}, "required": ["action"]}}}}
+      }
+    },
+    "/teams/{id}/members": {
+      "post": {
+        "summary": "Ask for a change to who is on a team, as a LEAD does with team request: add a helper agent (skill) or an SME for a repository (repo), or remove a member. It waits on /next as a formation card for the owner's allow; nothing launches before that. Returns its ask_id.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"op": {"type": "string", "enum": ["add", "remove"], "default": "add"}, "skill": {"type": "string"}, "repo": {"type": "string"}, "member": {"type": "string", "description": "remove: a member by name or session id"}, "assignment": {"type": "string"}, "reason": {"type": "string"}}}}}}
+      }
+    },
     "/sessions": {
-      "get": {"summary": "Overview of the sessions this device can see: session, title, state, waiting (an ask waits on the owner), and question (what the agent asks in its terminal now, if anything; answered there)."}
+      "get": {"summary": "Overview of the sessions this device can see: session, title, state, waiting (an ask waits on the owner), and question (what the agent asks in its terminal now, if anything; answered there), and for a team member: team, team_id, role (LEAD, SME or HELPER), parent (the member it hangs under) and assignment."}
     },
     "/compass": {
       "get": {"summary": "Read the owner's shown Compass lines."}

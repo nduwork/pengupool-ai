@@ -190,8 +190,9 @@ func (p *Pool) settleAsk(id string) (settled bool) {
 }
 
 // goOnAsk settles an ask and tells its asker to go on: a PenguPool notice answering the ask, which
-// starts the asker's turn when it is idle and waits for the next idle otherwise.
-func (p *Pool) goOnAsk(id, text string) {
+// starts the asker's turn when it is idle and waits for the next idle otherwise. It reports whether
+// the ask was still open.
+func (p *Pool) goOnAsk(id, text string) bool {
 	var ask protocol.TeamMessage
 	for _, x := range p.st.State().Domain.Messages {
 		if x.ID == id {
@@ -199,21 +200,22 @@ func (p *Pool) goOnAsk(id, text string) {
 		}
 	}
 	if !p.settleAsk(id) {
-		return // settled meanwhile: by the owner, or by triage
+		return false // settled meanwhile: by the owner, or by triage
 	}
 	msg := protocol.TeamMessage{ID: protocol.NewID(), TeamID: ask.TeamID, To: ask.From, Text: text,
 		State: "queued", At: now(), Via: viaHost, Type: "tell", ReplyTo: ask.ID}
 	if err := p.update(func(st *store.State) error { addMessage(st, msg); return nil }); err != nil {
-		return
+		return true
 	}
 	p.logLine(ask.From, "notice: "+text)
 	if s, ok := p.session(ask.From); ok && s.Status == "idle" {
 		p.deliver(msg)
-		return
+		return true
 	}
 	p.mu.Lock()
 	p.pending[ask.From] = append(p.pending[ask.From], msg)
 	p.mu.Unlock()
+	return true
 }
 
 // nativeArrived marks the SendMessage messages to a Claude session delivered once they are in its
