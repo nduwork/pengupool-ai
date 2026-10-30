@@ -154,6 +154,20 @@ func (p *Pool) typeInto(id, text string) error {
 	if p.testKeys != nil {
 		return p.testKeys(id, text)
 	}
+	// Claude's TUI takes a pasted command and its Enter as one paste; send Enter separately.
+	return p.input(id, strings.TrimSuffix(text, "\r"), "\r")
+}
+
+// pressKey sends one key, such as Esc, with no Enter after it.
+func (p *Pool) pressKey(id, key string) error {
+	if p.testKeys != nil {
+		return p.testKeys(id, key)
+	}
+	return p.input(id, key)
+}
+
+// input attaches to the session and writes each chunk as its own input frame.
+func (p *Pool) input(id string, chunks ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	c, err := client.Dial(ctx, filepath.Join(p.st.Dir(), store.RunDir, "hub.sock"), protocol.KindCLI, "pengupool action")
@@ -187,9 +201,7 @@ func (p *Pool) typeInto(id, text string) error {
 			break
 		}
 	}
-	// Claude's TUI takes a pasted command and its Enter as one paste; send Enter separately.
-	body := strings.TrimSuffix(text, "\r")
-	for _, chunk := range []string{body, "\r"} {
+	for _, chunk := range chunks {
 		if chunk == "" {
 			continue
 		}

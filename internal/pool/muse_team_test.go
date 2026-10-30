@@ -122,11 +122,27 @@ func TestMuseTeamAsk(t *testing.T) {
 	}
 
 	// A team without iOS access keeps its asks off the device.
+	_ = p.st.Update(func(s *store.State) error {
+		s.Domain.Teams[1].IOSAccess = false
+		addMessage(s, protocol.TeamMessage{ID: "tax", TeamID: "team2", From: "webaaaaaaaaa", To: "otheraaaaaaa",
+			Text: "Hidden?", State: "delivered", At: now(), Type: "ask", EscalatedAt: now()})
+		return nil
+	})
+	for _, a := range p.museAsks() {
+		if a.id == "teamask:tax" {
+			t.Fatal("an ask on a hidden team is on /next")
+		}
+	}
 	escalated("ta3")
 	c3 := card("ta3")
 	_ = p.st.Update(func(s *store.State) error { s.Domain.Teams[0].IOSAccess = false; return nil })
 	if err := answer(c3, "go_on", ""); protocol.CodeOf(err) != protocol.CodeNotFound {
 		t.Fatalf("invisible team: %v", err)
+	}
+	for _, a := range p.museAsks() {
+		if a.id == "teamask:ta3" {
+			t.Fatal("a hidden team's ask is on /next")
+		}
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/gateway"
 	"github.com/nduwork/pengupool-ai/internal/harness"
@@ -22,7 +23,7 @@ func (p *Pool) museTeamAsks() []museAsk {
 	ms := st.Domain.Messages
 	var out []museAsk
 	for i, m := range ms {
-		if m.Type != "ask" || m.EscalatedAt == "" || !askOpen(ms, i) {
+		if m.Type != "ask" || m.EscalatedAt == "" || !askOpen(ms, i) || !p.museTeamVisible(m.TeamID) {
 			continue
 		}
 		from, ok := p.session(m.From)
@@ -57,19 +58,26 @@ func (p *Pool) museAnswerTeamAsk(ctx context.Context, id string, in museAnswerIn
 	if payloadHash("team-ask\x00"+m.ID+"\x00"+m.Text) != in.PayloadHash {
 		return nil, conflict("the ask changed or expired")
 	}
+	to, _ := p.session(m.To)
+	settled := false
 	switch in.Action {
-	case "go_on", "dismiss":
-		return p.askSettle(ctx, settleIn{ID: m.ID, Action: in.Action})
+	case "go_on":
+		settled = p.goOnAsk(m.ID, fmt.Sprintf("No answer from %s. Go on with your best judgement and say what you assumed.", firstNonEmpty(to.Name, m.To)))
+	case "dismiss":
+		settled = p.settleAsk(m.ID)
 	case "reply":
 		text := strings.TrimSpace(in.Text)
 		if text == "" {
 			return nil, invalid("a reply needs its text")
 		}
-		to, _ := p.session(m.To)
-		p.goOnAsk(m.ID, fmt.Sprintf("The owner answered your ask to %s: %s", firstNonEmpty(to.Name, m.To), clipRunes(text, 4000)))
-		return nil, nil
+		settled = p.goOnAsk(m.ID, fmt.Sprintf("The owner answered your ask to %s: %s", firstNonEmpty(to.Name, m.To), clipRunes(text, 4000)))
+	default:
+		return nil, invalid("action is go_on, dismiss or reply")
 	}
-	return nil, invalid("action is go_on, dismiss or reply")
+	if !settled { // answered meanwhile, from another device, the app or triage
+		return nil, conflict("the ask was answered or closed")
+	}
+	return nil, nil
 }
 
 type museActionIn struct {
@@ -96,12 +104,20 @@ func (p *Pool) museAction(ctx context.Context, c gateway.Caller, raw json.RawMes
 	case "stop":
 		if running {
 			if err := p.hub.Kill(ctx, s.ID); err != nil {
-				return nil, protocol.Errorf(protocol.CodeUnavailable, "%v", err)
+				if cur, _ := p.session(s.ID); cur.State == "running" {
+					return nil, protocol.Errorf(protocol.CodeUnavailable, "%v", err)
+				} // it exited meanwhile: stopped all the same
+			}
+			for i := 0; i < 50; i++ { // the exit lands a moment after the kill, as in sessionRestart
+				if cur, _ := p.session(s.ID); cur.State != "running" {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
 			}
 		}
 	case "interrupt": // Esc, the agent's own interrupt key
 		if running {
-			if err := p.typeInto(s.ID, "\x1b"); err != nil {
+			if err := p.pressKey(s.ID, "\x1b"); err != nil {
 				return nil, protocol.Errorf(protocol.CodeUnavailable, "%v", err)
 			}
 		}
@@ -145,7 +161,7 @@ func (p *Pool) museMember(_ context.Context, c gateway.Caller, raw json.RawMessa
 		return nil, notFound("no team %s", in.Team)
 	}
 	ch := protocol.FormationChange{Op: firstNonEmpty(in.Op, "add"), SkillID: in.Skill, RepoID: in.Repo, SessionID: in.Member,
-		Assignment: in.Assignment, Reason: in.Reason}
+		Assignment: clipRunes(redact(in.Assignment), 1000), Reason: clipRunes(redact(in.Reason), 1000)}
 	if ch.SkillID != "" {
 		if sk := skillByNameOrID(&d, ch.SkillID); sk != nil {
 			ch.SkillID = sk.ID
