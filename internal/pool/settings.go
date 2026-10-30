@@ -158,7 +158,6 @@ func (p *Pool) settingsGet(_ context.Context, _ struct{}) (any, error) {
 	if HTTPAddr != nil {
 		out["bound"] = HTTPAddr()
 	}
-	out["lan_ips"] = lanIPs()
 	if ts, err := tailscaleName(); err == nil {
 		out["tailscale_name"] = ts
 	} else {
@@ -528,22 +527,6 @@ func (p *Pool) HealTailscaleServe() {
 		return
 	}
 	p.logf("pool: tailscale serve re-pointed at 127.0.0.1:%s", port)
-}
-
-func lanIPs() []string {
-	out, err := exec.Command("ifconfig").Output()
-	if err != nil {
-		return nil
-	}
-	var ips []string
-	sc := bufio.NewScanner(strings.NewReader(string(out)))
-	for sc.Scan() {
-		f := strings.Fields(sc.Text())
-		if len(f) >= 2 && f[0] == "inet" && f[1] != "127.0.0.1" && !strings.HasPrefix(f[1], "100.") && !strings.HasPrefix(f[1], "169.254.") {
-			ips = append(ips, f[1])
-		}
-	}
-	return ips
 }
 
 // Node handlers delegate to the SSH layer.

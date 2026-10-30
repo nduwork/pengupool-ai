@@ -17,12 +17,13 @@ import (
 )
 
 // Version of the prototype. It is not the protocol version; that is protocol.Version.
-const Version = "0.9.31"
+const Version = "0.9.32"
 
 const help = `usage: pengupool <command> [options]
 
   daemon [--store DIR] [--http ADDR] [--lan]
-        run the host: state, sessions, browser app. Loopback only unless --lan.
+        run the host: state, sessions, browser app. The app stays on this machine;
+        --lan opens the device API to the network.
   new [--name N] [--cwd DIR] [--harness claude|muse|codex|pi|omp|opencode] [--model M]
         start an agent session (Claude Code by default) in that directory.
   ls [--json]

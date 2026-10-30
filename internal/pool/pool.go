@@ -273,8 +273,8 @@ func (p *Pool) RPC(ctx context.Context, c gateway.Caller, typ string, params jso
 	// what an agent does for itself. Agents' CLI calls arrive on the unix socket, which never counts
 	// as the owner, so no agent can decide an approval, change the Compass or the team, or reconfigure
 	// the host, whatever it sends.
-	// A phone reaches the app with no token, so it is never an agent: its own requests only.
-	if !c.Owner && !(c.Phone && iosAllowed[typ]) && !(c.Phone && (typ == "muse.pair" || c.Device != "" && museAllowed[typ])) && !(c.Terminal && terminalAllowed[typ]) && !(agentAllowed[typ] && !c.Phone) {
+	// A paired device is never an agent: its own requests only.
+	if !c.Owner && !(c.Phone && (typ == "muse.pair" || c.Device != "" && museAllowed[typ])) && !(c.Terminal && terminalAllowed[typ]) && !(agentAllowed[typ] && !c.Phone) {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "%s is for the owner, in the PenguPool app", typ)
 	}
 	if err := p.bindSession(c, params); err != nil {

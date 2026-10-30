@@ -44,20 +44,6 @@ export interface ConnectionOptions {
   maxDelayMs?: number;
 }
 
-/**
- * The kind the browser should announce. A phone is view-only, so an iOS browser says `ios` rather
- * than `browser`; iPadOS reports a desktop user agent, which the touch points give away.
- */
-export function detectClientKind(): string {
-  if (typeof navigator === "undefined") return "browser";
-  const ua = navigator.userAgent ?? "";
-  const iPadOS =
-    /Macintosh/.test(ua) &&
-    typeof navigator.maxTouchPoints === "number" &&
-    navigator.maxTouchPoints > 1;
-  return /iPhone|iPad|iPod/.test(ua) || iPadOS ? "ios" : "browser";
-}
-
 const INITIAL: ConnectionInfo = {
   status: "connecting",
   detail: "connecting",
@@ -96,7 +82,7 @@ export class Connection {
       path: opts.path ?? "/ws",
       token: opts.token ?? "",
       baseURL: opts.baseURL ?? "",
-      clientKind: opts.clientKind ?? detectClientKind(),
+      clientKind: opts.clientKind ?? "browser",
       clientName: opts.clientName ?? "pengupool web",
       clientVersion: opts.clientVersion ?? "0.1.0-prototype",
       baseDelayMs: opts.baseDelayMs ?? 500,

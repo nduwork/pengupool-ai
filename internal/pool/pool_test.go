@@ -840,8 +840,8 @@ func TestOwnerActionsAreTheOwners(t *testing.T) {
 	if !forbidden(gateway.Caller{Kind: protocol.KindIOS}, "approval.decide") {
 		t.Error("a socket client claiming ios decided an approval")
 	}
-	if forbidden(phone, "approval.decide") {
-		t.Error("the owner's phone cannot decide approvals")
+	if !forbidden(phone, "approval.decide") || !forbidden(phone, "history.read") {
+		t.Error("a phone without a paired device reached the app's requests")
 	}
 }
 

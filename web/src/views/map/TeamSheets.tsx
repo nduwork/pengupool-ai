@@ -10,12 +10,11 @@ import type { Team } from "../../protocol/domain";
 // A group's settings and closing live on its frame in the map; there is no Teams page. Tasks come from
 // the owner's instructions or a tracker the agents reach themselves.
 
-/** The team's rarely changed settings: budget, phone access, group password. */
+/** The team's rarely changed settings: budget, and whether paired devices see it. */
 export function TeamSettingsSheet({ team }: { team: Team }): ReactElement {
   const app = useApp();
   const t = app.domain.teams.find((x) => x.id === team.id) ?? team; // live, so switches reflect changes
   const [budget, setBudget] = useState(String(t.budget_usd ?? ""));
-  const [pw, setPw] = useState("");
   return (
     <Sheet title={`Settings of ${t.name}`} onClose={() => app.showDialog(null)}>
       <div className="grid gap-5 text-label">
@@ -39,42 +38,10 @@ export function TeamSettingsSheet({ team }: { team: Team }): ReactElement {
         <div className="flex items-center justify-between gap-3">
           <span>
             Allow iOS access
-            <span className="block text-caption text-muted-foreground">The PenguPool phone app can see and message this team.</span>
+            <span className="block text-caption text-muted-foreground">Paired Muse devices can see this team and answer its asks.</span>
           </span>
           <Switch checked={t.ios_access} onCheckedChange={(v) => void app.call("team.policy", { team_id: t.id, ios_access: v })} label="Allow iOS access" />
         </div>
-        <form
-          className="grid gap-1.5"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if ((await app.call("team.policy", { team_id: t.id, password: pw })) !== undefined) {
-              setPw("");
-              toast.success("Group password saved");
-            }
-          }}
-        >
-          <Label hint="Asked on the phone before it opens this team. At least 4 characters.">
-            Group password
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                className="w-56"
-                value={pw}
-                onChange={(e) => setPw(e.target.value)}
-                placeholder={t.password_set ? "New group password" : "Group password"}
-                autoComplete="new-password"
-              />
-              <Button type="submit" size="sm" disabled={pw.length < 4}>
-                {t.password_set ? "Change" : "Set"}
-              </Button>
-              {t.password_set ? (
-                <Button type="button" size="sm" variant="ghost" onClick={() => void app.call("team.policy", { team_id: t.id, clear_password: true })}>
-                  Remove
-                </Button>
-              ) : null}
-            </div>
-          </Label>
-        </form>
       </div>
     </Sheet>
   );

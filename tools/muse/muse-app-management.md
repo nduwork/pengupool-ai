@@ -172,7 +172,7 @@ answer waiting asks (agents' own questions, and a member's ask the team left to 
 reply or dismiss), send words to a session, stop, interrupt or resume an agent session
 (`POST /sessions/{id}/action`), ask for a member to join or leave a team (`POST
 /teams/{id}/members`: it waits on `/next` for your allow, like a LEAD's request), and read the Compass. It sees sessions on no team, and teams with **Allow iOS access** switched on (team
-sheet on the map). It skips a team's phone password, because it is your own paired device.
+sheet on the map).
 
 A device token cannot read a session's screen, start new sessions, change settings, or pair
 other devices. It works nowhere but `/api/muse/v1`, and the app's own token never works there.
@@ -186,8 +186,11 @@ same WebSocket the PenguPool app uses. It takes **the owner's token**, which is 
 this PenguPool, so keep it on machines you own. On the PenguPool machine, `pengupool-ai web`
 prints the app URL, and the token is the part after `#token=`.
 
-Connect to `ws://<host>:7787/ws?token=<owner token>`, using any host the host check accepts
-(above). Every WebSocket message is one binary frame: a 17-byte big-endian header, then the
+This API answers only on the PenguPool machine itself (or through an SSH port forward to it).
+Over the network, the tailnet name, Serve or the local network, only the device API and
+`/api/healthz` answer; everything else is `404`.
+
+Connect to `ws://127.0.0.1:7787/ws?token=<owner token>` on the PenguPool machine. Every WebSocket message is one binary frame: a 17-byte big-endian header, then the
 payload.
 
 | Bytes | Field | Meaning |
@@ -231,7 +234,7 @@ A minimal client (Node 22 or later, no packages) that lists the sessions and pri
 running one's screen:
 
 ```js
-// node list-and-read.mjs http://mac.tail1234.ts.net:7787 <owner token>
+// node list-and-read.mjs http://127.0.0.1:7787 <owner token>
 const [base, token] = process.argv.slice(2);
 const ws = new WebSocket(base.replace(/^http/, "ws") + "/ws?token=" + token);
 ws.binaryType = "arraybuffer";
@@ -279,11 +282,13 @@ const typeLine = async (text) => {
   Funnel, so nothing is exposed to the public internet.
 - **Credential.** A device token is the only thing that lets a device in. Each device has its own,
   stored only as a hash, revocable any time under Settings › Muse app.
-- **Limits.** A device answers asks and sends words. It cannot read screens, run commands, start
-  or stop sessions, or change settings. The owner's token, used by the WebSocket API above, can do
-  everything the app can, so it never goes on a device you don't own.
-- **With Local network on,** other machines on your local network can reach port 7787 as well.
-  Without a token they get the phone view only: view-only, and only teams with iOS access.
+- **Limits.** A device answers asks, sends words, stops, interrupts or resumes an agent session,
+  and asks for team changes you approve. It cannot read screens, run commands, start new sessions,
+  or change settings. The owner's token, used by the WebSocket API above, can do everything the
+  app can, and it works only on the PenguPool machine.
+- **With Local network on,** other machines on your local network can reach port 7787 as well,
+  but only the device API and the health check answer there. The PenguPool app, its WebSocket
+  and every other route answer only on this machine.
 
 ## Troubleshooting
 
