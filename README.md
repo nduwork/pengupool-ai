@@ -179,6 +179,10 @@ of 502. New guide: docs/muse-app-management.md.
 v0.9.29: A session waiting on you shows what it asks (the permission, the question and its
 choices, or the plan to approve) on hover in the app, in `session.list` and in the Muse app's
 session list. It is still answered in the session's terminal.
+v0.9.30: An agent can put a question only you can settle to you directly (`pengupool ask
+[--option A]... "question"`). It waits for your answer, given in the app's Approvals or from a
+paired Muse device: one of its options, or a reply in your own words. Other agents cannot answer it. An ask left
+unanswered for 15 minutes expires, and the agent goes on with a safe default of its own.
 
 ## Credits
 

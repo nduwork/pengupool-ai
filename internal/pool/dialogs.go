@@ -70,6 +70,7 @@ func (p *Pool) watchStartup() {
 	}
 	p.expireQueued(time.Now())
 	p.sweepAsks(time.Now())
+	p.expireStaleAsks(time.Now())
 }
 
 // expireQueued fails the agent messages that wait on a session that will not take them: one that has

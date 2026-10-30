@@ -364,8 +364,8 @@ const museOpenAPI = `{
     },
     "/asks/{id}/answer": {
       "post": {
-        "summary": "Answer one card. A tap works exactly like clicking the prompt's button in the PenguPool app.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["allow", "deny"]}, "payload_hash": {"type": "string"}, "idempotency_key": {"type": "string"}}, "required": ["action", "payload_hash", "idempotency_key"]}}}}
+        "summary": "Answer one card. A tap works exactly like clicking the prompt's button in the PenguPool app. An agent's own ask (ask_id ask:...) is answered with one of its card's actions: option:N for a choice, or reply with text in the owner's words; the waiting agent gets the answer.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"action": {"type": "string", "description": "allow or deny; for an agent's ask, option:N or reply"}, "text": {"type": "string", "description": "the reply, for action reply"}, "payload_hash": {"type": "string"}, "idempotency_key": {"type": "string"}}, "required": ["action", "payload_hash", "idempotency_key"]}}}}
       }
     },
     "/sessions/{id}/say": {

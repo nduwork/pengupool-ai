@@ -20,7 +20,9 @@ import { age } from "./map/asks";
 
 export function ApprovalsBell(): ReactElement {
   const app = useApp();
-  const pending = app.domain.approvals.filter((a) => a.state === "pending" && a.kind !== "permission"); // permission requests are answered in the terminal
+  const running = (id?: string): boolean => app.sessions.some((s) => s.id === id && s.state === "running");
+  // Permission requests are answered in the terminal; an agent's ask only while the agent runs.
+  const pending = app.domain.approvals.filter((a) => a.state === "pending" && a.kind !== "permission" && (a.kind !== "ask" || running(a.session_id)));
   const [inbox, setInbox] = usePersisted<InboxEntry[]>("inbox", []);
   useEffect(
     () => setInbox(reconcileInbox(inbox, [...sessionNeeds(app.sessions, app.gates), ...askNeeds(app.domain.messages, app.sessions)], Date.now())),
@@ -41,7 +43,9 @@ export function ApprovalsBell(): ReactElement {
           <p className="px-2 pb-1 text-label font-semibold">Approvals</p>
           {pending.length === 0 ? <p className="px-2 py-3 text-label text-muted-foreground">Nothing is waiting for you.</p> : null}
           <div className="grid grid-cols-1 gap-1">
-            {pending.map((a) => (a.kind === "formation" ? <FormationRow key={a.id} a={a} /> : <LaunchRow key={a.id} a={a} />))}
+            {pending.map((a) =>
+              a.kind === "ask" ? <AgentAskRow key={a.id} a={a} /> : a.kind === "formation" ? <FormationRow key={a.id} a={a} /> : <LaunchRow key={a.id} a={a} />,
+            )}
           </div>
           {inbox.length > 0 ? (
             <>
@@ -263,6 +267,45 @@ function FormationRow({ a }: { a: Approval }): ReactElement {
         </Button>
       </div>
     </div>
+  );
+}
+
+/** An agent put a question to the owner (`pengupool ask`): one of its choices, or a reply in the owner's words. */
+function AgentAskRow({ a }: { a: Approval }): ReactElement {
+  const app = useApp();
+  const [reply, setReply] = useState("");
+  const answer = (text: string): void => void app.call("ask.answer", { id: a.id, answer: text });
+  return (
+    <form
+      className="grid gap-2 rounded-md p-2 hover:bg-hover"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (reply.trim() !== "") answer(reply);
+      }}
+    >
+      <div className="flex min-w-0 items-start gap-2">
+        <MessageCircleQuestion className="mt-0.5 size-4 shrink-0 text-warning" />
+        <span className="min-w-0 whitespace-pre-wrap text-label [overflow-wrap:anywhere]">
+          <strong>{sessionName(app.sessions, a.session_id ?? "")} asks: </strong>
+          {a.detail}
+        </span>
+      </div>
+      {(a.options ?? []).length > 0 ? (
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {(a.options ?? []).map((o) => (
+            <Button key={o} size="sm" type="button" variant="default" onClick={() => answer(o)}>
+              {o}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+      <div className="flex gap-1.5">
+        <Input value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Or reply in your own words" aria-label="Reply" />
+        <Button size="sm" type="submit" disabled={reply.trim() === ""}>
+          Reply
+        </Button>
+      </div>
+    </form>
   );
 }
 

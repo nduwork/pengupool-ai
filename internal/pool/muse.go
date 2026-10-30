@@ -73,7 +73,8 @@ type museAsk struct {
 	title     string
 	text      string
 	at        time.Time
-	payload   string // canonical content the hash covers
+	payload   string   // canonical content the hash covers
+	options   []string // an agent's ask: its choices
 }
 
 // askID joins the ask's stable identity.
@@ -94,6 +95,15 @@ func (p *Pool) museAsks() []museAsk {
 	for i := range st.Domain.Approvals {
 		a := &st.Domain.Approvals[i]
 		if a.State != "pending" {
+			continue
+		}
+		if a.Kind == "ask" {
+			if s, ok := p.session(a.SessionID); ok && s.State == "running" && !askStale(*a, time.Now()) {
+				out = append(out, museAsk{
+					id: askID("ask", a.ID), kind: "ask", sessionID: s.ID, teamID: a.TeamID, text: a.Detail,
+					at: parseMuseTime(a.CreatedAt), payload: askPayload(*a), options: a.Options,
+				})
+			}
 			continue
 		}
 		if a.Kind != "launch" && a.Kind != "formation" {
@@ -220,10 +230,17 @@ func (p *Pool) museCard(a museAsk) *museCard {
 		title += " · " + s.Harness
 	}
 	desc := clipRunes(oneLine(redactSecrets(a.text)), 500)
+	actions := []museAction{{ID: "allow", Label: "Allow"}, {ID: "deny", Label: "Deny"}, {ID: "chat", Label: "Chat"}}
+	if a.kind == "ask" { // the agent's own choices, then a reply in the owner's words
+		actions = nil
+		for i, o := range a.options {
+			actions = append(actions, museAction{ID: fmt.Sprintf("option:%d", i), Label: o})
+		}
+		actions = append(actions, museAction{ID: "reply", Label: "Reply"})
+	}
 	return &museCard{
 		Session: s.ID, Team: a.teamID, Title: title, Description: desc,
-		AskID: a.id, PayloadHash: payloadHash(a.payload),
-		Actions: []museAction{{ID: "allow", Label: "Allow"}, {ID: "deny", Label: "Deny"}, {ID: "chat", Label: "Chat"}},
+		AskID: a.id, PayloadHash: payloadHash(a.payload), Actions: actions,
 	}
 }
 
@@ -249,6 +266,7 @@ type museAnswerIn struct {
 	Action         string `json:"action"` // allow | deny
 	PayloadHash    string `json:"payload_hash"`
 	IdempotencyKey string `json:"idempotency_key"`
+	Text           string `json:"text,omitempty"` // an agent's ask: the owner's own words (action reply)
 }
 
 func (p *Pool) museAnswer(ctx context.Context, c gateway.Caller, raw json.RawMessage) (any, error) {
@@ -259,7 +277,7 @@ func (p *Pool) museAnswer(ctx context.Context, c gateway.Caller, raw json.RawMes
 	if c.Device == "" {
 		return nil, protocol.Errorf(protocol.CodeUnauthorized, "no device")
 	}
-	if in.Action != "allow" && in.Action != "deny" {
+	if in.Action != "allow" && in.Action != "deny" && !strings.HasPrefix(in.AskID, "ask:") {
 		return nil, invalid("action is allow or deny")
 	}
 	if in.IdempotencyKey == "" {
@@ -298,6 +316,8 @@ func (p *Pool) museAnswer(ctx context.Context, c gateway.Caller, raw json.RawMes
 		res, err = p.museAnswerApproval(ctx, c, id, in)
 	case "gate":
 		res, err = p.museAnswerGate(id, in)
+	case "ask":
+		res, err = p.museAnswerAsk(c, id, in)
 	default:
 		return nil, notFound("no ask %s", in.AskID)
 	}
@@ -370,6 +390,47 @@ func (p *Pool) museAnswerApproval(ctx context.Context, c gateway.Caller, id stri
 	raw, _ := json.Marshal(decideIn{ID: a.ID, Decision: decision, Version: a.Version})
 	res, err := p.approvalDecide(ctx, c, raw)
 	p.logf("owner via %s: answer %s %s", c.Device, a.ID, decision)
+	return res, err
+}
+
+// askPayload is what an agent's ask's hash covers: its question and its choices.
+func askPayload(a protocol.Approval) string {
+	return "ask\x00" + a.ID + "\x00" + a.Detail + "\x00" + strings.Join(a.Options, "\x00")
+}
+
+// museAnswerAsk answers an agent's ask with one of its options (option:N) or the owner's own words
+// (reply, with text), the way the app does.
+func (p *Pool) museAnswerAsk(c gateway.Caller, id string, in museAnswerIn) (any, error) {
+	a, ok := p.approval(id)
+	if !ok || a.Kind != "ask" || !p.museTeamVisible(a.TeamID) || !p.museVisible(a.SessionID) {
+		return nil, notFound("no ask ask:%s", id) // one the device cannot see does not exist for it
+	}
+	if a.State == "expired" || askStale(a, time.Now()) {
+		return nil, protocol.Errorf(protocol.CodeConflict, "the ask expired") // its card already left /next
+	}
+	if a.State != "pending" {
+		return nil, protocol.Errorf(protocol.CodeConflict, "the ask changed or expired")
+	}
+	if payloadHash(askPayload(a)) != in.PayloadHash {
+		return nil, protocol.Errorf(protocol.CodeConflict, "the ask changed or expired")
+	}
+	answer := ""
+	switch n, isOption := strings.CutPrefix(in.Action, "option:"); {
+	case isOption:
+		i, err := strconv.Atoi(n)
+		if err != nil || i < 0 || i >= len(a.Options) {
+			return nil, invalid("action is option:N for one of the ask's options, or reply")
+		}
+		answer = a.Options[i]
+	case in.Action == "reply":
+		if answer = strings.TrimSpace(in.Text); answer == "" {
+			return nil, invalid("a reply needs its text")
+		}
+	default:
+		return nil, invalid("action is option:N for one of the ask's options, or reply")
+	}
+	res, err := p.answerAsk(id, answer, c.Device)
+	p.logf("owner via %s: answered ask %s", c.Device, id)
 	return res, err
 }
 

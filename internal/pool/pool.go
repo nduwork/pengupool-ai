@@ -76,6 +76,7 @@ type Pool struct {
 	ownerEnter        map[string][]credit          // session id → the prompts the owner submitted in it, not yet matched (under mu)
 	askingOwner       map[string]bool              // sessions with a question or plan tool open (under mu)
 	questionUse       map[string]string            // the tool_use_id a session's pending question is about (under mu)
+	askWaitedAt       map[string]time.Time         // when an agent last waited on its ask (under mu)
 	hookAt            map[string]time.Time         // session id → its newest hook event (under mu; hookless.go)
 	promptAt          map[string]time.Time         // session id → the owner's first prompt in its launch (under mu)
 	routed            map[string]string            // LEAD session id → the teammate triage named for this turn (under mu)
@@ -297,6 +298,8 @@ var agentAllowed = map[string]bool{
 	"hook.event": true, "message.send": true, "team.request": true, "search": true, "memory.search": true, "experience.search": true, "experience.show": true,
 	"compass.word": true, // an asked session words the owner's preference once (compassWord)
 	"decision.ask": true, // asks the owner's decision model typed questions; it decides nothing for the owner
+	"ask.create":   true, // puts a question to the owner; only the owner or a paired device answers it
+	"ask.wait":     true, // waits for the answer to the session's own ask
 }
 
 var iosAllowed = map[string]bool{
@@ -381,6 +384,9 @@ func (p *Pool) handlers() map[string]handler {
 		"team.goal":             bind(p.teamGoal),
 		"proposal.edit":         bind(p.proposalEdit),
 		"approval.decide":       p.approvalDecide,
+		"ask.create":            bind(p.agentAsk),
+		"ask.wait":              bind(p.askWait),
+		"ask.answer":            p.askAnswer,
 		"team.place_helper":     bind(p.placeHelperRPC),
 		"team.formation":        bind(p.teamFormation),
 		"team.request":          bind(p.teamRequest),

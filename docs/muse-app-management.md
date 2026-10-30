@@ -111,6 +111,20 @@ curl -s -X POST "$API/asks/gate:42/answer" -H "$AUTH" -H 'Content-Type: applicat
   answer and never answers twice. A retry that arrives while the first is still running gets
   `503` with `Retry-After: 1`. Reusing a key for a different ask or action is `409`.
 
+**Answer an agent's own question.** An agent can put a question to you itself
+(`pengupool ask`, below). Its card has `ask_id` `ask:…`, and its actions are the agent's choices
+(`option:0`, `option:1`, …) followed by `reply`:
+
+```bash
+curl -s -X POST "$API/asks/ask:01a1…/answer" -H "$AUTH" -H 'Content-Type: application/json' \
+  -d '{"action":"option:1","payload_hash":"5e1d…","idempotency_key":"tap-81c2"}'
+curl -s -X POST "$API/asks/ask:01a1…/answer" -H "$AUTH" -H 'Content-Type: application/json' \
+  -d '{"action":"reply","text":"Tomorrow, after the review.","payload_hash":"5e1d…","idempotency_key":"tap-81c3"}'
+```
+
+The agent, waiting on its question, gets your answer and goes on. The same payload-hash,
+idempotency and `409` rules apply.
+
 **Say something to a session** ("Chat" on a card, or any time):
 
 ```bash
@@ -133,10 +147,28 @@ curl -s "$API/compass" -H "$AUTH"
 
 The full contract is at `GET $API/openapi.json` (no token needed).
 
+## Agents asking you directly
+
+Inside a session PenguPool runs, an agent can ask you a question only you can settle:
+
+```bash
+pengupool ask --option Postgres --option SQLite "Which database for the cache?"
+# {"answer":"SQLite","by":"My phone","id":"01a1…"}
+```
+
+It shows in the app's Approvals (pick an option, or reply in your own words) and as a card on
+`/next`. Only you, in the app or from a paired device, can answer it; another agent cannot. The
+command waits up to 2 minutes; if you haven't answered by then it prints `{"pending":"<id>"}`, and
+`pengupool ask --wait <id>` waits again. An agent has at most 3 asks waiting at once. An ask you leave unanswered
+for 15 minutes expires: its card leaves `/next`, a late answer gets `409`, and the agent is told
+(`{"expired": …}` from its wait, or a notice) to go on with a safe default. An ask also goes away
+when its session ends. An answer given while the agent isn't waiting reaches it
+as a notice at its next turn.
+
 ## 5. What a paired device can and cannot do
 
-A device token can list sessions, read and answer waiting asks, send words to a session, and read
-the Compass. It sees sessions on no team, and teams with **Allow iOS access** switched on (team
+A device token can list sessions, read and answer waiting asks (agents' own questions included),
+send words to a session, and read the Compass. It sees sessions on no team, and teams with **Allow iOS access** switched on (team
 sheet on the map). It skips a team's phone password, because it is your own paired device.
 
 A device token cannot read a session's screen, start or stop sessions, change settings, or pair
