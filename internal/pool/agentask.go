@@ -159,6 +159,11 @@ func (p *Pool) askAnswer(_ context.Context, c gateway.Caller, raw json.RawMessag
 // answerAsk records the answer once: a second answer, or one to an ask that went, is a conflict.
 // The session gets it from its wait, or as a notice when nothing waits.
 func (p *Pool) answerAsk(id, answer, by string) (any, error) {
+	return p.answerAskWith(id, answer, by, "")
+}
+
+// answerAskWith is answerAsk recording the owner's words that carried the answer (askAnswerFor).
+func (p *Pool) answerAskWith(id, answer, by, words string) (any, error) {
 	answer = strings.TrimSpace(answer)
 	if answer == "" {
 		return nil, invalid("no answer")
@@ -178,7 +183,7 @@ func (p *Pool) answerAsk(id, answer, by string) (any, error) {
 					gone = true // answered by nobody: it goes, and the update below is dropped
 					return conflict("the ask changed or expired")
 				}
-				x.State, x.Answer, x.AnsweredBy = "answered", clipRunes(answer, 4000), by
+				x.State, x.Answer, x.AnsweredBy, x.OwnerWords = "answered", clipRunes(answer, 4000), by, words
 				a = *x
 				return nil
 			}

@@ -149,6 +149,8 @@ export interface Approval {
   options?: string[];
   answer?: string;
   answered_by?: string;
+  /** Answered "owner via <session>": the owner's own prompt in that session, clipped and redacted. */
+  owner_words?: string;
   state: string;
   created_at: string;
   expires_at?: string;

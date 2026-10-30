@@ -179,9 +179,12 @@ type Approval struct {
 	Options    []string `json:"options,omitempty"`
 	Answer     string   `json:"answer,omitempty"`
 	AnsweredBy string   `json:"answered_by,omitempty"`
-	State      string   `json:"state"` // pending | approved | denied | expired | answered
-	CreatedAt  string   `json:"created_at"`
-	ExpiresAt  string   `json:"expires_at,omitempty"`
+	// OwnerWords: for an ask the owner answered through a parent's session ("owner via <id>"), the
+	// owner's own prompt there, clipped and redacted: the provenance of that answer.
+	OwnerWords string `json:"owner_words,omitempty"`
+	State      string `json:"state"` // pending | approved | denied | expired | answered
+	CreatedAt  string `json:"created_at"`
+	ExpiresAt  string `json:"expires_at,omitempty"`
 }
 
 // FormationChange is one change to who is on a team: add a member (a skill as a freelancer, or a

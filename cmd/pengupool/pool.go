@@ -366,6 +366,9 @@ var askPatience = 110 * time.Second
 
 // cmdAsk puts a question to the owner from inside an agent session and waits for the answer.
 func cmdAsk(args []string) error {
+	if len(args) > 0 && args[0] == "answer" {
+		return cmdAskAnswer(args[1:])
+	}
 	fs := flag.NewFlagSet("ask", flag.ContinueOnError)
 	waitID := fs.String("wait", "", "go on waiting for the answer to this ask")
 	var opts []string
@@ -411,6 +414,32 @@ func cmdAsk(args []string) error {
 			return nil
 		}
 	}
+}
+
+// cmdAskAnswer carries the owner's answer, typed in this session, to a child's waiting ask.
+func cmdAskAnswer(args []string) error {
+	fs := flag.NewFlagSet("ask answer", flag.ContinueOnError)
+	option := fs.Int("option", 0, "the option (1-based) the owner's whole prompt is; otherwise the prompt itself is the answer")
+	usage := errors.New(`usage: pengupool ask answer ASK_ID [--option N]`)
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return usage
+	}
+	id := args[0]
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	session := os.Getenv("PENGUPOOL_SESSION_ID")
+	if session == "" {
+		return errors.New("pengupool ask answer works inside an agent session PenguPool runs")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	res, err := rpc(ctx, poolStore(), "ask.answer_for_owner", map[string]any{"session_id": session, "id": id, "option": *option})
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(res))
+	return nil
 }
 
 // cmdCompass: `compass word …`, the answer to a [PenguPool compass] note.
