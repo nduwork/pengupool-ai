@@ -136,6 +136,8 @@ export class AttachSession {
         : undefined,
       // Never claim on attach: the CLI attach client owns the size by default. See claimLease().
       claim_lease: false,
+      // sink.reset() runs before every snapshot, so the host may send the history with each.
+      resets: true,
     });
   }
 

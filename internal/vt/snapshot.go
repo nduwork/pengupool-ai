@@ -3,21 +3,33 @@ package vt
 import (
 	"bytes"
 	"strconv"
+	"strings"
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
-	xvt "github.com/charmbracelet/x/vt"
 )
 
+// maxSnapshotHistory bounds the scrollback bytes one snapshot carries: the newest lines that fit.
+// A worker gives up on a connection 2 MiB behind (session.maxQueuedBytes), and a resize sends a
+// snapshot to every viewer, so history stays well under that.
+const maxSnapshotHistory = 512 << 10
+
 // Snapshot returns the bytes that rebuild the visible screen on a cleared, same-size client.
-//
-// Layout: set the alternate screen to match, emit every tracked DEC private mode plus the
-// XTMODKEYS and kitty keyboard sequences, emit the scroll region when it is not the whole screen,
+func (s *screen) Snapshot() []byte { return s.snapshot(false) }
+
+// SnapshotHistory is Snapshot preceded by the scrollback, for a client that resets before it
+// applies a snapshot (or has not been sent the history yet).
+func (s *screen) SnapshotHistory() []byte { return s.snapshot(true) }
+
+// snapshot lays out, with history: on the normal screen, the scrollback as plain lines and enough newlines to scroll them
+// all into the client's own history (before any scroll region exists to confine them); then the
+// alternate screen when it is in use, every tracked DEC private mode plus the XTMODKEYS and kitty
+// keyboard sequences, emit the scroll region when it is not the whole screen,
 // then per row a cursor position, an erase of that row and the row's cells, and finally a closed
 // pen and hyperlink, the cursor position and cursor visibility. Every row is rewritten from column
 // one and cleared to its end, so a client showing stale content ends up with exactly this screen.
 // \x1b[2J is never emitted: on the normal screen it would destroy the client's scrollback.
-func (s *screen) Snapshot() []byte {
+func (s *screen) snapshot(history bool) []byte {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -25,10 +37,13 @@ func (s *screen) Snapshot() []byte {
 	var b bytes.Buffer
 	b.Grow(cols*rows + cols*8 + 64)
 
+	b.WriteString("\x1b[?1049l")
+	b.WriteString(ansi.ResetStyle)
+	if history {
+		appendHistory(&b, s.emu.Scrollback().Lines(), rows)
+	}
 	if s.emu.IsAltScreen() {
 		b.WriteString("\x1b[?1049h")
-	} else {
-		b.WriteString("\x1b[?1049l")
 	}
 	appendModes(&b, s.mode)
 	appendScrollRegion(&b, s.mode)
@@ -53,33 +68,8 @@ func (s *screen) Snapshot() []byte {
 			link = uv.Link{}
 		}
 		b.WriteString(ansi.EraseLineRight)
-		last := lastPaintedCell(s.emu, y, cols)
-		for x := 0; x <= last; {
-			c := s.emu.CellAt(x, y)
-			if c == nil {
-				x++
-				continue
-			}
-			if c.Width <= 0 {
-				x++ // trail half of a wide cell: nothing to write, the leading cell covers it
-				continue
-			}
-			if !c.Style.Equal(&pen) {
-				b.WriteString(uv.StyleDiff(&pen, &c.Style))
-				pen = c.Style
-			}
-			if !c.Link.Equal(&link) {
-				if link.URL != "" {
-					b.WriteString(ansi.ResetHyperlink())
-				}
-				if c.Link.URL != "" {
-					b.WriteString(ansi.SetHyperlink(c.Link.URL, c.Link.Params))
-				}
-				link = c.Link
-			}
-			b.WriteString(cellText(c))
-			x += c.Width
-		}
+		at := func(x int) *uv.Cell { return s.emu.CellAt(x, y) }
+		appendCells(&b, at, lastPaintedCell(at, cols), &pen, &link)
 	}
 
 	// The cursor position and visibility below must not be painted with the last cell's pen or
@@ -102,12 +92,77 @@ func (s *screen) Snapshot() []byte {
 	return b.Bytes()
 }
 
+// appendHistory writes the newest scrollback lines that fit maxSnapshotHistory, oldest first, each
+// on its own line with the pen closed, then rows-1 newlines: the last line written sits on the
+// client's bottom row, and rows-1 more scroll it, and every line before it, into the history.
+func appendHistory(b *bytes.Buffer, lines []uv.Line, rows int) {
+	var enc [][]byte
+	size := 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		var l bytes.Buffer
+		var pen uv.Style
+		var link uv.Link
+		at := func(x int) *uv.Cell { return &lines[i][x] }
+		appendCells(&l, at, lastPaintedCell(at, len(lines[i])), &pen, &link)
+		if !pen.IsZero() {
+			l.WriteString(ansi.ResetStyle) // a newline must not scroll in a coloured row
+		}
+		if link.URL != "" {
+			l.WriteString(ansi.ResetHyperlink())
+		}
+		l.WriteString("\r\n")
+		if size+l.Len() > maxSnapshotHistory {
+			break
+		}
+		size += l.Len()
+		enc = append(enc, l.Bytes())
+	}
+	if len(enc) == 0 {
+		return
+	}
+	for i := len(enc) - 1; i >= 0; i-- {
+		b.Write(enc[i])
+	}
+	b.WriteString(strings.Repeat("\n", rows-1))
+}
+
+// appendCells writes the cells of one row up to last, opening styles and hyperlinks as they
+// change; pen and link carry what is open.
+func appendCells(b *bytes.Buffer, at func(x int) *uv.Cell, last int, pen *uv.Style, link *uv.Link) {
+	for x := 0; x <= last; {
+		c := at(x)
+		if c == nil {
+			x++
+			continue
+		}
+		if c.Width <= 0 {
+			x++ // trail half of a wide cell: nothing to write, the leading cell covers it
+			continue
+		}
+		if !c.Style.Equal(pen) {
+			b.WriteString(uv.StyleDiff(pen, &c.Style))
+			*pen = c.Style
+		}
+		if !c.Link.Equal(link) {
+			if link.URL != "" {
+				b.WriteString(ansi.ResetHyperlink())
+			}
+			if c.Link.URL != "" {
+				b.WriteString(ansi.SetHyperlink(c.Link.URL, c.Link.Params))
+			}
+			*link = c.Link
+		}
+		b.WriteString(cellText(c))
+		x += c.Width
+	}
+}
+
 // lastPaintedCell returns the last column of a row that carries anything a cleared client would
 // lose, or -1 for a row that is blank all the way across. Cells past it stay blank and are left
 // alone by the erase that opened the row.
-func lastPaintedCell(emu *xvt.Emulator, y, cols int) int {
+func lastPaintedCell(at func(x int) *uv.Cell, cols int) int {
 	for x := cols - 1; x >= 0; x-- {
-		c := emu.CellAt(x, y)
+		c := at(x)
 		if c == nil {
 			continue
 		}

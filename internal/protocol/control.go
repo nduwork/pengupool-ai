@@ -137,10 +137,13 @@ type Message struct {
 	Generation uint64         `json:"generation,omitempty"`
 	Retained   *RetainedState `json:"retained,omitempty"`
 	ClaimLease bool           `json:"claim_lease,omitempty"`
-	Cols       int            `json:"cols,omitempty"`
-	Rows       int            `json:"rows,omitempty"`
-	Mode       string         `json:"mode,omitempty"`
-	Offset     uint64         `json:"offset,omitempty"`
+	// Resets: the client resets its terminal before applying a snapshot (the web app), so every
+	// snapshot carries the history; otherwise only its first does (a terminal keeps what it was sent).
+	Resets bool   `json:"resets,omitempty"`
+	Cols   int    `json:"cols,omitempty"`
+	Rows   int    `json:"rows,omitempty"`
+	Mode   string `json:"mode,omitempty"`
+	Offset uint64 `json:"offset,omitempty"`
 
 	// session.create
 	Name    string   `json:"name,omitempty"`

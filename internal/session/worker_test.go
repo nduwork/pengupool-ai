@@ -367,6 +367,13 @@ type snapshotData struct {
 // snapshot chunks in order, nothing else in between, then snapshot.end with the matching part count.
 func (tc *testConn) readSnapshot() snapshotData {
 	tc.t.Helper()
+	return tc.readSnapshotAfter(false)
+}
+
+// readSnapshotAfter is readSnapshot; with skipOutput, live output that arrives before snapshot.begin
+// (written before the resize the snapshot answers) is skipped. Output inside the sequence still fails.
+func (tc *testConn) readSnapshotAfter(skipOutput bool) snapshotData {
+	tc.t.Helper()
 	var s snapshotData
 	sawEnd := false
 	frames := tc.collect(testTimeout, func(f protocol.Frame) bool {
@@ -407,6 +414,9 @@ func (tc *testConn) readSnapshot() snapshotData {
 			s.chunks = append(s.chunks, f)
 			s.data = append(s.data, f.Payload...)
 		default:
+			if skipOutput && s.begin == nil && f.Header.Type == protocol.FrameOutput {
+				continue
+			}
 			tc.t.Fatalf("%s frame inside a snapshot sequence", f.Header.Type)
 		}
 	}
@@ -814,6 +824,44 @@ func TestWorkerResizeKeepsContent(t *testing.T) {
 	}
 	if text := c.waitText(resized.data, "keep me"); !strings.Contains(string(text), "keep me") {
 		t.Fatalf("the resize blanked the screen: %q", text)
+	}
+}
+
+// TestWorkerHistoryPerClient: a client that resets before a snapshot (the web app) gets the history
+// with every snapshot; one that does not (pengupool attach writes snapshots into the user's terminal)
+// gets it with its first only, so repeated resizes never repeat it there.
+func TestWorkerHistoryPerClient(t *testing.T) {
+	tw := startWorker(t, []string{"/bin/sh", "-c", "i=0; while [ $i -lt 60 ]; do echo hist$i; i=$((i+1)); done; while read l; do echo tick; done"})
+	const first = "hist0\r\n" // a history line; screen rows are painted with cursor moves, not newlines
+
+	probe := dialWorker(t, tw.sock)
+	probe.hello()
+	probe.attach(1, false, nil)
+	probe.waitText(probe.readSnapshot().data, "hist59")
+
+	term := dialWorker(t, tw.sock) // non-resetting, holds the size lease
+	term.hello()
+	term.attachRequest(&protocol.Message{ID: protocol.NewID(), Type: protocol.TypeSessionAttach, SessionID: term.sessionID, Channel: 1, ClaimLease: true})
+	if snap := term.readSnapshot(); bytes.Count(snap.data, []byte(first)) != 1 {
+		t.Fatalf("a terminal's first snapshot lacks the history: %q", snap.data)
+	}
+	web := dialWorker(t, tw.sock)
+	web.hello()
+	web.attachRequest(&protocol.Message{ID: protocol.NewID(), Type: protocol.TypeSessionAttach, SessionID: web.sessionID, Channel: 1, Resets: true})
+	if snap := web.readSnapshot(); bytes.Count(snap.data, []byte(first)) != 1 {
+		t.Fatalf("the web client's first snapshot lacks the history")
+	}
+	for i := range 3 {
+		term.send(&protocol.Message{ID: protocol.NewID(), Type: protocol.TypeSessionResize, Cols: 90 + i, Rows: 24})
+		term.sendFrame(protocol.FrameInput, 1, 0, []byte("\n"))
+		// The typed newline wakes the pumps (a resize alone does not); its "tick" may reach a client
+		// just before that client's snapshot, so output ahead of snapshot.begin is skipped.
+		if snap := term.readSnapshotAfter(true); bytes.Contains(snap.data, []byte(first)) {
+			t.Fatalf("resize %d sent the history to the terminal again", i+1)
+		}
+		if snap := web.readSnapshotAfter(true); bytes.Count(snap.data, []byte(first)) != 1 {
+			t.Fatalf("resize %d: the web client's snapshot lacks the history", i+1)
+		}
 	}
 }
 
