@@ -34,6 +34,14 @@ surfaces, each with one job: the **context card** renders nicely, the
   user's own — Muse shows the exact text in the conversation and
   files only after the user's Send tap (or rewording). When the answer
   is the user's own words, it files directly.
+- **The owner's words can be a directive, not just an answer.**
+  Sometimes the right reply to a prompt is a specific instruction in
+  the owner's own words — "merge PR 53" — and the reply path carries
+  it verbatim: for an agent ask, the answer's reply action delivers
+  the text to the waiting session, which then acts on it; when no ask
+  is open, the same words go through the session's say path. Muse
+  files them exactly as spoken — never paraphrased, never reduced to
+  the nearest provided option.
 - There is no Draft step and no Send button on any card; the
   conversation window is the drafting surface.
 

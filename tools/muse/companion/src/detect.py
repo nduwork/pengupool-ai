@@ -6,7 +6,9 @@ only, compares against the last recorded state, and prints exactly one
 JSON line: {"decision": "silent"|"wake", "reason": str, "payload": {...}}.
 
 Signals, all from the paired-device API (pp.py): per-session presence and
-status (/sessions) and a pending ask (/next). State lives in
+status (/sessions), a pending ask (/next), and the daemon epoch
+(/api/healthz — a changed epoch means the daemon restarted, the signal
+the detector used to get from settings.get's version). State lives in
 ~/hooks/state/pengupool-status.json and is NOT written on dry runs.
 """
 import json
@@ -33,7 +35,8 @@ DRY = os.environ.get("HATCH_HOOK_DRY_RUN") == "1"
 
 def observe():
     """obs: {sessions: {id: {name, status}}, ask, ask_detail}; sessions stays empty when unreachable."""
-    obs = {"sessions": {}, "ask": False, "refused": False, "reachable": False}
+    obs = {"sessions": {}, "ask": False, "refused": False, "reachable": False,
+           "epoch": None}
     try:
         code, res = pp.api("GET", "/sessions")
         obs["refused"] = code == 401
@@ -47,6 +50,12 @@ def observe():
         obs["ask"] = code == 200
         if code == 200 and card:
             obs["ask_detail"] = {k: card.get(k) for k in ("session", "title", "description")}
+    except (OSError, EOFError, ValueError, SystemExit):
+        pass
+    try:
+        code, info = pp.healthz()
+        if code == 200 and info:
+            obs["epoch"] = info.get("epoch")
     except (OSError, EOFError, ValueError, SystemExit):
         pass
     return obs
@@ -100,6 +109,8 @@ def main():
                 if len(what) > 140:
                     what = what[:137] + "..."
                 changes.append(f"needs input: {who}" + (f" — {what}" if what else ""))
+            if obs.get("epoch") and prev.get("epoch") and obs["epoch"] != prev["epoch"]:
+                changes.append("daemon restarted (epoch changed)")
         if obs["refused"] and not prev.get("refused"):
             changes.append("PenguPool refused the device token (revoked?); pair this device again")
         if reachable and not prev.get("reachable", True):
@@ -114,6 +125,7 @@ def main():
         "ask": obs["ask"],
         "reachable": reachable,
         "refused": obs["refused"],
+        "epoch": obs.get("epoch") or (prev or {}).get("epoch"),
         "last_check_epoch": time.time(),
     }
     if not DRY:

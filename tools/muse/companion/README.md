@@ -21,7 +21,7 @@ prove the install works.
 | File | Role |
 | --- | --- |
 | `src/pp.py` | Paired-device API client (`/api/muse/v1`): sessions, next, answer, say, action, compass. Token from `./device-token` (0600) or `$PENGUPOOL_DEVICE_TOKEN`, the only credential; host from `$PENGUPOOL_HOST` (required, the workstation's Tailscale name), port `$PENGUPOOL_PORT`. Goes through `$HTTPS_PROXY`'s CONNECT tunnel when set. |
-| `src/detect.py` | The change detector. One poll prints one JSON line: `{"decision": "silent"|"wake", ...}`. Wakes only on material change: a session appearing/disappearing, a status change, an ask waiting on the owner (`/next`), reachability flips. |
+| `src/detect.py` | The change detector. One poll prints one JSON line: `{"decision": "silent"|"wake", ...}`. Wakes only on material change: a session appearing/disappearing, a status change, an ask waiting on the owner (`/next`), a daemon restart (the `/api/healthz` epoch changes), reachability flips. |
 | `src/companion.py` | The CLI (below). Owns the monitor config. |
 | `src/gadget.py` | Renders the team status card (chat-widget HTML) from live API data. |
 | `src/tracker.py` | Per-agent workflow chains (A → B → C with a status symbol per step) rendered under each agent's name in the status card, from Muse's own `tracker.json` (tracking lives outside PenguPool by the owner's rule). |
