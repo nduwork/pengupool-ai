@@ -80,10 +80,13 @@ AUTH="Authorization: Bearer 9f2c…"
 
 ```bash
 curl -s "$API/sessions" -H "$AUTH"
-# [{"session":"01a1…","title":"api-fix · backend","state":"running","waiting":true}, …]
+# [{"session":"01a1…","title":"api-fix · backend","state":"running","waiting":true,
+#   "question":"Bash: git push origin main"}, …]
 ```
 
-`waiting` is true when the session has an ask waiting on you.
+`waiting` is true when the session has an ask waiting on you. `question`, when present, is what
+the agent is asking in its terminal right now (a permission, a question with its choices, a plan
+to approve). It is answered in the terminal, not here; it goes away once the agent moves on.
 
 **Get the next waiting ask.** It returns one card, for the oldest ask. `wait` (0–60 seconds) holds
 the call open until an ask arrives. `204 No Content` means nothing is waiting.
@@ -169,7 +172,8 @@ Control messages are JSON objects with an `id` you pick and a `type`. The first 
 Then:
 
 - `{"id":"2","type":"session.list"}` returns `sessions`, each with `id`, `name`, `state`, `status`
-  (`working`, `waiting`, `approval`, `idle`), `team_id` and more.
+  (`working`, `waiting`, `approval`, `idle`), `question` (what the agent asks in its terminal now,
+  if anything), `team_id` and more.
 - `{"id":"3","type":"state.subscribe"}` sends a `state.snapshot` (sessions plus teams), then a
   `state.delta` whenever something changes.
 - **App requests** go as `{"id":"4","type":"<request>","params":{…}}` and are answered with the same

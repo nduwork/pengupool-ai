@@ -77,6 +77,8 @@ export interface SessionView {
   status?: string;
   /** The first-run dialog the agent is stuck on while starting. */
   waiting?: string;
+  /** What the agent asks the owner now (a permission, a question, its plan); answered in its terminal. */
+  question?: string;
   /** Prompted 2+ minutes ago, and none of PenguPool's hooks has arrived since the session launched. */
   hooks_missing?: boolean;
   team_id?: string;
