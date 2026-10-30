@@ -17,7 +17,7 @@ import (
 )
 
 // Version of the prototype. It is not the protocol version; that is protocol.Version.
-const Version = "0.9.29"
+const Version = "0.9.30"
 
 const help = `usage: pengupool <command> [options]
 
@@ -46,6 +46,11 @@ const help = `usage: pengupool <command> [options]
         "Done: <title>".
   team request add --skill S|--repo R [--assignment A] | remove MEMBER [--reason R]
         (inside a team session) ask the owner to change who is on the team; it waits for approval.
+  ask [--option O]... QUESTION | ask --wait ID
+        (inside an agent session) put a question to the owner, answered in the app or from a paired
+        Muse device; waits up to 9 minutes and prints {"answer": …, "by": …} as JSON, else
+        {"pending": ID}: run "ask --wait ID" to go on waiting. The owner may pick an option or reply
+        in their own words.
   compass word [--supports UID]... [--contradicts UID]... [--line "preference|restriction :: BODY :: WHEN"]... | compass word --none
         (inside a session asked to) say which Compass lines the owner's last words support or go
         against and word up to 3 new lasting preferences, or say they hold none. Only the session
@@ -126,6 +131,8 @@ func main() {
 		err = cmdMemory(args[1:])
 	case "team":
 		err = cmdTeam(args[1:])
+	case "ask":
+		err = cmdAsk(args[1:])
 	case "compass":
 		err = cmdCompass(args[1:])
 	case "experience":

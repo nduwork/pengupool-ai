@@ -137,7 +137,7 @@ export interface FormationChange {
 
 export interface Approval {
   id: string;
-  /** launch | formation | permission */
+  /** launch | formation | permission | ask */
   kind: string;
   team_id?: string;
   change?: FormationChange;
@@ -146,6 +146,10 @@ export interface Approval {
   session_id?: string;
   tool?: string;
   detail?: string;
+  /** An agent's ask: its choices, and the owner's answer (one of them or their own words). */
+  options?: string[];
+  answer?: string;
+  answered_by?: string;
   state: string;
   created_at: string;
   expires_at?: string;

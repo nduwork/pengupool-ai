@@ -166,7 +166,7 @@ type Team struct {
 // or a harness permission request.
 type Approval struct {
 	ID     string `json:"id"`
-	Kind   string `json:"kind"` // launch | formation | permission
+	Kind   string `json:"kind"` // launch | formation | permission | ask
 	TeamID string `json:"team_id,omitempty"`
 	// Change is a formation change: what to do once approved.
 	Change    *FormationChange `json:"change,omitempty"`
@@ -175,9 +175,14 @@ type Approval struct {
 	SessionID string           `json:"session_id,omitempty"`
 	Tool      string           `json:"tool,omitempty"`
 	Detail    string           `json:"detail,omitempty"`
-	State     string           `json:"state"` // pending | approved | denied | expired
-	CreatedAt string           `json:"created_at"`
-	ExpiresAt string           `json:"expires_at,omitempty"`
+	// An agent's ask (kind ask): the choices it offers, and the owner's answer, one of them or their
+	// own words; AnsweredBy is "owner" or the paired device's name.
+	Options    []string `json:"options,omitempty"`
+	Answer     string   `json:"answer,omitempty"`
+	AnsweredBy string   `json:"answered_by,omitempty"`
+	State      string   `json:"state"` // pending | approved | denied | expired | answered
+	CreatedAt  string   `json:"created_at"`
+	ExpiresAt  string   `json:"expires_at,omitempty"`
 }
 
 // FormationChange is one change to who is on a team: add a member (a skill as a freelancer, or a
