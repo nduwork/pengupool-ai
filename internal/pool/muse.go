@@ -405,6 +405,9 @@ func (p *Pool) museAnswerAsk(c gateway.Caller, id string, in museAnswerIn) (any,
 	if !ok || a.Kind != "ask" || !p.museTeamVisible(a.TeamID) || !p.museVisible(a.SessionID) {
 		return nil, notFound("no ask ask:%s", id) // one the device cannot see does not exist for it
 	}
+	if a.State == "expired" || askStale(a, time.Now()) {
+		return nil, protocol.Errorf(protocol.CodeConflict, "the ask expired") // its card already left /next
+	}
 	if a.State != "pending" {
 		return nil, protocol.Errorf(protocol.CodeConflict, "the ask changed or expired")
 	}

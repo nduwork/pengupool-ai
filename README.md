@@ -181,7 +181,8 @@ choices, or the plan to approve) on hover in the app, in `session.list` and in t
 session list. It is still answered in the session's terminal.
 v0.9.30: An agent can put a question only you can settle to you directly (`pengupool ask
 [--option A]... "question"`). It waits for your answer, given in the app's Approvals or from a
-paired Muse device: one of its options, or a reply in your own words. Other agents cannot answer it.
+paired Muse device: one of its options, or a reply in your own words. Other agents cannot answer it. An ask left
+unanswered for 15 minutes expires, and the agent goes on with a safe default of its own.
 
 ## Credits
 

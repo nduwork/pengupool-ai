@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -17,9 +18,11 @@ import (
 // choices. It is an approval of kind ask, so it reaches the owner where the other asks do (the app's
 // Approvals, the Muse app's /next card) and is answered once, by the owner or a paired device, never
 // by an agent. The agent waits for the answer and gets it as data; one answered while it was not
-// waiting reaches it as a notice instead.
+// waiting reaches it as a notice instead. One the owner leaves unanswered for askExpiry expires: the
+// agent is told, from its wait or as a notice, and goes on with a safe default of its own.
 
 const (
+	askExpiry     = 15 * time.Minute // the owner's time to answer; change it here
 	askMaxOptions = 8
 	askMaxPending = 3                // per session: an agent asking in a loop fills no list
 	askMaxWait    = 60 * time.Second // one ask.wait call; the CLI calls again
@@ -61,7 +64,7 @@ func (p *Pool) agentAsk(_ context.Context, in agentAskIn) (any, error) {
 			if x.Kind == "ask" && x.State == "pending" {
 				if i := sessionIndex(st, x.SessionID); i < 0 || st.Sessions[i].State != "running" {
 					x.State = "expired"
-				} else if x.SessionID == s.ID {
+				} else if x.SessionID == s.ID && !askStale(x, time.Now()) {
 					mine++
 				}
 			}
@@ -99,9 +102,18 @@ func (p *Pool) askWait(ctx context.Context, in askWaitIn) (any, error) {
 			return nil, notFound("no ask %s of this session", in.ID)
 		}
 		p.askWaited(in.ID)
+		if askStale(a, time.Now()) {
+			p.expireStaleAsks(time.Now()) // stamped as waited on: the expiry comes here, not as a notice too
+			continue
+		}
 		switch a.State {
 		case "answered":
 			return map[string]string{"id": a.ID, "answer": a.Answer, "by": a.AnsweredBy}, nil
+		case "expired":
+			if s, ok := p.session(a.SessionID); ok && s.State == "running" {
+				return map[string]string{"id": a.ID, "expired": askExpiredNote(a)}, nil
+			}
+			return nil, conflict("the ask %s went with its session", a.ID)
 		case "pending":
 		default:
 			return nil, conflict("the ask %s was %s", a.ID, a.State)
@@ -135,7 +147,11 @@ func (p *Pool) askAnswer(_ context.Context, c gateway.Caller, raw json.RawMessag
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return nil, invalid("params: %v", err)
 	}
-	return p.answerAsk(in.ID, in.Answer, "owner")
+	res, err := p.answerAsk(in.ID, in.Answer, "owner")
+	if a, _ := p.approval(in.ID); err != nil && a.State == "expired" {
+		return map[string]string{"id": a.ID, "expired": "true"}, nil // expected: its row just went, no error
+	}
+	return res, err
 }
 
 // answerAsk records the answer once: a second answer, or one to an ask that went, is a conflict.
@@ -146,12 +162,15 @@ func (p *Pool) answerAsk(id, answer, by string) (any, error) {
 		return nil, invalid("no answer")
 	}
 	var a protocol.Approval
-	gone := false
+	gone, stale := false, false
 	err := p.update(func(st *store.State) error {
 		for i := range st.Domain.Approvals {
 			if x := &st.Domain.Approvals[i]; x.ID == id && x.Kind == "ask" {
 				if x.State != "pending" {
 					return conflict("the ask changed or expired")
+				}
+				if stale = askStale(*x, time.Now()); stale {
+					return conflict("the ask expired")
 				}
 				if j := sessionIndex(st, x.SessionID); j < 0 || st.Sessions[j].State != "running" {
 					gone = true // answered by nobody: it goes, and the update below is dropped
@@ -166,6 +185,9 @@ func (p *Pool) answerAsk(id, answer, by string) (any, error) {
 	})
 	if gone {
 		p.expireAsks("")
+	}
+	if stale {
+		p.expireStaleAsks(time.Now())
 	}
 	if err != nil {
 		return nil, err
@@ -196,6 +218,45 @@ func (p *Pool) expireAsks(sessionID string) {
 		}
 		return nil
 	})
+}
+
+// askStale says whether a is an agent's ask the owner left unanswered past askExpiry.
+func askStale(a protocol.Approval, at time.Time) bool {
+	return a.Kind == "ask" && a.State == "pending" && olderThan(a.CreatedAt, at, askExpiry)
+}
+
+func askExpiredNote(a protocol.Approval) string {
+	return fmt.Sprintf("Your ask %s (\"%s\") expired: the owner did not answer within %d minutes. Go on with a safe default and say what you assumed.",
+		a.ID, clipRunes(oneLine(a.Detail), 120), int(askExpiry.Minutes()))
+}
+
+// expireStaleAsks expires the asks left unanswered past askExpiry. An agent waiting on one hears it
+// from its wait; any other is told with a notice.
+func (p *Pool) expireStaleAsks(at time.Time) {
+	if !slices.ContainsFunc(p.st.State().Domain.Approvals, func(a protocol.Approval) bool { return askStale(a, at) }) {
+		return
+	}
+	var stale []protocol.Approval
+	_ = p.update(func(st *store.State) error {
+		stale = stale[:0]
+		for i := range st.Domain.Approvals {
+			if x := &st.Domain.Approvals[i]; askStale(*x, at) {
+				x.State = "expired"
+				stale = append(stale, *x)
+			}
+		}
+		return nil
+	})
+	for _, a := range stale {
+		p.logLine(a.SessionID, "ask expired unanswered: "+clipRunes(oneLine(a.Detail), 200))
+		p.mu.Lock()
+		waiting := time.Since(p.askWaitedAt[a.ID]) < askWaitGrace
+		delete(p.askWaitedAt, a.ID)
+		p.mu.Unlock()
+		if s, ok := p.session(a.SessionID); ok && s.State == "running" && !waiting {
+			p.notice(a.TeamID, a.SessionID, askExpiredNote(a))
+		}
+	}
 }
 
 // askWaitGrace: an ask waited on this recently still has its waiter (the CLI calls again between

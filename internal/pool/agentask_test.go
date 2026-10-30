@@ -121,6 +121,72 @@ func TestAgentAsk(t *testing.T) {
 	}
 }
 
+// An ask the owner leaves unanswered expires: its waiter is told to go on with a safe default, an
+// agent not waiting gets a notice, the card leaves /next, and a late answer is refused (quietly in the app).
+func TestAgentAskExpiry(t *testing.T) {
+	p, _, _ := gateTeam(t)
+	ctx := context.Background()
+	const id = "leadaaaaaaaa"
+	_ = p.st.Update(func(s *store.State) error {
+		for i := range s.Domain.Teams {
+			s.Domain.Teams[i].IOSAccess = true
+		}
+		return nil
+	})
+	ask := func(q string) string {
+		t.Helper()
+		res, err := p.agentAsk(ctx, agentAskIn{SessionID: id, Question: q})
+		if err != nil {
+			t.Fatal(err)
+		}
+		a := res.(map[string]string)["id"]
+		_ = p.st.Update(func(s *store.State) error { // asked longer ago than the owner has to answer
+			for i := range s.Domain.Approvals {
+				if s.Domain.Approvals[i].ID == a {
+					s.Domain.Approvals[i].CreatedAt = time.Now().Add(-askExpiry - time.Minute).UTC().Format(time.RFC3339)
+				}
+			}
+			return nil
+		})
+		return a
+	}
+
+	waited := ask("Waited on?")
+	res, err := p.askWait(ctx, askWaitIn{SessionID: id, ID: waited, Wait: 5})
+	if err != nil || !strings.Contains(res.(map[string]string)["expired"], "safe default") {
+		t.Fatalf("expired wait = %+v %v", res, err)
+	}
+
+	quiet := ask("Nobody waiting?")
+	if len(p.museAsks()) == 0 {
+		t.Fatal("the pending ask is not on /next before the sweep") // the sweep has not run yet
+	}
+	c := *p.museCard(p.museAsks()[0])
+	p.expireStaleAsks(time.Now())
+	for _, a := range p.museAsks() {
+		if a.id == "ask:"+quiet {
+			t.Fatal("an expired ask stayed on /next")
+		}
+	}
+	notices := 0
+	for _, m := range p.st.State().Domain.Messages {
+		if m.To == id && strings.Contains(m.Text, "expired") {
+			notices++
+		}
+	}
+	if notices != 1 {
+		t.Fatalf("%d expiry notices; want 1, for the ask nobody waited on", notices)
+	}
+	raw, _ := json.Marshal(map[string]any{"ask_id": c.AskID, "action": "reply", "text": "late", "payload_hash": c.PayloadHash, "idempotency_key": "late"})
+	if _, err := p.RPC(ctx, museCaller(), "muse.answer", raw); protocol.CodeOf(err) != protocol.CodeConflict {
+		t.Fatalf("late answer from the phone: %v", err)
+	}
+	raw, _ = json.Marshal(map[string]string{"id": quiet, "answer": "late"})
+	if res, err := p.RPC(ctx, gateway.Caller{Owner: true}, "ask.answer", raw); err != nil || res.(map[string]string)["expired"] == "" {
+		t.Fatalf("late answer in the app = %+v %v", res, err)
+	}
+}
+
 // A wait that went (the agent's shell tool stopped the CLI) leaves no grace: the answer comes as a
 // notice. At most 3 asks wait per session, and an ask whose session ended expires.
 func TestAgentAskLimits(t *testing.T) {

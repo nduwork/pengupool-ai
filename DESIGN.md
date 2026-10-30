@@ -140,6 +140,7 @@ never works here, and a device token works nowhere else.
  AN AGENT'S OWN ASK
  agent ─ pengupool ask [--option A]... "question" ─▶ pending ask (an approval of kind ask) ─ the agent waits
  owner ─ app Approvals, or POST /asks/ask:{id}/answer {action: option:N | reply, text} ─▶ the agent gets {answer, by}
+ unanswered for 15 minutes ─▶ expired: the agent is told, goes on with a safe default; a late answer is 409
 
  THE LOOP (one session at a time)
  GET /api/muse/v1/next?wait=60 ─▶ ONE card for the oldest waiting session, or 204

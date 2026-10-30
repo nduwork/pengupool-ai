@@ -50,7 +50,8 @@ const help = `usage: pengupool <command> [options]
         (inside an agent session) put a question to the owner, answered in the app or from a paired
         Muse device; waits up to 2 minutes and prints {"answer": …, "by": …} as JSON, else
         {"pending": ID}: run "ask --wait ID" to go on waiting. The owner may pick an option or reply
-        in their own words.
+        in their own words. Unanswered for 15 minutes, it expires: {"expired": …}; go on with a
+        safe default.
   compass word [--supports UID]... [--contradicts UID]... [--line "preference|restriction :: BODY :: WHEN"]... | compass word --none
         (inside a session asked to) say which Compass lines the owner's last words support or go
         against and word up to 3 new lasting preferences, or say they hold none. Only the session
