@@ -101,7 +101,9 @@ func (p *Pool) askWait(ctx context.Context, in askWaitIn) (any, error) {
 		if !ok || a.Kind != "ask" || a.SessionID != in.SessionID {
 			return nil, notFound("no ask %s of this session", in.ID)
 		}
-		p.askWaited(in.ID)
+		if a.State == "pending" { // a settled ask's stamp is gone: stamping it again would keep it
+			p.askWaited(in.ID)
+		}
 		if askStale(a, time.Now()) {
 			p.expireStaleAsks(time.Now()) // stamped as waited on: the expiry comes here, not as a notice too
 			continue
