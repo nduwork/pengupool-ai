@@ -166,8 +166,11 @@ func TestAskAnswerForOwner(t *testing.T) {
 		t.Fatalf("web's wait = %+v", res)
 	}
 	// Settled or expired: refused.
-	if err := answer(a1, 1); protocol.CodeOf(err) != protocol.CodeConflict {
-		t.Fatalf("an answered ask was answered again: %v", err)
+	if err := answer(a1, 1); err == nil { // no pending question shown now, or the settle's conflict
+		t.Fatal("an answered ask was answered again")
+	}
+	if x, _ := p.approval(a1); x.Answer != "yes, push it" {
+		t.Fatalf("the answer changed: %q", x.Answer)
 	}
 	a4 := ask(web, askExpiry+time.Minute)
 	shown(a4)
@@ -199,7 +202,53 @@ func TestAskAnswerForOwner(t *testing.T) {
 			t.Fatalf("%q --option %d answered %q, want %q", c.prompt, c.opt, x.Answer, c.want)
 		}
 	}
+	// Two questions shown: which one the owner answered is not the lead's choice. A prompt naming
+	// neither is refused; one naming B's whole id answers B only, with the whole prompt.
+	p.expireAsks(web) // a session may have only askMaxPending asks waiting
+	qa, qb := ask(web, time.Minute), ask(web, time.Minute)
+	shown(qa, qb)
+	owner("yes")
+	if err := answer(qa, 1); protocol.CodeOf(err) != protocol.CodeForbidden || !strings.Contains(err.Error(), "more than one question was shown") || !pending(qa) || !pending(qb) {
+		t.Fatalf("one of two shown questions was answered on an unnamed prompt: %v", err)
+	}
+	owner("for " + qb + ": no, hold it")
+	if err := answer(qa, 0); protocol.CodeOf(err) != protocol.CodeForbidden || !pending(qa) {
+		t.Fatalf("the question the owner did not name was answered: %v", err)
+	}
+	if err := answer(qb, 0); err != nil {
+		t.Fatal(err)
+	}
+	if x, _ := p.approval(qb); x.Answer != "for "+qb+": no, hold it" || !pending(qa) {
+		t.Fatalf("named question answer = %q (other pending: %v)", x.Answer, pending(qa))
+	}
+	// A longer token that merely contains the id does not name it.
+	shown(qa, ask(web, time.Minute))
+	owner("x" + qa + " yes")
+	if err := answer(qa, 0); protocol.CodeOf(err) != protocol.CodeForbidden || !pending(qa) {
+		t.Fatalf("an id inside a longer token named the question: %v", err)
+	}
+	// Carried whole or not at all: up to maxCarried runes (multibyte counted as runes), never clipped.
+	for _, c := range []struct {
+		prompt string
+		ok     bool
+	}{
+		{strings.Repeat("y", maxCarried), true},
+		{strings.Repeat("日", maxCarried), true},
+		{strings.Repeat("y", maxCarried+1), false},
+		{strings.Repeat("日", maxCarried+1), false},
+	} {
+		p.expireAsks(web)
+		id := ask(web, time.Minute)
+		shown(id)
+		owner(c.prompt)
+		err := answer(id, 0)
+		x, _ := p.approval(id)
+		if c.ok && (err != nil || x.Answer != c.prompt) || !c.ok && (protocol.CodeOf(err) != protocol.CodeForbidden || !strings.Contains(err.Error(), "member's session") || !pending(id)) {
+			t.Fatalf("%d-rune prompt: ok=%v err=%v answer len %d", len([]rune(c.prompt)), c.ok, err, len([]rune(x.Answer)))
+		}
+	}
 	// The request must come provably from the lead's own process tree on this host.
+	p.expireAsks(web)
 	a8 := ask(web, time.Minute)
 	shown(a8)
 	owner("yes")

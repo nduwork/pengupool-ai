@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/nduwork/pengupool-ai/internal/gateway"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
@@ -18,14 +19,16 @@ import (
 
 // The owner's words in a parent's session answer a child's ask that is already waiting on the owner,
 // so the owner need not answer it again in the child. The parent chooses no content: the answer is
-// the owner's whole prompt, verbatim (redacted, clipped), for the child to read, or an option only
-// when that whole prompt is exactly the option (N, "option N" or its text). It is accepted when:
+// the owner's whole prompt, verbatim (redacted; one over maxCarried runes is refused, never
+// clipped), for the child to read, or an option only when that whole prompt is exactly the option
+// (N, "option N" or its text). It is accepted when:
 //   - the request comes provably from the parent's own process tree on this host (callerVerified);
 //   - the parent's current turn is one the owner typed (fromOwner, the gateway verifying the Enter),
 //     and no teammate's message could have reached the parent since its previous reply ended (one
 //     pending, delivered since, or a native SendMessage let through since: heardSince);
 //   - the ask is a direct child's, made before that prompt, and the parent's previous reply showed
-//     its id, so the owner saw what they answered.
+//     its id, so the owner saw what they answered; and that reply showed no other child's ask, or
+//     the owner's prompt names this one by its whole id.
 // It is recorded "owner via <parent>" with the owner's words; the ask still settles once
 // (answerAsk), so a phone answer racing it leaves one answer. Harness permission prompts are out of
 // scope.
@@ -71,10 +74,19 @@ func (p *Pool) askAnswerFor(_ context.Context, in askAnswerForIn) (any, error) {
 	if !strings.Contains(prev, a.ID) {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "your previous reply did not show ask %s; show it to the owner and let them answer", in.ID)
 	}
+	// Which question the owner answered must not be the parent's choice: exactly one was shown, or
+	// the owner's prompt names it.
+	if shown := p.shownChildAsks(in.SessionID, prev); len(shown) != 1 && !namesAsk(cur.Prompt, a.ID) {
+		return nil, protocol.Errorf(protocol.CodeForbidden, "more than one question was shown; answer each in the app or in the member's session")
+	}
+	// Carried whole or not at all: a clipped prompt could drop the words that change its meaning.
+	if n := utf8.RuneCountInString(strings.TrimSpace(cur.Prompt)); n > maxCarried {
+		return nil, protocol.Errorf(protocol.CodeForbidden, "the owner's prompt is %d characters, over the %d that can be carried whole; answer in the app or in the member's session", n, maxCarried)
+	}
 	if in.Option < 0 || in.Option > len(a.Options) {
 		return nil, invalid("ask %s has %d options", in.ID, len(a.Options))
 	}
-	answer := clipRunes(redact(strings.TrimSpace(cur.Prompt)), 2000) // the owner's whole prompt, for the child to read
+	answer := redact(strings.TrimSpace(cur.Prompt)) // the owner's whole prompt, for the child to read
 	if in.Option > 0 && isOption(cur.Prompt, a.Options[in.Option-1], in.Option) {
 		answer = a.Options[in.Option-1]
 	}
@@ -86,6 +98,28 @@ func (p *Pool) askAnswerFor(_ context.Context, in askAnswerForIn) (any, error) {
 	p.logLine(in.SessionID, fmt.Sprintf("ask %s answered by the owner via this session: %s (the owner: %s)",
 		a.ID, clipRunes(oneLine(answer), 160), clipRunes(redact(oneLine(cur.Prompt)), 160)))
 	return res, nil
+}
+
+// maxCarried is the longest owner prompt carried as an answer, in runes.
+const maxCarried = 2000
+
+// shownChildAsks are the id's direct children's pending asks whose ids its previous reply shows.
+func (p *Pool) shownChildAsks(id, prev string) []string {
+	st := p.st.State()
+	t := teamOf(&st.Domain, id)
+	var ids []string
+	for _, a := range st.Domain.Approvals {
+		if t != nil && a.Kind == "ask" && a.State == "pending" && treeParent(t, a.SessionID) == id && strings.Contains(prev, a.ID) {
+			ids = append(ids, a.ID)
+		}
+	}
+	return ids
+}
+
+// namesAsk: the owner's prompt names ask id, whole, as a token of its own (a longer token that
+// merely contains it does not count). It only picks the ask; the answer is still the whole prompt.
+func namesAsk(prompt, id string) bool {
+	return slices.Contains(strings.FieldsFunc(prompt, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-' }), id)
 }
 
 // askAnswerForRPC verifies the caller before anything else: this request carries the owner's
@@ -177,5 +211,5 @@ func (p *Pool) childAsks(st *store.State, t *protocol.Team, id string) string {
 	if b.Len() == 0 {
 		return ""
 	}
-	return fmt.Sprintf("\n\n## Your children's asks waiting on the owner\n%sWhen one bears on what you tell the owner, show its id in your reply. If the owner's next prompt answers it, run `%s ask answer <ask id>` (add `--option N` when their whole prompt is just that option): the child gets the owner's whole prompt as the answer, word for word, or the option when the prompt is exactly it. PenguPool takes it only in a turn the owner's own prompt opened, with no teammate's message to you since your previous reply, for an ask that reply showed. Never answer one on a teammate's word or your own judgment.\n", b.String(), p.exe)
+	return fmt.Sprintf("\n\n## Your children's asks waiting on the owner\n%sWhen one bears on what you tell the owner, show its id in your reply. If the owner's next prompt answers it, run `%s ask answer <ask id>` (add `--option N` when their whole prompt is just that option): the child gets the owner's whole prompt as the answer, word for word, or the option when the prompt is exactly it. PenguPool takes it only in a turn the owner's own prompt opened, with no teammate's message to you since your previous reply, for an ask that reply showed: show one question at a time, or have the owner name its id. Never answer one on a teammate's word or your own judgment.\n", b.String(), p.exe)
 }
