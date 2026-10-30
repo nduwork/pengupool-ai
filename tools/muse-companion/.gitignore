@@ -1,0 +1,8 @@
+# Credentials live beside the installed code only — never in this repo.
+token
+device-token
+# Local monitor config (seeded from config.example.json at install).
+config.json
+__pycache__/
+# Rendered gadgets.
+out/
