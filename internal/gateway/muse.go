@@ -417,7 +417,7 @@ const museOpenAPI = `{
       }
     },
     "/sessions": {
-      "get": {"summary": "Overview of the sessions this device can see: session, title, state, waiting (an ask waits on the owner), and question (what the agent asks in its terminal now, if anything; answered there), and for a team member: team, team_id, role (LEAD, SME or HELPER), parent (the member it hangs under) and assignment."}
+      "get": {"summary": "Overview of the sessions this device can see: session, title, state, name, status (what a running agent is doing: starting, working, idle or approval), waiting (an ask waits on the owner), and question (what the agent asks in its terminal now, if anything; answered there), and for a team member: team, team_id, role (LEAD, SME or HELPER), parent (the member it hangs under) and assignment."}
     },
     "/compass": {
       "get": {"summary": "Read the owner's shown Compass lines."}

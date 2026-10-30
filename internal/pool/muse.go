@@ -523,8 +523,12 @@ func (p *Pool) museSay(_ context.Context, c gateway.Caller, raw json.RawMessage)
 
 type museSessionView struct {
 	Session string `json:"session"`
-	Title   string `json:"title"`
+	Title   string `json:"title"` // the name, then each team it is on: "web · app"
+	Name    string `json:"name"`
 	State   string `json:"state"`
+	// Status is what a running agent is doing: starting, working, idle, or approval (its harness
+	// asks in the terminal). Empty for a session that is not running.
+	Status  string `json:"status,omitempty"`
 	Waiting bool   `json:"waiting"`
 	// Question is what the agent asks in its terminal now, if anything (answered there, not here).
 	Question string `json:"question,omitempty"`
@@ -553,7 +557,7 @@ func (p *Pool) museSessions(_ context.Context, c gateway.Caller, _ json.RawMessa
 		if !p.museVisible(s.ID) {
 			continue
 		}
-		v := museSessionView{Session: s.ID, Title: s.Name, State: string(s.State), Waiting: waiting[s.ID], Question: s.View().Question}
+		v := museSessionView{Session: s.ID, Title: s.Name, State: string(s.State), Name: s.Name, Status: running(s.Status, string(s.State)), Waiting: waiting[s.ID], Question: s.View().Question}
 		for i := range st.Domain.Teams {
 			t := &st.Domain.Teams[i]
 			for _, m := range t.Members {
@@ -741,4 +745,12 @@ func (p *Pool) museDevices(_ context.Context, _ gateway.Caller, _ json.RawMessag
 		out = append(out, museDeviceView{Name: d.Name, Created: d.CreatedAt, LastSeen: d.LastSeen})
 	}
 	return out, nil
+}
+
+// running is the status of a running session, and nothing for one that is not.
+func running(status, state string) string {
+	if state != "running" {
+		return ""
+	}
+	return status
 }

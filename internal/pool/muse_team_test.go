@@ -46,7 +46,7 @@ func TestMuseSessionsTeam(t *testing.T) {
 	for _, v := range sessions {
 		got[v.Session] = v
 	}
-	if v := got["leadaaaaaaaa"]; v.Team != "app" || v.TeamID != "team1" || v.Role != "LEAD" {
+	if v := got["leadaaaaaaaa"]; v.Team != "app" || v.TeamID != "team1" || v.Role != "LEAD" || v.Status != "idle" || v.Name != "lead" {
 		t.Errorf("lead = %+v", v)
 	}
 	if v := got["webaaaaaaaaa"]; v.Parent != "leadaaaaaaaa" || v.Assignment != "the login page" {

@@ -196,6 +196,11 @@ another machine on the network), and with it the team's group password, which on
 asked for. Phones use a paired Muse device. A raw TCP forward you set up to the port (SSH,
 socat, Serve in TCP mode) counts as this machine, as an SSH forward does; PenguPool's own Serve is
 the HTTPS kind.
+v0.9.33: The Muse companion (change detector, status card, answer cards, mini status site) ships
+at tools/muse/companion. It uses only the paired-device API with a device token; it never holds the
+owner's app token. The mini status site on this machine is a paired device of its own, and its URL
+carries a key without which every page is 404. `/sessions` also gives each running agent's status
+(working, idle...).
 
 ## Credits
 
