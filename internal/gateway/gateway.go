@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -731,7 +732,7 @@ func (s *Server) hostGuard(next http.Handler) http.Handler {
 			return
 		}
 		// The network gets the device API only; the app and its owner routes stay on this machine.
-		if !s.local(r) && r.URL.Path != "/api/healthz" && !strings.HasPrefix(r.URL.Path, "/api/muse/v1/") {
+		if p := path.Clean(r.URL.Path); !s.local(r) && p != "/api/healthz" && !strings.HasPrefix(p, "/api/muse/v1/") {
 			http.NotFound(w, r)
 			return
 		}
@@ -751,11 +752,14 @@ func (s *Server) hostGuard(next http.Handler) http.Handler {
 }
 
 // local reports a request from this machine itself, or an SSH forward to it: a loopback peer that
-// did not come through Tailscale Serve, which proxies the tailnet from loopback with its own Host.
+// did not come through a proxy. Tailscale Serve proxies the tailnet from loopback and passes the
+// client's Host on, so its forwarding headers, not the Host, give it away; a local client that
+// sends them only shuts itself out.
 func (s *Server) local(r *http.Request) bool {
 	peer, _, err := net.SplitHostPort(r.RemoteAddr)
 	ip := net.ParseIP(peer)
-	return err == nil && ip != nil && ip.IsLoopback() && !s.phoneHost(r)
+	proxied := r.Header.Get("X-Forwarded-For") != "" || r.Header.Get("X-Forwarded-Host") != "" || r.Header.Get("Forwarded") != ""
+	return err == nil && ip != nil && ip.IsLoopback() && !proxied && !s.phoneHost(r)
 }
 
 func (s *Server) phoneHost(r *http.Request) bool {
