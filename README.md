@@ -226,10 +226,16 @@ output), and those repaints never become history lines, here or in any terminal
 (stablyai/orca#18490).
 v0.9.38: The owner can answer a child's waiting ask from the lead's session. The lead's context lists
 its direct children's asks, and `pengupool ask answer ASK_ID (--option N | --words "...")` carries the
-owner's answer. It is accepted only in a turn the owner's own typed prompt opened, for a direct child's
-ask made before that prompt that the lead's previous reply showed. A teammate's message, triage or a
-notice answers nothing. The answer is recorded as the owner's ("owner via <session>") with the owner's
-words; harness permission prompts are not covered.
+owner's answer. It is accepted only when all of these hold:
+- it comes from the lead's own process on this host;
+- the lead's turn was opened by a prompt the owner typed, and no teammate's message has reached the lead
+  since;
+- the ask is a direct child's, made before that prompt, and the lead's previous reply showed it;
+- the answer is in the owner's prompt: `--words` the owner typed (case and spacing aside), or an option
+  the prompt names (its text, "option N", or N alone).
+
+A teammate's message, triage or a notice answers nothing. The answer is recorded as the owner's ("owner
+via <session>") with the owner's words; harness permission prompts are not covered.
 
 ## Credits
 

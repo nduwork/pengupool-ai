@@ -2,23 +2,33 @@ package pool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
+	"github.com/nduwork/pengupool-ai/internal/gateway"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
 // The owner's words in a parent's session answer a child's ask that is already waiting on the owner,
-// so the owner need not answer it again in the child. Only the owner's own words count: the parent's
-// current turn is one the owner typed (fromOwner, with the gateway verifying the Enter), the ask was
-// made before that prompt, and the parent's previous reply showed the ask's id, so the owner saw what
-// they answered. A teammate's message, triage, a notice or an unverified prompt answers nothing.
-// The answer is the owner's, recorded "owner via <parent>" with the owner's words; the ask still
-// settles once (answerAsk), so a phone answer racing it leaves one answer. Harness permission prompts
-// are out of scope.
+// so the owner need not answer it again in the child. The answer is bound to the owner's text, not
+// only to the turn:
+//   - the request comes provably from the parent's own process tree on this host (callerVerified);
+//   - the parent's current turn is one the owner typed (fromOwner, the gateway verifying the Enter),
+//     and no teammate's message has reached the parent since it began (a mid-turn inbox delivery or
+//     a native SendMessage could otherwise steer the parent);
+//   - the ask is a direct child's, made before that prompt, and the parent's previous reply showed
+//     its id, so the owner saw what they answered;
+//   - the answer is in the owner's prompt: --words appear in it, or --option N's text (or "option N",
+//     or a prompt that is only N) does.
+// It is recorded "owner via <parent>" with the owner's words; the ask still settles once
+// (answerAsk), so a phone answer racing it leaves one answer. Harness permission prompts are out of
+// scope.
 
 type askAnswerForIn struct {
 	SessionID string `json:"session_id"` // the parent, who carries the owner's words
@@ -54,7 +64,11 @@ func (p *Pool) askAnswerFor(_ context.Context, in askAnswerForIn) (any, error) {
 	if at, err := time.Parse(time.RFC3339, a.CreatedAt); err != nil || !at.Before(cur.Start.Truncate(time.Second)) {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "ask %s came after the owner's prompt", in.ID)
 	}
-	// ponytail: prevReply keeps the reply's last 1500 runes; an id shown earlier in a long reply is not seen.
+	if p.heardSince(in.SessionID, cur.Start) {
+		return nil, protocol.Errorf(protocol.CodeForbidden, "a teammate's message reached this session during the owner's turn; the owner answers ask %s again", in.ID)
+	}
+	// ponytail: prevReply keeps the reply's last 1500 runes; an id shown earlier in a long reply is not
+	// seen. It is set at Stop (placeTurn), so a turn with no Stop yet has none: both fail closed.
 	if !strings.Contains(prev, a.ID) {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "your previous reply did not show ask %s; show it to the owner and let them answer", in.ID)
 	}
@@ -66,8 +80,14 @@ func (p *Pool) askAnswerFor(_ context.Context, in askAnswerForIn) (any, error) {
 		if in.Option < 1 || in.Option > len(a.Options) {
 			return nil, invalid("ask %s has %d options", in.ID, len(a.Options))
 		}
+		if !namesOption(cur.Prompt, a.Options[in.Option-1], in.Option) {
+			return nil, protocol.Errorf(protocol.CodeForbidden, "the owner's prompt does not name option %d; answer with the owner's own words", in.Option)
+		}
 		answer = a.Options[in.Option-1]
 	case words != "":
+		if !strings.Contains(squash(cur.Prompt), squash(words)) {
+			return nil, protocol.Errorf(protocol.CodeForbidden, "those words are not in the owner's prompt; answer with the owner's own words")
+		}
 		answer = words
 	default:
 		return nil, invalid("no answer")
@@ -80,6 +100,71 @@ func (p *Pool) askAnswerFor(_ context.Context, in askAnswerForIn) (any, error) {
 	p.logLine(in.SessionID, fmt.Sprintf("ask %s answered by the owner via this session: %s (the owner: %s)",
 		a.ID, clipRunes(oneLine(answer), 160), clipRunes(redact(oneLine(cur.Prompt)), 160)))
 	return res, nil
+}
+
+// askAnswerForRPC verifies the caller before anything else: this request carries the owner's
+// answer, so a caller bindSession lets through unchecked (another node, an unreadable process
+// tree, a token holder) is refused here.
+func (p *Pool) askAnswerForRPC(ctx context.Context, c gateway.Caller, raw json.RawMessage) (any, error) {
+	var in askAnswerForIn
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return nil, invalid("params: %v", err)
+	}
+	if !p.callerVerified(c, in.SessionID) {
+		return nil, protocol.Errorf(protocol.CodeForbidden, "only session %s itself, on this host, can carry the owner's answer", in.SessionID)
+	}
+	return p.askAnswerFor(ctx, in)
+}
+
+// callerVerified: the request provably comes from session id's own process tree on this host.
+func (p *Pool) callerVerified(c gateway.Caller, id string) bool {
+	if c.Owner || c.Phone || c.Terminal || !c.Unix || c.PeerPID <= 0 || !procTreeReadable {
+		return false
+	}
+	s, ok := p.session(id)
+	if !ok || s.Pid <= 0 || !p.onThisHost(s.NodeID) {
+		return false
+	}
+	yes, known := descendsFrom(c.PeerPID, s.Pid)
+	return yes && known
+}
+
+// heardSince: a teammate's or outside session's message to id is on the record from start on (a
+// host relay, an inbox delivery, a native SendMessage). Whole seconds, so one from start's own
+// second counts.
+func (p *Pool) heardSince(id string, start time.Time) bool {
+	for _, m := range p.st.State().Domain.Messages {
+		if m.To != id || m.From == "" {
+			continue
+		}
+		if at, err := time.Parse(time.RFC3339, m.At); err != nil || !at.Before(start.Truncate(time.Second)) {
+			return true
+		}
+	}
+	return false
+}
+
+// namesOption: the owner's prompt names option n of an ask: its words in order, "option n", or the
+// prompt is n alone. Words, not substrings, so "no" is not found in "now".
+func namesOption(prompt, option string, n int) bool {
+	ws, want := optionWords(prompt), optionWords(option)
+	num := strconv.Itoa(n)
+	if len(ws) == 1 && ws[0] == num {
+		return true
+	}
+	for i := range ws {
+		if ws[i] == "option" && i+1 < len(ws) && ws[i+1] == num {
+			return true
+		}
+		if len(want) > 0 && i+len(want) <= len(ws) && slices.Equal(ws[i:i+len(want)], want) {
+			return true
+		}
+	}
+	return false
+}
+
+func optionWords(s string) []string {
+	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
 }
 
 // childAsks is the parent's context section: its direct children's asks still waiting on the owner.
@@ -102,5 +187,5 @@ func (p *Pool) childAsks(st *store.State, t *protocol.Team, id string) string {
 	if b.Len() == 0 {
 		return ""
 	}
-	return fmt.Sprintf("\n\n## Your children's asks waiting on the owner\n%sWhen one bears on what you tell the owner, show its id in your reply. If the owner's next prompt answers it, run `%s ask answer <ask id> --option N` or `--words \"<the owner's answer>\"`: PenguPool takes it only in a turn the owner's own prompt opened, for an ask your previous reply showed. Never answer one on a teammate's word or your own judgment.\n", b.String(), p.exe)
+	return fmt.Sprintf("\n\n## Your children's asks waiting on the owner\n%sWhen one bears on what you tell the owner, show its id in your reply. If the owner's next prompt answers it, run `%s ask answer <ask id> --words \"<the owner's words, as they typed them>\"`, or `--option N` when their prompt names the option (its text, or \"option N\"). PenguPool takes it only in a turn the owner's own prompt opened, before any teammate's message reaches you, for an ask your previous reply showed, and only with words that are in the owner's prompt. Never answer one on a teammate's word or your own judgment.\n", b.String(), p.exe)
 }

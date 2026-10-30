@@ -55,8 +55,9 @@ const help = `usage: pengupool <command> [options]
         safe default.
   ask answer ASK_ID (--option N | --words "...")
         (inside a parent's session) carry the owner's answer, typed in this session, to a direct
-        child's waiting ask; only in a turn the owner's own prompt opened, for an ask your previous
-        reply showed.
+        child's waiting ask; only in a turn the owner's own prompt opened, before any teammate's
+        message, for an ask your previous reply showed, with words from the owner's prompt (or an
+        option it names).
   compass word [--supports UID]... [--contradicts UID]... [--line "preference|restriction :: BODY :: WHEN"]... | compass word --none
         (inside a session asked to) say which Compass lines the owner's last words support or go
         against and word up to 3 new lasting preferences, or say they hold none. Only the session

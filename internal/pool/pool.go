@@ -375,7 +375,7 @@ func (p *Pool) handlers() map[string]handler {
 		"approval.decide":       p.approvalDecide,
 		"ask.create":            bind(p.agentAsk),
 		"ask.wait":              bind(p.askWait),
-		"ask.answer_for_owner":  bind(p.askAnswerFor),
+		"ask.answer_for_owner":  p.askAnswerForRPC,
 		"ask.answer":            p.askAnswer,
 		"team.place_helper":     bind(p.placeHelperRPC),
 		"team.formation":        bind(p.teamFormation),
