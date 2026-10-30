@@ -4,19 +4,24 @@
 Usage:
   pp.py sessions                      the sessions this device sees (team, role, status, waiting)
   pp.py next                          the oldest waiting ask, as its card (nothing when none waits)
-  pp.py answer ACTION [TEXT] [--ask ID]
-                                      answer the card /next shows now with one of its action
-                                      ids; TEXT for a reply. --ask refuses if another ask is next.
+  pp.py answer ASK_ID PAYLOAD_HASH ACTION [TEXT]
+                                      answer the card the owner saw (its ask_id and payload_hash)
+                                      with one of its action ids; TEXT for a reply. A card that
+                                      changed or was answered meanwhile is refused (409).
   pp.py say SESSION WORDS...          type the words into a session, with Enter
   pp.py action SESSION stop|interrupt|resume
   pp.py compass                       the owner's Compass lines
 
 The paired device token is read from ./device-token (mode 0600) or $PENGUPOOL_DEVICE_TOKEN.
 It is the only credential: the owner's app token never works on this API.
+
+PENGUPOOL_PORT=443 speaks HTTPS to the Tailscale Serve name, end to end through any proxy. On
+plain HTTP (port 7787) a proxy on the way ($HTTPS_PROXY) sees the token and every call.
 """
 import json
 import os
 import socket
+import ssl
 import sys
 import uuid
 from urllib.parse import quote, urlparse
@@ -72,13 +77,18 @@ def connect():
         raise SystemExit("PENGUPOOL_HOST is not set: the workstation's Tailscale name")
     proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
     if not proxy:
-        return Sock(socket.create_connection((HOST, PORT), timeout=20))
-    p = urlparse(proxy)
-    sk = Sock(socket.create_connection((p.hostname, p.port or 3130), timeout=20))
-    sk.s.sendall(f"CONNECT {HOST}:{PORT} HTTP/1.1\r\nHost: {HOST}:{PORT}\r\n\r\n".encode())
-    status = sk.read_until(b"\r\n\r\n").decode("latin1").split("\r\n", 1)[0]
-    if " 200 " not in status:
-        raise SystemExit(f"tunnel CONNECT failed: {status}")
+        sk = Sock(socket.create_connection((HOST, PORT), timeout=20))
+    else:
+        p = urlparse(proxy)
+        sk = Sock(socket.create_connection((p.hostname, p.port or 3130), timeout=20))
+        sk.s.sendall(f"CONNECT {HOST}:{PORT} HTTP/1.1\r\nHost: {HOST}:{PORT}\r\n\r\n".encode())
+        status = sk.read_until(b"\r\n\r\n").decode("latin1").split("\r\n", 1)[0]
+        if " 200 " not in status:
+            raise SystemExit(f"tunnel CONNECT failed: {status}")
+        if sk.buf:
+            raise SystemExit("tunnel sent data before the request")
+    if PORT == 443:  # Serve's HTTPS: the token is encrypted to the workstation, not just to the proxy
+        sk.s = ssl.create_default_context().wrap_socket(sk.s, server_hostname=HOST)
     return sk
 
 
@@ -86,7 +96,8 @@ def api(method, path, body=None):
     """One call on the device API. Returns (status, parsed JSON or None)."""
     sk = connect()
     data = json.dumps(body).encode() if body is not None else b""
-    head = (f"{method} /api/muse/v1{path} HTTP/1.1\r\nHost: {HOST}:{PORT}\r\n"
+    host = HOST if PORT == 443 else f"{HOST}:{PORT}"
+    head = (f"{method} /api/muse/v1{path} HTTP/1.1\r\nHost: {host}\r\n"
             f"Authorization: Bearer {load_token()}\r\nConnection: close\r\n")
     if body is not None:
         head += f"Content-Type: application/json\r\nContent-Length: {len(data)}\r\n"
@@ -131,22 +142,14 @@ def cmd_next(_args):
 
 
 def cmd_answer(args):
-    want = None
-    if "--ask" in args:
-        i = args.index("--ask")
-        want, args = args[i + 1], args[:i] + args[i + 2:]
-    if not args:
-        raise SystemExit("usage: pp.py answer ACTION [TEXT] [--ask ID]")
-    card = ok(*api("GET", "/next"), "next")
-    if not card:
-        raise SystemExit("no ask is waiting")
-    if want and card["ask_id"] != want:
-        raise SystemExit(f"{want} is not the ask waiting now ({card['ask_id']} is); nothing answered")
-    body = {"action": args[0], "payload_hash": card["payload_hash"], "idempotency_key": str(uuid.uuid4())}
-    if len(args) > 1:
-        body["text"] = " ".join(args[1:])
-    ok(*api("POST", f"/asks/{quote(card['ask_id'], safe=':')}/answer", body), "answer")
-    print(f"answered {card['ask_id']}: {args[0]}")
+    if len(args) < 3:
+        raise SystemExit("usage: pp.py answer ASK_ID PAYLOAD_HASH ACTION [TEXT]")
+    ask_id, payload_hash, action = args[:3]
+    body = {"action": action, "payload_hash": payload_hash, "idempotency_key": str(uuid.uuid4())}
+    if len(args) > 3:
+        body["text"] = " ".join(args[3:])
+    ok(*api("POST", f"/asks/{quote(ask_id, safe=':')}/answer", body), "answer")
+    print(f"answered {ask_id}: {action}")
 
 
 def cmd_say(args):

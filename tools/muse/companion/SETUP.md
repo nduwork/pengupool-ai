@@ -92,10 +92,13 @@ tools/muse/companion/install.sh
 This installs `pp.py`/`detect.py`/`gadget.py` to
 `~/workspace/pengupool-agent/`, the CLI to `~/workspace/companion/`,
 seeds `config.json` (enabled, every 1m), and installs the hook
-wrapper. Export `PENGUPOOL_HOST=<workstation tailnet name or IP>` in
-the hook's environment; there is no default. (From a Muse VM, HTTP to the workstation
-goes through the runtime's CONNECT tunnel proxy — `pp.py` already
-handles this.)
+wrapper. Export `PENGUPOOL_HOST=<the workstation's Tailscale name>` in
+the hook's environment; there is no default. From a Muse VM, calls go
+through the runtime's CONNECT tunnel proxy (`pp.py` handles it). On
+plain HTTP (port 7787) that proxy sees the device token, so when the
+workstation has Tailscale Serve set up (Settings › Tailscale), also
+export `PENGUPOOL_PORT=443`: `pp.py` then speaks HTTPS to the Serve
+name, end to end.
 
 Then register and enable the **pengupool-status** hook (agent, with
 owner approval — step 0.4): a 60-second poll running
@@ -139,9 +142,10 @@ and that routine polls stay silent.
   when the ask has options, a choice tap files immediately, and a
   "send it" confirmation only for free text you formulated that is not
   the owner's own words.
-- The owner answers an ask — you file it through the ask's own answer
-  path (the device API answer endpoint for host asks; the session's
-  channel for agent questions) and show the closed card.
+- The owner answers an ask — you file it on the device API answer
+  endpoint with the ask_id and payload_hash of the card shown
+  (`pp.py answer`), and show the closed card. A 409 means the ask
+  changed or was answered meanwhile: re-issue the cards.
 
 ## 7. Optional: the mobile mini site (agent, on the PenguPool machine)
 
@@ -155,7 +159,9 @@ such as `Status site`), save its token on that machine, then install:
 cd tools/muse/companion && ./install-host.sh   # PORT=7791 changes the port
 ```
 
-It needs Node 22+ on that machine and nothing else: launchd keeps it
+It needs Node 22+ on that machine, and Local network on (it calls the
+device API at `http://<this machine's Tailscale name>:7787`; with
+Serve instead, set `MC_API=https://<name>` in the plist). launchd keeps it
 running, it binds to the machine's Tailscale address only, and it reads
 `/api/muse/v1/sessions` with that device token; it never holds the
 owner's app token. Every request but `/health` needs the site key the
@@ -164,5 +170,7 @@ to the owner's devices; anything without the key gets 404. Verify:
 `curl http://<machine>.<tailnet>.ts.net:7790/health` answers
 `{"ok":true}` from another tailnet device, the page without the key is
 404, and with it shows the live team. The site is read-only: names and
-statuses, nothing else. Revoking its device under Settings › Muse app
-stops it.
+statuses, nothing else. Its device token could do more than the site
+uses (answer asks, type, stop sessions), which is why it is its own
+device: revoking it under Settings › Muse app stops the site and
+nothing else.

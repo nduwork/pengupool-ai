@@ -24,7 +24,7 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 NODE="$(command -v node || true)"
 [ -n "$NODE" ] || { echo "node not found — install Node 22 or newer first" >&2; exit 1; }
 MAJOR="$("$NODE" --version | sed 's/^v//; s/\..*//')"
-[ "$MAJOR" -ge 22 ] || { echo "node $("$NODE" --version) is too old — need 22+ (global WebSocket)" >&2; exit 1; }
+[ "$MAJOR" -ge 22 ] || { echo "node $("$NODE" --version) is too old — need 22+ (global fetch)" >&2; exit 1; }
 
 mkdir -p "$DEST/src" "$DEST/out" "$HOME/Library/LaunchAgents"
 chmod 0700 "$DEST"
@@ -35,6 +35,7 @@ if [ ! -s "$DEST/device-token" ]; then
 fi
 chmod 0600 "$DEST/device-token"
 [ -s "$DEST/site-key" ] || (umask 077; "$NODE" -e 'process.stdout.write(require("crypto").randomBytes(18).toString("base64url"))' > "$DEST/site-key")
+chmod 0600 "$DEST/site-key"
 KEY="$(cat "$DEST/site-key")"
 install -m 0644 "$SRC/src/serve.mjs" "$DEST/src/serve.mjs"
 cp "$SRC/README.md" "$SRC/SETUP.md" "$DEST/" 2>/dev/null || true

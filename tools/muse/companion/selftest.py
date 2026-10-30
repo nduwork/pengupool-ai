@@ -28,7 +28,7 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         assert self.headers["Authorization"] == "Bearer tok123", self.headers
         if self.path == "/api/muse/v1/next": return self._send(200, {"ask_id": "teamask:a1", "payload_hash": "ph", "actions": []}, chunked=True)
-        if self.path == "/api/muse/v1/sessions": return self._send(200, [{"session": "s1"}])
+        if self.path == "/api/muse/v1/sessions": return self._send(200, [{"session": "s1"}], chunked=True)
         self._send(404, {"error": "no"})
     def do_POST(self):
         n = int(self.headers["Content-Length"]); body = json.loads(self.rfile.read(n))
@@ -40,8 +40,8 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 env = dict(os.environ, PENGUPOOL_HOST="127.0.0.1", PENGUPOOL_PORT=str(srv.server_address[1]), PENGUPOOL_DEVICE_TOKEN="tok123")
 env.pop("HTTPS_PROXY", None); env.pop("https_proxy", None)
 run = lambda *a: subprocess.run([sys.executable, os.environ["SRC"] + "/pp.py", *a], env=env, capture_output=True, text=True)
-r = run("answer", "reply", "Use", "8080", "--ask", "teamask:a1"); assert r.returncode == 0, r.stderr
-r = run("answer", "go_on", "--ask", "teamask:other"); assert r.returncode != 0 and "not the ask waiting now" in r.stderr, r
+r = run("answer", "teamask:a1", "ph", "reply", "Use", "8080"); assert r.returncode == 0, r.stderr
+r = run("answer", "teamask:a1"); assert r.returncode != 0 and "usage" in r.stderr, r
 r = run("say", "s 1", "hello"); assert r.returncode == 0, r.stderr
 r = run("action", "s1", "stop"); assert r.returncode == 0 and '"exited"' in r.stdout, r
 r = run("sessions"); assert '"s1"' in r.stdout, r
@@ -56,8 +56,8 @@ import sys, json, os
 sys.path.insert(0, os.environ["SRC"])
 import pp
 SESS = [
- {"session":"lead1","title":"lead","state":"running","status":"working","waiting":False,"team":"app","team_id":"t1","role":"LEAD"},
- {"session":"web1","title":"web <b>","state":"running","status":"idle","waiting":True,"team":"app","team_id":"t1","role":"HELPER","parent":"lead1"},
+ {"session":"lead1","title":"lead · app","name":"lead","state":"running","status":"working","waiting":False,"team":"app","team_id":"t1","role":"LEAD"},
+ {"session":"web1","title":"web <b> · app","name":"web <b>","state":"running","status":"idle","waiting":True,"team":"app","team_id":"t1","role":"HELPER","parent":"lead1"},
  {"session":"solo1","title":"solo","state":"exited","waiting":False},
 ]
 def fake(method, path, body=None):
@@ -69,9 +69,12 @@ import gadget, detect
 out = gadget.render()
 assert "web &lt;b&gt;" in out and "? Need input" in out and "Active" in out and "Ended" in out, out
 assert out.index("lead") < out.index("web &lt;b&gt;") and "padding-left:32px" in out, "web under lead"
-assert "Ungrouped" in out and "badge" not in out
+assert "Ungrouped" in out and "badge" not in out and "· app" not in out, "rows show the name"
 obs = detect.observe()
 assert obs["ask"] and obs["sessions"]["web1"]["status"] == "waiting on you" and obs["sessions"]["lead1"]["status"] == "working", obs
+pp.api = lambda method, path, body=None: (401, {"error": "unauthorized"})
+obs = detect.observe()
+assert obs["refused"] and not obs["sessions"], obs
 print("gadget and detect ok")
 """
 

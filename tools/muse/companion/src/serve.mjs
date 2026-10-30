@@ -6,7 +6,7 @@
 // poll from the PenguPool paired-device API (/api/muse/v1/sessions) with
 // the site's own device token. It never holds the owner's app token.
 //
-// No dependencies: Node 22+ and the standard library.
+// No dependencies: Node 22+ (global fetch) and the standard library.
 //
 //   node serve.mjs [--port 7790] [--bind tailnet|all|<ip>]
 //                  [--api http://<this machine's Tailscale name>:7787]
@@ -96,7 +96,7 @@ function buildPayload(sessions) {
     const key = shownKey(s);
     const [label, tone] = STATUS[key];
     if (key === "approval") needsYou++;
-    return { name: s.title || "?", role: s.role || "", depth, label, tone };
+    return { name: s.name || s.title || "?", role: s.role || "", depth, label, tone };
   };
   const byTeam = new Map();
   for (const s of sessions) if (s.team_id) { if (!byTeam.has(s.team_id)) byTeam.set(s.team_id, []); byTeam.get(s.team_id).push(s); }
@@ -260,8 +260,8 @@ const server = http.createServer(async (req, res) => {
       try { payload = await status(); }
       catch { if (payload) payload = { ...payload, stale: true }; }
       const boot = payload ? JSON.stringify(payload).replace(/</g, "\\u003c") : "null";
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-      return res.end(PAGE.replace("__PAYLOAD__", () => boot || "null").replace("${POLL_MS}", String(POLL_MS)));
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
+      return res.end(PAGE.replace("__PAYLOAD__", () => boot));
     }
     res.writeHead(404, { "Content-Type": "text/plain" });
     res.end("not found");

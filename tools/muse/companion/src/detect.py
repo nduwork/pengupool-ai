@@ -33,13 +33,14 @@ DRY = os.environ.get("HATCH_HOOK_DRY_RUN") == "1"
 
 def observe():
     """obs: {sessions: {id: {name, status}}, ask, ask_detail}; sessions stays empty when unreachable."""
-    obs = {"sessions": {}, "ask": False}
+    obs = {"sessions": {}, "ask": False, "refused": False}
     try:
         code, res = pp.api("GET", "/sessions")
+        obs["refused"] = code == 401
         if code == 200:
             for s in res or []:
                 st = "waiting on you" if s.get("waiting") else s.get("status") or s.get("state", "?")
-                obs["sessions"][s["session"]] = {"name": s.get("title", "?"), "status": st}
+                obs["sessions"][s["session"]] = {"name": s.get("name") or s.get("title", "?"), "status": st}
         # /next answers 200 with the ask card exactly when an ask waits on the owner (204: none).
         code, card = pp.api("GET", "/next")
         obs["ask"] = code == 200
@@ -98,9 +99,11 @@ def main():
                 if len(what) > 140:
                     what = what[:137] + "..."
                 changes.append(f"needs input: {who}" + (f" — {what}" if what else ""))
+        if obs["refused"] and not prev.get("refused"):
+            changes.append("PenguPool refused the device token (revoked?); pair this device again")
         if reachable and not prev.get("reachable", True):
             changes.append("daemon reachable again")
-        if not reachable and prev.get("reachable", True):
+        if not reachable and not obs["refused"] and prev.get("reachable", True):
             changes.append("daemon unreachable via API")
         decision = "wake" if changes else "silent"
         reason = "; ".join(changes) if changes else "no material change"
@@ -109,6 +112,7 @@ def main():
         "sessions": obs["sessions"],
         "ask": obs["ask"],
         "reachable": reachable,
+        "refused": obs["refused"],
         "last_check_epoch": time.time(),
     }
     if not DRY:

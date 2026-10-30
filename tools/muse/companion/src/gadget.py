@@ -162,12 +162,12 @@ def row_html(s, depth, anc, slug, has_kids):
     label, tone = STATUS[shown_key(s)]
     pad = 12 + depth * 20
     cls = "row foldable" if has_kids else "row"
-    toggle = f' data-toggle="{slug}"' if has_kids else ""
+    toggle = f' data-toggle="{html.escape(slug)}"' if has_kids else ""
     chev = CHEV if has_kids else ""
     tag = f' <span class="tag">{html.escape(s["role"].title())}</span>' if s.get("role") else ""
-    return (f'<div class="{cls}" data-anc="{anc}"{toggle} style="padding-left:{pad}px">'
+    return (f'<div class="{cls}" data-anc="{html.escape(anc)}"{toggle} style="padding-left:{pad}px">'
             f'{chev}<span class="dot d-{tone}"></span>'
-            f'<span class="nm">{html.escape(s.get("title", "?"))}</span>{tag}'
+            f'<span class="nm">{html.escape(s.get("name") or s.get("title", "?"))}</span>{tag}'
             f'<span class="st s-{tone}">{label}</span></div>')
 
 
@@ -256,7 +256,7 @@ def render():
                 cur = by_id[cur["parent"]]
             out.append(row_html(s, depth, " ".join(chain), slug, bool(kid_ids)))
             if wfmod:
-                crow = wfmod.chain_row(wf, s.get("title"),
+                crow = wfmod.chain_row(wf, s.get("name") or s.get("title"),
                                        " ".join(chain) + " " + slug,
                                        12 + depth * 20 + 24)
                 if crow:
@@ -268,7 +268,7 @@ def render():
         for s in rest:
             out.append(row_html(s, 0, "", "", False))
             if wfmod:
-                crow = wfmod.chain_row(wf, s.get("title"), "", 36)
+                crow = wfmod.chain_row(wf, s.get("name") or s.get("title"), "", 36)
                 if crow:
                     out.append(crow)
 

@@ -59,8 +59,12 @@ carries the text.
 
 ## Delivery paths
 
-- Host asks (today): device API answer endpoint with ask_id +
-  payload_hash (idempotent; 409 if the ask changed under you).
-- Agent questions (piece 1/2): once the ask primitive lands, the same
-  endpoint family. Terminal prompts in the interim still resolve via
-  the say lane, with the same card flow on top.
+- Every ask on `/next` (host approvals and gates, an agent's own
+  question `ask:…`, a member's ask the team left to the owner
+  `teamask:…`) is answered on the device API answer endpoint with the
+  ask_id and payload_hash of the card the owner saw:
+  `pp.py answer ASK_ID PAYLOAD_HASH ACTION [TEXT]` (idempotent; 409 if
+  the ask changed or was answered meanwhile, so re-issue the cards).
+- An agent's own tool prompts in its terminal are never answered from
+  here: the device API does not reach them, and typing a choice into a
+  session with `say` is not an answer path.

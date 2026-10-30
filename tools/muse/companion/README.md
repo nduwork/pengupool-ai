@@ -163,7 +163,9 @@ Then, once:
    **Tokens are never part of this package**: they live beside the
    installed code only, and `.gitignore` guards them here.
 2. Export `PENGUPOOL_HOST=<the workstation's Tailscale name>` where the
-   hook runs.
+   hook runs, and `PENGUPOOL_PORT=443` when the workstation has Tailscale
+   Serve: `pp.py` then speaks HTTPS end to end, so a proxy on the way
+   never sees the device token (on plain HTTP, port 7787, it does).
 3. Register/enable the `pengupool-status` hook (60-second poll) pointing
    at `~/hooks/scripts/pengupool-status.sh` — in Muse this is a hook
    definition, so ask Muse to set it up.

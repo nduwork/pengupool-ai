@@ -21,6 +21,8 @@ install -m 0755 "$SRC/src/companion.py" "$HOME/workspace/companion/companion.py"
 ln -sf "$HOME/workspace/companion/companion.py" "$HOME/workspace/companion/companion"
 install -m 0755 "$SRC/hook/pengupool-status.sh" "$HOME/hooks/scripts/pengupool-status.sh"
 
+[ -f "$HOME/workspace/pengupool-agent/device-token" ] && chmod 0600 "$HOME/workspace/pengupool-agent/device-token"
+
 if [ ! -f "$HOME/workspace/companion/config.json" ]; then
   install -m 0644 "$SRC/config.example.json" "$HOME/workspace/companion/config.json"
   echo "seeded ~/workspace/companion/config.json from config.example.json"
