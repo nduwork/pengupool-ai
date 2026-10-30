@@ -79,7 +79,7 @@ func TestGuardRouteMuseTools(t *testing.T) {
 	if !call("bash", sh("make runner")) {
 		t.Fatal("writing muse shell passed")
 	}
-	if call("bash", sh(`pengupool send --to "weba" "take the runner work"`)) || call("write_file", nil) {
+	if call("bash", sh(`pengupool send --to "web" "take the runner work"`)) || call("write_file", nil) {
 		t.Fatal("a send to the routed member must release the hold")
 	}
 }

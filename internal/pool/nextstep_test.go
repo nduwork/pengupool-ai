@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nduwork/pengupool-ai/internal/decision"
+	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
@@ -189,12 +190,25 @@ func TestGuardRoute(t *testing.T) {
 	if call("WebSearch", nil) || call("WebFetch", nil) {
 		t.Fatal("web reads are reads")
 	}
-	if call("Bash", sh("pengupool send --to=weba 'do it'")) || call("Write", nil) {
+	if call("Bash", sh("pengupool send --to=web 'do it'")) || call("Write", nil) {
 		t.Fatal("pengupool send to the routed member releases the hold")
 	}
 	firm()
 	if call("Bash", sh("pengupool send --to webaaaaa 'do it'")) || call("Write", nil) {
 		t.Fatal("pengupool send by a session id prefix releases the hold")
+	}
+	// Another team runs a session named web whose id shares web's prefix: the send resolves in the
+	// lead's team, as messageSend resolves it, so both still release.
+	_ = p.st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions, store.Session{ID: "webaaaaabbbb", Name: "web", State: "running"})
+		s.Domain.Teams[1].Members = append(s.Domain.Teams[1].Members, protocol.Member{SessionID: "webaaaaabbbb", Name: "web", Role: "helper", State: "active"})
+		return nil
+	})
+	for _, to := range []string{"web", "webaaaaa"} {
+		firm()
+		if call("Bash", sh("pengupool send --to "+to+" 'do it'")) || call("Write", nil) {
+			t.Fatalf("send --to %s, a name or prefix another team shares, did not release the hold", to)
+		}
 	}
 	// Hedged: no hold at all.
 	p.testDecider = &routeDecider{choice: "web", pr: 0.6, calibrated: true}

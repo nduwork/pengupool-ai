@@ -204,9 +204,10 @@ func readOnlyCmd(cmd string) bool {
 }
 
 // sentTo reports a shell command that runs `pengupool send --to <member>`: the --to value only, so a
-// message to someone else that mentions the member does not count. The value resolves as messageSend
-// resolves it (name, session id or id prefix), so a rename or a short id still counts.
-func (p *Pool) sentTo(cmd, id string) bool {
+// message to someone else that mentions the member does not count. The value resolves among the
+// sender's team as messageSend resolves it (memberHits), so a rename, a short id or a name another
+// team also uses still counts.
+func (p *Pool) sentTo(cmd, from, id string) bool {
 	if !strings.Contains(cmd, "pengupool send") && !strings.Contains(cmd, p.exe+" send") {
 		return false
 	}
@@ -216,8 +217,14 @@ func (p *Pool) sentTo(cmd, id string) bool {
 		if !ok && w == "--to" && i+1 < len(f) {
 			to, ok = f[i+1], true
 		}
-		if x, hit := sessionNamed(p.st.State(), strings.Trim(to, `"'`)); ok && hit && x.ID == id {
-			return true
+		if !ok {
+			continue
+		}
+		d := p.st.State().Domain
+		if t := teamOf(&d, from); t != nil {
+			if hits := memberHits(t, strings.Trim(to, `"'`)); len(hits) == 1 && hits[0].SessionID == id {
+				return true
+			}
 		}
 	}
 	return false
@@ -247,7 +254,7 @@ func (p *Pool) guardRoute(s store.Session, pl map[string]any) (HookOut, bool) {
 		}
 		return HookOut{}, false
 	}
-	if cmd != "" && p.sentTo(cmd, who) {
+	if cmd != "" && p.sentTo(cmd, s.ID, who) {
 		p.release(s.ID, name)
 		return HookOut{}, false
 	}

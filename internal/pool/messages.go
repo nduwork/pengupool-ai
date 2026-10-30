@@ -87,11 +87,7 @@ func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
 		teamID := ""
 		if t != nil {
 			teamID = t.ID
-			for _, m := range t.Members {
-				if m.State == "active" && (m.SessionID == in.To || strings.EqualFold(m.Name, in.To) || strings.HasPrefix(m.SessionID, in.To) && len(in.To) >= 8) {
-					hits = append(hits, m)
-				}
-			}
+			hits = memberHits(t, in.To)
 		}
 		if len(hits) == 0 && channel != "" {
 			hits = append(hits, protocol.Member{SessionID: channel})
@@ -152,6 +148,18 @@ func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
 		p.mu.Unlock()
 	}
 	return map[string]string{"id": msg.ID, "to": toSession.Name}, nil
+}
+
+// memberHits are the team's active members a `send --to` value names: a session id, a display name
+// (any case) or an id prefix of 8 or more. Sessions outside the team never match.
+func memberHits(t *protocol.Team, to string) []protocol.Member {
+	var hits []protocol.Member
+	for _, m := range t.Members {
+		if m.State == "active" && (m.SessionID == to || strings.EqualFold(m.Name, to) || strings.HasPrefix(m.SessionID, to) && len(to) >= 8) {
+			hits = append(hits, m)
+		}
+	}
+	return hits
 }
 
 // cleanText strips control, bidi and zero-width characters (a message must not drive a terminal).
