@@ -215,6 +215,12 @@ v0.9.36: A Claude SendMessage is checked against the session Claude actually del
 Claude session of that name. A name shared with another team's session no longer slips past the
 team check, and a name two Claude sessions share is refused with a pointer to `pengupool send
 --to <session id>`.
+v0.9.37: The host keeps each session's terminal history (2000 lines, tmux's default), and an
+attach snapshot carries it ahead of the screen (at most 512 KiB, newest lines first), so every
+viewer shows the same history after a reconnect, a resize or a session switch. Live output is
+unchanged, and so is the phone and Muse API. Known limit: Claude Code repaints its live area in
+place (synchronized output), and those repaints never become history lines, here or in any
+terminal (stablyai/orca#18490).
 
 ## Credits
 

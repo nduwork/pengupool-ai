@@ -162,8 +162,8 @@ func (h *Hub) followScreen(id string, scr *vt.Screen, cols, rows int) {
 	old := *scr
 	*scr = nil
 	if cols > 0 && rows > 0 {
-		*scr = vt.New(cols, rows)
-		go func(r <-chan []byte) { // the PTY's own terminal answers its queries, not this copy
+		*scr = vt.NewVisible(cols, rows) // ScreenText reads the visible screen only
+		go func(r <-chan []byte) {       // the PTY's own terminal answers its queries, not this copy
 			for range r {
 			}
 		}((*scr).Responses())

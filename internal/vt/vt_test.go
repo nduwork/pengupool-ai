@@ -49,12 +49,11 @@ func recording(leaveAltScreen bool) string {
 // cursor and the same modes.
 func TestSnapshotRoundTrip(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		alt    bool
-		prefix string
+		name string
+		alt  bool
 	}{
-		{name: "normal screen", alt: false, prefix: "\x1b[?1049l"},
-		{name: "alternate screen", alt: true, prefix: "\x1b[?1049h"},
+		{name: "normal screen", alt: false},
+		{name: "alternate screen", alt: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			src := New(testCols, testRows)
@@ -69,8 +68,9 @@ func TestSnapshotRoundTrip(t *testing.T) {
 			if len(snap) == 0 {
 				t.Fatal("Snapshot returned nothing")
 			}
-			if !strings.HasPrefix(string(snap), tc.prefix) {
-				t.Fatalf("snapshot starts with %q, want the prefix %q", head(snap, 16), tc.prefix)
+			// History is written on the normal screen first; the alternate screen follows it.
+			if !strings.HasPrefix(string(snap), "\x1b[?1049l") || tc.alt != bytes.Contains(snap, []byte("\x1b[?1049h")) {
+				t.Fatalf("snapshot starts with %q; alternate screen %v", head(snap, 16), tc.alt)
 			}
 			// A snapshot must never clear the display: on the normal screen that would throw away
 			// the client's scrollback.

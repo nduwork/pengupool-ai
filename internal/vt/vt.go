@@ -3,9 +3,12 @@
 //
 // Every PTY byte is fed to a Screen exactly once. When a client cannot be replayed to from the
 // ring (its offset fell out of the window, or the generation changed), the worker sends
-// Snapshot instead: a self-contained reconstruction of the visible screen, the cursor and the
-// input-affecting modes, which the client can apply blindly after clearing its own screen.
-// Scrollback is never part of a snapshot.
+// Snapshot instead: a self-contained reconstruction of the scrollback, the visible screen, the
+// cursor and the input-affecting modes, which the client can apply blindly after a reset. The host
+// keeps the history, so every viewer shows the same one after a reconnect, a resize or a switch.
+//
+// Known limit: a program that repaints its live area in place (Claude Code does, inside DEC 2026
+// synchronized output) adds no scrollback rows for what it overwrites, here or in any terminal.
 //
 // A Screen is safe for concurrent use: Write, Resize, Cols, Rows, Cursor, Modes and Snapshot may
 // be called from different goroutines. Responses delivers the emulator's query replies on a
@@ -55,9 +58,9 @@ type Screen interface {
 	Cursor() (col, row int)
 	// Modes reports the input-affecting terminal modes currently set.
 	Modes() Modes
-	// Snapshot returns bytes that reconstruct the visible screen, the cursor and the tracked
-	// modes on a cleared, same-size, xterm-compatible client. The normal screen is never cleared
-	// wholesale (no \x1b[2J) and scrollback is never included.
+	// Snapshot returns bytes that reconstruct the scrollback (newest lines, bounded), the visible
+	// screen, the cursor and the tracked modes on a reset, same-size, xterm-compatible client. The
+	// normal screen is never cleared wholesale (no \x1b[2J).
 	Snapshot() []byte
 	// Responses returns the channel on which this emulator delivers the replies it produces in
 	// answer to a program query (DA1, DA2, DECRQM, DSR, focus, in-band resize). One consumer must
@@ -72,8 +75,17 @@ type Screen interface {
 	Close() error
 }
 
-// New returns a Screen of cols x rows cells. Sizes below one cell are clamped to one.
-func New(cols, rows int) Screen { return newScreen(cols, rows) }
+// New returns a Screen of cols x rows cells that keeps HistoryLines of scrollback. Sizes below one
+// cell are clamped to one.
+func New(cols, rows int) Screen { return newScreen(cols, rows, HistoryLines) }
+
+// NewVisible returns a Screen that keeps no scrollback, for a follower that only reads Text.
+func NewVisible(cols, rows int) Screen { return newScreen(cols, rows, 1) }
+
+// HistoryLines is the scrollback a session's screen keeps: tmux's default history-limit. Lines are
+// stored trimmed at 112 bytes a cell, so a session of full 120-column lines holds about 27 MB at
+// worst and typical agent output far less; the line cap is the memory cap.
+const HistoryLines = 2000
 
 // screen is the x/vt-backed Screen.
 //
@@ -103,7 +115,7 @@ var _ Screen = (*screen)(nil)
 // read loop feeds it, so once the buffer is full the read loop stops feeding it queries.
 const respQueue = 256
 
-func newScreen(cols, rows int) *screen {
+func newScreen(cols, rows, history int) *screen {
 	if cols < 1 {
 		cols = 1
 	}
@@ -112,9 +124,7 @@ func newScreen(cols, rows int) *screen {
 	}
 
 	emu := xvt.NewEmulator(cols, rows)
-	// Snapshots never carry scrollback, so let it keep a single line instead of the 10k-line
-	// default the package uses for scrollback-capable applications.
-	emu.SetScrollbackSize(1)
+	emu.SetScrollbackSize(history) // x/vt keeps 10k by default; at least 1 (0 means the default)
 
 	s := &screen{emu: emu, resp: make(chan []byte, respQueue)}
 	emu.SetCallbacks(xvt.Callbacks{
