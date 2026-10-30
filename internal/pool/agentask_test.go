@@ -120,3 +120,54 @@ func TestAgentAsk(t *testing.T) {
 		t.Fatalf("an exited session asked: %v", err)
 	}
 }
+
+// A wait that went (the agent's shell tool stopped the CLI) leaves no grace: the answer comes as a
+// notice. At most 3 asks wait per session, and an ask whose session ended expires.
+func TestAgentAskLimits(t *testing.T) {
+	p, _, _ := gateTeam(t)
+	ctx := context.Background()
+	const id = "leadaaaaaaaa"
+	ask := func(q string) (string, error) {
+		res, err := p.agentAsk(ctx, agentAskIn{SessionID: id, Question: q})
+		if err != nil {
+			return "", err
+		}
+		return res.(map[string]string)["id"], nil
+	}
+	a1, _ := ask("one?")
+	wctx, cancel := context.WithCancel(ctx)
+	go func() { time.Sleep(100 * time.Millisecond); cancel() }()
+	if _, err := p.askWait(wctx, askWaitIn{SessionID: id, ID: a1, Wait: 10}); err == nil {
+		t.Fatal("a cancelled wait returned")
+	}
+	if _, err := p.answerAsk(a1, "yes", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	noticed := false
+	for _, m := range p.st.State().Domain.Messages {
+		noticed = noticed || m.To == id && strings.Contains(m.Text, a1)
+	}
+	if !noticed {
+		t.Fatal("the answer after a gone wait reached nobody")
+	}
+
+	for _, q := range []string{"two?", "three?", "four?"} {
+		if _, err := ask(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := ask("five?"); protocol.CodeOf(err) != protocol.CodeConflict {
+		t.Fatalf("a fourth pending ask: %v", err)
+	}
+
+	_ = p.st.Update(func(s *store.State) error { s.Sessions[sessionIndex(s, id)].State = "exited"; return nil })
+	_ = p.st.Update(func(s *store.State) error { s.Sessions[sessionIndex(s, "webaaaaaaaaa")].Harness = "claude"; return nil })
+	if _, err := p.agentAsk(ctx, agentAskIn{SessionID: "webaaaaaaaaa", Question: "web?"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range p.st.State().Domain.Approvals {
+		if a.Kind == "ask" && a.SessionID == id && a.State == "pending" {
+			t.Fatalf("an ask outlived its session: %+v", a)
+		}
+	}
+}

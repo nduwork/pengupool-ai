@@ -20,6 +20,7 @@ import (
 
 const (
 	askMaxOptions = 8
+	askMaxPending = 3                // per session: an agent asking in a loop fills no list
 	askMaxWait    = 60 * time.Second // one ask.wait call; the CLI calls again
 )
 
@@ -44,7 +45,7 @@ func (p *Pool) agentAsk(_ context.Context, in agentAskIn) (any, error) {
 	}
 	var opts []string
 	for _, o := range in.Options {
-		if o = clipRunes(oneLine(strings.TrimSpace(o)), 80); o != "" {
+		if o = clipRunes(redact(oneLine(strings.TrimSpace(o))), 80); o != "" {
 			opts = append(opts, o)
 		}
 	}
@@ -52,12 +53,22 @@ func (p *Pool) agentAsk(_ context.Context, in agentAskIn) (any, error) {
 		Detail: clipRunes(redact(q), 2000), Options: opts, State: "pending", CreatedAt: now()}
 	cut := time.Now().Add(-24 * time.Hour)
 	if err := p.update(func(st *store.State) error {
-		// Answered asks stay a day, for the app's record; then they go.
-		keep := st.Domain.Approvals[:0]
+		// An ask whose session went expires; settled asks stay a day, for the app's record.
+		keep, mine := st.Domain.Approvals[:0], 0
 		for _, x := range st.Domain.Approvals {
+			if x.Kind == "ask" && x.State == "pending" {
+				if i := sessionIndex(st, x.SessionID); i < 0 || st.Sessions[i].State != "running" {
+					x.State = "expired"
+				} else if x.SessionID == s.ID {
+					mine++
+				}
+			}
 			if t, _ := time.Parse(time.RFC3339, x.CreatedAt); x.Kind != "ask" || x.State == "pending" || t.After(cut) {
 				keep = append(keep, x)
 			}
+		}
+		if mine >= askMaxPending {
+			return conflict("%d of your asks already wait on the owner; wait for those (pengupool ask --wait ID)", mine)
 		}
 		st.Domain.Approvals = append(keep, a)
 		return nil
@@ -81,11 +92,11 @@ func (p *Pool) askWait(ctx context.Context, in askWaitIn) (any, error) {
 	wait := min(max(time.Duration(in.Wait)*time.Second, 0), askMaxWait)
 	deadline := time.Now().Add(wait)
 	for {
-		p.askWaited(in.ID)
 		a, ok := p.approval(in.ID)
 		if !ok || a.Kind != "ask" || a.SessionID != in.SessionID {
 			return nil, notFound("no ask %s of this session", in.ID)
 		}
+		p.askWaited(in.ID)
 		switch a.State {
 		case "answered":
 			return map[string]string{"id": a.ID, "answer": a.Answer, "by": a.AnsweredBy}, nil
@@ -94,11 +105,17 @@ func (p *Pool) askWait(ctx context.Context, in askWaitIn) (any, error) {
 			return nil, conflict("the ask %s was %s", a.ID, a.State)
 		}
 		if time.Until(deadline) <= 0 {
+			if s, ok := p.session(a.SessionID); !ok || s.State != "running" {
+				return nil, conflict("the ask %s went with its session", a.ID)
+			}
 			return map[string]string{"pending": a.ID}, nil
 		}
 		// ponytail: polls the state twice a second; a channel per ask if many agents ever wait at once.
 		select {
-		case <-ctx.Done():
+		case <-ctx.Done(): // the CLI went: an answer from now on comes as a notice
+			p.mu.Lock()
+			delete(p.askWaitedAt, in.ID)
+			p.mu.Unlock()
 			return nil, ctx.Err()
 		case <-time.After(500 * time.Millisecond):
 		}

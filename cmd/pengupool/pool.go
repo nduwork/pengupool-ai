@@ -360,9 +360,9 @@ func cmdTeam(args []string) error {
 	return nil
 }
 
-// askPatience is how long one `pengupool ask` waits for the answer: under the 10 minutes an agent's
-// shell tool allows a command.
-var askPatience = 9 * time.Minute
+// askPatience is how long one `pengupool ask` waits for the answer: under the 2 minutes an agent's
+// shell tool gives a command by default. The agent waits again with --wait ID.
+var askPatience = 110 * time.Second
 
 // cmdAsk puts a question to the owner from inside an agent session and waits for the answer.
 func cmdAsk(args []string) error {
@@ -392,6 +392,8 @@ func cmdAsk(args []string) error {
 		var out map[string]string
 		_ = json.Unmarshal(res, &out)
 		id = out["id"]
+		// First, so an agent whose shell tool stops the wait still has the id to wait again with.
+		fmt.Fprintf(os.Stderr, "asked the owner (ask %s); waiting for the answer\n", id)
 	}
 	deadline := time.Now().Add(askPatience)
 	for {

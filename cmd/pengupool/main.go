@@ -48,7 +48,7 @@ const help = `usage: pengupool <command> [options]
         (inside a team session) ask the owner to change who is on the team; it waits for approval.
   ask [--option O]... QUESTION | ask --wait ID
         (inside an agent session) put a question to the owner, answered in the app or from a paired
-        Muse device; waits up to 9 minutes and prints {"answer": …, "by": …} as JSON, else
+        Muse device; waits up to 2 minutes and prints {"answer": …, "by": …} as JSON, else
         {"pending": ID}: run "ask --wait ID" to go on waiting. The owner may pick an option or reply
         in their own words.
   compass word [--supports UID]... [--contradicts UID]... [--line "preference|restriction :: BODY :: WHEN"]... | compass word --none

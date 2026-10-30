@@ -158,8 +158,9 @@ pengupool ask --option Postgres --option SQLite "Which database for the cache?"
 
 It shows in the app's Approvals (pick an option, or reply in your own words) and as a card on
 `/next`. Only you, in the app or from a paired device, can answer it; another agent cannot. The
-command waits up to 9 minutes; if you haven't answered by then it prints `{"pending":"<id>"}`, and
-`pengupool ask --wait <id>` waits again. An answer given while the agent isn't waiting reaches it
+command waits up to 2 minutes; if you haven't answered by then it prints `{"pending":"<id>"}`, and
+`pengupool ask --wait <id>` waits again. An agent has at most 3 asks waiting at once, and an ask
+goes away when its session ends. An answer given while the agent isn't waiting reaches it
 as a notice at its next turn.
 
 ## 5. What a paired device can and cannot do
