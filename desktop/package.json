@@ -1,7 +1,7 @@
 {
   "name": "pengupool-ai-desktop",
   "productName": "PenguPool AI",
-  "version": "0.9.35",
+  "version": "0.9.36",
   "private": true,
   "description": "PenguPool AI desktop: the native app around the PenguPool host, with the Compass built in.",
   "license": "MIT",

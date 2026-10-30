@@ -242,3 +242,63 @@ func TestContextSendsOnlyChangedSections(t *testing.T) {
 		t.Fatalf("sections = %q", secs)
 	}
 }
+
+// TestSendMessageSharedName: Claude delivers a SendMessage by name to the Claude session of that
+// name, so a name shared across teams is checked against where it really lands. Teammate web and
+// another team's session are both called "rev".
+func TestSendMessageSharedName(t *testing.T) {
+	p, st := twoTeams(t)
+	ctx := context.Background()
+	set := func(webHarness, webState, otherHarness string) {
+		_ = st.Update(func(s *store.State) error {
+			for i := range s.Sessions {
+				switch s.Sessions[i].ID {
+				case "webaaaaaaaaa":
+					s.Sessions[i].Name, s.Sessions[i].Harness, s.Sessions[i].State = "rev", webHarness, webState
+				case "otheraaaaaaa":
+					s.Sessions[i].Name, s.Sessions[i].Harness = "rev", otherHarness
+				}
+			}
+			return nil
+		})
+	}
+	tool := func(event string) string {
+		b, _ := json.Marshal(map[string]any{"tool_name": "SendMessage", "tool_input": map[string]any{"to": "rev", "message": "review #60"}})
+		out, err := p.hookEvent(ctx, hookIn{SessionID: "leadaaaaaaaa", Harness: "claude", Event: event, Payload: b})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.(HookOut).Stdout
+	}
+	// The teammate runs codex, the other team's rev runs Claude: Claude would deliver to the other team.
+	set("codex", "running", "claude")
+	if out := tool("PreToolUse"); !strings.Contains(out, `"deny"`) || !strings.Contains(out, `send --to \u003csession id\u003e`) {
+		t.Fatalf("SendMessage that lands in another team passed: %s", out)
+	}
+	// Both run Claude: which one Claude picks is unknown, so neither.
+	set("claude", "running", "claude")
+	if out := tool("PreToolUse"); !strings.Contains(out, `"deny"`) {
+		t.Fatalf("SendMessage to a name two Claude sessions share passed: %s", out)
+	}
+	// Only the teammate runs Claude: it is where the message lands, so it passes and is recorded to it.
+	set("claude", "running", "codex")
+	p.turnStart("leadaaaaaaaa", "get #60 reviewed")
+	if out := tool("PreToolUse"); out != "" {
+		t.Fatalf("SendMessage to the teammate was refused: %s", out)
+	}
+	tool("PostToolUse")
+	var to []string
+	for _, m := range p.st.State().Domain.Messages {
+		if m.Text == "review #60" {
+			to = append(to, m.To)
+		}
+	}
+	if len(to) != 1 || to[0] != "webaaaaaaaaa" {
+		t.Fatalf("recorded to %v, want the teammate", to)
+	}
+	// The teammate closes: the name now means the other team's session only.
+	set("claude", "ended", "codex")
+	if out := tool("PreToolUse"); !strings.Contains(out, `"deny"`) {
+		t.Fatalf("SendMessage passed after the teammate closed: %s", out)
+	}
+}

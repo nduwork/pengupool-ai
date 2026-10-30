@@ -211,6 +211,10 @@ v0.9.35: Team members know each other by session id, not display name, so renami
 longer breaks who reaches whom. The Team members list maps each session id to its current name,
 and the send and reply commands PenguPool hands agents name the session id. Agents still call
 teammates by display name when they talk to the owner. Sending by name still works.
+v0.9.36: A Claude SendMessage is checked against the session Claude actually delivers it to, the
+Claude session of that name. A name shared with another team's session no longer slips past the
+team check, and a name two Claude sessions share is refused with a pointer to `pengupool send
+--to <session id>`.
 
 ## Credits
 
