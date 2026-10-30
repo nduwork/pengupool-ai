@@ -242,10 +242,10 @@ func (p *Pool) deliver(m protocol.TeamMessage) {
 // messageBody is a message as its recipient reads it: who sent it and how to answer.
 func (p *Pool) messageBody(m protocol.TeamMessage, from store.Session) string {
 	body := fmt.Sprintf("[PenguPool team message from %s (%s)] %s\n\nTo reply, run this shell command (do not just print it): %s send --to %q \"<your reply>\"",
-		from.Name, from.Role, m.Text, p.exe, from.Name)
+		from.Name, from.Role, m.Text, p.exe, m.From)
 	if m.Type == "ask" {
 		body = fmt.Sprintf("[PenguPool team message from %s (%s), an ask waiting for your answer] %s\n\nTo answer, run this shell command (do not just print it): %s send --to %q --reply-to %s \"<your answer>\"",
-			from.Name, from.Role, m.Text, p.exe, from.Name, m.ID)
+			from.Name, from.Role, m.Text, p.exe, m.From, m.ID)
 	}
 	if d := p.st.State().Domain; m.From != "" && !sameTeam(&d, m.From, m.To) {
 		body = strings.Replace(body, "[PenguPool team message from "+from.Name+" ("+from.Role+")", outsideLabel+from.Name+", outside your team, on a channel the owner opened", 1)

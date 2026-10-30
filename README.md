@@ -207,6 +207,10 @@ verifiers. A state.json from an older version still loads; its stored verifiers 
 no error, and gone from state.json at the next save and from its backup, state.json.bak, at the
 save after (backups you made yourself keep them). A team's iOS access still decides whether paired devices see
 it.
+v0.9.35: Team members know each other by session id, not display name, so renaming a session no
+longer breaks who reaches whom. The Team members list maps each session id to its current name,
+and the send and reply commands PenguPool hands agents name the session id. Agents still call
+teammates by display name when they talk to the owner. Sending by name still works.
 
 ## Credits
 

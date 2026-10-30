@@ -741,7 +741,7 @@ func TestFormationLeadAndGoal(t *testing.T) {
 	if n := p.takeNotices("lead1aaaaaaaaa"); strings.Contains(n, " left") {
 		t.Fatalf("roster notices: %q", n)
 	}
-	if got := p.renderContext("lead1aaaaaaaaa"); strings.Contains(got, "## Roster") || strings.Contains(got, "[fact] gcp:") || strings.Contains(got, "- gcp —") || !strings.Contains(got, "- web — ") {
+	if got := p.renderContext("lead1aaaaaaaaa"); strings.Contains(got, "## Roster") || strings.Contains(got, "[fact] gcp:") || strings.Contains(got, "- gcp (") || !strings.Contains(got, "- web (session web1aaaaaaaaa) — ") {
 		t.Fatalf("context:\n%s", got)
 	}
 	// Every formation change is on file, approved.

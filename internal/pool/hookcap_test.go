@@ -37,7 +37,7 @@ func TestContextOutFitsMuseCap(t *testing.T) {
 	if len(muse) >= 16<<10 {
 		t.Fatalf("muse hook answer is %d bytes, past the 16 KiB ceiling", len(muse))
 	}
-	for _, want := range []string{"## Team members", "- web —", "send --to", "LEAD", "… more: search"} {
+	for _, want := range []string{"## Team members", "- web (session ", "send --to", "LEAD", "… more: search"} {
 		if !strings.Contains(muse, want) {
 			t.Errorf("capped context lacks %q", want)
 		}

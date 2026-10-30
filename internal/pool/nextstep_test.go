@@ -192,6 +192,10 @@ func TestGuardRoute(t *testing.T) {
 	if call("Bash", sh("pengupool send --to=weba 'do it'")) || call("Write", nil) {
 		t.Fatal("pengupool send to the routed member releases the hold")
 	}
+	firm()
+	if call("Bash", sh("pengupool send --to webaaaaa 'do it'")) || call("Write", nil) {
+		t.Fatal("pengupool send by a session id prefix releases the hold")
+	}
 	// Hedged: no hold at all.
 	p.testDecider = &routeDecider{choice: "web", pr: 0.6, calibrated: true}
 	p.nextStepNote(lead, routePrompt)

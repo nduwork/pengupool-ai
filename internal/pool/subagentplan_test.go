@@ -48,7 +48,7 @@ func TestSubagentPlan(t *testing.T) {
 	d := &planDecider{pr: 0.9, calibrated: true}
 	p.testDecider = d
 	got := p.subagentPlan(helper, msg)
-	for _, w := range []string{"subagent of kind Explore", "model haiku", "effort low", "Use effort low", "straight to lead", "send --to lead"} {
+	for _, w := range []string{"subagent of kind Explore", "model haiku", "effort low", "Use effort low", "straight to lead", `send --to "leadaaaaaaaa"`} {
 		if !strings.Contains(got, w) {
 			t.Fatalf("plan lacks %q: %q", w, got)
 		}
