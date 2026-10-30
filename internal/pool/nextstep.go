@@ -265,8 +265,8 @@ func (p *Pool) guardRoute(s store.Session, pl map[string]any) (HookOut, bool) {
 	return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 		"hookEventName":      "PreToolUse",
 		"permissionDecision": "deny",
-		"permissionDecisionReason": fmt.Sprintf("PenguPool triage routed this turn's work to %s. Hand it over with `%s send --to %q \"...\"` (or SendMessage to %s); a brief file holds long context. Reading is allowed meanwhile. The owner can override in their next prompt by telling you to do it yourself.",
-			name, p.exe, who, name),
+		"permissionDecisionReason": fmt.Sprintf("PenguPool triage routed this turn's work to %s. Hand it over with `%s send --to %q \"...\"` (its session id: a SendMessage by name is refused when another session shares the name); a brief file holds long context. Reading is allowed meanwhile. The owner can override in their next prompt by telling you to do it yourself.",
+			name, p.exe, who),
 	}}), true
 }
 
