@@ -364,8 +364,8 @@ const museOpenAPI = `{
     },
     "/asks/{id}/answer": {
       "post": {
-        "summary": "Answer one card. A tap works exactly like clicking the prompt's button in the PenguPool app.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["allow", "deny"]}, "payload_hash": {"type": "string"}, "idempotency_key": {"type": "string"}}, "required": ["action", "payload_hash", "idempotency_key"]}}}}
+        "summary": "Answer one card. A tap works exactly like clicking the prompt's button in the PenguPool app. An agent's own ask (ask_id ask:...) is answered with one of its card's actions: option:N for a choice, or reply with text in the owner's words; the waiting agent gets the answer.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"action": {"type": "string", "description": "allow or deny; for an agent's ask, option:N or reply"}, "text": {"type": "string", "description": "the reply, for action reply"}, "payload_hash": {"type": "string"}, "idempotency_key": {"type": "string"}}, "required": ["action", "payload_hash", "idempotency_key"]}}}}
       }
     },
     "/sessions/{id}/say": {
@@ -375,7 +375,7 @@ const museOpenAPI = `{
       }
     },
     "/sessions": {
-      "get": {"summary": "Overview of the sessions this device can see."}
+      "get": {"summary": "Overview of the sessions this device can see: session, title, state, waiting (an ask waits on the owner), and question (what the agent asks in its terminal now, if anything; answered there)."}
     },
     "/compass": {
       "get": {"summary": "Read the owner's shown Compass lines."}

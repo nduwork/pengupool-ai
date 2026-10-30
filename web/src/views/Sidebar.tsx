@@ -150,6 +150,7 @@ export function Sidebar(): ReactElement {
                         type="button"
                         onClick={() => app.select(s.id)}
                         aria-current={s.id === app.selected}
+                        title={s.question}
                         className={cn(
                           "group flex h-7 w-full items-center gap-2 rounded-md pr-1.5 text-label text-muted-foreground hover:bg-hover hover:text-foreground",
                           s.id === app.selected && "bg-selected text-foreground",

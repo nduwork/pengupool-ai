@@ -360,6 +360,59 @@ func cmdTeam(args []string) error {
 	return nil
 }
 
+// askPatience is how long one `pengupool ask` waits for the answer: under the 2 minutes an agent's
+// shell tool gives a command by default. The agent waits again with --wait ID.
+var askPatience = 110 * time.Second
+
+// cmdAsk puts a question to the owner from inside an agent session and waits for the answer.
+func cmdAsk(args []string) error {
+	fs := flag.NewFlagSet("ask", flag.ContinueOnError)
+	waitID := fs.String("wait", "", "go on waiting for the answer to this ask")
+	var opts []string
+	fs.Func("option", "a choice to offer; repeatable", func(v string) error { opts = append(opts, v); return nil })
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	session := os.Getenv("PENGUPOOL_SESSION_ID")
+	if session == "" {
+		return errors.New("pengupool ask works inside an agent session PenguPool runs")
+	}
+	id := *waitID
+	if id == "" {
+		q := strings.TrimSpace(strings.Join(fs.Args(), " "))
+		if q == "" {
+			return errors.New(`usage: pengupool ask [--option O]... QUESTION | pengupool ask --wait ID`)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		res, err := rpc(ctx, poolStore(), "ask.create", map[string]any{"session_id": session, "question": q, "options": opts})
+		cancel()
+		if err != nil {
+			return err
+		}
+		var out map[string]string
+		_ = json.Unmarshal(res, &out)
+		id = out["id"]
+		// First, so an agent whose shell tool stops the wait still has the id to wait again with.
+		fmt.Fprintf(os.Stderr, "asked the owner (ask %s); waiting for the answer\n", id)
+	}
+	deadline := time.Now().Add(askPatience)
+	for {
+		wait := min(time.Until(deadline), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), wait+15*time.Second)
+		res, err := rpc(ctx, poolStore(), "ask.wait", map[string]any{"session_id": session, "id": id, "wait": int(wait.Seconds())})
+		cancel()
+		if err != nil {
+			return err
+		}
+		var out map[string]string
+		_ = json.Unmarshal(res, &out)
+		if out["pending"] == "" || time.Until(deadline) <= time.Second {
+			fmt.Println(string(res))
+			return nil
+		}
+	}
+}
+
 // cmdCompass: `compass word …`, the answer to a [PenguPool compass] note.
 func cmdCompass(args []string) error {
 	usage := errors.New(`usage: pengupool compass word [--supports UID]... [--contradicts UID]... [--line "preference|restriction :: BODY :: WHEN"]... | compass word --none (or --kind K --body TEXT [--condition WHEN] for one line)`)

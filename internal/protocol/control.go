@@ -93,8 +93,9 @@ type SessionView struct {
 	StartedAt string   `json:"started_at,omitempty"`
 
 	// Pool fields: harness status from hooks, team membership and context use.
-	Status     string `json:"status,omitempty"`  // working | waiting | approval | idle
-	Waiting    string `json:"waiting,omitempty"` // a first-run dialog the agent is stuck on, while starting
+	Status     string `json:"status,omitempty"`   // working | waiting | approval | idle
+	Waiting    string `json:"waiting,omitempty"`  // a first-run dialog the agent is stuck on, while starting
+	Question   string `json:"question,omitempty"` // what the agent asks the owner now; answered in its terminal
 	TeamID     string `json:"team_id,omitempty"`
 	Role       string `json:"role,omitempty"` // main | helper
 	SkillID    string `json:"skill_id,omitempty"`

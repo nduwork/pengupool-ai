@@ -32,6 +32,7 @@ export function SessionHover({ s }: { s: SessionView }): ReactElement {
       <span className={statusStyle(shownStatus(s, app.gates)).text}>
         {statusStyle(shownStatus(s, app.gates)).label} · {harnessLabel(s.harness)}
       </span>
+      {s.question !== undefined && s.question !== "" ? <span className="line-clamp-3 text-foreground [overflow-wrap:anywhere]">{s.question}</span> : null}
       {s.hooks_missing === true ? (
         <span className="flex items-start gap-1 text-foreground">
           <Unplug className="mt-0.5 size-3 shrink-0" aria-hidden />
