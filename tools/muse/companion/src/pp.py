@@ -80,13 +80,33 @@ def connect():
         sk = Sock(socket.create_connection((HOST, PORT), timeout=20))
     else:
         p = urlparse(proxy)
-        sk = Sock(socket.create_connection((p.hostname, p.port or 3130), timeout=20))
-        sk.s.sendall(f"CONNECT {HOST}:{PORT} HTTP/1.1\r\nHost: {HOST}:{PORT}\r\n\r\n".encode())
-        status = sk.read_until(b"\r\n\r\n").decode("latin1").split("\r\n", 1)[0]
-        if " 200 " not in status:
-            raise SystemExit(f"tunnel CONNECT failed: {status}")
-        if sk.buf:
-            raise SystemExit("tunnel sent data before the request")
+        # The Muse runtime proxy takes CONNECT on 3130, not on the port
+        # in its own URL (that port closes CONNECT attempts): try the
+        # URL's port first, then 3130.
+        ports = [p.port or 3130]
+        if ports[0] != 3130:
+            ports.append(3130)
+        sk, last = None, None
+        for port in ports:
+            try:
+                sk = Sock(socket.create_connection((p.hostname, port), timeout=20))
+                sk.s.sendall(f"CONNECT {HOST}:{PORT} HTTP/1.1\r\nHost: {HOST}:{PORT}\r\n\r\n".encode())
+                status = sk.read_until(b"\r\n\r\n").decode("latin1").split("\r\n", 1)[0]
+                if " 200 " not in status:
+                    raise SystemExit(f"tunnel CONNECT failed: {status}")
+                if sk.buf:
+                    raise SystemExit("tunnel sent data before the request")
+                break
+            except (OSError, EOFError, SystemExit) as e:
+                last = e
+                if sk is not None:
+                    try:
+                        sk.s.close()
+                    except Exception:
+                        pass
+                sk = None
+        if sk is None:
+            raise SystemExit(f"tunnel CONNECT failed: {last}")
     if PORT == 443:  # Serve's HTTPS: the token is encrypted to the workstation, not just to the proxy
         sk.s = ssl.create_default_context().wrap_socket(sk.s, server_hostname=HOST)
     return sk
@@ -121,6 +141,38 @@ def api(method, path, body=None):
         return status, json.loads(raw) if raw else None
     except ValueError:
         return status, {"error": raw.decode("utf-8", "replace").strip()}
+
+
+def healthz():
+    """GET /api/healthz — no token; the gateway answers it on the network.
+
+    Returns (status, parsed JSON or None). The response's epoch changes
+    at every daemon start: it is the detector's restart signal now that
+    settings.get (which carried the version) is local-only.
+    """
+    sk = connect()
+    host = HOST if PORT == 443 else f"{HOST}:{PORT}"
+    sk.s.sendall((f"GET /api/healthz HTTP/1.1\r\nHost: {host}\r\n"
+                  "Connection: close\r\n\r\n").encode())
+    lines = sk.read_until(b"\r\n\r\n").decode("latin1").split("\r\n")
+    status = int(lines[0].split(" ", 2)[1])
+    headers = {k.lower(): v for k, _, v in (ln.partition(": ") for ln in lines[1:] if ": " in ln)}
+    if "chunked" in headers.get("transfer-encoding", ""):
+        raw = bytearray()
+        while True:
+            n = int(sk.read_until(b"\r\n").decode("latin1").split(";")[0], 16)
+            if n == 0:
+                break
+            raw += sk.read_exact(n)
+            sk.read_until(b"\r\n")
+    else:
+        n = int(headers.get("content-length", "0"))
+        raw = sk.read_exact(n) if n else b""
+    sk.s.close()
+    try:
+        return status, json.loads(raw) if raw else None
+    except ValueError:
+        return status, None
 
 
 def ok(status, res, what):
