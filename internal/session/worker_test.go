@@ -367,6 +367,13 @@ type snapshotData struct {
 // snapshot chunks in order, nothing else in between, then snapshot.end with the matching part count.
 func (tc *testConn) readSnapshot() snapshotData {
 	tc.t.Helper()
+	return tc.readSnapshotAfter(false)
+}
+
+// readSnapshotAfter is readSnapshot; with skipOutput, live output that arrives before snapshot.begin
+// (written before the resize the snapshot answers) is skipped. Output inside the sequence still fails.
+func (tc *testConn) readSnapshotAfter(skipOutput bool) snapshotData {
+	tc.t.Helper()
 	var s snapshotData
 	sawEnd := false
 	frames := tc.collect(testTimeout, func(f protocol.Frame) bool {
@@ -407,6 +414,9 @@ func (tc *testConn) readSnapshot() snapshotData {
 			s.chunks = append(s.chunks, f)
 			s.data = append(s.data, f.Payload...)
 		default:
+			if skipOutput && s.begin == nil && f.Header.Type == protocol.FrameOutput {
+				continue
+			}
 			tc.t.Fatalf("%s frame inside a snapshot sequence", f.Header.Type)
 		}
 	}
@@ -844,10 +854,12 @@ func TestWorkerHistoryPerClient(t *testing.T) {
 	for i := range 3 {
 		term.send(&protocol.Message{ID: protocol.NewID(), Type: protocol.TypeSessionResize, Cols: 90 + i, Rows: 24})
 		term.sendFrame(protocol.FrameInput, 1, 0, []byte("\n"))
-		if snap := term.readSnapshot(); bytes.Contains(snap.data, []byte(first)) {
+		// The typed newline wakes the pumps (a resize alone does not); its "tick" may reach a client
+		// just before that client's snapshot, so output ahead of snapshot.begin is skipped.
+		if snap := term.readSnapshotAfter(true); bytes.Contains(snap.data, []byte(first)) {
 			t.Fatalf("resize %d sent the history to the terminal again", i+1)
 		}
-		if snap := web.readSnapshot(); bytes.Count(snap.data, []byte(first)) != 1 {
+		if snap := web.readSnapshotAfter(true); bytes.Count(snap.data, []byte(first)) != 1 {
 			t.Fatalf("resize %d: the web client's snapshot lacks the history", i+1)
 		}
 	}
