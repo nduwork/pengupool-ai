@@ -1,0 +1,10 @@
+# Credentials live beside the installed code only — never in this repo.
+device-token
+site-key
+# Local monitor config (seeded from config.example.json at install).
+config.json
+# The live work tracker (seeded from tracker.example.json at install).
+tracker.json
+__pycache__/
+# Rendered gadgets.
+out/

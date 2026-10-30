@@ -525,6 +525,8 @@ type museSessionView struct {
 	Session string `json:"session"`
 	Title   string `json:"title"`
 	State   string `json:"state"`
+	// Status is what a running agent is doing: working, idle, starting, lost or unreachable.
+	Status  string `json:"status,omitempty"`
 	Waiting bool   `json:"waiting"`
 	// Question is what the agent asks in its terminal now, if anything (answered there, not here).
 	Question string `json:"question,omitempty"`
@@ -553,7 +555,7 @@ func (p *Pool) museSessions(_ context.Context, c gateway.Caller, _ json.RawMessa
 		if !p.museVisible(s.ID) {
 			continue
 		}
-		v := museSessionView{Session: s.ID, Title: s.Name, State: string(s.State), Waiting: waiting[s.ID], Question: s.View().Question}
+		v := museSessionView{Session: s.ID, Title: s.Name, State: string(s.State), Status: s.Status, Waiting: waiting[s.ID], Question: s.View().Question}
 		for i := range st.Domain.Teams {
 			t := &st.Domain.Teams[i]
 			for _, m := range t.Members {
