@@ -98,7 +98,7 @@ func (p *Pool) museAsks() []museAsk {
 			continue
 		}
 		if a.Kind == "ask" {
-			if s, ok := p.session(a.SessionID); ok && s.State == "running" {
+			if s, ok := p.session(a.SessionID); ok && s.State == "running" && !askStale(*a, time.Now()) {
 				out = append(out, museAsk{
 					id: askID("ask", a.ID), kind: "ask", sessionID: s.ID, teamID: a.TeamID, text: a.Detail,
 					at: parseMuseTime(a.CreatedAt), payload: askPayload(*a), options: a.Options,

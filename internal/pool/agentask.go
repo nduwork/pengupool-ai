@@ -112,7 +112,7 @@ func (p *Pool) askWait(ctx context.Context, in askWaitIn) (any, error) {
 		case "answered":
 			return map[string]string{"id": a.ID, "answer": a.Answer, "by": a.AnsweredBy}, nil
 		case "expired":
-			if s, ok := p.session(a.SessionID); ok && s.State == "running" {
+			if s, ok := p.session(a.SessionID); ok && s.State == "running" && olderThan(a.CreatedAt, time.Now(), askExpiry) {
 				return map[string]string{"id": a.ID, "expired": askExpiredNote(a)}, nil
 			}
 			return nil, conflict("the ask %s went with its session", a.ID)

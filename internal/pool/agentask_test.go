@@ -133,13 +133,7 @@ func TestAgentAskExpiry(t *testing.T) {
 		}
 		return nil
 	})
-	ask := func(q string) string {
-		t.Helper()
-		res, err := p.agentAsk(ctx, agentAskIn{SessionID: id, Question: q})
-		if err != nil {
-			t.Fatal(err)
-		}
-		a := res.(map[string]string)["id"]
+	age := func(a string) {
 		_ = p.st.Update(func(s *store.State) error { // asked longer ago than the owner has to answer
 			for i := range s.Domain.Approvals {
 				if s.Domain.Approvals[i].ID == a {
@@ -148,20 +142,29 @@ func TestAgentAskExpiry(t *testing.T) {
 			}
 			return nil
 		})
-		return a
+	}
+	ask := func(q string) string {
+		t.Helper()
+		res, err := p.agentAsk(ctx, agentAskIn{SessionID: id, Question: q})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.(map[string]string)["id"]
 	}
 
 	waited := ask("Waited on?")
+	age(waited)
 	res, err := p.askWait(ctx, askWaitIn{SessionID: id, ID: waited, Wait: 5})
 	if err != nil || !strings.Contains(res.(map[string]string)["expired"], "safe default") {
 		t.Fatalf("expired wait = %+v %v", res, err)
 	}
 
 	quiet := ask("Nobody waiting?")
-	if len(p.museAsks()) == 0 {
-		t.Fatal("the pending ask is not on /next before the sweep") // the sweep has not run yet
+	c := *p.museCard(p.museAsks()[0]) // the card the phone holds
+	age(quiet)
+	if len(p.museAsks()) != 0 {
+		t.Fatal("a stale ask is on /next before the sweep")
 	}
-	c := *p.museCard(p.museAsks()[0])
 	p.expireStaleAsks(time.Now())
 	for _, a := range p.museAsks() {
 		if a.id == "ask:"+quiet {
