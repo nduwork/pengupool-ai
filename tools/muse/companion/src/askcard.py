@@ -96,10 +96,10 @@ if __name__ == "__main__":
     if "--answer" in sys.argv:
         answer = sys.argv[sys.argv.index("--answer") + 1]
         page = render_closed(spec, answer)
-        out = out_dir / ("ask-%s-closed.html" % spec["id"])
+        out = out_dir / ("ask-%s-closed.html" % Path(str(spec["id"])).name)
     else:
         page = render_question(spec)
-        out = out_dir / ("ask-%s.html" % spec["id"])
+        out = out_dir / ("ask-%s.html" % Path(str(spec["id"])).name)
     out.write_text(page)
     print(out)
     for label in option_labels(spec):

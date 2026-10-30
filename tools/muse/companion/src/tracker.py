@@ -57,6 +57,7 @@ def chain_inner(steps):
     parts = []
     for i, s in enumerate(steps):
         st = s.get("status", "todo")
+        st = st if st in SYMBOL else "todo"  # it goes into a class name
         if i:
             parts.append('<span class="carr">→</span>')
         parts.append(f'<span class="csym cs-{st}">{SYMBOL.get(st, "○")}</span>'
@@ -69,7 +70,7 @@ def chain_row(data, agent_name, anc, pad):
     steps = steps_of(data, agent_name)
     if not steps:
         return ""
-    return (f'<div class="row chain" data-anc="{anc}" style="padding-left:{pad}px">'
+    return (f'<div class="row chain" data-anc="{html.escape(str(anc))}" style="padding-left:{pad}px">'
             f'<span>{chain_inner(steps)}</span></div>')
 
 

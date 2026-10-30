@@ -25,7 +25,7 @@ import time
 import uuid
 from urllib.parse import urlparse
 
-HOST = os.environ.get("PENGUPOOL_HOST", "100.106.40.12")
+HOST = os.environ.get("PENGUPOOL_HOST", "")  # the workstation's tailnet name or IP; set it in the environment
 PORT = int(os.environ.get("PENGUPOOL_PORT", "7787"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -73,11 +73,13 @@ class Sock:
 
 
 def tunnel():
+    if not HOST:
+        raise SystemExit("PENGUPOOL_HOST is not set: the workstation's tailnet name or IP")
     proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
     if not proxy:
         raise SystemExit("HTTPS_PROXY is not set; cannot reach the tunnel proxy")
     p = urlparse(proxy)
-    raw = socket.create_connection((p.hostname, 3130), timeout=20)
+    raw = socket.create_connection((p.hostname, p.port or 3130), timeout=20)
     req = (
         f"CONNECT {HOST}:{PORT} HTTP/1.1\r\n"
         f"Host: {HOST}:{PORT}\r\nProxy-Connection: keep-alive\r\n\r\n"

@@ -10,7 +10,7 @@
 set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-mkdir -p "$HOME/workspace/pengupool-agent" "$HOME/workspace/companion" "$HOME/hooks/scripts"
+mkdir -m 0700 -p "$HOME/workspace/pengupool-agent" && mkdir -p "$HOME/workspace/companion" "$HOME/hooks/scripts"
 
 install -m 0644 "$SRC/src/pp.py"      "$HOME/workspace/pengupool-agent/pp.py"
 install -m 0644 "$SRC/src/detect.py"  "$HOME/workspace/pengupool-agent/detect.py"
@@ -34,8 +34,7 @@ echo "installed. Remaining setup (once):"
 echo "  1. Put the daemon bootstrap token in ~/workspace/pengupool-agent/token"
 echo "     and the paired device token in ~/workspace/pengupool-agent/device-token"
 echo "     (both mode 0600; they are never part of this package)."
-echo "  2. If the workstation's Tailscale IP is not 100.106.40.12, export"
-echo "     PENGUPOOL_HOST=<its tailnet IP> where the hook runs."
+echo "  2. Export PENGUPOOL_HOST=<the workstation's tailnet name or IP> where the hook runs."
 echo "  3. Ask Muse to register/enable the 'pengupool-status' hook (60s poll)"
 echo "     pointing at ~/hooks/scripts/pengupool-status.sh."
 echo "  4. Try it: ~/workspace/companion/companion status"

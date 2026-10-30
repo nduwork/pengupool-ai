@@ -95,9 +95,8 @@ tools/muse/companion/install.sh
 This installs `pp.py`/`detect.py`/`gadget.py` to
 `~/workspace/pengupool-agent/`, the CLI to `~/workspace/companion/`,
 seeds `config.json` (enabled, every 1m), and installs the hook
-wrapper. If the workstation's Tailscale IP is not the default
-`100.106.40.12`, export `PENGUPOOL_HOST=<workstation tailnet IP>` for
-the hook's environment. (From a Muse VM, HTTP to the workstation
+wrapper. Export `PENGUPOOL_HOST=<workstation tailnet name or IP>` in
+the hook's environment; there is no default. (From a Muse VM, HTTP to the workstation
 goes through the runtime's CONNECT tunnel proxy — `pp.py` already
 handles this.)
 
@@ -156,7 +155,7 @@ owner's phone, install the mini site on the PenguPool machine itself:
 cd tools/muse/companion && ./install-host.sh   # PORT=7791 changes the port
 ```
 
-It needs Node 21+ on that machine and nothing else: launchd keeps it
+It needs Node 22+ on that machine and nothing else: launchd keeps it
 running, it binds to the machine's Tailscale address only, and it reads
 the owner API over loopback with the bootstrap token from
 `~/.pengupool-ai/v2/run/hub.token` — read fresh on every poll, so the

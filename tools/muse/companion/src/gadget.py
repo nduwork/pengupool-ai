@@ -245,7 +245,7 @@ def render():
         pass
 
     out = [f"<style>{CSS}</style>", '<div class="card" id="ppcard">']
-    out.append('<div class="hd"><div class="repo"><span>nduworker /</span> pengupool-ai</div>')
+    out.append('<div class="hd"><div class="repo">PenguPool</div>')
     if version:
         out.append(f'<div class="badge">v{html.escape(str(version))}</div>')
     out.append(f'<div class="mon"><span class="dot d-active"></span>'

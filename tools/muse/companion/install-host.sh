@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install the muse-companion mini status site ON the PenguPool machine.
 #
-# The site (src/serve.mjs, Node 21+, no dependencies) serves a phone-first
+# The site (src/serve.mjs, Node 22+, no dependencies) serves a phone-first
 # live status page. It runs under launchd so it survives reboots, binds
 # only to this machine's Tailscale address, and reads the PenguPool owner
 # API on the same machine — the bootstrap token is read fresh from
@@ -16,13 +16,13 @@ set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEST="$HOME/.muse-companion"
 PORT="${PORT:-7790}"
-LABEL="com.muse-companion.serve"
+case "$PORT" in ""|*[!0-9]*) echo "PORT must be a number, not $PORT" >&2; exit 1;; esac
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
 NODE="$(command -v node || true)"
-[ -n "$NODE" ] || { echo "node not found — install Node 21 or newer first" >&2; exit 1; }
+[ -n "$NODE" ] || { echo "node not found — install Node 22 or newer first" >&2; exit 1; }
 MAJOR="$("$NODE" --version | sed 's/^v//; s/\..*//')"
-[ "$MAJOR" -ge 21 ] || { echo "node $("$NODE" --version) is too old — need 21+" >&2; exit 1; }
+[ "$MAJOR" -ge 22 ] || { echo "node $("$NODE" --version) is too old — need 22+ (global WebSocket)" >&2; exit 1; }
 
 mkdir -p "$DEST/src" "$DEST/out" "$HOME/Library/LaunchAgents"
 install -m 0644 "$SRC/src/serve.mjs" "$DEST/src/serve.mjs"
@@ -40,7 +40,10 @@ cat > "$PLIST" <<EOF
     <string>$DEST/src/serve.mjs</string>
   </array>
   <key>EnvironmentVariables</key>
-  <dict><key>MC_PORT</key><string>$PORT</string></dict>
+  <dict>
+    <key>MC_PORT</key><string>$PORT</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
   <key>WorkingDirectory</key><string>$DEST</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

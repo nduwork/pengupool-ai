@@ -33,7 +33,13 @@ function arg(name, env, dflt) {
 }
 const PORT = parseInt(arg("port", "MC_PORT", "7790"), 10);
 const BIND = arg("bind", "MC_BIND", "tailnet");
-const WS_URL = arg("ws", "MC_WS", "ws://[::1]:7787/ws");
+const WS_ARG = arg("ws", "MC_WS", "");
+const ADDR_FILE = os.homedir() + "/.pengupool-ai/v2/run/hub.addr";
+// The daemon's address is read fresh, like the token: it can change at a restart (another port, Local network).
+function wsURL() {
+  if (WS_ARG) return WS_ARG;
+  try { return "ws://" + fs.readFileSync(ADDR_FILE, "utf8").trim() + "/ws"; } catch { return "ws://127.0.0.1:7787/ws"; }
+}
 const TOKEN_FILE = arg("token-file", "MC_TOKEN_FILE",
   os.homedir() + "/.pengupool-ai/v2/run/hub.token");
 const POLL_MS = 10000;
@@ -78,7 +84,7 @@ function fetchDaemon() {
     let token;
     try { token = fs.readFileSync(TOKEN_FILE, "utf8").trim(); }
     catch (e) { reject(new Error("cannot read token file " + TOKEN_FILE)); return; }
-    const ws = new WebSocket(WS_URL + "?token=" + encodeURIComponent(token));
+    const ws = new WebSocket(wsURL() + "?token=" + encodeURIComponent(token));
     ws.binaryType = "arraybuffer";
     let seq = 0n;
     const send = (type, payload, channel = 0) => {
@@ -98,7 +104,7 @@ function fetchDaemon() {
     const grace = setTimeout(() => { if (got.sessions && got.domain) finish(); }, 2500);
     grace.unref?.();
     ws.onopen = () => control({ id: "mc1", type: "hello", v: 1, client: { kind: "cli", name: "muse-companion-site" } });
-    ws.onerror = () => done(reject, new Error("cannot reach the PenguPool daemon at " + WS_URL));
+    ws.onerror = () => done(reject, new Error("cannot reach the PenguPool daemon at " + wsURL()));
     ws.onmessage = (e) => {
       const b = new Uint8Array(e.data);
       if (b[0] !== 1) return;
@@ -279,12 +285,16 @@ document.getElementById("refresh").addEventListener("click",poll);
 // ---------- http ----------
 function resolveBind() {
   if (BIND !== "tailnet") return BIND === "all" ? "0.0.0.0" : BIND;
-  try {
-    const ip = execFileSync("tailscale", ["ip", "-4"], { timeout: 5000 }).toString().trim().split("\n")[0];
-    if (ip) return ip;
-  } catch {}
-  console.error("warning: could not read this machine's Tailscale address; binding all interfaces");
-  return "0.0.0.0";
+  // launchd's PATH lacks Homebrew and the app bundle, so try where Tailscale's CLI lives.
+  for (const cli of ["tailscale", "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]) {
+    try {
+      const ip = execFileSync(cli, ["ip", "-4"], { timeout: 5000 }).toString().trim().split("\n")[0];
+      if (ip) return ip;
+    } catch {}
+  }
+  // No address: refuse to start rather than open an unauthenticated page to the LAN (MC_BIND=all does that on purpose).
+  console.error("cannot read this machine's Tailscale address; not starting (set MC_BIND to an address, or all)");
+  process.exit(1);
 }
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
@@ -309,7 +319,7 @@ const server = http.createServer(async (req, res) => {
       catch { if (payload) payload = { ...payload, stale: true }; }
       const boot = payload ? JSON.stringify(payload).replace(/</g, "\\u003c") : "null";
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-      return res.end(PAGE.replace("__PAYLOAD__", boot || "null").replace("${POLL_MS}", String(POLL_MS)));
+      return res.end(PAGE.replace("__PAYLOAD__", () => boot || "null").replace("${POLL_MS}", String(POLL_MS)));
     }
     res.writeHead(404, { "Content-Type": "text/plain" });
     res.end("not found");
@@ -320,6 +330,6 @@ const server = http.createServer(async (req, res) => {
 });
 const bindAddr = resolveBind();
 server.listen(PORT, bindAddr, () => {
-  console.log(`muse-companion mini site on http://${bindAddr}:${PORT} (ws ${WS_URL})`);
+  console.log(`muse-companion mini site on http://${bindAddr}:${PORT} (ws ${wsURL()})`);
   if (bindAddr === "0.0.0.0") console.log("warning: bound to all interfaces — reachable from the LAN as well as the tailnet");
 });

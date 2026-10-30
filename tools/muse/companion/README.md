@@ -20,7 +20,7 @@ prove the install works.
 
 | File | Role |
 | --- | --- |
-| `src/pp.py` | Owner-API client: speaks the gateway `/ws` protocol (v1 frames) over the Tailscale tunnel. Token from `./token` (0600) or `$PENGUPOOL_TOKEN`; host from `$PENGUPOOL_HOST` (default `100.106.40.12`), port `$PENGUPOOL_PORT`. |
+| `src/pp.py` | Owner-API client: speaks the gateway `/ws` protocol (v1 frames) over the Tailscale tunnel. Token from `./token` (0600) or `$PENGUPOOL_TOKEN`; host from `$PENGUPOOL_HOST` (required), port `$PENGUPOOL_PORT`. |
 | `src/detect.py` | The change detector. One poll prints one JSON line: `{"decision": "silent"|"wake", ...}`. Wakes only on material change: a session appearing/disappearing, a status change, a device-visible ask (`/next`), a daemon version change, reachability flips, a stale bootstrap token. |
 | `src/companion.py` | The CLI (below). Owns the monitor config. |
 | `src/gadget.py` | Renders the team status card (chat-widget HTML) from live API data. |

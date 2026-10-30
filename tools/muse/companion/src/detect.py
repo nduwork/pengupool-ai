@@ -31,8 +31,6 @@ def load_config():
     return {"enabled": bool(cfg.get("enabled", True)),
             "interval_secs": int(cfg.get("interval_secs", 60))}
 DRY = os.environ.get("HATCH_HOOK_DRY_RUN") == "1"
-BASE = "http://nduworkstation.tail04aac9.ts.net:7787/api/muse/v1"
-
 
 def device_api(path):
     """One GET on the device API over the CONNECT tunnel. Returns (status, body)."""
@@ -42,7 +40,7 @@ def device_api(path):
     sk = pp.tunnel()
     req = (
         f"GET /api/muse/v1{path} HTTP/1.1\r\n"
-        f"Host: nduworkstation.tail04aac9.ts.net:7787\r\n"
+        f"Host: {pp.HOST}:{pp.PORT}\r\n"
         f"Authorization: Bearer {tok}\r\nConnection: close\r\n\r\n"
     )
     sk.s.sendall(req.encode())
