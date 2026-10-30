@@ -221,6 +221,15 @@ viewer shows the same history after a reconnect, a resize or a session switch. L
 unchanged, and so is the phone and Muse API. Known limit: Claude Code repaints its live area in
 place (synchronized output), and those repaints never become history lines, here or in any
 terminal (stablyai/orca#18490).
+v0.9.37: The host keeps each session's terminal history (2000 lines, tmux's default), and snapshots
+carry it ahead of the screen (at most 512 KiB, newest lines first). The web app resets before every
+snapshot, so it gets the history each time and every viewer shows the same one after a reconnect, a
+resize or a session switch. `pengupool attach` writes snapshots into your terminal, so it gets the
+history once, on attach. Memory: 112 bytes a cell, so about 27 MB per session at worst with full
+120-column lines, 56 MB at 250 columns; typical output far less. Live output is unchanged, and so is
+the phone and Muse API. Known limit: Claude Code repaints its live area in place (synchronized
+output), and those repaints never become history lines, here or in any terminal
+(stablyai/orca#18490).
 
 ## Credits
 

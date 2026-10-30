@@ -14,10 +14,14 @@ import (
 // snapshot to every viewer, so history stays well under that.
 const maxSnapshotHistory = 512 << 10
 
-// Snapshot returns the bytes that rebuild the scrollback and the visible screen on a reset,
-// same-size client.
-//
-// Layout: on the normal screen, the scrollback as plain lines and enough newlines to scroll them
+// Snapshot returns the bytes that rebuild the visible screen on a cleared, same-size client.
+func (s *screen) Snapshot() []byte { return s.snapshot(false) }
+
+// SnapshotHistory is Snapshot preceded by the scrollback, for a client that resets before it
+// applies a snapshot (or has not been sent the history yet).
+func (s *screen) SnapshotHistory() []byte { return s.snapshot(true) }
+
+// snapshot lays out, with history: on the normal screen, the scrollback as plain lines and enough newlines to scroll them
 // all into the client's own history (before any scroll region exists to confine them); then the
 // alternate screen when it is in use, every tracked DEC private mode plus the XTMODKEYS and kitty
 // keyboard sequences, emit the scroll region when it is not the whole screen,
@@ -25,7 +29,7 @@ const maxSnapshotHistory = 512 << 10
 // pen and hyperlink, the cursor position and cursor visibility. Every row is rewritten from column
 // one and cleared to its end, so a client showing stale content ends up with exactly this screen.
 // \x1b[2J is never emitted: on the normal screen it would destroy the client's scrollback.
-func (s *screen) Snapshot() []byte {
+func (s *screen) snapshot(history bool) []byte {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -35,7 +39,9 @@ func (s *screen) Snapshot() []byte {
 
 	b.WriteString("\x1b[?1049l")
 	b.WriteString(ansi.ResetStyle)
-	appendHistory(&b, s.emu.Scrollback().Lines(), rows)
+	if history {
+		appendHistory(&b, s.emu.Scrollback().Lines(), rows)
+	}
 	if s.emu.IsAltScreen() {
 		b.WriteString("\x1b[?1049h")
 	}

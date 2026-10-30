@@ -42,7 +42,7 @@ func TestSnapshotHistoryReattach(t *testing.T) {
 	}
 	for range 2 {
 		dst := New(20, 5)
-		dst.Write(src.Snapshot())
+		dst.Write(src.SnapshotHistory())
 		if got := history(t, dst); strings.Join(got, "\n") != strings.Join(want, "\n") {
 			t.Fatalf("viewer history:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 		}
@@ -63,7 +63,7 @@ func TestSnapshotHistoryResize(t *testing.T) {
 		t.Fatalf("history after resize: %q, want %q", got, want)
 	}
 	dst := New(30, 8)
-	dst.Write(src.Snapshot())
+	dst.Write(src.SnapshotHistory())
 	if got := history(t, dst); len(got) < len(want) || strings.Join(got[:len(want)], "\n") != strings.Join(want, "\n") {
 		t.Fatalf("viewer history after resize: %q, want it to start with %q", got, want)
 	}
@@ -76,7 +76,7 @@ func TestSnapshotHistoryAltScreen(t *testing.T) {
 	writeLines(src, 10, func(i int) string { return fmt.Sprintf("line %02d", i) })
 	src.Write([]byte("\x1b[?1049hfull-screen app"))
 	dst := New(20, 5)
-	dst.Write(src.Snapshot())
+	dst.Write(src.SnapshotHistory())
 	if got := history(t, dst); len(got) != len(history(t, src)) || got[0] != "line 00" {
 		t.Fatalf("viewer history = %q", got)
 	}
@@ -95,7 +95,7 @@ func TestHistoryCaps(t *testing.T) {
 	if len(h) != HistoryLines || !strings.HasPrefix(h[len(h)-1], fmt.Sprintf("%05d", n-5)) {
 		t.Fatalf("host keeps %d lines, last %.6q", len(h), h[len(h)-1])
 	}
-	snap := src.Snapshot()
+	snap := src.SnapshotHistory()
 	if len(snap) > maxSnapshotHistory+200*5*16 { // history plus a 5-row colour screen
 		t.Fatalf("snapshot is %d bytes, past the history budget", len(snap))
 	}
@@ -109,5 +109,22 @@ func TestHistoryCaps(t *testing.T) {
 	writeLines(f, 50, func(i int) string { return "x" })
 	if l := len(history(t, f)); l > 1 {
 		t.Fatalf("a follower keeps %d history lines", l)
+	}
+}
+
+// TestSnapshotHistoryShrink: the host keeps its history lines whole when the screen narrows, and a
+// narrower viewer wraps each one as any terminal would.
+func TestSnapshotHistoryShrink(t *testing.T) {
+	src := New(20, 5)
+	writeLines(src, 10, func(i int) string { return fmt.Sprintf("line %02d abcdefgh", i) }) // 16 columns
+	want := history(t, src)
+	src.Resize(10, 5)
+	if got := history(t, src); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("host history after shrink: %q, want %q", got, want)
+	}
+	dst := New(10, 5)
+	dst.Write(src.SnapshotHistory())
+	if got := history(t, dst); len(got) < 2 || got[0] != want[0][:10] || got[1] != want[0][10:] {
+		t.Fatalf("viewer history = %q, want %q wrapped at 10", got, want[0])
 	}
 }

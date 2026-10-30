@@ -66,11 +66,14 @@ type client struct {
 	greeted  bool
 	attached bool
 	viewOnly bool // the attach said kind "ios": no lease, no input (docs/protocol/v1.md section 4)
-	channel  uint32
-	gen      uint64 // session generation this client's screen is valid for
-	sent     uint64 // next byte offset this client has been sent
-	acked    uint64 // next byte offset this client has acknowledged
-	paused   bool
+	resets   bool // the attach said resets: every snapshot carries the history (snapshotFor)
+	// historySent: this client has had the history once. Guarded by worker.mu.
+	historySent bool
+	channel     uint32
+	gen         uint64 // session generation this client's screen is valid for
+	sent        uint64 // next byte offset this client has been sent
+	acked       uint64 // next byte offset this client has acknowledged
+	paused      bool
 	// pendingExit is the session.exit this client is owed, queued by pump once the client has
 	// caught up with every byte it is owed. Guarded by worker.mu.
 	pendingExit *outFrame
@@ -437,6 +440,7 @@ func (c *client) attach(m *protocol.Message) bool {
 		kind = string(c.kind)
 	}
 	c.viewOnly = kind == string(protocol.KindIOS)
+	c.resets = m.Resets
 	claim := m.ClaimLease && !c.viewOnly
 	if claim && (m.Cols != 0 || m.Rows != 0) && !validSize(m.Cols, m.Rows) {
 		c.errorReply(m.ID, protocol.Errorf(protocol.CodeInvalidArgument, "resize %dx%d is out of range", m.Cols, m.Rows))
@@ -485,7 +489,7 @@ func (c *client) attach(m *protocol.Message) bool {
 	} else {
 		// Capture the screen and the offset it belongs to under the same lock the PTY read loop
 		// writes under, so live output starts exactly where the snapshot ends.
-		snap = w.screen.Snapshot()
+		snap = c.snapshotFor()
 	}
 	exited, exitCode, exitedAt := w.exited, w.exitCode, w.exitedAt
 	w.mu.Unlock()
@@ -685,7 +689,7 @@ func (c *client) pump() {
 		if w.gen != c.gen {
 			// A resize invalidated this client's screen.
 			gen, cols, rows := w.gen, w.cols, w.rows
-			snap := w.screen.Snapshot()
+			snap := c.snapshotFor()
 			start := w.ring.End()
 			w.mu.Unlock()
 			c.sendSnapshot(gen, cols, rows, snap, start)
@@ -700,7 +704,7 @@ func (c *client) pump() {
 			// The pending offset fell out of the ring while the client was paused: replay would
 			// leave a gap, so send a snapshot from the current offset instead.
 			gen, cols, rows := w.gen, w.cols, w.rows
-			snap := w.screen.Snapshot()
+			snap := c.snapshotFor()
 			w.mu.Unlock()
 			c.sendSnapshot(gen, cols, rows, snap, end)
 			continue
@@ -721,7 +725,7 @@ func (c *client) pump() {
 		data, ok := w.ring.Read(c.sent, maxOutputPayload)
 		if !ok {
 			gen, cols, rows := w.gen, w.cols, w.rows
-			snap := w.screen.Snapshot()
+			snap := c.snapshotFor()
 			w.mu.Unlock()
 			c.sendSnapshot(gen, cols, rows, snap, end)
 			continue
@@ -743,6 +747,17 @@ func (c *client) pump() {
 
 // sendSnapshot emits snapshot.begin, the zero-based numbered chunks, and snapshot.end, then hands
 // the client back to pump() at the captured offset.
+// snapshotFor is the snapshot this client is sent: with the history when the client resets before
+// applying one, and once otherwise, so a terminal that keeps what it was sent (pengupool attach) never
+// shows the history twice. Called with worker.mu held.
+func (c *client) snapshotFor() []byte {
+	if c.resets || !c.historySent {
+		c.historySent = true
+		return c.w.screen.SnapshotHistory()
+	}
+	return c.w.screen.Snapshot()
+}
+
 func (c *client) sendSnapshot(gen uint64, cols, rows int, snap []byte, off uint64) {
 	c.gen = gen
 	c.sent = off

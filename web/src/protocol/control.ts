@@ -119,6 +119,8 @@ export interface ControlMessage {
   generation?: number;
   retained?: RetainedState;
   claim_lease?: boolean;
+  /** This client resets before applying a snapshot, so every snapshot carries the history. */
+  resets?: boolean;
   cols?: number;
   rows?: number;
   mode?: string;
