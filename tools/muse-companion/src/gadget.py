@@ -77,12 +77,21 @@ html[data-theme="dark"] .card{--pp-success:#4ade80;--pp-warning:#fbbf24;--pp-dan
 .ctx-ok{color:var(--pp-success);font-weight:600}.ctx-warn{color:var(--pp-warning);font-weight:600}.ctx-bad{color:var(--pp-danger);font-weight:600}
 .shd{padding:7px 12px 3px;font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--hatch-widget-muted);text-transform:uppercase}
 .ft{padding:8px 12px;font-size:11px;color:var(--hatch-widget-muted);border-top:1px solid var(--hatch-widget-border);line-height:1.5}
+.chain{font-size:12px;padding-top:1px;padding-bottom:7px;color:var(--hatch-widget-muted)}
+.csym{font-size:11px;margin-right:3px}
+.cs-done{color:var(--pp-success)}
+.cs-current{color:var(--pp-success);animation:pl 1.6s ease-in-out infinite}
+.cs-todo{color:var(--pp-faint)}
+.cs-blocked{color:var(--pp-danger)}
+.cstep-done{color:var(--hatch-widget-muted)}
+.cstep-current{color:var(--hatch-widget-text);font-weight:600}
+.carr{color:var(--pp-faint);margin:0 3px}
 """
 
 JS = """
 (function(){
   var card=document.getElementById('ppcard');
-  var state={closed:[]};
+  var state=__SEED__;
   function apply(){
     var closed={}; state.closed.forEach(function(id){closed[id]=true;});
     card.querySelectorAll('[data-anc]').forEach(function(r){
@@ -96,7 +105,7 @@ JS = """
     });
   }
   function save(){ if(window.hatchWidget) window.hatchWidget.setState(state); }
-  try{ state=window.hatchWidget.getState({closed:[]})||state; }catch(e){}
+  try{ state=window.hatchWidget.getState(__SEED__)||state; }catch(e){}
   apply();
   card.addEventListener('click',function(e){
     var el=e.target.closest('[data-toggle]'); if(!el) return;
@@ -242,6 +251,17 @@ def render():
     out.append(f'<div class="mon"><span class="dot d-active"></span>'
                f'companion checking every {interval}{last_txt}</div></div>')
 
+    # Per-agent workflow chains (Muse's tracker, tracker.py) render
+    # directly under each agent's name: A → B → C with a status symbol
+    # per step. There is no separate tracker panel.
+    wfmod = None
+    wf = {"agents": {}}
+    try:
+        import tracker as wfmod
+        wf = wfmod.load()
+    except Exception:
+        wfmod = None
+
     placed = set()
     groups = []
     for t in domain.get("teams", []):
@@ -295,27 +315,32 @@ def render():
                 cur = by_member[cur["parent"]]
             out.append(row_html(s, member, checkins, depth,
                                 " ".join(chain), slug, bool(kid_ids)))
+            if wfmod:
+                crow = wfmod.chain_row(wf, s.get("name"),
+                                       " ".join(chain) + " " + slug,
+                                       12 + depth * 20 + 24)
+                if crow:
+                    out.append(crow)
 
     rest = [s for s in agents if s["id"] not in placed]
     if rest:
         out.append('<div class="shd">Ungrouped</div>')
         for s in rest:
             out.append(row_html(s, None, checkins, 0, "", "", False))
+            if wfmod:
+                crow = wfmod.chain_row(wf, s.get("name"), "", 36)
+                if crow:
+                    out.append(crow)
 
-    if shells:
-        out.append('<div class="shd">Terminals</div>')
-        for s in shells:
-            cwd = (s.get("cwd") or "").rstrip("/").split("/")[-1] or "/"
-            out.append(f'<div class="row" style="padding-left:16px">'
-                       f'<span class="nm" style="font-weight:500">{html.escape(s.get("name", "terminal"))}</span>'
-                       f'<span class="right"><span>{html.escape(cwd)}</span></span></div>')
-
+    default_closed = []
     now = datetime.now().astimezone().strftime("%-I:%M %p")
     out.append(f'<div class="ft">PenguPool\'s own indicators: green pulsing = Active, '
                f'amber = Waiting, red = ? Need input, grey = Stale. Tap a parent row to '
-               f'fold or unfold its branch. Rendered {now} by companion gadget.</div>')
+               f'fold or unfold its branch. Under each agent, its workflow: '
+               f'✓ done · ● current · ○ todo. Rendered {now} by companion gadget.</div>')
     out.append("</div>")
-    out.append(f"<script>{JS}</script>")
+    out.append("<script>" + JS.replace("__SEED__",
+                                        json.dumps({"closed": default_closed})) + "</script>")
     return "\n".join(out)
 
 

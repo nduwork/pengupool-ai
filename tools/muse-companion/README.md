@@ -24,7 +24,7 @@ prove the install works.
 | `src/detect.py` | The change detector. One poll prints one JSON line: `{"decision": "silent"|"wake", ...}`. Wakes only on material change: a session appearing/disappearing, a status change, a device-visible ask (`/next`), a daemon version change, reachability flips, a stale bootstrap token. |
 | `src/companion.py` | The CLI (below). Owns the monitor config. |
 | `src/gadget.py` | Renders the team status card (chat-widget HTML) from live API data. |
-| `src/tracker.py` | Renders the work-tracker card from Muse's own `tracker.json` (tracking lives outside PenguPool by the owner's rule). |
+| `src/tracker.py` | Per-agent workflow chains (A → B → C with a status symbol per step) rendered under each agent's name in the status card, from Muse's own `tracker.json` (tracking lives outside PenguPool by the owner's rule). |
 | `src/askcard.py` | Renders the context card for a pending agent question (and its closed state). See "Answering agent questions". |
 | `src/serve.mjs` | The optional mobile mini site (zero-dependency Node; runs on the PenguPool machine). |
 | `install-host.sh` | Installs the mini site on the PenguPool machine (launchd). |
@@ -57,7 +57,7 @@ companion config set enabled off  pause / on resume
 companion check                   run one check right now
 companion log [n]                 the last n poll decisions
 companion gadget [--out PATH]     render the team status card (HTML)
-companion tracker [--out PATH]    render the work-tracker card (HTML)
+companion tracker                 print the agent workflow chains (text)
 companion ask SPEC [--answer T]   render a question's context card (HTML)
 ```
 
@@ -65,8 +65,9 @@ companion ask SPEC [--answer T]   render a question's context card (HTML)
 
 `gadget.py` rebuilds, from live data, the card Muse shows in chat:
 the team as a tap-to-fold tree (the real parent links from the team's
-member list; folding any parent row hides its branch), terminals in
-their own section, and PenguPool's **own** status indicators — labels
+member list; folding any parent row hides its branch), each agent's
+workflow chain under its name, and PenguPool's **own** status
+indicators — labels
 and colours mirror `web/src/app/ctx.tsx` (`STATUS`, `shownStatus`) and
 the design tokens in `web/src/index.css`:
 
@@ -83,15 +84,25 @@ Rules that matter: an idle session with an open check-in gate shows as
 *Stale* (helpers never go stale); context % is green below 30, amber
 below 60, red from 60.
 
-## The work tracker
+## The workflow tracker
 
-`companion tracker` renders the snapshot card for the work itself —
-in progress, open, blocked, paused, done. Epics and work-status
-tracking deliberately live outside PenguPool (the owner's rule: that is
-third-party management), so the tracker is Muse's own curated file,
-`~/workspace/companion/tracker.json` (seeded from `tracker.example.json`
-at install). Live session status belongs to the status card and the
-mini site; the tracker card answers "what is being worked on".
+There is no separate tracker panel. Under each agent's name, the
+status card shows that agent's **workflow**: a short chain of steps,
+A → B → C, with a symbol per step — ✓ done, ● current, ○ todo,
+✕ blocked. Labels run two or three words so a chain fits one line;
+agents without a workflow show nothing.
+
+Epics and work-status tracking deliberately live outside PenguPool
+(the owner's rule: that is third-party management), so the chains are
+Muse's own curation in `~/workspace/companion/tracker.json` (seeded
+from `tracker.example.json` at install):
+
+```json
+{"agents": {"<session name>": {"steps": [
+  {"label": "…", "status": "done|current|todo|blocked"}]}}}
+```
+
+`companion tracker` prints the chains as text.
 
 ## Answering agent questions
 

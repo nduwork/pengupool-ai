@@ -1,102 +1,97 @@
 #!/usr/bin/env python3
-"""tracker — render the work-tracker card as chat-widget HTML.
+"""tracker — per-agent workflow chains for the status card.
 
-The tracker is the owner's Muse's own record: epics and work-status
-tracking deliberately live OUTSIDE PenguPool (the owner's rule), so this
-snapshot card — curated by Muse, updated as work changes — is where the
-tracker shows up. Live session status belongs to the mini site and the
-status gadget; this card answers "what is being worked on, what is open,
-what is paused, what is done".
+Each agent's workflow is a short chain of steps, A → B → C, with a
+symbol per step showing its status: ✓ done, ● current, ○ todo,
+✕ blocked. The status card (gadget.py) renders the chain directly
+under the agent's name; this module owns the data and the chain
+markup. There is no separate tracker panel.
 
-Data: a JSON file (default ~/workspace/companion/tracker.json, override
-with COMPANION_TRACKER or --file):
+The data is Muse's own curation — work tracking lives outside
+PenguPool (the owner's rule) — in ~/workspace/companion/tracker.json
+(override with COMPANION_TRACKER or --file):
 
-  {"title": "…", "sections": [{"name": "Open", "items": [
-      {"title": "…", "note": "…", "state": "open|progress|blocked|paused|done"}]}]}
+  {"agents": {"<session name>": {"steps": [
+      {"label": "…", "status": "done|current|todo|blocked"}]}}}
 
-Usage: tracker.py [--file PATH] [--out PATH]
+Keep labels to two or three words so a chain fits one line, and keep
+chains short: the steps the agent is actually moving through, nothing
+more.
+
+Usage: tracker.py [--file PATH]   (prints the chains as text)
 """
 import html
 import json
 import os
 import sys
-from datetime import datetime
 
-CHIP = {
-    "progress": ("In progress", "active"),
-    "open": ("Open", "waiting"),
-    "blocked": ("Blocked", "need"),
-    "paused": ("Paused", "stale"),
-    "done": ("Done", "active"),
-}
-CSS = """
-*{box-sizing:border-box}
-.card{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;background:var(--hatch-widget-surface);border:1px solid var(--hatch-widget-border);border-radius:10px;overflow:hidden;color:var(--hatch-widget-text);
---pp-success:#15803d;--pp-warning:#b45309;--pp-danger:#c0262d;--pp-faint:#8a91a0}
-html[data-theme="dark"] .card{--pp-success:#4ade80;--pp-warning:#fbbf24;--pp-danger:#f87171;--pp-faint:#6b7280}
-.hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--hatch-widget-border)}
-.repo{font-weight:600;font-size:14px}
-.badge{font-size:11px;padding:1px 7px;border:1px solid var(--hatch-widget-border);border-radius:999px;color:var(--hatch-widget-muted)}
-.mon{margin-left:auto;font-size:11px;color:var(--hatch-widget-muted)}
-.shd{padding:9px 12px 3px;font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--hatch-widget-muted);text-transform:uppercase}
-.row{display:flex;align-items:flex-start;gap:8px;padding:7px 12px;border-bottom:1px solid var(--hatch-widget-border);font-size:13px}
-.row:last-child{border-bottom:none}
-.dot{width:8px;height:8px;border-radius:50%;flex:none;margin-top:5px}
-.d-waiting{background:var(--pp-warning)}.d-active{background:var(--pp-success)}.d-need{background:var(--pp-danger)}.d-stale{background:var(--pp-faint)}
-.body{flex:1;min-width:0}
-.nm{font-weight:600}
-.note{font-size:12px;color:var(--hatch-widget-muted);line-height:1.45}
-.chip{flex:none;font-size:11px;white-space:nowrap;padding-top:1px}
-.c-waiting{color:var(--pp-warning)}.c-active{color:var(--pp-success)}.c-need{color:var(--pp-danger);font-weight:600}.c-stale{color:var(--pp-faint)}
-.ft{padding:8px 12px;font-size:11px;color:var(--hatch-widget-muted);border-top:1px solid var(--hatch-widget-border);line-height:1.5}
+SYMBOL = {"done": "✓", "current": "●", "todo": "○", "blocked": "✕"}
+
+CHAIN_CSS = """
+.chain{font-size:12px;padding-top:1px;padding-bottom:7px;color:var(--hatch-widget-muted)}
+.csym{font-size:11px;margin-right:3px}
+.cs-done{color:var(--pp-success)}
+.cs-current{color:var(--pp-success);animation:pl 1.6s ease-in-out infinite}
+.cs-todo{color:var(--pp-faint)}
+.cs-blocked{color:var(--pp-danger)}
+.cstep-done{color:var(--hatch-widget-muted)}
+.cstep-current{color:var(--hatch-widget-text);font-weight:600}
+.carr{color:var(--pp-faint);margin:0 3px}
 """
 
 
-def render(data):
-    out = [f"<style>{CSS}</style>", '<div class="card">']
-    out.append('<div class="hd"><div class="repo">'
-               f'{html.escape(data.get("title", "Work tracker"))}</div>')
-    out.append('<div class="badge">tracked by Muse</div>')
-    now = datetime.now().astimezone().strftime("%-I:%M %p")
-    out.append(f'<div class="mon">snapshot {now}</div></div>')
-    for sec in data.get("sections", []):
-        items = sec.get("items", [])
-        if not items:
+def load(path=None):
+    path = path or os.environ.get(
+        "COMPANION_TRACKER",
+        os.path.expanduser("~/workspace/companion/tracker.json"))
+    with open(path) as f:
+        return json.load(f)
+
+
+def steps_of(data, agent_name):
+    return (data.get("agents", {}).get(agent_name) or {}).get("steps") or []
+
+
+def chain_inner(steps):
+    """The A → B → C spans for one agent's steps (no row wrapper)."""
+    parts = []
+    for i, s in enumerate(steps):
+        st = s.get("status", "todo")
+        if i:
+            parts.append('<span class="carr">→</span>')
+        parts.append(f'<span class="csym cs-{st}">{SYMBOL.get(st, "○")}</span>'
+                     f'<span class="cstep-{st}">{html.escape(s.get("label", ""))}</span>')
+    return "".join(parts)
+
+
+def chain_row(data, agent_name, anc, pad):
+    """A gadget-compatible row holding the agent's chain, or '' if none."""
+    steps = steps_of(data, agent_name)
+    if not steps:
+        return ""
+    return (f'<div class="row chain" data-anc="{anc}" style="padding-left:{pad}px">'
+            f'<span>{chain_inner(steps)}</span></div>')
+
+
+def text_lines(data):
+    lines = []
+    for name, wf in data.get("agents", {}).items():
+        steps = (wf or {}).get("steps") or []
+        if not steps:
             continue
-        out.append(f'<div class="shd">{html.escape(sec.get("name", ""))} · {len(items)}</div>')
-        for it in items:
-            label, tone = CHIP.get(it.get("state", "open"), CHIP["open"])
-            note = (f'<div class="note">{html.escape(it["note"])}</div>'
-                    if it.get("note") else "")
-            out.append(
-                f'<div class="row"><span class="dot d-{tone}"></span>'
-                f'<div class="body"><span class="nm">{html.escape(it.get("title", "?"))}</span>{note}</div>'
-                f'<span class="chip c-{tone}">{label}</span></div>')
-    out.append('<div class="ft">Epics and work tracking live here, with Muse — '
-               'never inside PenguPool (the owner\'s rule). Live session status '
-               'is on the mini site; this card is the tracker snapshot.</div>')
-    out.append("</div>")
-    return "\n".join(out)
+        chain = " → ".join(f"{SYMBOL.get(s.get('status', 'todo'), '○')} {s.get('label', '')}"
+                            for s in steps)
+        lines.append(f"{name}: {chain}")
+    return lines
 
 
 def main():
     args = sys.argv[1:]
-    path = os.environ.get("COMPANION_TRACKER",
-                          os.path.expanduser("~/workspace/companion/tracker.json"))
-    out_path = None
+    path = None
     if "--file" in args:
         path = args[args.index("--file") + 1]
-    if "--out" in args:
-        out_path = args[args.index("--out") + 1]
-    with open(path) as f:
-        data = json.load(f)
-    text = render(data)
-    if out_path:
-        with open(out_path, "w") as f:
-            f.write(text)
-        print(out_path)
-    else:
-        print(text)
+    lines = text_lines(load(path))
+    print("\n".join(lines) if lines else "no agent workflows tracked")
     return 0
 
 

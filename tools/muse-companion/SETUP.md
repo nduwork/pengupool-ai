@@ -128,9 +128,10 @@ and that routine polls stay silent.
   runs `companion config set interval 5m`. No code changes, ever.
 - The owner says "status" — the agent runs `companion gadget` and
   shows the card.
-- The owner says "tracker" — the agent runs `companion tracker` and
-  shows the work-tracker card, after updating `tracker.json` for
-  anything that changed.
+- The owner says "tracker" — the workflows are part of the status card
+  (`companion gadget`); `companion tracker` prints the chains as text.
+  Update `tracker.json` first for anything that changed: per agent, a
+  short chain of steps (label + status), nothing more.
 - Alerts are single and factual: what changed, and the card when it
   helps. Silence is the default state.
 - **Needs-input is a signal, not a judgment call.** When a wake carries
