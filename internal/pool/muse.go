@@ -23,7 +23,7 @@ import (
 // The Muse app API's pool side: paired devices, one-card-at-a-time asks,
 // answers through the same paths as the app's buttons, and chat through
 // the owner's input path (so the Compass learns). Thin wrappers over the
-// existing RPCs; the allowed actions are a fixed list like iosAllowed.
+// existing RPCs; the allowed actions are a fixed list (museAllowed).
 
 // museAllowed are the pool requests a paired Muse device may call. The
 // gateway only routes them with a valid device token; the owner-only
@@ -182,8 +182,6 @@ func parseMuseTime(s string) time.Time {
 
 // museVisible reports whether the device may see the session: only teams
 // with iOS access (the owner's existing switch), or sessions on no team.
-// A device token is the owner's own paired device, so it skips the per-team
-// group password.
 func (p *Pool) museVisible(sessionID string) bool {
 	st := p.st.State()
 	for _, t := range st.Domain.Teams {
@@ -365,8 +363,8 @@ func (p *Pool) sweepMuseAnswered() {
 
 // museAnswerApproval answers a launch/formation approval the way the app's
 // buttons do: the owner chose (2026-10-27) that their paired Muse device may
-// approve these, unlike the iPhone web path, which stays desktop-only. A
-// changed hash or version, or an already settled approval, is a 409.
+// approve these. A changed hash or version, or an already settled approval,
+// is a 409.
 func (p *Pool) museAnswerApproval(ctx context.Context, c gateway.Caller, id string, in museAnswerIn) (any, error) {
 	st := p.st.State()
 	var a *protocol.Approval

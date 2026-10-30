@@ -78,12 +78,6 @@ type Options struct {
 	Logf func(string, ...any)
 	// RPC answers every pool request type the gateway does not handle itself. It may be nil.
 	RPC func(ctx context.Context, c Caller, typ string, params json.RawMessage) (any, error)
-	// Filter, when set, narrows the state a connection sees (iOS group access). It may be nil.
-	Filter func(c Caller, st store.State) store.State
-	// OnClose is told when a connection ends, so per-connection unlocks can be dropped.
-	OnClose func(c Caller)
-	// Authorize, when set, may refuse an attach (group access for phones).
-	Authorize func(c Caller, sessionID string) error
 	// OwnerInput, when set, is told that the owner submitted a prompt in a session: the keystrokes of
 	// the app's own connection (/ws with the host's token). Not the terminal CLI's: on one account an
 	// agent can reparent a process away from its session (( cmd & )) and run the CLI from outside every
@@ -421,30 +415,6 @@ func newConn(s *Server, fc frameConn, remote string) *conn {
 	return c
 }
 
-// Revoke detaches every live attachment the match selects (access withdrawn).
-func (s *Server) Revoke(match func(c Caller, sessionID string) bool) {
-	s.liveMu.Lock()
-	conns := make([]*conn, 0, len(s.live))
-	for c := range s.live {
-		conns = append(conns, c)
-	}
-	s.liveMu.Unlock()
-	for _, c := range conns {
-		c.mu.Lock()
-		att := c.att
-		c.mu.Unlock()
-		if att != nil && match(c.caller(), att.sessionID) {
-			c.mu.Lock()
-			if c.att == att {
-				c.att = nil
-			}
-			c.mu.Unlock()
-			att.close()
-			c.sendError("", protocol.Errorf(protocol.CodeForbidden, "access to session %s was withdrawn", att.sessionID))
-		}
-	}
-}
-
 // conn is one client connection's state.
 type conn struct {
 	srv    *Server
@@ -545,9 +515,6 @@ func (c *conn) teardown() {
 	}
 	if att != nil {
 		att.close()
-	}
-	if c.srv.opts.OnClose != nil {
-		c.srv.opts.OnClose(c.caller())
 	}
 	c.srv.liveMu.Lock()
 	delete(c.srv.live, c)

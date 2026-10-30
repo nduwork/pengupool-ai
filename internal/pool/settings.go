@@ -633,9 +633,6 @@ func (p *Pool) historyRead(_ context.Context, c gateway.Caller, raw json.RawMess
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return nil, invalid("params: %v", err)
 	}
-	if err := p.iosMayReach(c, in.SessionID); err != nil {
-		return nil, err
-	}
 	s, ok := p.session(in.SessionID)
 	if !ok {
 		return nil, notFound("no session")

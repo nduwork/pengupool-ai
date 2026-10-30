@@ -4,7 +4,7 @@ import type { Domain, Member, Team } from "../protocol/domain";
 import { leadOf, roleOf, teamLabel } from "./Formation";
 
 const m = (id: string, x: Partial<Member> = {}): Member => ({ session_id: id, name: id, role: "helper", state: "active", ...x });
-const team = (members: Member[]): Team => ({ id: "t", name: "t", harness: "claude", members, state: "active", ios_access: false, password_set: false, created_at: "" });
+const team = (members: Member[]): Team => ({ id: "t", name: "t", harness: "claude", members, state: "active", ios_access: false, created_at: "" });
 
 describe("team labels", () => {
   it("derives Lead, SME and Helper from the tree", () => {

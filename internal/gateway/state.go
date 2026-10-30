@@ -100,14 +100,8 @@ func (c *conn) pollState(ctx context.Context, gen uint64, last store.State) {
 	}
 }
 
-// state is the store state as this connection may see it.
-func (c *conn) state() store.State {
-	st := c.srv.opts.Store.State()
-	if c.srv.opts.Filter != nil {
-		st = c.srv.opts.Filter(c.caller(), st)
-	}
-	return st
-}
+// state is the store state.
+func (c *conn) state() store.State { return c.srv.opts.Store.State() }
 
 // list answers session.list from the store.
 func (c *conn) list(msg *protocol.Message) {

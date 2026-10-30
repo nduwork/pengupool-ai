@@ -173,9 +173,6 @@ func cmdDaemon(args []string) error {
 		Static:     staticFS(),
 		Logf:       logf,
 		RPC:        pl.RPC,
-		Filter:     pl.Filter,
-		OnClose:    pl.ConnectionClosed,
-		Authorize:  pl.Authorize,
 		OwnerInput: pl.OwnerInput,
 		InSession:  pl.InAgentSession,
 		PhoneHosts: func() []string { return phoneHosts(st.Config().Network.Tailscale, pool.TailnetName()) },
@@ -183,7 +180,6 @@ func cmdDaemon(args []string) error {
 	if err != nil {
 		return err
 	}
-	pl.SetRevoker(srv.Revoke)
 	pool.HTTPAddr = srv.HTTPAddr
 	go pl.HealTailscaleServe() // re-serve after a port change; owner's home only
 	pool.TailnetName()         // look the name up now, so the first remote call already matches it

@@ -177,7 +177,6 @@ func (p *Pool) runFresh(_ context.Context, _ struct{}) (any, error) {
 	}
 	for _, id := range closed {
 		p.recordFormation(id, protocol.FormationChange{Op: "remove", Reason: "started fresh"}, "start fresh")
-		p.revokeTeam(id)
 	}
 	return map[string]int{"sessions": removed, "teams": len(closed)}, nil
 }

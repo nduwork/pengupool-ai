@@ -70,8 +70,6 @@ type Pool struct {
 	msgSock           map[string]claudeInbox       // session id → Claude inbox socket
 	crossOK           map[sessionPair]time.Time    // channels the owner opened with @, until when
 	injected          map[string]map[string]string // session id → digest → heading of each context section it was given
-	unlocks           map[string]map[string]bool   // connection id → unlocked team ids
-	failures          map[string][]time.Time       // connection+team → recent wrong passwords
 	lastInput         map[string]time.Time         // session id → last desktop input (unused by native paths)
 	ownerEnter        map[string][]credit          // session id → the prompts the owner submitted in it, not yet matched (under mu)
 	askingOwner       map[string]bool              // sessions with a question or plan tool open (under mu)
@@ -119,7 +117,6 @@ type Pool struct {
 	museToolWarned bool
 	db             *agentdb.DB // agents.db: the Compass and logs; nil if it could not open
 	formMu         sync.Mutex  // formation changes apply one at a time
-	revoker        Revoker
 
 	reposCache atomic.Pointer[ghRepos] // the GitHub account's repositories
 	// syncFor is the sync repository checked this run (private, writable) and the account's
@@ -155,7 +152,6 @@ func New(o Options) *Pool {
 	p := &Pool{
 		st: o.Store, hub: o.Hub, exe: o.Exe, env: env, logf: logf, nodes: o.Nodes, version: o.Version,
 		msgSock: map[string]claudeInbox{}, crossOK: map[sessionPair]time.Time{}, injected: map[string]map[string]string{},
-		unlocks: map[string]map[string]bool{}, failures: map[string][]time.Time{},
 		lastInput: map[string]time.Time{}, pending: map[string][]protocol.TeamMessage{},
 		ownerEnter: map[string][]credit{}, requireOwnerInput: o.RequireOwnerInput,
 		museCodes: map[string]*musePairCode{}, museAnswered: map[string]museAnswerDone{}, museInflight: map[string]bool{},
@@ -260,14 +256,11 @@ func withUserPath(env []string, home string) []string {
 
 type handler func(ctx context.Context, c gateway.Caller, params json.RawMessage) (any, error)
 
-// RPC answers one pool request. iOS connections reach only the requests meant for the phone.
+// RPC answers one pool request.
 func (p *Pool) RPC(ctx context.Context, c gateway.Caller, typ string, params json.RawMessage) (any, error) {
 	h, ok := p.handlers()[typ]
 	if !ok {
 		return nil, protocol.Errorf(protocol.CodeUnsupported, "unsupported message type %q", typ)
-	}
-	if c.Kind == protocol.KindIOS && !iosAllowed[typ] {
-		return nil, protocol.Errorf(protocol.CodeForbidden, "%s is for the desktop owner", typ)
 	}
 	// Default deny: everything is the owner's (the app, or the phone for its few requests) except
 	// what an agent does for itself. Agents' CLI calls arrive on the unix socket, which never counts
@@ -300,11 +293,6 @@ var agentAllowed = map[string]bool{
 	"decision.ask": true, // asks the owner's decision model typed questions; it decides nothing for the owner
 	"ask.create":   true, // puts a question to the owner; only the owner or a paired device answers it
 	"ask.wait":     true, // waits for the answer to the session's own ask
-}
-
-var iosAllowed = map[string]bool{
-	"team.unlock": true, "team.lock": true, "approval.decide": true, "session.action": true,
-	"session.input": true, "history.read": true,
 }
 
 func (p *Pool) handlers() map[string]handler {
@@ -396,8 +384,6 @@ func (p *Pool) handlers() map[string]handler {
 		"team.create":           bind(p.teamCreate),
 		"team.add_session":      bind(p.teamAddSession),
 		"team.policy":           bind(p.teamPolicy),
-		"team.unlock":           p.teamUnlock,
-		"team.lock":             p.teamLock,
 		"message.send":          bind(p.messageSend),
 		"ask.settle":            bind(p.askSettle), // the owner's, from Needs you
 		"hook.event":            bindCaller(p.hookEventFrom),

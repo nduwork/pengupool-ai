@@ -425,14 +425,6 @@ func (p *Pool) approvalDecide(ctx context.Context, c gateway.Caller, raw json.Ra
 	if a == nil || a.State != "pending" {
 		return nil, conflict("the approval is no longer pending")
 	}
-	if c.Kind == protocol.KindIOS {
-		if err := p.iosMayReach(c, a.SessionID); err != nil {
-			return nil, err
-		}
-		if a.Kind == "launch" || a.Kind == "formation" {
-			return nil, protocol.Errorf(protocol.CodeForbidden, "team launches and formation changes are approved on the desktop")
-		}
-	}
 	switch a.Kind {
 	case "permission":
 		// Permission requests are answered in the terminal now; one a previous daemon left pending just ends.
@@ -1003,7 +995,6 @@ func (p *Pool) teamClose(ctx context.Context, in teamCloseIn) (any, error) {
 	if err == nil {
 		p.recordFormation(t.ID, protocol.FormationChange{Op: "remove", Reason: "team closed"}, "close the team")
 	}
-	p.revokeTeam(t.ID)
 	return results, err
 }
 

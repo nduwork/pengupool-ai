@@ -117,7 +117,6 @@ export interface Team {
   members: Member[];
   state: string;
   ios_access: boolean;
-  password_set: boolean;
   created_at: string;
 }
 
