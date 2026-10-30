@@ -459,6 +459,8 @@ type museSessionView struct {
 	Title   string `json:"title"`
 	State   string `json:"state"`
 	Waiting bool   `json:"waiting"`
+	// Question is what the agent asks in its terminal now, if anything (answered there, not here).
+	Question string `json:"question,omitempty"`
 }
 
 func (p *Pool) museSessions(_ context.Context, c gateway.Caller, _ json.RawMessage) (any, error) {
@@ -486,7 +488,7 @@ func (p *Pool) museSessions(_ context.Context, c gateway.Caller, _ json.RawMessa
 				}
 			}
 		}
-		out = append(out, museSessionView{Session: s.ID, Title: title, State: string(s.State), Waiting: waiting[s.ID]})
+		out = append(out, museSessionView{Session: s.ID, Title: title, State: string(s.State), Waiting: waiting[s.ID], Question: s.View().Question})
 	}
 	if out == nil {
 		out = []museSessionView{}

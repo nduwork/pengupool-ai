@@ -176,6 +176,9 @@ v0.9.28: The Muse app reaches PenguPool on this machine's own Tailscale name, wi
 (Local network on); the pairing URL names it. With Local network on, the desktop app no longer
 sits at Reconnecting. Pairing a name already paired, or with no name, says so (409, 400) instead
 of 502. New guide: docs/muse-app-management.md.
+v0.9.29: A session waiting on you shows what it asks (the permission, the question and its
+choices, or the plan to approve) on hover in the app, in `session.list` and in the Muse app's
+session list. It is still answered in the session's terminal.
 
 ## Credits
 
