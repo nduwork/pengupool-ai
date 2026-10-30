@@ -89,9 +89,22 @@ def observe():
     except Exception:
         ws_ok = False
     # Device API: session fallback + the pending-ask signal (204 = none).
+    # The ask is a direct signal from the host, not something to infer:
+    # /next answers 200 with the ask card (session, title, description)
+    # exactly when a session is waiting on the owner.
     try:
         code, body = device_api("/next")
         obs["ask"] = code == 200
+        if code == 200:
+            try:
+                card = json.loads(body)
+                obs["ask_detail"] = {
+                    "session": card.get("session"),
+                    "title": card.get("title"),
+                    "description": card.get("description"),
+                }
+            except Exception:
+                obs["ask_detail"] = None
         if not obs["sessions"]:
             code2, body2 = device_api("/sessions")
             if code2 == 200:
@@ -147,7 +160,12 @@ def main():
                 if sid not in new:
                     changes.append(f"session gone: {s['name']}")
             if obs["ask"] and not prev.get("ask"):
-                changes.append("a session ask is waiting for the owner (device /next)")
+                d = obs.get("ask_detail") or {}
+                who = d.get("title") or d.get("session") or "a session"
+                what = (d.get("description") or "").strip()
+                if len(what) > 140:
+                    what = what[:137] + "..."
+                changes.append(f"needs input: {who}" + (f" — {what}" if what else ""))
             if obs["version"] and prev.get("version") and obs["version"] != prev["version"]:
                 changes.append(f"daemon version {prev['version']} -> {obs['version']}")
         if reachable and not prev.get("reachable", True):

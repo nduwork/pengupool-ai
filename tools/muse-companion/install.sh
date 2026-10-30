@@ -15,6 +15,8 @@ mkdir -p "$HOME/workspace/pengupool-agent" "$HOME/workspace/companion" "$HOME/ho
 install -m 0644 "$SRC/src/pp.py"      "$HOME/workspace/pengupool-agent/pp.py"
 install -m 0644 "$SRC/src/detect.py"  "$HOME/workspace/pengupool-agent/detect.py"
 install -m 0644 "$SRC/src/gadget.py"  "$HOME/workspace/pengupool-agent/gadget.py"
+install -m 0644 "$SRC/src/tracker.py" "$HOME/workspace/pengupool-agent/tracker.py"
+install -m 0644 "$SRC/src/askcard.py" "$HOME/workspace/pengupool-agent/askcard.py"
 install -m 0755 "$SRC/src/companion.py" "$HOME/workspace/companion/companion.py"
 ln -sf "$HOME/workspace/companion/companion.py" "$HOME/workspace/companion/companion"
 install -m 0755 "$SRC/hook/pengupool-status.sh" "$HOME/hooks/scripts/pengupool-status.sh"
@@ -22,6 +24,10 @@ install -m 0755 "$SRC/hook/pengupool-status.sh" "$HOME/hooks/scripts/pengupool-s
 if [ ! -f "$HOME/workspace/companion/config.json" ]; then
   install -m 0644 "$SRC/config.example.json" "$HOME/workspace/companion/config.json"
   echo "seeded ~/workspace/companion/config.json from config.example.json"
+fi
+if [ ! -f "$HOME/workspace/companion/tracker.json" ]; then
+  install -m 0644 "$SRC/tracker.example.json" "$HOME/workspace/companion/tracker.json"
+  echo "seeded ~/workspace/companion/tracker.json from tracker.example.json"
 fi
 
 echo "installed. Remaining setup (once):"

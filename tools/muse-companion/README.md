@@ -24,6 +24,11 @@ prove the install works.
 | `src/detect.py` | The change detector. One poll prints one JSON line: `{"decision": "silent"|"wake", ...}`. Wakes only on material change: a session appearing/disappearing, a status change, a device-visible ask (`/next`), a daemon version change, reachability flips, a stale bootstrap token. |
 | `src/companion.py` | The CLI (below). Owns the monitor config. |
 | `src/gadget.py` | Renders the team status card (chat-widget HTML) from live API data. |
+| `src/tracker.py` | Renders the work-tracker card from Muse's own `tracker.json` (tracking lives outside PenguPool by the owner's rule). |
+| `src/askcard.py` | Renders the context card for a pending agent question (and its closed state). See "Answering agent questions". |
+| `src/serve.mjs` | The optional mobile mini site (zero-dependency Node; runs on the PenguPool machine). |
+| `install-host.sh` | Installs the mini site on the PenguPool machine (launchd). |
+| `tracker.example.json` | Seed for the work tracker, copied on first install. |
 | `hook/pengupool-status.sh` | The every-minute hook wrapper: runs the detector and forwards its decision. |
 | `install.sh` | Installs the layout below; idempotent. |
 | `config.example.json` | Default monitor config, seeded on first install. |
@@ -52,6 +57,8 @@ companion config set enabled off  pause / on resume
 companion check                   run one check right now
 companion log [n]                 the last n poll decisions
 companion gadget [--out PATH]     render the team status card (HTML)
+companion tracker [--out PATH]    render the work-tracker card (HTML)
+companion ask SPEC [--answer T]   render a question's context card (HTML)
 ```
 
 ## The status card
@@ -76,6 +83,55 @@ Rules that matter: an idle session with an open check-in gate shows as
 *Stale* (helpers never go stale); context % is green below 30, amber
 below 60, red from 60.
 
+## The work tracker
+
+`companion tracker` renders the snapshot card for the work itself —
+in progress, open, blocked, paused, done. Epics and work-status
+tracking deliberately live outside PenguPool (the owner's rule: that is
+third-party management), so the tracker is Muse's own curated file,
+`~/workspace/companion/tracker.json` (seeded from `tracker.example.json`
+at install). Live session status belongs to the status card and the
+mini site; the tracker card answers "what is being worked on".
+
+## Answering agent questions
+
+When a harness needs the owner, there is a signal — the detector reads
+the ask straight off the device API (`/next`) and the wake carries it.
+No triage: needs-input is relayed, never judged. The answering flow
+(full design in [`ANSWER-CARDS.md`](ANSWER-CARDS.md)):
+
+- **Context card** (HTML, display only): the asking agent, the
+  question, and a Context block saying what the decision affects —
+  `companion ask` renders it from a small JSON spec.
+- **Choice card** (the chat's native tappable list): shown only when
+  the ask carries options, directly under the context card, containing
+  ONLY the choices (plus a "My own answer…" row). **A tap files the
+  answer immediately** — a choice is the decision; there is no extra
+  confirmation.
+- **Open question**: context card only; the owner answers in the
+  conversation. If the agent's Muse drafts the wording (anything that
+  is not the owner's own words), the exact text is shown and filed
+  only after the owner's Send tap. The owner's own words file
+  directly.
+- "My own answer" settles in conversation; then Muse operates the
+  API — selects the proper option for the ask and types the answer in
+  — never a terminal side channel.
+- Answered asks re-render as a closed card; a question that changes
+  (payload hash moved) is re-issued before anything can be filed
+  against it.
+
+## The mobile mini site
+
+`src/serve.mjs` is a zero-dependency Node server that runs **on the
+PenguPool machine** and serves a phone-first live status page: the same
+tree and indicators as the status card, a red banner when an agent
+needs input, auto-refresh every 10 seconds. It binds only to the
+machine's Tailscale address, and reads the owner API locally with the
+current bootstrap token (read fresh from `hub.token` on every poll, so
+daemon restarts need no attention). Install it on the PenguPool machine
+with `./install-host.sh` (launchd; survives reboots), then open
+`http://<machine>.<tailnet>.ts.net:7790` on the phone.
+
 ## Install
 
 ```
@@ -85,7 +141,7 @@ below 60, red from 60.
 Installs into the layout the code's paths assume:
 
 ```
-~/workspace/pengupool-agent/   pp.py detect.py gadget.py (+ tokens, below)
+~/workspace/pengupool-agent/   pp.py detect.py gadget.py tracker.py askcard.py (+ tokens, below)
 ~/workspace/companion/         companion.py, companion symlink, config.json
 ~/hooks/scripts/               pengupool-status.sh
 ```

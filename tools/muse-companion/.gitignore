@@ -3,6 +3,8 @@ token
 device-token
 # Local monitor config (seeded from config.example.json at install).
 config.json
+# The live work tracker (seeded from tracker.example.json at install).
+tracker.json
 __pycache__/
 # Rendered gadgets.
 out/

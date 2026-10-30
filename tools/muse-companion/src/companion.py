@@ -9,6 +9,8 @@ Manages the PenguPool status monitor without code changes:
   companion check                  run one check right now
   companion log [n]                the last n poll decisions
   companion gadget [--out PATH]    render the team status card (chat widget HTML)
+  companion tracker [--out PATH]   render the work-tracker card (chat widget HTML)
+  companion ask SPEC [--answer T]  render an answer card for a pending question
 
 The every-minute hook polls the detector; the detector reads
 ~/workspace/companion/config.json on every poll and only performs a
@@ -28,6 +30,8 @@ STATE_PATH = os.path.expanduser("~/hooks/state/pengupool-status.json")
 HOOK_LOG = os.path.expanduser("~/hooks/logs/pengupool-status.jsonl")
 DETECT = os.path.expanduser("~/workspace/pengupool-agent/detect.py")
 GADGET = os.path.expanduser("~/workspace/pengupool-agent/gadget.py")
+TRACKER = os.path.expanduser("~/workspace/pengupool-agent/tracker.py")
+ASK = os.path.expanduser("~/workspace/pengupool-agent/askcard.py")
 BASE_POLL_SECS = 60  # the hook's own cadence; the effective floor
 
 
@@ -133,11 +137,29 @@ def cmd_check():
         print(f"  - {c}")
 
 
+def cmd_ask(args):
+    out = subprocess.run([sys.executable, ASK] + args,
+                         capture_output=True, text=True, timeout=60)
+    if out.returncode != 0:
+        print("ask failed:", out.stderr[-300:])
+        sys.exit(1)
+    sys.stdout.write(out.stdout)
+
+
 def cmd_gadget(args):
     out = subprocess.run([sys.executable, GADGET] + args,
                          capture_output=True, text=True, timeout=120)
     if out.returncode != 0:
         print("gadget failed:", out.stderr[-300:])
+        sys.exit(1)
+    sys.stdout.write(out.stdout)
+
+
+def cmd_tracker(args):
+    out = subprocess.run([sys.executable, TRACKER] + args,
+                         capture_output=True, text=True, timeout=60)
+    if out.returncode != 0:
+        print("tracker failed:", out.stderr[-300:])
         sys.exit(1)
     sys.stdout.write(out.stdout)
 
@@ -173,6 +195,10 @@ def main():
         cmd_check()
     elif cmd == "gadget":
         cmd_gadget(rest)
+    elif cmd == "tracker":
+        cmd_tracker(rest)
+    elif cmd == "ask":
+        cmd_ask(rest)
     elif cmd == "log":
         cmd_log(rest)
     else:

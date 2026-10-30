@@ -114,6 +114,8 @@ companion config set interval 1h && python3 ~/workspace/pengupool-agent/detect.p
                         # → {"decision": "silent", "reason": "not due ..."}
 companion config set interval 1m   # restore the owner's cadence
 companion gadget        # renders the team card (tree + PenguPool's indicators)
+companion tracker       # renders the work-tracker card
+companion ask <spec>    # renders a question's context card (ANSWER-CARDS.md)
 ```
 
 Plus a wake test: make a session appear/disappear (or wait for a real
@@ -126,5 +128,38 @@ and that routine polls stay silent.
   runs `companion config set interval 5m`. No code changes, ever.
 - The owner says "status" — the agent runs `companion gadget` and
   shows the card.
+- The owner says "tracker" — the agent runs `companion tracker` and
+  shows the work-tracker card, after updating `tracker.json` for
+  anything that changed.
 - Alerts are single and factual: what changed, and the card when it
   helps. Silence is the default state.
+- **Needs-input is a signal, not a judgment call.** When a wake carries
+  an ask, relay it to the owner as-is (which session, what it is
+  asking). The only check allowed: the ask is still open. Never decide
+  whether it deserves the owner's attention.
+- Answering follows the card flow (see `ANSWER-CARDS.md`): context
+  card for the question, the native choice card with only the choices
+  when the ask has options, a choice tap files immediately, and a
+  "send it" confirmation only for free text you formulated that is not
+  the owner's own words.
+- The owner answers an ask — you file it through the ask's own answer
+  path (the device API answer endpoint for host asks; the session's
+  channel for agent questions) and show the closed card.
+
+## 7. Optional: the mobile mini site (agent, on the PenguPool machine)
+
+The chat status card is a snapshot. For an always-live view on the
+owner's phone, install the mini site on the PenguPool machine itself:
+
+```
+cd tools/muse-companion && ./install-host.sh   # PORT=7791 changes the port
+```
+
+It needs Node 21+ on that machine and nothing else: launchd keeps it
+running, it binds to the machine's Tailscale address only, and it reads
+the owner API over loopback with the bootstrap token from
+`~/.pengupool-ai/v2/run/hub.token` — read fresh on every poll, so the
+token's rotation at daemon restarts is a non-event. Verify:
+`curl http://<machine>.<tailnet>.ts.net:7790/health` answers
+`{"ok":true}` from another tailnet device, and the page shows the live
+team. The site is read-only: names and statuses, nothing else.
