@@ -488,7 +488,7 @@ func (p *Pool) museSessions(_ context.Context, c gateway.Caller, _ json.RawMessa
 				}
 			}
 		}
-		out = append(out, museSessionView{Session: s.ID, Title: title, State: string(s.State), Waiting: waiting[s.ID], Question: s.Question})
+		out = append(out, museSessionView{Session: s.ID, Title: title, State: string(s.State), Waiting: waiting[s.ID], Question: s.View().Question})
 	}
 	if out == nil {
 		out = []museSessionView{}

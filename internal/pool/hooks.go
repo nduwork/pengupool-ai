@@ -163,11 +163,20 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		delete(p.routed, s.ID)
 		p.mu.Unlock()
 	}
-	// The pending question lasts until a hook about something else: the agent got its answer.
+	// The pending question lasts until the agent got its answer: a hook for that same tool call, or
+	// any hook when the question names no call. Another tool running alongside (parallel calls, a
+	// subagent) leaves it; a turn's or session's end always clears it.
 	switch in.Event {
 	case "PermissionRequest", "Notification", "Status", "Delivered":
+	case "PreToolUse", "PostToolUse":
+		p.mu.Lock()
+		use := p.questionUse[s.ID]
+		p.mu.Unlock()
+		if use == "" || use == str("tool_use_id") {
+			p.setQuestion(s.ID, "", "")
+		}
 	default:
-		p.setQuestion(s.ID, "")
+		p.setQuestion(s.ID, "", "")
 	}
 	switch in.Event {
 	case "SessionStart":
@@ -246,7 +255,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		p.turnOpen(s.ID, "")
 		p.asking(s.ID, str("tool_name"), true)
 		if t := str("tool_name"); t == "AskUserQuestion" || t == "ExitPlanMode" {
-			p.setQuestion(s.ID, askedSummary(t, pl["tool_input"]))
+			p.setQuestion(s.ID, askedSummary(t, pl["tool_input"]), str("tool_use_id"))
 		}
 		if out, deny := p.guardRoute(s, pl); deny {
 			return out, nil
@@ -330,7 +339,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			}
 		}
 		p.setStatus(s.ID, "approval")
-		p.setQuestion(s.ID, askedSummary(str("tool_name"), pl["tool_input"]))
+		p.setQuestion(s.ID, askedSummary(str("tool_name"), pl["tool_input"]), str("tool_use_id"))
 		p.permissionAsked(s, str("tool_name"), pl["tool_input"], str("tool_use_id"))
 		return HookOut{}, nil
 	case "Notification":
@@ -339,7 +348,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			p.setStatus(s.ID, "approval")
 			// Its message only names the tool: the PermissionRequest before it says more.
 			if cur, ok := p.session(s.ID); ok && cur.Question == "" {
-				p.setQuestion(s.ID, clipRunes(redact(oneLine(str("message"))), 300))
+				p.setQuestion(s.ID, clipRunes(redact(oneLine(str("message"))), 300), "")
 			}
 		case "idle_prompt":
 			p.setStatus(s.ID, "idle")
@@ -398,7 +407,19 @@ func (p *Pool) setSession(id string, fn func(*store.Session)) {
 	})
 }
 
-func (p *Pool) setQuestion(id, q string) {
+// setQuestion records what the session asks the owner now, and the tool call it is about ("" when
+// unknown: then any tool hook ends it).
+func (p *Pool) setQuestion(id, q, use string) {
+	p.mu.Lock()
+	if p.questionUse == nil {
+		p.questionUse = map[string]string{}
+	}
+	if q == "" {
+		delete(p.questionUse, id)
+	} else if use != "" || p.questionUse[id] == "" {
+		p.questionUse[id] = use // a Notification (no id) never loses the id its PermissionRequest gave
+	}
+	p.mu.Unlock()
 	if s, ok := p.session(id); !ok || s.Question == q {
 		return
 	}

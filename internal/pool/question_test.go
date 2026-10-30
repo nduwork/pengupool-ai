@@ -50,8 +50,28 @@ func TestPendingQuestion(t *testing.T) {
 	hook("PostToolUse", map[string]any{"tool_name": "AskUserQuestion"})
 	want("chosen", "")
 
+	// Parallel calls: another tool's hooks leave the question; its own call's hook ends it.
+	hook("PermissionRequest", map[string]any{"tool_name": "Bash", "tool_use_id": "tuA", "tool_input": map[string]any{"command": "make deploy"}})
+	hook("PreToolUse", map[string]any{"tool_name": "Read", "tool_use_id": "tuB", "tool_input": map[string]any{"file_path": "a.go"}})
+	hook("PostToolUse", map[string]any{"tool_name": "Read", "tool_use_id": "tuB", "tool_input": map[string]any{"file_path": "a.go"}})
+	hook("Notification", map[string]any{"notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash"})
+	want("another call ran", "Bash: make deploy")
+	hook("PreToolUse", map[string]any{"tool_name": "Bash", "tool_use_id": "tuA", "tool_input": map[string]any{"command": "make deploy"}})
+	want("its own call went ahead", "")
+
 	hook("PreToolUse", map[string]any{"tool_name": "ExitPlanMode", "tool_input": map[string]any{"plan": "\n## Add caching to the API\n\n1. ..."}})
 	want("plan", "Approve the plan: Add caching to the API")
+
+	// A session that is no longer running asks nothing.
+	_ = p.st.Update(func(s *store.State) error {
+		s.Sessions[sessionIndex(s, id)].State = "lost"
+		return nil
+	})
+	want("lost", "")
+	_ = p.st.Update(func(s *store.State) error {
+		s.Sessions[sessionIndex(s, id)].State = "running"
+		return nil
+	})
 
 	// The paired device's overview carries it too (a team the owner opened to the phone).
 	_ = p.st.Update(func(s *store.State) error {

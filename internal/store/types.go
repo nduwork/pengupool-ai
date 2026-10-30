@@ -67,8 +67,8 @@ type Session struct {
 	// still starting: it needs the owner, not a message.
 	Waiting string `json:"waiting,omitempty"`
 	// Question is what the agent is asking the owner right now (a permission, a question, its plan),
-	// from its harness's own hooks; cleared by the next hook that is not about it. Answered in the
-	// terminal.
+	// from its harness's own hooks; cleared by the next hook for that tool call (or any tool hook when
+	// it names none) and at a turn's end. Shown only while the session runs. Answered in the terminal.
 	Question   string `json:"question,omitempty"`
 	TeamID     string `json:"team_id,omitempty"`
 	Role       string `json:"role,omitempty"`
@@ -235,7 +235,6 @@ func (s Session) View() protocol.SessionView {
 
 		Status:     s.Status,
 		Waiting:    s.Waiting,
-		Question:   s.Question,
 		TeamID:     s.TeamID,
 		Role:       s.Role,
 		SkillID:    s.SkillID,
@@ -246,6 +245,9 @@ func (s Session) View() protocol.SessionView {
 		Summary:    s.Summary,
 	}
 	v.HooksMissing = s.HooksMissing
+	if s.State == "running" { // a session that ended or was lost asks nothing, whatever its last hook said
+		v.Question = s.Question
+	}
 	return v
 }
 

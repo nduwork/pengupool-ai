@@ -75,6 +75,7 @@ type Pool struct {
 	lastInput         map[string]time.Time         // session id → last desktop input (unused by native paths)
 	ownerEnter        map[string][]credit          // session id → the prompts the owner submitted in it, not yet matched (under mu)
 	askingOwner       map[string]bool              // sessions with a question or plan tool open (under mu)
+	questionUse       map[string]string            // the tool_use_id a session's pending question is about (under mu)
 	hookAt            map[string]time.Time         // session id → its newest hook event (under mu; hookless.go)
 	promptAt          map[string]time.Time         // session id → the owner's first prompt in its launch (under mu)
 	routed            map[string]string            // LEAD session id → the teammate triage named for this turn (under mu)
