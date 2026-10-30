@@ -183,6 +183,9 @@ v0.9.30: An agent can put a question only you can settle to you directly (`pengu
 [--option A]... "question"`). It waits for your answer, given in the app's Approvals or from a
 paired Muse device: one of its options, or a reply in your own words. Other agents cannot answer it. An ask left
 unanswered for 15 minutes expires, and the agent goes on with a safe default of its own.
+v0.9.31: The Muse companion (status gadget, mini status site, answer cards, change detector) ships
+in the repo at tools/muse/companion, next to the Muse app guide. The app itself is unchanged; its
+built web files are refreshed in the repo to match the source.
 
 ## Credits
 

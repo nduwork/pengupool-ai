@@ -89,7 +89,7 @@ The full pairing walkthrough also lives in the repo's
 From a clone of the pengupool-ai repo:
 
 ```
-tools/muse-companion/install.sh
+tools/muse/companion/install.sh
 ```
 
 This installs `pp.py`/`detect.py`/`gadget.py` to
@@ -153,7 +153,7 @@ The chat status card is a snapshot. For an always-live view on the
 owner's phone, install the mini site on the PenguPool machine itself:
 
 ```
-cd tools/muse-companion && ./install-host.sh   # PORT=7791 changes the port
+cd tools/muse/companion && ./install-host.sh   # PORT=7791 changes the port
 ```
 
 It needs Node 21+ on that machine and nothing else: launchd keeps it

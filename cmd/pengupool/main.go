@@ -17,7 +17,7 @@ import (
 )
 
 // Version of the prototype. It is not the protocol version; that is protocol.Version.
-const Version = "0.9.30"
+const Version = "0.9.31"
 
 const help = `usage: pengupool <command> [options]
 
