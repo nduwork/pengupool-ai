@@ -413,7 +413,6 @@ function Providers(): ReactElement {
 interface SettingsResp {
   network: { lan: boolean; lan_addr?: string; tailscale?: string };
   bound?: string;
-  lan_ips?: string[] | null;
   tailscale_name?: string;
   tailscale_error?: string;
   store: string;
@@ -466,7 +465,7 @@ function TerminalHistory(): ReactElement {
   );
 }
 
-/** The local network: where the host listens, and whether phones on this network may connect. */
+/** The local network: where the host listens, and whether paired devices may reach it over the network. */
 function LocalNetwork(): ReactElement {
   const app = useApp();
   const [n, setN] = useState(0);
@@ -477,7 +476,7 @@ function LocalNetwork(): ReactElement {
   return (
     <div>
       <H title="Local network">
-        No pairing. Phones see only teams that allow iOS access; a group password gates a team&apos;s screens, history and input. A phone is always view-only on the screen.
+        Paired Muse devices reach this machine on its Tailscale name. The network gets the device API only; this app stays on this machine.
       </H>
       <Card className="px-4">
         <Row title="Host address" hint="Where this machine listens.">
@@ -487,7 +486,7 @@ function LocalNetwork(): ReactElement {
           title="Local network"
           hint={
             s.network.lan
-              ? `Phones on this network: ${(s.lan_ips ?? []).map((ip) => `http://${ip}:${port}`).join("  ")}`
+              ? `On: paired devices reach the device API on port ${port}.`
               : "Off: only this machine can connect. Turning it on restarts the host; sessions keep running."
           }
         >
@@ -518,7 +517,7 @@ function LocalNetwork(): ReactElement {
         </Row>
       </Card>
       <p className="mt-3 rounded-md bg-warning/10 p-3 text-caption text-warning">
-        A group password does not encrypt plain HTTP. Use the local network only when you trust it; new teams get iOS access off while it is on.
+        Plain HTTP is not encrypted on the local network; the tailnet is. Every device API call needs a device token; new teams get iOS access off while it is on.
       </p>
     </div>
   );
@@ -532,7 +531,7 @@ function Tailscale(): ReactElement {
   if (s === null) return <p className="text-label text-faint">Loading…</p>;
   return (
     <div>
-      <H title="Tailscale">Reach this machine from your phone anywhere, over your private tailnet. PenguPool never uses Funnel.</H>
+      <H title="Tailscale">Paired devices reach this machine anywhere, over your private tailnet. PenguPool never uses Funnel.</H>
       <Card className="mb-4 px-4">
         <Row title="Tailscale" hint={s.tailscale_name !== undefined ? `This machine is ${s.tailscale_name} on your tailnet. Serve uses your private tailnet only, never Funnel.` : s.tailscale_error}>
           <Button

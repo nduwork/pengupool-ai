@@ -188,6 +188,12 @@ role, parent and assignment; a member's ask the team left to you waits on `/next
 dismiss); `POST /sessions/{id}/action` stops, interrupts or resumes an agent session, with no
 error when it already is so; `POST /teams/{id}/members` asks for a team change that waits for
 your allow. Teams without iOS access stay hidden, and no agent can use any of it.
+v0.9.32: The PenguPool app stays on this machine. Over the network (Local network, the tailnet
+name, Tailscale Serve) only the paired-device API and the health check answer; the app, its
+WebSocket and every other route are 404 there, reachable on this machine or through an SSH
+port forward. Removed: the browser phone view (the app opened without the token from a phone or
+another machine on the network), and with it the team's group password, which only that view
+asked for. Phones use a paired Muse device.
 
 ## Credits
 

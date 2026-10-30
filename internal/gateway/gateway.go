@@ -93,9 +93,9 @@ type Options struct {
 	// A connection from such a process is not the owner's terminal, whatever token it sends: an agent
 	// can read the token file and unset the variable the CLI looks at.
 	InSession func(pid int) bool
-	// PhoneHosts are extra Host names accepted on the HTTP listener (the Tailscale Serve name).
-	// A browser that reaches the app through one of them, or from a non-loopback address, without
-	// the owner's bootstrap token is a phone: view-only and filtered by group access.
+	// PhoneHosts are extra Host names accepted on the HTTP listener (the Tailscale Serve name, and
+	// this machine's tailnet name). Through them, as from any non-loopback address, only the
+	// device API and the health check answer.
 	PhoneHosts func() []string
 }
 
@@ -107,7 +107,7 @@ type Caller struct {
 	// Owner: the connection presented this host's token on /ws (the owner's app). A unix-socket
 	// connection, where agents' CLI calls arrive, never is, whatever kind it claims.
 	Owner bool
-	// Phone: the owner's phone (reached the app without the token, through the phone path).
+	// Phone: a paired device on /api/muse/v1 (see Device).
 	Phone bool
 	// Device: the paired Muse device name, when Phone came with a valid
 	// device token on /api/muse/v1. Empty otherwise.
@@ -375,45 +375,21 @@ func (s *Server) handleNetConn(ctx context.Context, c net.Conn) {
 	untrack := s.track(c)
 	defer untrack()
 	defer c.Close()
-	s.handleConn(ctx, newNetFrameConn(c), c.RemoteAddr().String(), false, false, peerPID(c), isUnixConn(c))
+	s.handleConn(ctx, newNetFrameConn(c), c.RemoteAddr().String(), false, peerPID(c), isUnixConn(c))
 }
 
 // handle runs one client connection to completion.
 func (s *Server) handle(ctx context.Context, fc frameConn, remote string) {
-	s.handlePhone(ctx, fc, remote, false, false)
-}
-
-// phoneRequest reports a tokenless request a phone may make: on a PhoneHosts name (the Tailscale
-// Serve name, or this machine's own tailnet name; Serve's proxy arrives from loopback with that
-// Host), or from another host on a LAN listener. Either way the connection is view-only.
-func (s *Server) phoneRequest(r *http.Request) bool {
-	host := r.Host
-	if h, _, err := net.SplitHostPort(r.Host); err == nil {
-		host = h
-	}
-	if s.opts.PhoneHosts != nil {
-		for _, h := range s.opts.PhoneHosts() {
-			if h != "" && strings.EqualFold(h, host) {
-				return true
-			}
-		}
-	}
-	ra, _, err := net.SplitHostPort(r.RemoteAddr)
-	ip := net.ParseIP(ra)
-	return err == nil && ip != nil && !ip.IsLoopback()
-}
-
-func (s *Server) handlePhone(ctx context.Context, fc frameConn, remote string, phone, owner bool) {
-	s.handleConn(ctx, fc, remote, phone, owner, 0, false)
+	s.handleConn(ctx, fc, remote, false, 0, false)
 }
 
 func isUnixConn(c net.Conn) bool { _, ok := c.(*net.UnixConn); return ok }
 
-func (s *Server) handleConn(ctx context.Context, fc frameConn, remote string, phone, owner bool, peerPID int, unix bool) {
+func (s *Server) handleConn(ctx context.Context, fc frameConn, remote string, owner bool, peerPID int, unix bool) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	c := newConn(s, fc, remote)
-	c.phone, c.owner, c.peerPID, c.unix = phone, owner && !phone, peerPID, unix
+	c.owner, c.peerPID, c.unix = owner, peerPID, unix
 	defer c.teardown()
 	// Unblock a read parked inside the frame connection when the connection's context ends.
 	go func() {
@@ -481,7 +457,6 @@ type conn struct {
 
 	wmu sync.Mutex
 
-	phone bool // reached the app without the owner's token: always view-only
 	owner bool // presented the owner's token on /ws
 	// terminal: the owner's CLI on the unix socket (sent the token in hello): it may start and
 	// stop sessions, nothing more.
@@ -609,9 +584,6 @@ func (c *conn) checkHello(f protocol.Frame) bool {
 			c.terminal = false // the token, but from inside an agent: not the owner's
 		}
 	}
-	if c.phone {
-		c.kind = protocol.KindIOS
-	}
 	ok := &protocol.Message{
 		ID:           msg.ID,
 		Type:         protocol.TypeHelloOK,
@@ -683,7 +655,7 @@ func (c *conn) dispatch(ctx context.Context, f protocol.Frame) {
 }
 
 func (c *conn) caller() Caller {
-	return Caller{ConnectionID: c.id, Kind: c.kind, Remote: c.remote, Owner: c.owner, Phone: c.phone, Terminal: c.terminal, PeerPID: c.peerPID, Unix: c.unix}
+	return Caller{ConnectionID: c.id, Kind: c.kind, Remote: c.remote, Owner: c.owner, Terminal: c.terminal, PeerPID: c.peerPID, Unix: c.unix}
 }
 
 func (c *conn) rpc(ctx context.Context, msg *protocol.Message) {
@@ -758,6 +730,11 @@ func (s *Server) hostGuard(next http.Handler) http.Handler {
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
 		}
+		// The network gets the device API only; the app and its owner routes stay on this machine.
+		if !s.local(r) && r.URL.Path != "/api/healthz" && !strings.HasPrefix(r.URL.Path, "/api/muse/v1/") {
+			http.NotFound(w, r)
+			return
+		}
 		// CORS for the desktop app's pages only; every API route still checks the token.
 		if r.Header.Get("Origin") == DesktopOrigin {
 			w.Header().Set("Access-Control-Allow-Origin", DesktopOrigin)
@@ -771,6 +748,14 @@ func (s *Server) hostGuard(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// local reports a request from this machine itself, or an SSH forward to it: a loopback peer that
+// did not come through Tailscale Serve, which proxies the tailnet from loopback with its own Host.
+func (s *Server) local(r *http.Request) bool {
+	peer, _, err := net.SplitHostPort(r.RemoteAddr)
+	ip := net.ParseIP(peer)
+	return err == nil && ip != nil && ip.IsLoopback() && !s.phoneHost(r)
 }
 
 func (s *Server) phoneHost(r *http.Request) bool {
@@ -872,13 +857,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	phone := false
 	if subtle.ConstantTimeCompare([]byte(r.URL.Query().Get(TokenQuery)), []byte(s.token)) != 1 {
-		if r.URL.Query().Get(TokenQuery) != "" || !s.phoneRequest(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		phone = true
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
 	}
 	if !originAllowed(r) {
 		http.Error(w, "forbidden origin", http.StatusForbidden)
@@ -899,7 +880,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	s.serveMu.Lock()
 	parent := s.serveCtx
 	s.serveMu.Unlock()
-	s.handlePhone(parent, &wsFrameConn{ws: ws, ctx: parent}, r.RemoteAddr, phone, !phone)
+	s.handleConn(parent, &wsFrameConn{ws: ws, ctx: parent}, r.RemoteAddr, true, 0, false)
 }
 
 // DesktopOrigin is the origin of the PenguPool desktop app's own pages. The app loads its UI from
