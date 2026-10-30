@@ -550,11 +550,14 @@ func (p *Pool) guardSendMessage(s store.Session, pl map[string]any) HookOut {
 	return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 		"hookEventName":            "PreToolUse",
 		"permissionDecision":       "deny",
-		"permissionDecisionReason": "PenguPool: agents talk only to their parent and children on their team, and that session is neither. Message your parent; it passes on what others need. Only the owner can open a channel to another session, by typing @<session> in your prompt.",
+		"permissionDecisionReason": "PenguPool: agents talk only to their parent and children on their team, and that session is neither, or the name is shared by more than one session. Message your parent; it passes on what others need. To reach a teammate whatever its name, run `" + p.exe + " send --to <session id>` with the id from your Team members list. Only the owner can open a channel to another session, by typing @<session> in your prompt.",
 	}})
 }
 
-// sendTarget is the PenguPool session a SendMessage names, if it names one.
+// sendTarget is the PenguPool session a SendMessage names, if it names one. Claude delivers a
+// SendMessage by name to the Claude session of that name, so that session is the target, whatever
+// team holds a session of the same name; a name two Claude sessions share is ("", true), which no
+// one may send to (the guard says to use the session id).
 func (p *Pool) sendTarget(pl map[string]any) (string, bool) {
 	in, _ := pl["tool_input"].(map[string]any)
 	to, _ := in["to"].(string)
@@ -562,7 +565,20 @@ func (p *Pool) sendTarget(pl map[string]any) (string, bool) {
 	if strings.Contains(to, "/") || strings.Contains(to, ":") {
 		return p.sessionBySocket(strings.TrimPrefix(to, "uds:")), true
 	}
-	if x, ok := sessionNamed(p.st.State(), to); ok {
+	st := p.st.State()
+	var claude []string
+	for _, s := range st.Sessions {
+		if s.State == "running" && s.Harness == harness.Claude && strings.EqualFold(s.Name, to) {
+			claude = append(claude, s.ID)
+		}
+	}
+	switch {
+	case len(claude) == 1:
+		return claude[0], true
+	case len(claude) > 1:
+		return "", true
+	}
+	if x, ok := sessionNamed(st, to); ok {
 		return x.ID, true
 	}
 	return "", false
