@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"time"
 
@@ -45,7 +46,7 @@ func (p *Pool) agentAsk(_ context.Context, in agentAskIn) (any, error) {
 	}
 	var opts []string
 	for _, o := range in.Options {
-		if o = clipRunes(redact(oneLine(strings.TrimSpace(o))), 80); o != "" {
+		if o = clipRunes(redact(oneLine(strings.TrimSpace(o))), 80); o != "" && !slices.Contains(opts, o) {
 			opts = append(opts, o)
 		}
 	}
@@ -53,7 +54,8 @@ func (p *Pool) agentAsk(_ context.Context, in agentAskIn) (any, error) {
 		Detail: clipRunes(redact(q), 2000), Options: opts, State: "pending", CreatedAt: now()}
 	cut := time.Now().Add(-24 * time.Hour)
 	if err := p.update(func(st *store.State) error {
-		// An ask whose session went expires; settled asks stay a day, for the app's record.
+		// An ask whose session is not running expires: its waiter went with it (a session restored
+		// after a crash or update asks again). Settled asks stay a day, for the app's record.
 		keep, mine := st.Domain.Approvals[:0], 0
 		for _, x := range st.Domain.Approvals {
 			if x.Kind == "ask" && x.State == "pending" {
@@ -144,10 +146,15 @@ func (p *Pool) answerAsk(id, answer, by string) (any, error) {
 		return nil, invalid("no answer")
 	}
 	var a protocol.Approval
+	gone := false
 	err := p.update(func(st *store.State) error {
 		for i := range st.Domain.Approvals {
 			if x := &st.Domain.Approvals[i]; x.ID == id && x.Kind == "ask" {
 				if x.State != "pending" {
+					return conflict("the ask changed or expired")
+				}
+				if j := sessionIndex(st, x.SessionID); j < 0 || st.Sessions[j].State != "running" {
+					gone = true // answered by nobody: it goes, and the update below is dropped
 					return conflict("the ask changed or expired")
 				}
 				x.State, x.Answer, x.AnsweredBy = "answered", clipRunes(answer, 4000), by
@@ -157,6 +164,9 @@ func (p *Pool) answerAsk(id, answer, by string) (any, error) {
 		}
 		return notFound("no ask %s", id)
 	})
+	if gone {
+		p.expireAsks("")
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -169,6 +179,23 @@ func (p *Pool) answerAsk(id, answer, by string) (any, error) {
 		p.notice(a.TeamID, a.SessionID, "The owner answered your ask "+a.ID+" (\""+clipRunes(oneLine(a.Detail), 120)+"\"): "+a.Answer)
 	}
 	return map[string]string{"id": a.ID, "answer": a.Answer}, nil
+}
+
+// expireAsks ends the pending asks of one session, or ("") of every session that is not running.
+func (p *Pool) expireAsks(sessionID string) {
+	_ = p.update(func(st *store.State) error {
+		for i := range st.Domain.Approvals {
+			x := &st.Domain.Approvals[i]
+			if x.Kind != "ask" || x.State != "pending" {
+				continue
+			}
+			j := sessionIndex(st, x.SessionID)
+			if x.SessionID == sessionID || sessionID == "" && (j < 0 || st.Sessions[j].State != "running") {
+				x.State = "expired"
+			}
+		}
+		return nil
+	})
 }
 
 // askWaitGrace: an ask waited on this recently still has its waiter (the CLI calls again between

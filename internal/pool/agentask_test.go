@@ -160,8 +160,34 @@ func TestAgentAskLimits(t *testing.T) {
 		t.Fatalf("a fourth pending ask: %v", err)
 	}
 
+	// Nobody answers an ask whose session stopped: it expires instead.
+	pending := ""
+	for _, a := range p.st.State().Domain.Approvals {
+		if a.Kind == "ask" && a.State == "pending" && a.SessionID == id {
+			pending = a.ID
+		}
+	}
 	_ = p.st.Update(func(s *store.State) error { s.Sessions[sessionIndex(s, id)].State = "exited"; return nil })
+	if _, err := p.answerAsk(pending, "late", "owner"); protocol.CodeOf(err) != protocol.CodeConflict {
+		t.Fatalf("answered a stopped session's ask: %v", err)
+	}
+	if a, _ := p.approval(pending); a.State != "expired" {
+		t.Fatalf("stopped session's ask = %+v", a)
+	}
 	_ = p.st.Update(func(s *store.State) error { s.Sessions[sessionIndex(s, "webaaaaaaaaa")].Harness = "claude"; return nil })
+	// Duplicate choices are one; resuming a session ends what it asked before.
+	res, err := p.agentAsk(ctx, agentAskIn{SessionID: "webaaaaaaaaa", Question: "pick", Options: []string{"A", "A", " B "}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	web, _ := p.approval(res.(map[string]string)["id"])
+	if strings.Join(web.Options, ",") != "A,B" {
+		t.Fatalf("options = %q", web.Options)
+	}
+	p.expireAsks("webaaaaaaaaa")
+	if a, _ := p.approval(web.ID); a.State != "expired" {
+		t.Fatalf("resumed session's ask = %+v", a)
+	}
 	if _, err := p.agentAsk(ctx, agentAskIn{SessionID: "webaaaaaaaaa", Question: "web?"}); err != nil {
 		t.Fatal(err)
 	}

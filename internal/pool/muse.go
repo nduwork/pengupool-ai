@@ -402,11 +402,11 @@ func askPayload(a protocol.Approval) string {
 // (reply, with text), the way the app does.
 func (p *Pool) museAnswerAsk(c gateway.Caller, id string, in museAnswerIn) (any, error) {
 	a, ok := p.approval(id)
-	if !ok || a.Kind != "ask" || a.State != "pending" {
-		return nil, protocol.Errorf(protocol.CodeConflict, "the ask changed or expired")
+	if !ok || a.Kind != "ask" || !p.museTeamVisible(a.TeamID) || !p.museVisible(a.SessionID) {
+		return nil, notFound("no ask ask:%s", id) // one the device cannot see does not exist for it
 	}
-	if !p.museTeamVisible(a.TeamID) || !p.museVisible(a.SessionID) {
-		return nil, notFound("no ask ask:%s", id)
+	if a.State != "pending" {
+		return nil, protocol.Errorf(protocol.CodeConflict, "the ask changed or expired")
 	}
 	if payloadHash(askPayload(a)) != in.PayloadHash {
 		return nil, protocol.Errorf(protocol.CodeConflict, "the ask changed or expired")

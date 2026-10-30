@@ -383,6 +383,7 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 		return nil, invalid("%s's helper agent was deleted; start a new session instead", s.Name)
 	}
 	keep := s
+	p.expireAsks(s.ID) // what it asked before it stopped has no one waiting: it asks again if it still needs to
 	ns, err := p.spawn(ctx, spawnReq{
 		ID: s.ID, Name: s.Name, Harness: s.Harness, Cwd: s.Cwd, Resume: resumeID, Cols: s.Cols, Rows: s.Rows, SkillID: keep.SkillID, Via: s.Via,
 		Decorate: func(n *store.Session) {
