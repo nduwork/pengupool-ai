@@ -157,11 +157,24 @@ func TestTreeTalk(t *testing.T) {
 		t.Fatalf("the SendMessage on the record: %+v", onRecord)
 	}
 	// Each member's context lists only its neighbours, with the way to reach each.
-	if c := p.renderContext(id["db"]); !strings.Contains(c, "- gcp (your parent): `pengupool send --to \"gcp\"") || strings.Contains(c, "- api (your") || strings.Contains(c, "- lead (your") {
+	if c := p.renderContext(id["db"]); !strings.Contains(c, "- gcp (your parent): `pengupool send --to \""+id["gcp"]+"\"") || strings.Contains(c, "- api (your") || strings.Contains(c, "- lead (your") {
 		t.Fatalf("db's contacts:\n%s", c)
 	}
-	if c := p.renderContext(id["lead"]); !strings.Contains(c, "- web (your child): `pengupool send --to \"web\"") || !strings.Contains(c, "- gcp (your child): `pengupool send") || strings.Contains(c, "- db (your") {
+	if c := p.renderContext(id["lead"]); !strings.Contains(c, "- web (your child): `pengupool send --to \""+id["web"]+"\"") || !strings.Contains(c, "- gcp (your child): `pengupool send") || strings.Contains(c, "- db (your") {
 		t.Fatalf("lead's contacts:\n%s", c)
+	}
+	// A rename keeps the session id: a teammate that kept it still reaches gcp, and the roster maps it to the new name.
+	if _, err := p.sessionRename(ctx, renameIn{SessionID: id["gcp"], Name: "infra"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.messageSend(ctx, sendIn{From: id["db"], To: id["gcp"], Text: "schema is in"}); err != nil {
+		t.Fatalf("send by session id after a rename: %v", err)
+	}
+	if c := p.renderContext(id["db"]); !strings.Contains(c, "- infra (session "+id["gcp"]+")") {
+		t.Fatalf("db's roster after the rename:\n%s", c)
+	}
+	if _, err := p.sessionRename(ctx, renameIn{SessionID: id["gcp"], Name: "gcp"}); err != nil {
+		t.Fatal(err)
 	}
 	// gcp closes: its children hang under the nearest active ancestor, lead.
 	_ = st.Update(func(s *store.State) error {
@@ -218,7 +231,7 @@ func TestContextSendsOnlyChangedSections(t *testing.T) {
 		t.Fatal(err)
 	}
 	upd = prompt("UserPromptSubmit")
-	if !strings.Contains(upd, "- newcomer — member") || strings.Contains(upd, "## Direction") || strings.Contains(upd, "## Current task") ||
+	if !strings.Contains(upd, "- newcomer (session newaaaaaaaaa) — member") || strings.Contains(upd, "## Direction") || strings.Contains(upd, "## Current task") ||
 		strings.Contains(upd, "no longer applies") || strings.Contains(upd, "notices") {
 		t.Fatalf("a join is not just the Team members section: %s", upd)
 	}

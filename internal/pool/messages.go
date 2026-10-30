@@ -87,11 +87,7 @@ func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
 		teamID := ""
 		if t != nil {
 			teamID = t.ID
-			for _, m := range t.Members {
-				if m.State == "active" && (m.SessionID == in.To || strings.EqualFold(m.Name, in.To) || strings.HasPrefix(m.SessionID, in.To) && len(in.To) >= 8) {
-					hits = append(hits, m)
-				}
-			}
+			hits = memberHits(t, in.To)
 		}
 		if len(hits) == 0 && channel != "" {
 			hits = append(hits, protocol.Member{SessionID: channel})
@@ -152,6 +148,18 @@ func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
 		p.mu.Unlock()
 	}
 	return map[string]string{"id": msg.ID, "to": toSession.Name}, nil
+}
+
+// memberHits are the team's active members a `send --to` value names: a session id, a display name
+// (any case) or an id prefix of 8 or more. Sessions outside the team never match.
+func memberHits(t *protocol.Team, to string) []protocol.Member {
+	var hits []protocol.Member
+	for _, m := range t.Members {
+		if m.State == "active" && (m.SessionID == to || strings.EqualFold(m.Name, to) || strings.HasPrefix(m.SessionID, to) && len(to) >= 8) {
+			hits = append(hits, m)
+		}
+	}
+	return hits
 }
 
 // cleanText strips control, bidi and zero-width characters (a message must not drive a terminal).
@@ -242,10 +250,10 @@ func (p *Pool) deliver(m protocol.TeamMessage) {
 // messageBody is a message as its recipient reads it: who sent it and how to answer.
 func (p *Pool) messageBody(m protocol.TeamMessage, from store.Session) string {
 	body := fmt.Sprintf("[PenguPool team message from %s (%s)] %s\n\nTo reply, run this shell command (do not just print it): %s send --to %q \"<your reply>\"",
-		from.Name, from.Role, m.Text, p.exe, from.Name)
+		from.Name, from.Role, m.Text, p.exe, m.From)
 	if m.Type == "ask" {
 		body = fmt.Sprintf("[PenguPool team message from %s (%s), an ask waiting for your answer] %s\n\nTo answer, run this shell command (do not just print it): %s send --to %q --reply-to %s \"<your answer>\"",
-			from.Name, from.Role, m.Text, p.exe, from.Name, m.ID)
+			from.Name, from.Role, m.Text, p.exe, m.From, m.ID)
 	}
 	if d := p.st.State().Domain; m.From != "" && !sameTeam(&d, m.From, m.To) {
 		body = strings.Replace(body, "[PenguPool team message from "+from.Name+" ("+from.Role+")", outsideLabel+from.Name+", outside your team, on a channel the owner opened", 1)
