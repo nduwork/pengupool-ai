@@ -419,9 +419,8 @@ func cmdAsk(args []string) error {
 // cmdAskAnswer carries the owner's answer, typed in this session, to a child's waiting ask.
 func cmdAskAnswer(args []string) error {
 	fs := flag.NewFlagSet("ask answer", flag.ContinueOnError)
-	option := fs.Int("option", 0, "the number of the ask's option the owner picked (1-based)")
-	words := fs.String("words", "", "the owner's answer in their words")
-	usage := errors.New(`usage: pengupool ask answer ASK_ID (--option N | --words "...")`)
+	option := fs.Int("option", 0, "the option (1-based) the owner's whole prompt is; otherwise the prompt itself is the answer")
+	usage := errors.New(`usage: pengupool ask answer ASK_ID [--option N]`)
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		return usage
 	}
@@ -435,7 +434,7 @@ func cmdAskAnswer(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	res, err := rpc(ctx, poolStore(), "ask.answer_for_owner", map[string]any{"session_id": session, "id": id, "option": *option, "words": *words})
+	res, err := rpc(ctx, poolStore(), "ask.answer_for_owner", map[string]any{"session_id": session, "id": id, "option": *option})
 	if err != nil {
 		return err
 	}

@@ -225,14 +225,15 @@ the phone and Muse API. Known limit: Claude Code repaints its live area in place
 output), and those repaints never become history lines, here or in any terminal
 (stablyai/orca#18490).
 v0.9.38: The owner can answer a child's waiting ask from the lead's session. The lead's context lists
-its direct children's asks, and `pengupool ask answer ASK_ID (--option N | --words "...")` carries the
-owner's answer. It is accepted only when all of these hold:
+its direct children's asks, and `pengupool ask answer ASK_ID [--option N]` carries the owner's answer.
+The lead chooses no content: the answer is the owner's whole prompt, word for word (clipped, with
+anything secret-looking left out), for the child to read. It is option N only when the whole prompt
+is exactly N, "option N" or that option's text. It is accepted only when all of these hold:
 - it comes from the lead's own process on this host;
-- the lead's turn was opened by a prompt the owner typed, and no teammate's message has reached the lead
-  since;
-- the ask is a direct child's, made before that prompt, and the lead's previous reply showed it;
-- the answer is in the owner's prompt: `--words` the owner typed (case and spacing aside), or an option
-  the prompt names (its text, "option N", or N alone).
+- the lead's turn was opened by a prompt the owner typed;
+- no teammate's message could have reached the lead since its previous reply: none pending, none
+  delivered since, and no SendMessage to it let through since;
+- the ask is a direct child's, made before that prompt, and the lead's previous reply showed it.
 
 A teammate's message, triage or a notice answers nothing. The answer is recorded as the owner's ("owner
 via <session>") with the owner's words; harness permission prompts are not covered.

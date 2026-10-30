@@ -81,15 +81,17 @@ type Pool struct {
 	answering         map[int64]time.Time          // check-ins being answered by the owner, so a double click types once (under mu)
 	requireOwnerInput bool
 	pending           map[string][]protocol.TeamMessage
-	turns             map[string]*turn    // session id → its open turn (guarded by mu)
-	wording           map[string]*wording // session id → the owner's words it is asked to word for the Compass (under mu)
-	prevReply         map[string]string   // session id → the reply of its last placed turn: the options a choice is made from (guarded by mu)
-	sstat             syncStatus          // the last sync round (guarded by mu)
-	roundMu           sync.Mutex          // one sync at a time
-	renames           map[string]string   // session id → a name to type into Claude at its next idle point (guarded by mu)
-	syncMu            sync.Mutex          // one Skill library sync at a time
-	logged            sync.Map            // catalog warnings already logged, so a list or refresh does not repeat them
-	triaging          sync.Map            // ask id → true while triage weighs it, so a sweep starts it once
+	turns             map[string]*turn     // session id → its open turn (guarded by mu)
+	wording           map[string]*wording  // session id → the owner's words it is asked to word for the Compass (under mu)
+	prevReply         map[string]string    // session id → the reply of its last placed turn: the options a choice is made from (guarded by mu)
+	prevReplyAt       map[string]time.Time // session id → when that reply was placed (guarded by mu)
+	nativeTo          map[string]time.Time // session id → the last native SendMessage to it the guard let through (guarded by mu)
+	sstat             syncStatus           // the last sync round (guarded by mu)
+	roundMu           sync.Mutex           // one sync at a time
+	renames           map[string]string    // session id → a name to type into Claude at its next idle point (guarded by mu)
+	syncMu            sync.Mutex           // one Skill library sync at a time
+	logged            sync.Map             // catalog warnings already logged, so a list or refresh does not repeat them
+	triaging          sync.Map             // ask id → true while triage weighs it, so a sweep starts it once
 	// cloneMu: clones being registered hold it shared; the orphan clean-up takes it alone, so it
 	// never removes a clone between its clone and its registration.
 	cloneMu sync.RWMutex

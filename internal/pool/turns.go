@@ -209,6 +209,10 @@ func (p *Pool) placeTurn(ctx context.Context, s store.Session, t turn, reply str
 		p.prevReply = map[string]string{}
 	}
 	p.prevReply[s.ID] = tailRunes(reply, 1500) // all a choice reads of it
+	if p.prevReplyAt == nil {
+		p.prevReplyAt = map[string]time.Time{}
+	}
+	p.prevReplyAt[s.ID] = time.Now()
 	p.mu.Unlock()
 	d := p.st.State().Domain
 	team := teamOf(&d, s.ID)

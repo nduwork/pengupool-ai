@@ -544,6 +544,14 @@ func copilotTool(pl map[string]any) {
 // PenguPool session is an in-process teammate.
 func (p *Pool) guardSendMessage(s store.Session, pl map[string]any) HookOut {
 	target, ok := p.sendTarget(pl)
+	if ok && p.mayTalk(s.ID, target) {
+		p.mu.Lock()
+		if p.nativeTo == nil {
+			p.nativeTo = map[string]time.Time{}
+		}
+		p.nativeTo[target] = time.Now() // it may be in target's inbox before its record exists (askAnswerFor)
+		p.mu.Unlock()
+	}
 	if !ok || p.mayTalk(s.ID, target) {
 		return HookOut{}
 	}
