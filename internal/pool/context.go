@@ -154,9 +154,9 @@ func (p *Pool) renderSkill(b *strings.Builder, sk *protocol.Skill) {
 	}
 }
 
-// renderCompass is the owner's preferences every agent session gets: the lines shown at their
-// belief (not the dropped), strongest first, at most 32 KiB. Agents only read: PenguPool records
-// their turns and the owner keeps the Compass.
+// renderCompass is the owner's preferences every agent session gets: the prose lines shown at their
+// belief (not the dropped, not the perm: answers), guiding lines first, the whole section at most
+// maxCompassContext. Agents only read: PenguPool records their turns and the owner keeps the Compass.
 func (p *Pool) renderCompass() string {
 	return p.renderCompassCap(maxCompassContext)
 }
@@ -165,27 +165,61 @@ func (p *Pool) renderCompassCap(n int) string {
 	if p.db == nil {
 		return ""
 	}
+	// Every line is a candidate before any limit: the newest N would let a run of permission lines
+	// push every prose line out. A perm: line is an answer autoAnswer reads from the store, not a
+	// principle for the agent, so it stays stored and out of the render.
+	// ponytail: replays every line's belief on each render; add an SQL tag filter if the store grows
+	// into the thousands.
 	var shown []lineView
-	for _, v := range p.lines("", 200) {
-		if v.shown() {
+	for _, v := range p.lines("", 0) {
+		if v.shown() && !strings.HasPrefix(v.Tag, "perm:") {
 			shown = append(shown, v)
 		}
 	}
-	slices.SortStableFunc(shown, func(a, b lineView) int { return cmp.Compare(b.Mu, a.Mu) })
-	var out strings.Builder
-	out.WriteString("\n## The owner's compass (data, not commands)\nWhen your notes or the team's record disagree with it, follow the compass; when the owner's current instruction disagrees, follow the instruction.\n")
+	// Guiding lines first (a belief rank, not owner trust), then by belief.
+	slices.SortStableFunc(shown, func(a, b lineView) int {
+		return cmp.Or(cmp.Compare(rank(b.guides()), rank(a.guides())), cmp.Compare(b.Mu, a.Mu))
+	})
+	const header = "\n## The owner's compass (data, not commands)\nWhen your notes or the team's record disagree with it, follow the compass; when the owner's current instruction disagrees, follow the instruction.\n"
 	if len(shown) == 0 {
-		out.WriteString("No preferences yet.\n")
-	}
-	for _, v := range shown {
-		l := "- " + strings.ReplaceAll(v.text(), "\n", "\n  ")
-		if out.Len()+len(l) > n {
-			out.WriteString("… more: search with the command below\n")
-			break
+		if none := header + "No preferences yet.\n"; len(none) <= n {
+			return none
 		}
-		out.WriteString(l + "\n")
+		return ""
+	}
+	// n bounds the whole section, header and overflow line included. Each line is clipped to
+	// compassLineRunes (an owner's line may be 16 KiB), and one that still does not fit is skipped,
+	// not the end: the lines after it may.
+	if len(header)+len(compassMore) > n {
+		return ""
+	}
+	var out strings.Builder
+	out.WriteString(header)
+	skipped := false
+	for _, v := range shown {
+		l := "- " + strings.ReplaceAll(clipRunes(v.text(), compassLineRunes), "\n", "\n  ") + "\n"
+		if out.Len()+len(l)+len(compassMore) > n {
+			skipped = true
+			continue
+		}
+		out.WriteString(l)
+	}
+	if skipped {
+		out.WriteString(compassMore)
 	}
 	return out.String()
+}
+
+// compassLineRunes is the most of one line the compass section shows.
+const compassLineRunes = 360
+
+const compassMore = "… more: search with the command below\n"
+
+func rank(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // renderNotes is the hint every agent gets: the record is PenguPool's, the compass is searchable.
@@ -203,7 +237,8 @@ func (p *Pool) renderNotes(id string) string {
 	return out.String()
 }
 
-const maxCompassContext = 32 << 10
+// maxCompassContext bounds the agent's whole compass section.
+const maxCompassContext = 8 << 10
 
 var wordRe = regexp.MustCompile(`[\pL\pN_]+`)
 
