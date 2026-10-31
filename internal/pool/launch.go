@@ -49,6 +49,9 @@ func (p *Pool) launch(ctx context.Context, in launchIn) (any, error) {
 	if in.Harness == "" {
 		in.Harness = harness.Claude
 	}
+	if err := harness.Dropped(in.Harness); err != nil {
+		return nil, invalid("%v", err)
+	}
 	if !harness.IsAgent(in.Harness) {
 		return nil, invalid("a PenguPool session runs an agent (%s), not %q", agentIDs(), in.Harness)
 	}
@@ -368,6 +371,9 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	}
 	if s.State == "running" {
 		return nil, conflict("session %s is still running", s.Name)
+	}
+	if err := harness.Dropped(s.Harness); err != nil {
+		return nil, invalid("%v", err)
 	}
 	if !harness.IsAgent(s.Harness) {
 		return nil, invalid("only agent sessions can be resumed")

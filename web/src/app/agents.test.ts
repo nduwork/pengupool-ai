@@ -8,7 +8,7 @@ const ollama = { version: "/opt/homebrew/bin/ollama", model: "qwen3-coder" };
 
 describe("New session's agent list", () => {
   it("offers installed agents only, Claude Code (Ollama) right after Claude Code", () => {
-    const found: Found = { claude: yes, muse: no, codex: yes, pi: no, omp: yes, opencode: no, ollama };
+    const found: Found = { claude: yes, muse: no, codex: yes, pi: no, omp: yes, ollama };
     expect(pickable(found, AGENTS, true).map((o) => o.value)).toEqual(["claude", CLAUDE_OLLAMA, "codex", "omp"]);
     expect(pickable(found).map((o) => o.value)).toEqual(["claude", "codex", "omp"]); // helpers: never on Ollama
   });
@@ -26,13 +26,13 @@ describe("New session's agent list", () => {
     expect(pickable(null, AGENTS, true)).toEqual([]);
   });
   it("a failed install check blocks nothing", () => {
-    expect(pickable(checkFailed(), AGENTS, true).map((o) => o.value)).toEqual(["claude", CLAUDE_OLLAMA, "muse", "codex", "pi", "omp", "opencode"]);
+    expect(pickable(checkFailed(), AGENTS, true).map((o) => o.value)).toEqual(["claude", CLAUDE_OLLAMA, "muse", "codex", "pi", "omp"]);
   });
   it("launches Claude Code (Ollama) as Claude via Ollama, on Ollama's model", () => {
     expect(launchAgent(CLAUDE_OLLAMA)).toEqual({ harness: "claude", via: "ollama" });
   });
   it("launches every agent on its own default model: no model is sent", () => {
-    for (const a of ["claude", "codex", "muse", "pi", "omp", "opencode", "shell"]) expect(launchAgent(a)).toEqual({ harness: a });
+    for (const a of ["claude", "codex", "muse", "pi", "omp", "shell"]) expect(launchAgent(a)).toEqual({ harness: a });
   });
   it("a child starts on its parent's agent, through Ollama when its parent was", () => {
     expect(parentPick({ harness: "claude", via: "ollama" })).toBe(CLAUDE_OLLAMA);

@@ -229,7 +229,7 @@ func agentEnv(env []string) []string {
 // the owner's login-shell PATH (launchd gives /usr/bin:/bin:/usr/sbin:/sbin) would find none of
 // them, so the ones that exist are added after PATH's own entries.
 // ponytail: fixed list; a version manager's bin (nvm, asdf) still needs the login shell's PATH.
-var userBins = []string{"~/.local/bin", "~/.bun/bin", "~/.npm-global/bin", "~/.opencode/bin", "~/.cargo/bin", "~/go/bin",
+var userBins = []string{"~/.local/bin", "~/.bun/bin", "~/.npm-global/bin", "~/.cargo/bin", "~/go/bin",
 	"/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin"}
 
 func withUserPath(env []string, home string) []string {

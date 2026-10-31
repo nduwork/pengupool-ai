@@ -9,7 +9,6 @@ Harnesses with PenguPool integration (hooks for context, Compass and the journal
 | Muse Code | The app installs its PenguPool plugin |
 | Codex | The app writes a rule so only the PenguPool CLI leaves the sandbox |
 | pi, OMP | One PenguPool extension for both; found on the login PATH |
-| OpenCode | A PenguPool plugin, given inline |
 
 Only agents found installed are offered; an agent PenguPool has no hooks and messages for cannot
 be added. GitHub Copilot and Gemini CLI are hidden: their old sessions still run and resume.

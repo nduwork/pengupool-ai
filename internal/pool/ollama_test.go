@@ -122,7 +122,7 @@ func TestProbeOffersListedAgents(t *testing.T) {
 		}
 	}
 	slices.Sort(got)
-	if want := []string{"claude", "codex", "muse", "ollama", "omp", "opencode", "pi"}; !slices.Equal(got, want) {
+	if want := []string{"claude", "codex", "muse", "ollama", "omp", "pi"}; !slices.Equal(got, want) {
 		t.Fatalf("probed %v, want %v", got, want)
 	}
 	if !harness.IsAgent("copilot") || !harness.IsAgent("gemini") {

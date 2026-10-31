@@ -119,7 +119,6 @@ export const AGENTS = [
   { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", hidden: false },
   { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", hidden: false },
   { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", hidden: false },
-  { id: "opencode", label: "OpenCode", hint: "open-source coding agent", clear: "/new", hidden: false },
   { id: "copilot", label: "GitHub Copilot", hint: "GitHub Copilot CLI", clear: "/clear", hidden: true },
   { id: "gemini", label: "Gemini CLI", hint: "Google's agent (Google login)", clear: "/clear", hidden: true },
 ] as const;

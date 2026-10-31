@@ -39,11 +39,10 @@ making the decisions the person would not. What is said in one session is lost i
 | Muse Code | a PenguPool plugin bundle, installed and approved by the app (real home only); `--trust-workspace` for sessions PenguPool launches | the Done report (Muse has no manual compaction) |
 | Codex | `-c hooks.*`; the app writes `~/.codex/rules/pengupool.rules` so only the PenguPool CLI runs outside the sandbox | `/compact` summary |
 | pi / OMP | the PenguPool extension (one file for both) | `/compact` summary |
-| OpenCode | a PenguPool plugin, given inline (`OPENCODE_CONFIG_CONTENT`) | `/compact` summary |
 | Claude Code (Ollama) | `ollama launch claude --model <Ollama's default> --yes --`, then Claude's own arguments and hooks | as Claude Code |
 
-New session offers the agents installed here (one install check: claude, muse, codex, pi, omp,
-opencode), and Claude Code (Ollama) when the ollama CLI is installed too. An agent PenguPool has no
+New session offers the agents installed here (one install check: claude, muse, codex, pi,
+omp), and Claude Code (Ollama) when the ollama CLI is installed too. An agent PenguPool has no
 hooks and messages for is never offered. Copilot and Gemini CLI are hidden: their sessions still run
 and resume, but none are offered.
 
@@ -171,7 +170,7 @@ reports how often the agent made the decision the owner would have, owner interr
 
 ## Out of scope
 
-Copilot, Gemini CLI and OpenCode harnesses; an MCP layer for the Compass; a phone app of our own; image
+Copilot and Gemini CLI harnesses; an MCP layer for the Compass; a phone app of our own; image
 models in the product (the logo is made with Muse Image).
 
 ## Demo (3 minutes)
