@@ -300,6 +300,20 @@ until they replace or delete it: it no longer fades with time, and evidence agai
 (inferred lines still do both). A helper's done report waiting for its compaction is kept as its
 journal entry when the host shuts down, and an entry with a summary keeps the report under it. A
 Compass signal and its effects are written together, so none is left without the effects it had.
+v0.10.3: A typed answer to an ask or check-in (the owner's words PenguPool types into the member, such
+as "Answer to your ask ID: …") answers only that: it no longer becomes the team's current task.
+v0.10.4: A helper's journal entry is its Done report itself, kept whole: PenguPool no longer types the
+agent's compact command or reads its compaction summary, which mixed every task since the last
+compact. Helpers are told how to write that report: a title of the subject and its result, one
+task's transferable lesson (not the diff git holds), durable know-how dated, the evidence and its
+limit, and never a credential's value. The owner's `pengupool experience export FILE` writes every entry
+in full, and `experience import` takes a `drop` list (each with a reason) that it deletes first, so a
+rebuild is one export and one import.
+v0.10.5: Memory reads honestly. Experience search ranks by relevance first; the same team only
+breaks ties, then the newest. A helper's past-work list leaves common words out of its query, and with
+no match it says "Recent work (no matching entries)" instead of offering the newest as a best match; it
+shows whole rows only, within 2 KiB and at most 10. A Compass line is shown whole or not at all (no
+clipping that loses its condition), and a condition worded "when …" no longer reads "when when".
 v0.10.6: Needs input stays true to what waits on the owner. A permission prompt keeps its needs-input
 status until that same call runs or the turn ends; an unrelated parallel tool no longer clears it. An
 AskUserQuestion needs the owner from its first moment. A session stuck on a first-run dialog (trust,

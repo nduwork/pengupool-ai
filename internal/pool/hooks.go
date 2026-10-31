@@ -372,7 +372,6 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		out := p.turnEnd(s, firstNonEmpty(str("last_assistant_message"), str("prompt_response")),
 			firstNonEmpty(str("transcript_path"), str("transcriptPath")), active, entered.Add(StopDeadline))
 		if out.Stdout != "" {
-			p.journalTurnEnd(s.ID) // continued: working again
 			return out, nil
 		}
 		// A wording asked during the turn and not yet offered goes on the turn once, before it ends: a
@@ -382,12 +381,10 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		if stopContinues(s.Harness) && !active {
 			if note := strings.TrimSpace(p.wordingNow(s.ID, "at the turn's end (one continuation)")); note != "" {
 				p.turnStart(s.ID, note)
-				p.journalTurnEnd(s.ID)
 				return continueTurn(s.Harness, note), nil
 			}
 		}
 		p.setStatus(s.ID, "idle")
-		p.journalTurnEnd(s.ID)   // before the queue: a delivered message starts the next turn
 		p.typeAnswersLater(s.ID) // the owner's answers first, typed as the member's next prompt
 		p.flushQueue(s.ID)       // after the turn's end: a message it delivers starts the next turn
 		return out, nil
