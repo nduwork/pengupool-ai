@@ -305,6 +305,11 @@ status until that same call runs or the turn ends; an unrelated parallel tool no
 AskUserQuestion needs the owner from its first moment. A session stuck on a first-run dialog (trust,
 login, setup) shows in Needs input, and an agent's question notifies as "An agent asks you", not
 "Team launch ready".
+v0.10.7: One place for what waits on the owner. The bell's count, the dock badge and the bell's panel
+are one list: team launches and changes, an agent's question, check-ins, permission dialogs, go-aheads to
+check and unanswered asks, each with its action. An item leaves it as soon as it is answered anywhere (the
+app, the phone, its terminal, through the lead), and its desktop notification is withdrawn. The Inbox,
+which kept a copy of agent messages for a day, is gone; the needs-you bar lives in the panel.
 
 ## Credits
 

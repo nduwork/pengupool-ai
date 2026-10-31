@@ -17,7 +17,7 @@ import { cn } from "./lib/utils";
 import { T } from "./protocol/control";
 import { EMPTY_DOMAIN } from "./protocol/domain";
 import { SessionsStore, type SessionsView } from "./state/sessions";
-import { ApprovalsBell, NeedsYouBar } from "./views/Approvals";
+import { ApprovalsBell } from "./views/Approvals";
 import { Welcome } from "./views/GettingStarted";
 import { NewSessionDialog } from "./views/NewSession";
 import { UpdatePill } from "./views/Update";
@@ -25,7 +25,7 @@ import { Settings } from "./views/Settings";
 import { Sidebar } from "./views/Sidebar";
 import { SkillLibrary } from "./views/SkillLibrary";
 import { isUnread, markViewed, type Viewed } from "./views/lanes";
-import { approvalTitle, askNeeds, sessionNeeds, type OpenGate } from "./views/inbox";
+import { type OpenGate, waitingOnOwner } from "./views/inbox";
 import { Handle } from "./views/Page";
 import { Workbench, usePanelRefs } from "./views/Workspace";
 
@@ -149,33 +149,31 @@ export function App(): ReactElement {
     return () => window.clearInterval(timer);
   }, []);
 
-  // The gates waiting on the owner, read again whenever a session changes status (a check-in arrives as one).
+  // The gates waiting on the owner, read again on any change that can settle one (a session's status or
+  // question, an approval, a message) and after every action the owner takes here (gatesTick).
   const [gates, setGates] = useState<OpenGate[]>([]);
-  const statusKey = view.sessions.map((s) => s.id + s.status).join();
+  const [gatesTick, setGatesTick] = useState(0);
+  const settleKey = [
+    view.sessions.map((s) => s.id + s.status + (s.question ?? "") + (s.waiting ?? "")).join(),
+    view.domain.approvals.map((a) => a.id + a.state).join(),
+    view.domain.messages.length,
+  ].join("|");
   useEffect(() => {
     if (info.status === "connected") void connection.request<OpenGate[]>("gates.open", {}).then((r) => setGates(r ?? []), () => setGates([]));
-  }, [connection, info.status, statusKey]);
+  }, [connection, info.status, settleKey, gatesTick]);
 
-  // Approvals: dock badge (pending proposals plus waiting agents), and a native notification for each new pending approval.
-  const seen = useRef(new Set<string>());
+  // One list of what waits on the owner: the dock badge counts it, a native notification announces each
+  // new item, and one that leaves the list (answered anywhere) has its notification withdrawn.
+  const notified = useRef(new Set<string>());
   useEffect(() => {
-    const pending = view.domain.approvals.filter((a) => a.state === "pending" && a.kind !== "permission");
-    desktop?.setBadge(pending.length + sessionNeeds(view.sessions, gates).length + askNeeds(view.domain.messages, view.sessions).length);
-    for (const a of pending) {
-      if (seen.current.has(a.id)) continue;
-      seen.current.add(a.id);
-      desktop?.notify(approvalTitle(a.kind), a.detail ?? "Review the proposal");
-    }
+    const { items } = waitingOnOwner(view.domain.approvals, view.sessions, view.domain.messages, gates);
+    desktop?.setBadge(items.length);
+    const now = new Set(items.map((i) => i.key));
+    for (const i of items) if (!notified.current.has(i.key)) desktop?.notify(i.title, i.body, i.key);
+    const gone = [...notified.current].filter((k) => !now.has(k));
+    if (gone.length > 0) desktop?.unnotify?.(gone);
+    notified.current = now;
   }, [view.domain.approvals, view.domain.messages, view.sessions, gates]);
-
-  // A session starting to need you (a permission prompt, a lost connection) notifies on the transition only; finished work never does.
-  const asking = useRef(new Set<string>());
-  useEffect(() => {
-    const list = [...sessionNeeds(view.sessions, gates), ...askNeeds(view.domain.messages, view.sessions)];
-    const words = (n: (typeof list)[number]): string => (n.kind === "checkin" ? `${n.name} asks: ${n.text}` : n.kind === "ask" ? `${n.name} asked ${n.toName ?? ""}: ${n.text}` : `${n.name} ${n.text}`);
-    for (const n of list) if (!asking.current.has(n.key ?? n.session)) desktop?.notify(`${n.name} needs you`, words(n));
-    asking.current = new Set(list.map((n) => n.key ?? n.session));
-  }, [view.sessions, view.domain.messages, gates]);
 
   // Unread dots: output since the owner last viewed a session (the selected one is always read).
   const [viewed, setViewed] = usePersisted<Viewed>("viewed", {});
@@ -190,6 +188,8 @@ export function App(): ReactElement {
         // Offline is already on the header's connection pill; a read made before the socket opens is no error.
         if ((e as { code?: string }).code !== "unavailable") toast.error((e as Error).message);
         return undefined;
+      } finally {
+        setGatesTick((n) => n + 1); // an action may have settled a gate: read them again
       }
     },
     [connection],
@@ -372,7 +372,6 @@ export function App(): ReactElement {
                   </Button>
                 </Tip>
               </header>
-              <NeedsYouBar />
               <main className="relative min-h-0 flex-1">
                 {/* The workbench stays mounted on other pages, so terminals keep their attachment. */}
                 <div className={cn("absolute inset-0", nav !== "workspace" && "invisible")}>

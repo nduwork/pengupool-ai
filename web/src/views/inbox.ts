@@ -1,5 +1,5 @@
 import type { SessionView } from "../protocol/control";
-import type { TeamMessage } from "../protocol/domain";
+import type { Approval, TeamMessage } from "../protocol/domain";
 import { sessionStatus } from "../app/ctx";
 import { openAsks } from "./map/asks";
 
@@ -19,9 +19,9 @@ export interface OpenGate {
   evidence?: string;
 }
 
-/** One live ask of the owner: shown in the bar while it lasts, and kept in the inbox after. */
+/** One live ask of the owner: shown in the panel while it lasts, gone once answered. */
 export interface Need {
-  /** The session it is about: the inbox merges by it (or by key). */
+  /** The session it is about: one need per session (or per key). */
   session: string;
   /** Set when one session can have more than one: an ask is keyed ask:{message id}. */
   key?: string;
@@ -68,14 +68,6 @@ export function permissionText(g: OpenGate): string {
   return `Approve ${call === "" ? "" : `${tool}: `}${what}${floor}?`;
 }
 
-export interface InboxEntry extends Need {
-  at: number;
-  /** Set when the ask went away. */
-  resolvedAt?: number;
-}
-
-/** Resolved entries leave the inbox after this long (auto-archive). */
-export const ARCHIVE_MS = 24 * 3600 * 1000;
 
 /**
  * What needs the owner now, one ask per running session: a lost connection, else a first-run dialog
@@ -100,25 +92,33 @@ export function sessionNeeds(sessions: SessionView[], gates: OpenGate[]): Need[]
   return out;
 }
 
-/**
- * The inbox after a state update: one entry per session (an ask has its own), merged, newest ask winning. A live need
- * opens (or reopens) its entry; an entry whose need went away is resolved and archived after a day.
- * A block stays while the session is still blocked, because it stays a live need.
- */
-export function reconcileInbox(entries: InboxEntry[], live: Need[], now: number): InboxEntry[] {
-  const by = new Map(entries.map((e) => [keyOf(e), e]));
-  for (const n of live) {
-    const old = by.get(keyOf(n));
-    by.set(keyOf(n), old !== undefined && old.resolvedAt === undefined && old.text === n.text && old.kind === n.kind ? old : { ...n, at: now });
-  }
-  const liveIds = new Set(live.map(keyOf));
-  return [...by.values()]
-    .map((e) => (liveIds.has(keyOf(e)) || e.resolvedAt !== undefined ? e : { ...e, resolvedAt: now }))
-    .filter((e) => e.resolvedAt === undefined || now - e.resolvedAt < ARCHIVE_MS)
-    .sort((a, b) => b.at - a.at);
-}
-
 /** A pending approval's notification title, by its kind: an agent's question is not a team launch. */
 export function approvalTitle(kind: string): string {
   return kind === "ask" ? "An agent asks you" : kind === "formation" ? "Team change to approve" : "Team launch ready";
+}
+
+/** One thing waiting on the owner: a pending approval or a need. key is stable while it waits. */
+export interface Waiting {
+  key: string;
+  title: string;
+  body: string;
+  session?: string;
+}
+
+/**
+ * Everything waiting on the owner, the one list the badge, the bell and its panel show: pending
+ * approvals (an agent's ask only while the agent runs; a permission is a need instead), then what
+ * each running session needs, then the asks triage could not settle. An item leaves the list as soon
+ * as the state says it was answered, wherever it was answered.
+ */
+export function waitingOnOwner(approvals: Approval[], sessions: SessionView[], messages: TeamMessage[], gates: OpenGate[]): { approvals: Approval[]; needs: Need[]; items: Waiting[] } {
+  const running = (id?: string): boolean => sessions.some((s) => s.id === id && s.state === "running");
+  const pending = approvals.filter((a) => a.state === "pending" && a.kind !== "permission" && (a.kind !== "ask" || running(a.session_id)));
+  const needs = [...sessionNeeds(sessions, gates), ...askNeeds(messages, sessions)];
+  const words = (n: Need): string => (n.kind === "checkin" ? `${n.name} asks: ${n.text}` : n.kind === "ask" ? `${n.name} asked ${n.toName ?? ""}: ${n.text}` : `${n.name} ${n.text}`);
+  const items: Waiting[] = [
+    ...pending.map((a) => ({ key: `approval:${a.id}`, title: approvalTitle(a.kind), body: a.detail ?? "Review the proposal", session: a.session_id })),
+    ...needs.map((n) => ({ key: `need:${keyOf(n)}:${n.kind}`, title: `${n.name} needs you`, body: words(n), session: n.session })),
+  ];
+  return { approvals: pending, needs, items };
 }

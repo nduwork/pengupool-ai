@@ -2,71 +2,46 @@ import { Bell, MessageCircleQuestion, MessagesSquare, ShieldQuestion, Rocket, Th
 import { Popover } from "radix-ui";
 import { useEffect, useState, type ReactElement } from "react";
 
-import { AGENTS, ago, harnessLabel, sessionName, skillName, useApp, usePersisted } from "../app/ctx";
+import { AGENTS, ago, harnessLabel, sessionName, skillName, useApp } from "../app/ctx";
 import { Button } from "../components/ui/button";
 import { Badge, Input, Label, RoleTag, Select, Textarea, submitOnEnter } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
 import type { Approval, Member, PerCompass, Proposal, ProposedMember, Team } from "../protocol/domain";
 import { ownerViaLabel, perCompassLabel, type Line } from "./compass";
 import { FormationSheet, roleOf } from "./Formation";
-import { askNeeds, reconcileInbox, sessionNeeds, type InboxEntry, type Need } from "./inbox";
+import { askNeeds, sessionNeeds, type Need, waitingOnOwner } from "./inbox";
 import { age } from "./map/asks";
 
-// Urgent approvals stay visible: a bell with a count in the title bar. NeedsYouBar is what needs the
-// owner now: an agent's check-in (answered here: Go on, Stop, or a reply typed into its terminal for
-// it), a permission dialog (it lives in the harness, so Open terminal) and the go-aheads triage picked
-// for the owner to check (a one-tap verdict), and a team member's ask nobody answered that triage
-// could not settle (Go on, Reply in the recipient's terminal, Dismiss). The bell's
-// popover also holds the Inbox: the history of those asks, one entry per session.
+// One surface for what waits on the owner: the bell in the title bar, its count the whole list
+// (waitingOnOwner, also the dock badge), and its panel the list itself: team launches and changes,
+// an agent's question, a check-in (Go on, Stop, or a reply typed into its terminal), a permission
+// dialog (it lives in the harness, so Open terminal), a go-ahead triage picked for the owner to
+// check, and a member's ask nobody answered. An item leaves as soon as it is answered, anywhere.
 
 export function ApprovalsBell(): ReactElement {
   const app = useApp();
-  const running = (id?: string): boolean => app.sessions.some((s) => s.id === id && s.state === "running");
-  // Permission requests are answered in the terminal; an agent's ask only while the agent runs.
-  const pending = app.domain.approvals.filter((a) => a.state === "pending" && a.kind !== "permission" && (a.kind !== "ask" || running(a.session_id)));
-  const [inbox, setInbox] = usePersisted<InboxEntry[]>("inbox", []);
-  useEffect(
-    () => setInbox(reconcileInbox(inbox, [...sessionNeeds(app.sessions, app.gates), ...askNeeds(app.domain.messages, app.sessions)], Date.now())),
-    [app.sessions, app.gates, app.domain.messages],
-  );
+  const { approvals: pending, items } = waitingOnOwner(app.domain.approvals, app.sessions, app.domain.messages, app.gates);
   const [open, setOpen] = useState(false);
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
-        <Button size="icon" variant="ghost" aria-label={`${pending.length} pending approvals`} className="relative">
+        <Button size="icon" variant="ghost" aria-label={`${items.length} waiting on you`} className="relative">
           <Bell />
-          {pending.length > 0 ? (
-            <span className="absolute -right-0.5 -top-0.5 grid grid-cols-1 min-w-4 place-items-center rounded-full bg-warning px-1 text-micro font-bold text-black">{pending.length}</span>
+          {items.length > 0 ? (
+            <span className="absolute -right-0.5 -top-0.5 grid grid-cols-1 min-w-4 place-items-center rounded-full bg-warning px-1 text-micro font-bold text-black">{items.length}</span>
           ) : null}
         </Button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content align="end" sideOffset={6} className="z-50 w-96 rounded-lg border border-border bg-raised p-2 shadow-2xl">
-          <p className="px-2 pb-1 text-label font-semibold">Approvals</p>
-          {pending.length === 0 ? <p className="px-2 py-3 text-label text-muted-foreground">Nothing is waiting for you.</p> : null}
+          <p className="px-2 pb-1 text-label font-semibold">Waiting on you</p>
+          {items.length === 0 ? <p className="px-2 py-3 text-label text-muted-foreground">Nothing is waiting for you.</p> : null}
           <div className="grid grid-cols-1 gap-1">
             {pending.map((a) =>
               a.kind === "ask" ? <AgentAskRow key={a.id} a={a} /> : a.kind === "formation" ? <FormationRow key={a.id} a={a} /> : <LaunchRow key={a.id} a={a} />,
             )}
           </div>
-          {inbox.length > 0 ? (
-            <>
-              <p className="px-2 pb-1 pt-2 text-label font-semibold">Inbox</p>
-              {inbox.map((e) => (
-                <button key={e.key ?? e.session} type="button" onClick={() => app.select(e.session)} className="flex w-full items-center gap-2 rounded-md p-2 text-left text-label hover:bg-hover">
-                  {e.kind === "ask" ? (
-                    <MessagesSquare className={e.resolvedAt === undefined ? "size-4 shrink-0 text-warning" : "size-4 shrink-0 text-faint"} />
-                  ) : (
-                    <ShieldQuestion className={e.resolvedAt === undefined ? "size-4 shrink-0 text-warning" : "size-4 shrink-0 text-faint"} />
-                  )}
-                  <span className={e.resolvedAt === undefined ? "min-w-0 flex-1 truncate" : "min-w-0 flex-1 truncate text-muted-foreground"}>
-                    <strong className="font-semibold">{e.name}</strong> {e.kind === "ask" ? `asked ${e.toName ?? ""}: “${e.text}”` : e.text}
-                  </span>
-                  <span className="shrink-0 text-caption text-faint">{e.resolvedAt === undefined ? ago(new Date(e.at).toISOString()) : "resolved"}</span>
-                </button>
-              ))}
-            </>
-          ) : null}
+          <NeedsYouBar />
           {open ? <DecidedForYou /> : null}
         </Popover.Content>
       </Popover.Portal>
@@ -180,7 +155,7 @@ export function NeedsYouBar(): ReactElement | null {
   const { spots, verdict } = useSpotChecks();
   if (list.length === 0 && asks.length === 0 && spots.length === 0) return null;
   return (
-    <div className="grid grid-cols-1 gap-1 border-b border-warning/30 bg-warning/10 px-3 py-1.5" role="region" aria-label="Needs you">
+    <div className="mt-1 grid grid-cols-1 gap-1 rounded-md bg-warning/10 px-2 py-1.5" role="region" aria-label="Needs you">
       {list.map((n) => (
         <NeedRow key={n.session} n={n} />
       ))}
