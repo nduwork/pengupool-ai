@@ -42,9 +42,14 @@ func TestContextOutFitsMuseCap(t *testing.T) {
 			t.Errorf("capped context lacks %q", want)
 		}
 	}
+	// The compass has its own budget (maxCompassContext, 8 KiB), under the Muse ceiling: an uncapped
+	// harness never keeps less, and its compass section stays within that budget.
 	claude := fat(t, harness.Claude)
-	if len(claude) <= len(muse) {
-		t.Fatalf("uncapped context (%d bytes) should keep more than capped (%d)", len(claude), len(muse))
+	if len(claude) < len(muse) {
+		t.Fatalf("uncapped context (%d bytes) kept less than capped (%d)", len(claude), len(muse))
+	}
+	if i, j := strings.Index(claude, "## The owner's compass"), strings.Index(claude, "… more: search"); i < 0 || j < 0 || j-i > maxCompassContext {
+		t.Fatalf("uncapped compass section spans %d bytes, past its %d budget", j-i, maxCompassContext)
 	}
 }
 

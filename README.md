@@ -238,6 +238,12 @@ is exactly N, "option N" or that option's text. It is accepted only when all of 
 
 A teammate's message, triage or a notice answers nothing. The answer is recorded as the owner's ("owner
 via <session>") with the owner's words; harness permission prompts are not covered.
+v0.9.39: The compass agents read holds the owner's prose lines only, guiding lines first, within 8 KiB
+for the whole section. Permission answers ("The owner allows Bash for …") stay stored for answering
+permission prompts but no longer fill agents' context, and every line is a candidate before any limit,
+so a run of newer permission answers can no longer push the owner's preferences out. Each line shows
+at most 360 characters, and a line that doesn't fit is skipped rather than ending the list, so one
+long line can't hide the rest.
 v0.9.40: A change of mind gets its own Compass line, and the Compass review shows lines that
 contradict. When the owner's words only go against existing lines ("red is my favorite" after
 "yellow"), the contradiction is recorded at once and the words are worded as a new line, so agents
