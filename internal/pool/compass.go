@@ -108,7 +108,11 @@ func (p *Pool) beliefs(lines []agentdb.Line) []lineView {
 		if l.Origin == "chose" {
 			prior = agentdb.PriorChose
 		}
-		b := agentdb.Replay(prior, effects[l.UID], t)
+		at := t
+		if l.Source == "owner" { // the owner's own line does not fade with time: it holds until they replace it
+			at = time.Time{}
+		}
+		b := agentdb.Replay(prior, effects[l.UID], at)
 		v := lineView{Line: l, Mu: b.Mu, N: b.N, Sigma: b.Sigma, Effects: len(effects[l.UID]), belief: b, th: th}
 		last := b.Last
 		if last.IsZero() {
@@ -119,7 +123,7 @@ func (p *Pool) beliefs(lines []agentdb.Line) []lineView {
 		switch {
 		case v.guides():
 			v.State = "confident"
-		case t.Sub(last) > 90*24*time.Hour:
+		case t.Sub(last) > 90*24*time.Hour && l.Source != "owner":
 			v.State = "fading"
 		default:
 			v.State = "learning"
@@ -158,17 +162,14 @@ type effectOn struct {
 // it could not be stored).
 func (p *Pool) record(sig agentdb.Signal, weight float64, on ...effectOn) string {
 	sig.Owner, sig.At = p.owner(), p.at().UTC().Format(time.RFC3339)
-	uid, err := p.db.AddSignal(sig)
+	var es []agentdb.Effect
+	for _, e := range on {
+		es = append(es, agentdb.Effect{LineUID: e.line, PSup: e.sup, PCon: e.con, Weight: weight, At: sig.At, SessionID: sig.SessionID, Kind: sig.Kind})
+	}
+	uid, err := p.db.AddSignal(sig, es...) // with its effects or not at all: never a signal that lost them
 	if err != nil {
 		p.logf("pool: record a signal: %v", err)
 		return ""
-	}
-	var es []agentdb.Effect
-	for _, e := range on {
-		es = append(es, agentdb.Effect{SignalUID: uid, LineUID: e.line, PSup: e.sup, PCon: e.con, Weight: weight, At: sig.At, SessionID: sig.SessionID, Kind: sig.Kind})
-	}
-	if err := p.db.AddEffects(es); err != nil {
-		p.logf("pool: record a signal's effects: %v", err)
 	}
 	var touched []agentdb.Line
 	for _, e := range on {
@@ -184,7 +185,7 @@ func (p *Pool) record(sig agentdb.Signal, weight float64, on ...effectOn) string
 // Compass keeps the current state, not what the owner turned down.
 func (p *Pool) sweepDropped(ls []agentdb.Line) {
 	for _, v := range p.beliefs(ls) {
-		if !v.belief.Dropped(v.th) {
+		if v.Source == "owner" || !v.belief.Dropped(v.th) { // the owner's own line goes only when they delete it
 			continue
 		}
 		if err := p.db.DeleteLine(v.UID); err != nil {

@@ -61,8 +61,9 @@ type Effect struct {
 	Kind      string  `json:"kind,omitempty"`
 }
 
-// AddSignal records a signal (uid and time assigned when empty) and returns its uid.
-func (d *DB) AddSignal(s Signal) (string, error) {
+// AddSignal records a signal (uid and time assigned when empty) with its effects (their SignalUID
+// set to it), all or nothing, and returns its uid.
+func (d *DB) AddSignal(s Signal, effects ...Effect) (string, error) {
 	if s.UID == "" {
 		s.UID = newUID()
 	}
@@ -72,8 +73,18 @@ func (d *DB) AddSignal(s Signal) (string, error) {
 	if s.Options == "" {
 		s.Options = "[]"
 	}
-	_, err := d.db.Exec(`INSERT INTO signals(uid, owner, kind, words, options, chosen, team_id, session_id, at, outcome) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-		s.UID, s.Owner, s.Kind, s.Words, s.Options, s.Chosen, s.TeamID, s.SessionID, s.At, s.Outcome)
+	err := d.tx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`INSERT INTO signals(uid, owner, kind, words, options, chosen, team_id, session_id, at, outcome) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+			s.UID, s.Owner, s.Kind, s.Words, s.Options, s.Chosen, s.TeamID, s.SessionID, s.At, s.Outcome); err != nil {
+			return err
+		}
+		for _, e := range effects {
+			if err := addEffect(tx, s.UID, e); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	return s.UID, err
 }
 
@@ -105,13 +116,18 @@ func (d *DB) WaitingSignals() (n int, err error) {
 func (d *DB) AddEffects(effects []Effect) error {
 	return d.tx(func(tx *sql.Tx) error {
 		for _, e := range effects {
-			if _, err := tx.Exec(`INSERT INTO signal_effects(signal_uid, line_uid, p_sup, p_con, weight, at, session_id, kind) VALUES (?,?,?,?,?,?,?,?)`,
-				e.SignalUID, e.LineUID, e.PSup, e.PCon, e.Weight, e.At, e.SessionID, e.Kind); err != nil {
+			if err := addEffect(tx, e.SignalUID, e); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+}
+
+func addEffect(tx *sql.Tx, signal string, e Effect) error {
+	_, err := tx.Exec(`INSERT INTO signal_effects(signal_uid, line_uid, p_sup, p_con, weight, at, session_id, kind) VALUES (?,?,?,?,?,?,?,?)`,
+		signal, e.LineUID, e.PSup, e.PCon, e.Weight, e.At, e.SessionID, e.Kind)
+	return err
 }
 
 // Answering a design or direction question for the owner (a line made from the owner's own choices)

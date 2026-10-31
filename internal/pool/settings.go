@@ -698,10 +698,6 @@ func (p *Pool) endScribes(ctx context.Context) {
 // Run keeps node status fresh in the domain and runs the daily backup and the sync.
 func (p *Pool) Run(ctx context.Context) {
 	p.endScribes(ctx)
-	go func() { // a helper's waiting done reports end with the pool
-		<-ctx.Done()
-		p.stopJournal()
-	}()
 	go p.syncLoop(ctx)
 	go p.updateLoop(ctx)
 	go p.readyLoop(ctx)
