@@ -107,6 +107,10 @@ func (p *Pool) runRestore(_ context.Context, _ struct{}) (any, error) {
 	go func() {
 		first := true
 		for _, r := range todo {
+			if err := harness.Dropped(r.Harness); err != nil {
+				p.logf("pool: restore %s: skipped: %v", r.Name, err)
+				continue
+			}
 			if !r.Agent {
 				continue
 			}

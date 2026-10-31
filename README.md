@@ -129,7 +129,7 @@ from a disk image, or does not answer.
 v0.9.0: updated host and app. Muse Code is an agent (plugin hooks, the hook answer
 cap, Muse's read tools, the Muse app API and device pairing). No Teams page: group
 settings and close are on the map's group frame, closed groups in the map's
-background menu. Copilot, Gemini CLI and OpenCode are experimental agents;
+background menu. Copilot and Gemini CLI are experimental agents (OpenCode was, until v0.9.44);
 `pengupool doctor` can clean PenguPool v1 out of Claude's settings. A record
 written by 0.4–0.8 opens: its search indexes are remade and the experience lessons
 column is not kept; update every machine that shares the record together.
