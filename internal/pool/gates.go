@@ -638,45 +638,6 @@ func (p *Pool) learnDecision(s store.Session, g agentdb.Gate) {
 	p.askWording(sig, g.ID)
 }
 
-// ruleTemplate are the words every decision line shares ("The owner lets agents … without asking"),
-// so they say nothing about which decision it is.
-var ruleTemplate = map[string]bool{"the": true, "owner": true, "owners": true, "allow": true, "allows": true, "let": true, "lets": true,
-	"agent": true, "agents": true, "for": true, "to": true, "without": true, "asking": true, "ask": true, "does": true, "not": true, "may": true, "can": true}
-
-var negationRe = regexp.MustCompile(`(?i)\b(not|never|no)\b|n't\b`)
-
-// contentWords are a decision line's words that tell it apart: lowercased, without stopwords, the
-// template's words or single letters.
-func contentWords(s string) map[string]bool {
-	out := map[string]bool{}
-	for _, w := range wordRe.FindAllString(strings.ToLower(s), -1) {
-		if len(w) > 1 && !stopwords[w] && !ruleTemplate[w] {
-			out[w] = true
-		}
-	}
-	return out
-}
-
-// sameContent: two decision lines name the same thing when their content words overlap by at least
-// 80% (Jaccard).
-func sameContent(a, b string) bool {
-	wa, wb := contentWords(a), contentWords(b)
-	shared := 0
-	for w := range wa {
-		if wb[w] {
-			shared++
-		}
-	}
-	union := len(wa) + len(wb) - shared
-	return union > 0 && shared*5 >= 4*union
-}
-
-func negative(s string) bool { return negationRe.MatchString(s) }
-
-// similarRule: two check-in decision lines say the same when they name the same thing and both are
-// negative or neither is.
-func similarRule(a, b string) bool { return negative(a) == negative(b) && sameContent(a, b) }
-
 // lockKey serialises the decisions on one key (the Compass, or a permission key), so two arriving
 // together make one line. ponytail: the map keeps one mutex per key seen; fine at owner scale.
 func (p *Pool) lockKey(k string) func() {

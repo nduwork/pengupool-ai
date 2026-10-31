@@ -284,24 +284,6 @@ func holding(p *Pool, id string) bool {
 
 const checkInReply = "I wrote the parser and its tests pass. Shall I go on with the loader?"
 
-func TestSimilarRule(t *testing.T) {
-	for _, c := range []struct {
-		a, b string
-		want bool
-	}{
-		{"The owner lets agents refactor code inside src without asking.", "The owner allows agents to refactor code inside src without asking.", true},
-		{"The owner lets agents refactor src without asking.", "The owner lets agents delete src without asking.", false},
-		{"The owner allows Bash for `npm test`", "The owner allows Bash for `go test`", false},
-		{"The owner lets agents push to their branch.", "The owner does not let agents push to their branch.", false},
-		{"The owner wants a test plan with every epic.", "The owner lets agents refactor inside src without asking.", false},
-		{"", "The owner allows Bash", false},
-	} {
-		if got := similarRule(c.a, c.b); got != c.want {
-			t.Errorf("similarRule(%q, %q) = %v", c.a, c.b, got)
-		}
-	}
-}
-
 func TestGateRedaction(t *testing.T) {
 	for _, secret := range []string{
 		"curl -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig' https://api",
