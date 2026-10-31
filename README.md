@@ -289,6 +289,9 @@ lines change. Owner-only asks are never decided this way. An ask is answered wit
 ("lead per Compass line <uid>"); a check-in gets triage's go-ahead quoting the line. The app's bell
 lists what was decided for the owner, with "That was wrong" (a correction against the line, and a
 notice to the member), and each team's settings have "Lead decides from your Compass" to turn it off.
+v0.10.0: Release of 0.9.39 to 0.9.48 as one build: the Compass curation (0.9.39, 0.9.40), answers
+through the lead (0.9.41, 0.9.47, 0.9.48), OpenCode and Local network removed (0.9.44, 0.9.45) and Sync
+with GitHub waiting for a picked repository (0.9.46). No changes of its own.
 
 ## Credits
 
