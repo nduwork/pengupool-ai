@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nduwork/pengupool-ai/internal/agentdb"
 	"github.com/nduwork/pengupool-ai/internal/gateway"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
@@ -520,7 +521,7 @@ func TestTypedAnswerNotCarriedOn(t *testing.T) {
 	}
 
 	// Delivered words that name no ask (a check-in answer typed in) are no answer for y either.
-	if err := p.typeOwnerPrompt(web, "Yes, go ahead"); err != nil || !fromOwner {
+	if err := p.typeOwnerPrompt(web, "Yes, go ahead", "checkin"); err != nil || !fromOwner {
 		t.Fatalf("typed: %v, from the owner %v", err, fromOwner)
 	}
 	_, err = p.askAnswerFor(ctx, askAnswerForIn{SessionID: web, ID: y})
@@ -540,4 +541,36 @@ func TestTypedAnswerNotCarriedOn(t *testing.T) {
 	if a, _ := p.approval(z); protocol.CodeOf(err) != protocol.CodeForbidden || a.State != "pending" {
 		t.Fatalf("words naming %s answered %s: %v", x, z, err)
 	}
+}
+
+// Delivered owner words act only where they were given: an @mention in them opens no channel for
+// the member (S2), and an ask's answer, typed in, does not claim the member's open check-in (S3); a
+// check-in's own answer still does.
+func TestDeliveredWordsActOnlyWhereGiven(t *testing.T) {
+	p, _ := twoTeams(t)
+	p.requireOwnerInput = true
+	const web, other = "webaaaaaaaaa", "otheraaaaaaa"
+	p.setStatus(web, "idle")
+	p.testKeys = func(string, string) error { return nil }
+	say := func(text, kind string) turn {
+		t.Helper()
+		if err := p.typeOwnerPrompt(web, text, kind); err != nil {
+			t.Fatal(err)
+		}
+		return prompt(t, p, web, text)
+	}
+	if tr := say("Answer to your ask X: yes, and loop in @othe", "ask"); tr.Delivered != "ask" || !tr.fromOwner() || p.crossTeamOpen(web, other) {
+		t.Fatalf("delivered %q, from the owner %v, channel open %v", tr.Delivered, tr.fromOwner(), p.crossTeamOpen(web, other))
+	}
+	gid, err := p.db.AddGate(agentdb.Gate{TeamID: "team1", SessionID: web, Agent: "web", Kind: "checkin", Question: "Shall I go on with the refactor?", CreatedAt: now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	say("Answer to your ask Y: yes", "ask")
+	time.Sleep(300 * time.Millisecond) // ownerReplied runs off the hook
+	if g, _ := p.db.Gate(gid); g.Outcome != "pending" || g.OwnerAnswer != "" {
+		t.Fatalf("an ask's answer claimed the check-in: %+v", g)
+	}
+	say("Go on with the refactor", "checkin")
+	waitGate(t, p, web, func(g agentdb.Gate) bool { return g.ID == gid && g.OwnerAnswer == "Go on with the refactor" })
 }

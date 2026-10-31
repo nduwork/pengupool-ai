@@ -51,7 +51,7 @@ func (p *Pool) askAnswerFor(_ context.Context, in askAnswerForIn) (any, error) {
 	}
 	prev, prevAt := p.prevReply[in.SessionID], p.prevReplyAt[in.SessionID]
 	p.mu.Unlock()
-	if open && cur.Delivered {
+	if open && cur.Delivered != "" {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "this prompt carries the owner's answer to another question; it answers nothing else")
 	}
 	if !open || !cur.fromOwner() {

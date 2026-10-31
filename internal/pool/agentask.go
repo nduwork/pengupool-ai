@@ -212,7 +212,7 @@ func (p *Pool) answerAskWith(id, answer, by, words, prompt string) (any, error) 
 		// once the member goes idle needs a queue.
 		s, _ := p.session(a.SessionID)
 		if _, agent := harness.Find(s.Harness); prompt == "" || !agent || s.Status != "idle" ||
-			p.typeOwnerPrompt(a.SessionID, "Answer to your ask "+a.ID+": "+prompt) != nil {
+			p.typeOwnerPrompt(a.SessionID, "Answer to your ask "+a.ID+": "+prompt, "ask") != nil {
 			p.notice(a.TeamID, a.SessionID, "The owner answered your ask "+a.ID+" (\""+clipRunes(oneLine(a.Detail), 120)+"\"): "+a.Answer)
 		} else {
 			return map[string]string{"id": a.ID, "answer": a.Answer, "typed": "true"}, nil

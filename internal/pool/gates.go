@@ -1529,7 +1529,7 @@ func (p *Pool) checkinAnswer(_ context.Context, in answerIn) (any, error) {
 		return nil, conflict("check-in %d is already being answered", in.GateID)
 	}
 	// The owner's own call (the app, by the gate), so it is the owner typing.
-	if err := p.typeOwnerPrompt(s.ID, text); err != nil {
+	if err := p.typeOwnerPrompt(s.ID, text, "checkin"); err != nil {
 		p.releaseAnswer(in.GateID)
 		return nil, protocol.Errorf(protocol.CodeUnavailable, "%v", err)
 	}
@@ -1541,9 +1541,9 @@ func (p *Pool) checkinAnswer(_ context.Context, in answerIn) (any, error) {
 // app's connection: else it would arrive unverified, teach the Compass nothing (ownerinput.go), and
 // the member's harness would not see the owner's prompt. The credit is a delivered one: the turn it
 // opens cannot carry the words on as an answer to another question.
-func (p *Pool) typeOwnerPrompt(id, text string) error {
+func (p *Pool) typeOwnerPrompt(id, text, kind string) error {
 	line := strings.Join(strings.Fields(text), " ")
-	p.ownerInputAs(id, line, true)
+	p.ownerInputAs(id, line, kind)
 	if err := p.typeInto(id, line+"\r"); err != nil {
 		p.withdrawOwnerInput(id, line) // nothing was typed: the credit must not wait for an agent to post that text
 		return err

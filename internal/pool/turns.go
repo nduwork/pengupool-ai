@@ -41,22 +41,22 @@ type turn struct {
 	// Enter in this session to send it (ownerinput.go): an agent can post a user turn into its own
 	// session. It is treated as a teammate's words, not the owner's.
 	Unverified bool
-	// Delivered: the owner's words the host typed in for them (credit.delivered); they cannot carry an
-	// answer on to another question.
-	Delivered bool
+	// Delivered: the owner's words the host typed in for them, "ask" or "checkin" (credit.delivered):
+	// they answer no other question and open no channel; an ask's answer claims no check-in.
+	Delivered string
 }
 
 // turnStart is the owner's (or a teammate's) prompt opening a turn.
-func (p *Pool) turnStart(id, prompt string) { p.turnStartAs(id, prompt, false) }
+func (p *Pool) turnStart(id, prompt string) { p.turnStartAs(id, prompt, false, "") }
 
 // turnStartAs is turnStart for a prompt the hook found not to be the owner's after all (unverified).
-func (p *Pool) turnStartAs(id, prompt string, unverified bool) {
+func (p *Pool) turnStartAs(id, prompt string, unverified bool, delivered string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.turns == nil {
 		p.turns = map[string]*turn{}
 	}
-	p.turns[id] = &turn{Prompt: prompt, Start: time.Now(), Unverified: unverified}
+	p.turns[id] = &turn{Prompt: prompt, Start: time.Now(), Unverified: unverified, Delivered: delivered}
 }
 
 // turnOpen opens a turn for a session that has none open, with an empty prompt (origin unknown):

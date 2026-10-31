@@ -219,20 +219,17 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		}
 		owner := t.fromOwner()
 		wait := p.promptArrived(s, owner)
-		if owner {
-			p.ownerMentions(s, t.Prompt)
+		if owner && t.Delivered == "" {
+			p.ownerMentions(s, t.Prompt) // the owner's @mentions in words given elsewhere open nothing here
+		}
+		if owner && t.Delivered != "ask" { // an ask's answer, typed in, is no answer to the member's check-in
 			go p.ownerReplied(s, t.Prompt, wait) // the owner may be answering a gate: off the hook, it becomes a signal
 		}
 		p.setStatus(s.ID, "working")
 		if t.Prompt == "" { // an extension's status-only or prompt-less signal: a delivered message's turn keeps its prompt
 			p.turnOpen(s.ID, "")
 		} else {
-			p.turnStartAs(s.ID, t.Prompt, t.Unverified)
-			if t.Delivered {
-				p.mu.Lock()
-				p.turns[s.ID].Delivered = true
-				p.mu.Unlock()
-			}
+			p.turnStartAs(s.ID, t.Prompt, t.Unverified, t.Delivered)
 		}
 		if s.JobStart.IsZero() { // the first prompt since its last log entry starts a job
 			p.setSession(s.ID, func(x *store.Session) { x.JobStart = time.Now().UTC() })

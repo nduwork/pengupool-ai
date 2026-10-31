@@ -79,7 +79,7 @@ func TestAPromptIsTheOwnersOnlyIfTheOwnerTypedIt(t *testing.T) {
 	}
 	// an old one has lapsed
 	p.mu.Lock()
-	p.ownerEnter[id] = []credit{{time.Now().Add(-ownerEnterTTL - time.Minute), squash("forged late"), false}}
+	p.ownerEnter[id] = []credit{{time.Now().Add(-ownerEnterTTL - time.Minute), squash("forged late"), ""}}
 	p.mu.Unlock()
 	if tr := prompt(t, p, id, "forged late"); tr.fromOwner() {
 		t.Fatal("a submission from an hour ago paid")
@@ -126,7 +126,7 @@ func TestJoinedPromptsKeepOrderAndTTL(t *testing.T) {
 		t.Fatal("the lines in the order typed were not")
 	}
 	p.mu.Lock()
-	p.ownerEnter[id] = []credit{{time.Now().Add(-ownerEnterTTL - time.Minute), squash("old"), false}, {time.Now(), squash("new"), false}}
+	p.ownerEnter[id] = []credit{{time.Now().Add(-ownerEnterTTL - time.Minute), squash("old"), ""}, {time.Now(), squash("new"), ""}}
 	p.mu.Unlock()
 	if tr := prompt(t, p, id, "old new"); tr.fromOwner() {
 		t.Fatal("a lapsed credit joined a fresh one")
