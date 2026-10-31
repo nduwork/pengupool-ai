@@ -300,6 +300,11 @@ until they replace or delete it: it no longer fades with time, and evidence agai
 (inferred lines still do both). A helper's done report waiting for its compaction is kept as its
 journal entry when the host shuts down, and an entry with a summary keeps the report under it. A
 Compass signal and its effects are written together, so none is left without the effects it had.
+v0.10.6: Needs input stays true to what waits on the owner. A permission prompt keeps its needs-input
+status until that same call runs or the turn ends; an unrelated parallel tool no longer clears it. An
+AskUserQuestion needs the owner from its first moment. A session stuck on a first-run dialog (trust,
+login, setup) shows in Needs input, and an agent's question notifies as "An agent asks you", not
+"Team launch ready".
 
 ## Credits
 

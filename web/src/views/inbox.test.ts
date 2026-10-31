@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SessionView } from "../protocol/control";
 import type { TeamMessage } from "../protocol/domain";
-import { ARCHIVE_MS, askNeeds, reconcileInbox, sessionNeeds, type Need, type OpenGate } from "./inbox";
+import { approvalTitle, ARCHIVE_MS, askNeeds, reconcileInbox, sessionNeeds, type Need, type OpenGate } from "./inbox";
 
 const s = (name: string, status: string, state = "running"): SessionView => ({ id: name, name, state, status, harness: "claude" }) as SessionView;
 const need = (session: string, text = "waiting on a permission prompt"): Need => ({ session, name: session, kind: "permission", text });
@@ -17,6 +17,20 @@ describe("sessionNeeds", () => {
     const g = (id: number, session_id: string, kind: "checkin" | "permission", question: string): OpenGate => ({ id, session_id, agent: session_id, kind, question, floor: false });
     const out = sessionNeeds([s("a", "approval"), s("b", "idle"), s("c", "working")], [g(1, "a", "permission", "Bash: git push origin main"), g(2, "b", "checkin", "Shall I go on?"), g(3, "c", "checkin", "stale")]);
     expect(out.map((n) => [n.session, n.text, n.gate?.id])).toEqual([["a", "Approve Bash: git push origin main?", 1], ["b", "Shall I go on?", 2]]);
+  });
+});
+
+describe("sessionNeeds first-run dialogs", () => {
+  it("lists an agent stuck on a first-run dialog while starting (trust, login, setup)", () => {
+    const stuck = { ...s("a", "starting"), waiting: "trust this folder" } as SessionView;
+    const out = sessionNeeds([stuck, s("b", "starting")], []);
+    expect(out.map((n) => [n.session, n.kind, n.text])).toEqual([["a", "block", "is waiting on a first-run dialog (trust this folder): answer it in its terminal"]]);
+  });
+});
+
+describe("approvalTitle", () => {
+  it("titles an agent's question and a team change by what they are, not as a team launch", () => {
+    expect([approvalTitle("ask"), approvalTitle("formation"), approvalTitle("launch")]).toEqual(["An agent asks you", "Team change to approve", "Team launch ready"]);
   });
 });
 

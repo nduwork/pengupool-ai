@@ -78,8 +78,9 @@ export interface InboxEntry extends Need {
 export const ARCHIVE_MS = 24 * 3600 * 1000;
 
 /**
- * What needs the owner now, one ask per running session: a lost connection, else a permission
- * prompt (the exact tool call when the host recorded it), else a check-in awaiting an answer.
+ * What needs the owner now, one ask per running session: a lost connection, else a first-run dialog
+ * it is stuck on while starting, else a permission prompt (the exact tool call when the host recorded
+ * it), else a check-in awaiting an answer.
  */
 export function sessionNeeds(sessions: SessionView[], gates: OpenGate[]): Need[] {
   const out: Need[] = [];
@@ -91,6 +92,7 @@ export function sessionNeeds(sessions: SessionView[], gates: OpenGate[]): Need[]
     const checkin = mine.find((g) => g.kind === "checkin");
     const n = { session: s.id, name: s.name };
     if (st === "lost" || st === "unreachable") out.push({ ...n, kind: "block", text: `is ${st}` });
+    else if (s.waiting) out.push({ ...n, kind: "block", text: `is waiting on a first-run dialog (${s.waiting}): answer it in its terminal` });
     else if (st === "approval")
       out.push(perm !== undefined ? { ...n, kind: "permission", text: permissionText(perm), detail: perm.question, gate: perm } : { ...n, kind: "permission", text: "is waiting on a permission prompt" });
     else if (checkin !== undefined && st !== "working") out.push({ ...n, kind: "checkin", text: checkin.question, gate: checkin });
@@ -114,4 +116,9 @@ export function reconcileInbox(entries: InboxEntry[], live: Need[], now: number)
     .map((e) => (liveIds.has(keyOf(e)) || e.resolvedAt !== undefined ? e : { ...e, resolvedAt: now }))
     .filter((e) => e.resolvedAt === undefined || now - e.resolvedAt < ARCHIVE_MS)
     .sort((a, b) => b.at - a.at);
+}
+
+/** A pending approval's notification title, by its kind: an agent's question is not a team launch. */
+export function approvalTitle(kind: string): string {
+  return kind === "ask" ? "An agent asks you" : kind === "formation" ? "Team change to approve" : "Team launch ready";
 }

@@ -25,7 +25,7 @@ import { Settings } from "./views/Settings";
 import { Sidebar } from "./views/Sidebar";
 import { SkillLibrary } from "./views/SkillLibrary";
 import { isUnread, markViewed, type Viewed } from "./views/lanes";
-import { askNeeds, sessionNeeds, type OpenGate } from "./views/inbox";
+import { approvalTitle, askNeeds, sessionNeeds, type OpenGate } from "./views/inbox";
 import { Handle } from "./views/Page";
 import { Workbench, usePanelRefs } from "./views/Workspace";
 
@@ -156,7 +156,7 @@ export function App(): ReactElement {
     if (info.status === "connected") void connection.request<OpenGate[]>("gates.open", {}).then((r) => setGates(r ?? []), () => setGates([]));
   }, [connection, info.status, statusKey]);
 
-  // Approvals: dock badge (pending proposals plus waiting agents), and a native notification for each new team launch proposal.
+  // Approvals: dock badge (pending proposals plus waiting agents), and a native notification for each new pending approval.
   const seen = useRef(new Set<string>());
   useEffect(() => {
     const pending = view.domain.approvals.filter((a) => a.state === "pending" && a.kind !== "permission");
@@ -164,7 +164,7 @@ export function App(): ReactElement {
     for (const a of pending) {
       if (seen.current.has(a.id)) continue;
       seen.current.add(a.id);
-      desktop?.notify("Team launch ready", a.detail ?? "Review the proposal");
+      desktop?.notify(approvalTitle(a.kind), a.detail ?? "Review the proposal");
     }
   }, [view.domain.approvals, view.domain.messages, view.sessions, gates]);
 

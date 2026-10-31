@@ -255,13 +255,15 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			}
 		}
 		// Muse asks its permission before PreToolUse: the call waits on the owner until it runs or fails.
-		if in.Harness != harness.Muse || s.Status != "approval" {
+		// Another call's prompt still waiting keeps the session waiting too (an unrelated parallel tool).
+		if (in.Harness != harness.Muse || s.Status != "approval") && !p.waitingOn(s.ID, str("tool_use_id")) {
 			p.setStatus(s.ID, "working")
 		}
 		p.turnOpen(s.ID, "")
 		p.asking(s.ID, str("tool_name"), true)
 		if t := str("tool_name"); t == "AskUserQuestion" || t == "ExitPlanMode" {
 			p.setQuestion(s.ID, askedSummary(t, pl["tool_input"]), str("tool_use_id"))
+			p.setStatus(s.ID, "approval") // it waits on the owner's answer from now
 		}
 		if out, deny := p.guardRoute(s, pl); deny {
 			return out, nil
@@ -279,7 +281,9 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		// No floor check here: PenguPool never adds a prompt to what the agent's own permissions allow.
 		// The floor only limits what it answers for the owner (autoAnswer).
 	case "PostToolUse":
-		p.setStatus(s.ID, "working")
+		if !p.waitingOn(s.ID, str("tool_use_id")) {
+			p.setStatus(s.ID, "working")
+		}
 		p.turnOpen(s.ID, "")
 		p.asking(s.ID, str("tool_name"), false)
 		p.turnTool(s.ID)
@@ -417,6 +421,15 @@ func (p *Pool) setSession(id string, fn func(*store.Session)) {
 
 // setQuestion records what the session asks the owner now, and the tool call it is about ("" when
 // unknown: then any tool hook ends it).
+// waitingOn says whether the session's open question belongs to another tool call than use: that
+// prompt still waits on the owner, whatever this call does.
+func (p *Pool) waitingOn(id, use string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	q := p.questionUse[id]
+	return q != "" && q != use
+}
+
 func (p *Pool) setQuestion(id, q, use string) {
 	p.mu.Lock()
 	if p.questionUse == nil {
