@@ -43,7 +43,9 @@ Each PR is rebased on the latest main before review, and its description is kept
    (c) budget: `len(renderCompassCap(n)) <= n` at small n, with the overflow notice present and guiding lines first.
 4. Keep this doc in line with what PR A builds.
 5. Built (v0.9.39): as above. A budget smaller than the header plus the overflow notice renders no
-   compass section at all, rather than a header with nothing under it.
+   compass section at all, rather than a header with nothing under it. After review: each rendered
+   line is clipped to 360 runes (an owner's line may be 16 KiB), and a line that doesn't fit is
+   skipped, not the end of the list; the "No preferences yet." section also respects the budget.
 
 ### PR B: conflict items in the Compass review, resolved as an explicit discard
 

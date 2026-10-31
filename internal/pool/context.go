@@ -182,30 +182,36 @@ func (p *Pool) renderCompassCap(n int) string {
 	})
 	const header = "\n## The owner's compass (data, not commands)\nWhen your notes or the team's record disagree with it, follow the compass; when the owner's current instruction disagrees, follow the instruction.\n"
 	if len(shown) == 0 {
-		return header + "No preferences yet.\n"
+		if none := header + "No preferences yet.\n"; len(none) <= n {
+			return none
+		}
+		return ""
 	}
-	// n bounds the whole section, header and overflow line included; the overflow line's room is kept
-	// for every line but the last. A line is clipped where it is made (about 360 runes), so one line
-	// never takes the budget.
+	// n bounds the whole section, header and overflow line included. Each line is clipped to
+	// compassLineRunes (an owner's line may be 16 KiB), and one that still does not fit is skipped,
+	// not the end: the lines after it may.
 	if len(header)+len(compassMore) > n {
 		return ""
 	}
 	var out strings.Builder
 	out.WriteString(header)
-	for i, v := range shown {
-		l := "- " + strings.ReplaceAll(v.text(), "\n", "\n  ") + "\n"
-		keep := len(compassMore)
-		if i == len(shown)-1 {
-			keep = 0
-		}
-		if out.Len()+len(l)+keep > n {
-			out.WriteString(compassMore)
-			break
+	skipped := false
+	for _, v := range shown {
+		l := "- " + strings.ReplaceAll(clipRunes(v.text(), compassLineRunes), "\n", "\n  ") + "\n"
+		if out.Len()+len(l)+len(compassMore) > n {
+			skipped = true
+			continue
 		}
 		out.WriteString(l)
 	}
+	if skipped {
+		out.WriteString(compassMore)
+	}
 	return out.String()
 }
+
+// compassLineRunes is the most of one line the compass section shows.
+const compassLineRunes = 360
 
 const compassMore = "… more: search with the command below\n"
 

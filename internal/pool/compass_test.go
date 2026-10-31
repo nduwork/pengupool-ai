@@ -969,3 +969,39 @@ func TestCompassRenderBudget(t *testing.T) {
 		seenOther = seenOther || !g
 	}
 }
+
+// One long owner line (up to 16 KiB) neither takes the budget nor hides the lines after it: each line
+// is clipped, and one that does not fit is skipped, not the end. With no lines, a cap still holds.
+func TestCompassRenderLongLine(t *testing.T) {
+	p, _ := twoTeams(t)
+	if c := p.renderCompassCap(50); c != "" {
+		t.Fatalf("no lines, cap 50: %q", c)
+	}
+	big := "The owner wants every change explained: " + strings.Repeat("why it matters and what it touches. ", 250)
+	if _, err := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: big, Origin: "stated", Source: "owner"}); err != nil {
+		t.Fatal(err)
+	}
+	small := []string{"The owner prefers small pull requests", "The owner wants tests with each fix"}
+	for _, b := range small {
+		stated(t, p, b)
+	}
+	c := p.renderCompass()
+	if !strings.Contains(c, "The owner wants every change explained") || strings.Contains(c, big) {
+		t.Fatalf("the long line is not shown clipped:\n%s", c)
+	}
+	for _, b := range small {
+		if !strings.Contains(c, b) {
+			t.Fatalf("%q is hidden by the long line:\n%s", b, c)
+		}
+	}
+	// A cap the clipped long line does not fit still shows the short lines, and says more exist.
+	c = p.renderCompassCap(400)
+	if len(c) > 400 || strings.Contains(c, "every change explained") || !strings.HasSuffix(c, compassMore) {
+		t.Fatalf("cap 400 (%d bytes):\n%s", len(c), c)
+	}
+	for _, b := range small {
+		if !strings.Contains(c, b) {
+			t.Fatalf("cap 400 hides %q:\n%s", b, c)
+		}
+	}
+}

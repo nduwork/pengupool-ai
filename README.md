@@ -241,7 +241,9 @@ via <session>") with the owner's words; harness permission prompts are not cover
 v0.9.39: The compass agents read holds the owner's prose lines only, guiding lines first, within 8 KiB
 for the whole section. Permission answers ("The owner allows Bash for …") stay stored for answering
 permission prompts but no longer fill agents' context, and every line is a candidate before any limit,
-so a run of newer permission answers can no longer push the owner's preferences out.
+so a run of newer permission answers can no longer push the owner's preferences out. Each line shows
+at most 360 characters, and a line that doesn't fit is skipped rather than ending the list, so one
+long line can't hide the rest.
 
 ## Credits
 
