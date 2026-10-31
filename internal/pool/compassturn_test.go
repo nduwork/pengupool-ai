@@ -33,7 +33,7 @@ func TestWordingIsOfferedInTheSameTurn(t *testing.T) {
 		return out.(HookOut).Stdout
 	}
 	ask := func() {
-		p.askWording(agentdb.Signal{SessionID: "claudeaaaaaa", Kind: "preference", Words: "bug fixes go before features"}, nil, 0)
+		p.askWording(agentdb.Signal{SessionID: "claudeaaaaaa", Kind: "preference", Words: "bug fixes go before features"}, 0)
 	}
 	status := func() string { s, _ := p.session("claudeaaaaaa"); return s.Status }
 
@@ -99,7 +99,7 @@ func TestWordingAskedWhileAnotherEnds(t *testing.T) {
 		}
 	}()
 	for range 200 {
-		p.askWording(agentdb.Signal{SessionID: "claudeaaaaaa", Kind: "said", Words: "small releases first"}, nil, 0)
+		p.askWording(agentdb.Signal{SessionID: "claudeaaaaaa", Kind: "said", Words: "small releases first"}, 0)
 	}
 	<-done
 }
@@ -123,7 +123,7 @@ func TestWordingTurnKeepsTheOwnersCheckIn(t *testing.T) {
 	}
 	var notices []string
 	p.testNotice = func(_, text string) error { notices = append(notices, text); return nil }
-	p.askWording(agentdb.Signal{SessionID: "leadaaaaaaaa", Kind: "preference", Words: "bug fixes go before features"}, nil, 0)
+	p.askWording(agentdb.Signal{SessionID: "leadaaaaaaaa", Kind: "preference", Words: "bug fixes go before features"}, 0)
 	if len(notices) != 1 {
 		t.Fatalf("notices %q", notices)
 	}

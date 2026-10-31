@@ -610,32 +610,33 @@ func TestMixedMessageStatesPreference(t *testing.T) {
 	}
 }
 
-// Without a decision model every owner prompt reaches the session's own agent, with the lines it may
-// touch: it links lines, words up to 3 new ones, once, and only the asked session may.
-func TestSessionWordsWithoutDecider(t *testing.T) {
+// Without a triage model the owner's words are judged by nothing. A wording, once asked, is the
+// session's own agent wording up to 3 new lines, once; only the asked session may.
+func TestSessionWording(t *testing.T) {
 	p, st := twoTeams(t)
 	lead, _ := p.session("leadaaaaaaaa")
-	ui := stated(t, p, "Keep the UI simple")
-	good := compassWordIn{Supports: []string{ui}, Lines: []string{"restriction :: Never merge without the review agent :: ", "preference :: Run the tests before every commit :: on the loader"}}
+	stated(t, p, "Keep the UI simple")
+	good := compassWordIn{Lines: []string{"restriction :: Never merge without the review agent :: ", "preference :: Run the tests before every commit :: on the loader"}}
 	if err := wordWith(t, p, lead.ID, good); err == nil {
 		t.Fatal("a wording nobody asked for was taken")
 	}
-	// Without a triage model the owner's words are judged by nothing: no wording is asked.
-	p.placeTurn(context.Background(), lead, turn{Prompt: "From now on keep the UI simple and never merge without the review agent"}, "ok")
+	words := "From now on keep the UI simple and never merge without the review agent"
+	p.placeTurn(context.Background(), lead, turn{Prompt: words}, "ok")
 	if p.wordingNote(lead.ID) != "" || len(signalKinds(t, st)) != 0 {
 		t.Fatal("the owner's words were judged without a triage model")
 	}
-	// The wording itself, once asked (the line candidates offered with it).
-	words := "From now on keep the UI simple and never merge without the review agent"
-	p.askWording(agentdb.Signal{Kind: "said", Words: words, SessionID: lead.ID}, p.candidates(words), 0)
+	p.askWording(agentdb.Signal{Kind: "said", Words: words, SessionID: lead.ID}, 0)
 	if len(p.lines("", 0)) != 1 || len(signalKinds(t, st)) != 0 {
 		t.Fatal("something was kept before the agent answered")
 	}
 	note := p.contextOut(lead.ID, "UserPromptSubmit", p.wordingNote(lead.ID)).Stdout
-	for _, want := range []string{"[PenguPool compass]", "never merge without the review agent", "[" + ui + "] Keep the UI simple", "--supports", "--line", "--for", "--none"} {
+	for _, want := range []string{"[PenguPool compass]", "never merge without the review agent", "--line", "--for", "--none"} {
 		if !strings.Contains(note, want) {
 			t.Fatalf("the note lacks %q: %q", want, note)
 		}
+	}
+	if strings.Contains(note, "--supports") || strings.Contains(note, "--contradicts") {
+		t.Fatalf("the note still offers lines to link: %q", note)
 	}
 	if err := wordWith(t, p, "webaaaaaaaaa", good); err == nil {
 		t.Fatal("another session's wording was taken")
@@ -643,26 +644,15 @@ func TestSessionWordsWithoutDecider(t *testing.T) {
 	if err := wordWith(t, p, lead.ID, compassWordIn{Lines: []string{"restriction :: no"}}); err == nil || len(p.lines("", 0)) != 1 {
 		t.Fatalf("a bare pick was taken: %v", err)
 	}
-	// A line that was not offered cannot be linked, nor one that is no line of the owner's.
-	bad := good
-	bad.Supports = []string{"nope"}
-	if err := wordWith(t, p, lead.ID, bad); err == nil || len(p.lines("", 0)) != 1 {
-		t.Fatalf("a line that was not offered was linked: %v", err)
-	}
-	other := stated(t, p, "Few panels")
-	bad.Supports = []string{other}
-	if err := wordWith(t, p, lead.ID, bad); err == nil || len(p.lines("", 0)) != 2 {
-		t.Fatalf("a line that was not offered was linked: %v", err)
-	}
 	if err := wordWith(t, p, lead.ID, compassWordIn{Lines: []string{"preference :: one two three", "preference :: one two three", "preference :: one two three", "preference :: one two three"}}); err == nil {
 		t.Fatal("four lines were taken")
 	}
-	// Two lines and a link: both lines kept, one signal, with its effect on the linked line.
+	// Two lines: both kept, one signal.
 	if err := wordWith(t, p, lead.ID, good); err != nil {
 		t.Fatal(err)
 	}
 	ls := p.lines("", 0)
-	if len(ls) != 4 || len(signalKinds(t, st)) != 1 {
+	if len(ls) != 3 || len(signalKinds(t, st)) != 1 {
 		t.Fatalf("lines %d, signals %v", len(ls), signalKinds(t, st))
 	}
 	for _, v := range ls {
@@ -670,18 +660,15 @@ func TestSessionWordsWithoutDecider(t *testing.T) {
 			t.Fatalf("the session's line: %+v", v)
 		}
 	}
-	if es, _ := p.db.Effects(ui); len(es[ui]) != 1 || es[ui][0].PSup != 1 || es[ui][0].Weight != agentdb.WeightSaid {
-		t.Fatalf("the linked line's effects: %+v", es[ui])
-	}
-	if err := wordWith(t, p, lead.ID, good); err == nil || len(p.lines("", 0)) != 4 {
+	if err := wordWith(t, p, lead.ID, good); err == nil || len(p.lines("", 0)) != 3 {
 		t.Fatalf("a second wording was taken: %v", err)
 	}
 	// --none clears the request and the signal waits in the ledger.
-	p.askWording(agentdb.Signal{Kind: "said", Words: "Always use tabs for indentation", SessionID: lead.ID}, p.candidates("Always use tabs for indentation"), 0)
+	p.askWording(agentdb.Signal{Kind: "said", Words: "Always use tabs for indentation", SessionID: lead.ID}, 0)
 	if err := wordWith(t, p, lead.ID, compassWordIn{None: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := wordWith(t, p, lead.ID, good); err == nil || len(p.lines("", 0)) != 4 || len(signalKinds(t, st)) != 2 {
+	if err := wordWith(t, p, lead.ID, good); err == nil || len(p.lines("", 0)) != 3 || len(signalKinds(t, st)) != 2 {
 		t.Fatalf("after --none: %v, %d lines, %v", err, len(p.lines("", 0)), signalKinds(t, st))
 	}
 }
@@ -691,7 +678,7 @@ func TestSessionWordsWithoutDecider(t *testing.T) {
 func TestWordingGivenUp(t *testing.T) {
 	p, st := twoTeams(t)
 	lead, _ := p.session("leadaaaaaaaa")
-	p.askWording(agentdb.Signal{Kind: "said", Words: "keep the UI simple", SessionID: lead.ID}, nil, 0)
+	p.askWording(agentdb.Signal{Kind: "said", Words: "keep the UI simple", SessionID: lead.ID}, 0)
 	for i := 0; i < maxOffers; i++ {
 		if !strings.Contains(p.wordingNote(lead.ID), "keep the UI simple") || len(signalKinds(t, st)) != 0 {
 			t.Fatalf("prompt %d: no note, or the signal was kept", i+1)
@@ -887,24 +874,16 @@ func TestStartupSweepsDroppedLines(t *testing.T) {
 	}
 }
 
-// An answer must name the note it read, and the agent's contradiction moves neither a restriction nor an owner's line.
+// An answer must name the note it read.
 func TestSessionWordingGuards(t *testing.T) {
 	p, _ := twoTeams(t)
 	lead, _ := p.session("leadaaaaaaaa")
-	rs, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Kind: "restriction", Body: "Never push to main without asking", Origin: "stated"})
-	pin, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Keep the UI simple", Origin: "stated", Source: "owner"})
-	sig := agentdb.Signal{Kind: "said", Words: "push to main is fine now", SessionID: lead.ID}
-	p.askWording(sig, []agentdb.Line{{UID: rs}, {UID: pin}}, 0)
+	p.askWording(agentdb.Signal{Kind: "said", Words: "push to main is fine now", SessionID: lead.ID}, 0)
 	if err := wordWith(t, p, lead.ID, compassWordIn{For: "nope", None: true}); err == nil {
 		t.Fatal("a wording for another note was taken")
 	}
-	if err := wordWith(t, p, lead.ID, compassWordIn{Contradicts: []string{rs, pin}}); err != nil {
+	if err := wordWith(t, p, lead.ID, compassWordIn{None: true}); err != nil {
 		t.Fatal(err)
-	}
-	for _, uid := range []string{rs, pin} {
-		if es, _ := p.db.Effects(uid); len(es[uid]) != 0 {
-			t.Fatalf("an agent's contradiction moved %s: %+v", uid, es[uid])
-		}
 	}
 }
 

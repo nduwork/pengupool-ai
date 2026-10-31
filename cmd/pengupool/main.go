@@ -63,10 +63,9 @@ const help = `usage: pengupool <command> [options]
         Only in a turn the owner's own prompt opened, with no teammate's message to you since your
         previous reply, for a question that reply showed by id and quoted as it stands (the only one
         it showed, or one the owner names by id); a prompt over 2000 characters is refused, not clipped.
-  compass word [--supports UID]... [--contradicts UID]... [--line "preference|restriction :: BODY :: WHEN"]... | compass word --none
-        (inside a session asked to) say which Compass lines the owner's last words support or go
-        against and word up to 3 new lasting preferences, or say they hold none. Only the session
-        PenguPool asked, once.
+  compass word [--line "preference|restriction :: BODY :: WHEN"]... | compass word --none
+        (inside a session asked to) word up to 3 new lasting preferences from the owner's last
+        words, or say they hold none. Only the session PenguPool asked, once.
   experience import FILE
         (the owner's terminal only) add journal entries from a JSON file (- for stdin), an array of
         {"helper": NAME, "at": RFC3339, "title": "...", "body": "..."}. An entry already there

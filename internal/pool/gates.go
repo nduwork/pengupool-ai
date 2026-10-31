@@ -635,7 +635,7 @@ func (p *Pool) learnDecision(s store.Session, g agentdb.Gate) {
 	if err := p.db.SetGateDecision(g.ID, proceed, ""); err != nil {
 		p.logf("pool: gate %d: %v", g.ID, err)
 	}
-	p.askWording(sig, nil, g.ID)
+	p.askWording(sig, g.ID)
 }
 
 // ruleTemplate are the words every decision line shares ("The owner lets agents … without asking"),

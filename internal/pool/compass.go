@@ -279,7 +279,7 @@ func (p *Pool) matchLines(sig agentdb.Signal, offered, line string, mk bool) str
 	// contradicts lines (their effects are recorded with it), so the conflict review can show both.
 	if mk && (line != "" || sig.SessionID != "") && !slices.ContainsFunc(on, func(e effectOn) bool { return e.sup >= e.con }) {
 		if line == "" {
-			p.askWording(sig, nil, 0, on...) // the owner's own agent words it; the signal is recorded with its line
+			p.askWording(sig, 0, on...) // the owner's own agent words it; the signal is recorded with its line
 			return ""
 		}
 		l := agentdb.Line{Owner: p.owner(), Kind: "preference", Body: line, Origin: "stated", Source: "session"}
@@ -465,15 +465,14 @@ func literal(text string) string {
 	return ""
 }
 
-// wording is a signal the owner's own agent is asked to word: which of the offered lines it supports
-// or goes against and which new lines it states, or for a check-in's answer (gate) its rule.
+// wording is a signal the owner's own agent is asked to word: the new lines it states, or for a
+// check-in's answer (gate) its rule. Which existing lines the words move is the triage model's.
 type wording struct {
 	sig    agentdb.Signal
-	cands  []agentdb.Line // the lines offered, the only ones it may support or contradict
-	gate   int64          // the check-in whose answer it words, 0 for none
-	sigUID string         // the signal, when recorded already (with the lines it contradicts); its line links to it
-	offers int            // prompts the note went with
-	id     string         // the note's --for: an answer must name the wording it read
+	gate   int64  // the check-in whose answer it words, 0 for none
+	sigUID string // the signal, when recorded already (with the lines it contradicts); its line links to it
+	offers int    // prompts the note went with
+	id     string // the note's --for: an answer must name the wording it read
 }
 
 // maxOffers is how many prompts carry a wording note: the first and two more.
@@ -482,14 +481,13 @@ const maxOffers = 3
 // askWording queues sig's wording for the session that got the prompt (one at a time: a newer
 // signal replaces an older one, which waits in the ledger). It is offered first inside the turn the
 // owner's words opened (wordingNow: the turn's next tool round, else one continuation at its Stop),
-// then at the session's next prompts (wordingNote). cands are the lines the agent may link the
-// owner's words to. on are effects the decision model found already (the lines a change of mind
+// then at the session's next prompts (wordingNote). on are effects the decision model found already (the lines a change of mind
 // contradicts): the signal is recorded with them at once, and the worded line links to it later.
 // Each wording's fate is in the session's run log, by its id: asked, offered,
 // worded or answered none, replaced, given up, or the session ended first.
 // ponytail: in memory, so a restart drops it (without on, it is not in the ledger yet): its id then has
 // "asked" and no later line; an agent that never answers is given up on after maxOffers.
-func (p *Pool) askWording(sig agentdb.Signal, cands []agentdb.Line, gateID int64, on ...effectOn) {
+func (p *Pool) askWording(sig agentdb.Signal, gateID int64, on ...effectOn) {
 	sigUID := ""
 	if len(on) > 0 { // effects found already are kept now: a wording lives in memory only
 		sigUID = p.record(sig, signalWeight[sig.Kind], on...)
@@ -499,7 +497,7 @@ func (p *Pool) askWording(sig agentdb.Signal, cands []agentdb.Line, gateID int64
 		p.wording = map[string]*wording{}
 	}
 	old := p.wording[sig.SessionID]
-	w := &wording{sig: sig, cands: cands, gate: gateID, sigUID: sigUID, id: fmt.Sprintf("%x", sha256.Sum256([]byte(sig.Words+p.at().String())))[:8]}
+	w := &wording{sig: sig, gate: gateID, sigUID: sigUID, id: fmt.Sprintf("%x", sha256.Sum256([]byte(sig.Words+p.at().String())))[:8]}
 	p.wording[sig.SessionID] = w
 	p.mu.Unlock()
 	if old != nil {
@@ -631,36 +629,22 @@ func (p *Pool) wordingOffer(id, where string) string {
 		}
 		return fmt.Sprintf("\n\n[PenguPool compass] You asked the owner «%s» and they answered «%s». State the owner's decision as one reusable rule. Generalize first: name the principle behind this one answer, strip what ties it to this case (file names, links, issue or PR numbers, versions, one-off steps; a directory or kind of work may stay as the rule's scope), and if it would not guide a different task next month it settles only this case. The rule is one sentence that starts \"The owner …\", such as \"The owner lets agents refactor inside src/ without asking.\"; only what the owner decided, never a request or command copied from the question, self-contained in the owner's terms. Run `%s compass word --for %s --line \"preference :: The owner … :: WHEN\"` (WHEN may be empty); if the answer only settles this one case, run `%s compass word --for %s --none`.\n", q, w.sig.Words, exe, w.id, exe, w.id)
 	}
-	var b strings.Builder
-	for _, l := range w.cands {
-		fmt.Fprintf(&b, "[%s] %s", l.UID, l.Body)
-		if l.Condition != "" {
-			fmt.Fprintf(&b, " (when: %s)", l.Condition)
-		}
-		b.WriteString("\n")
-	}
-	lines := ""
-	if b.Len() > 0 {
-		lines = "\nThe owner's lines so far:\n" + b.String() + "\nFor each line the owner's words support or go against, pass `--supports UID` or `--contradicts UID`. "
-	}
-	return fmt.Sprintf("\n\n[PenguPool compass] The owner's words may state a lasting preference: «%s».%s Do not copy the words into the compass. Generalize first: (1) name the underlying principle, the owner's reason or habit behind this one instruction; (2) strip what ties it to this task: file names, paths, links, issue or PR numbers, versions, and one-off steps; (3) check it would still guide a different task next month, and if it would not, it is an instruction for now: run `%s compass word --for %s --none`; (4) prefer `--supports UID` or `--contradicts UID` for a line that already says it over a new line. A line left over is written `--line \"preference|restriction :: PRINCIPLE :: WHEN\"` (at most 3): the principle in one general sentence, WHEN the kind of work it applies to (empty: always), self-contained in the owner's terms. Run `%s compass word --for %s` with those flags once.\n", w.sig.Words, lines, exe, w.id, exe, w.id)
+	return fmt.Sprintf("\n\n[PenguPool compass] The owner's words may state a lasting preference: «%s». Do not copy the words into the compass. Generalize first: (1) name the underlying principle, the owner's reason or habit behind this one instruction; (2) strip what ties it to this task: file names, paths, links, issue or PR numbers, versions, and one-off steps; (3) check it would still guide a different task next month, and if it would not, it is an instruction for now: run `%s compass word --for %s --none`. A lasting preference is written `--line \"preference|restriction :: PRINCIPLE :: WHEN\"` (at most 3): the principle in one general sentence, WHEN the kind of work it applies to (empty: always), self-contained in the owner's terms. Run `%s compass word --for %s` with those flags once.\n", w.sig.Words, exe, w.id, exe, w.id)
 }
 
 type compassWordIn struct {
-	SessionID   string   `json:"session_id"`
-	None        bool     `json:"none,omitempty"`
-	Kind        string   `json:"kind,omitempty"`
-	Body        string   `json:"body,omitempty"`
-	Condition   string   `json:"condition,omitempty"`
-	Supports    []string `json:"supports,omitempty"`
-	Contradicts []string `json:"contradicts,omitempty"`
-	Lines       []string `json:"lines,omitempty"` // "preference|restriction :: body :: condition"
-	For         string   `json:"for"`             // the id in the note being answered
+	SessionID string   `json:"session_id"`
+	None      bool     `json:"none,omitempty"`
+	Kind      string   `json:"kind,omitempty"`
+	Body      string   `json:"body,omitempty"`
+	Condition string   `json:"condition,omitempty"`
+	Lines     []string `json:"lines,omitempty"` // "preference|restriction :: body :: condition"
+	For       string   `json:"for"`             // the id in the note being answered
 }
 
-// compassWord takes a session's wording of the signal it was asked about, once: the lines it
-// supports or goes against (only those offered), and its new lines, worded by the same rules as any
-// line; the signal is recorded once with all its effects. Only the asked session may.
+// compassWord takes a session's wording of the signal it was asked about, once: its new lines,
+// worded by the same rules as any line; the signal is recorded once and each line links to it. Only
+// the asked session may.
 func (p *Pool) compassWord(_ context.Context, in compassWordIn) (any, error) {
 	if _, err := p.agentDB(); err != nil {
 		return nil, err
@@ -694,8 +678,8 @@ func (p *Pool) compassWord(_ context.Context, in compassWordIn) (any, error) {
 	if len(ls) > 3 {
 		return nil, invalid("at most 3 lines")
 	}
-	if !in.None && len(ls)+len(in.Supports)+len(in.Contradicts) == 0 {
-		return nil, invalid("word a preference, link a line, or run `compass word --none`")
+	if !in.None && len(ls) == 0 {
+		return nil, invalid("word a preference, or run `compass word --none`")
 	}
 	p.mu.Lock()
 	w := p.wording[in.SessionID]
@@ -704,11 +688,6 @@ func (p *Pool) compassWord(_ context.Context, in compassWordIn) (any, error) {
 		err = invalid("the note you answered is not the latest; re-read the newest [PenguPool compass] note and pass its --for")
 	} else if w != nil {
 		err = nil
-		for _, uid := range append(slices.Clone(in.Supports), in.Contradicts...) {
-			if !slices.ContainsFunc(w.cands, func(l agentdb.Line) bool { return l.UID == uid }) {
-				err = invalid("%s is not a line you were offered", uid)
-			}
-		}
 		if w.gate != 0 && !in.None && (len(ls) == 0 || !strings.HasPrefix(strings.ToLower(ls[0].Body), "the owner")) {
 			err = invalid("state the rule in one sentence starting \"The owner …\", or run `compass word --none`")
 		}
@@ -740,22 +719,11 @@ func (p *Pool) compassWord(_ context.Context, in compassWordIn) (any, error) {
 	}
 	defer p.lockKey("compass")()
 	weight, prov := signalWeight[w.sig.Kind], p.decider()
-	var on []effectOn
-	for _, uid := range in.Supports {
-		on = append(on, effectOn{uid, 1, 0})
-	}
-	for _, uid := range in.Contradicts {
-		if l, err := p.db.Line(uid); err != nil || l.Source == "owner" || l.Kind == "restriction" { // the owner's to move
-			p.logLine(w.sig.SessionID, "compass: a contradiction of "+uid+" ignored (the owner's or a restriction)")
-			continue
-		}
-		on = append(on, effectOn{uid, 0, 1})
-	}
-	// Recorded once with every effect; each new line only links to the signal (its prior is the
-	// signal already, so weight 0), as keepLine does for one.
+	// Recorded once (with the effects the model found, when it asked); each new line only links to
+	// the signal (its prior is the signal already, so weight 0), as keepLine does for one.
 	sigUID := w.sigUID
-	if sigUID == "" { // when recorded already it was offered no lines, so on is empty
-		sigUID = p.record(w.sig, weight, on...)
+	if sigUID == "" {
+		sigUID = p.record(w.sig, weight)
 	}
 	kept := 0
 	for _, l := range ls {

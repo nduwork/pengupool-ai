@@ -308,7 +308,9 @@ v0.10.9: No rules stand in for the triage model. Without one (or with one not an
 judges nothing: the owner's words are not read for preferences by sentence patterns or by the session's
 own agent, a turn is not placed by its tool count or length, a team proposal is the main worker with a
 note, and a lead's per-Compass decision is refused with "no triage model is set up". Check-ins,
-permissions and asks still go to the owner, and the app asks for a model until one works.
+permissions and asks still go to the owner, and the app asks for a model until one works. `compass word`
+loses `--supports` and `--contradicts`: which existing lines the owner's words move is the model's call;
+the session's agent only words new lines.
 
 ## Credits
 

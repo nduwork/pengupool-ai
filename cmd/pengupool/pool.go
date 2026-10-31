@@ -474,7 +474,7 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 
 // cmdCompass: `compass word …`, the answer to a [PenguPool compass] note.
 func cmdCompass(args []string) error {
-	usage := errors.New(`usage: pengupool compass word [--supports UID]... [--contradicts UID]... [--line "preference|restriction :: BODY :: WHEN"]... | compass word --none (or --kind K --body TEXT [--condition WHEN] for one line)`)
+	usage := errors.New(`usage: pengupool compass word [--line "preference|restriction :: BODY :: WHEN"]... | compass word --none (or --kind K --body TEXT [--condition WHEN] for one line)`)
 	if len(args) == 0 || args[0] != "word" {
 		return usage
 	}
@@ -484,24 +484,22 @@ func cmdCompass(args []string) error {
 	cond := fs.String("condition", "", "when it applies (empty: always)")
 	forID := fs.String("for", "", "the id in the compass note being answered")
 	none := fs.Bool("none", false, "the owner's words hold no lasting preference")
-	var sup, con, lines []string
+	var lines []string
 	add := func(to *[]string) func(string) error {
 		return func(v string) error { *to = append(*to, v); return nil }
 	}
-	fs.Func("supports", "a line (uid) the owner's words support; repeatable", add(&sup))
-	fs.Func("contradicts", "a line (uid) the owner's words go against; repeatable", add(&con))
 	fs.Func("line", `a new line, "preference|restriction :: BODY :: WHEN"; repeatable`, add(&lines))
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
-	if !*none && *body == "" && len(sup)+len(con)+len(lines) == 0 {
+	if !*none && *body == "" && len(lines) == 0 {
 		return usage
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	_, err := rpc(ctx, poolStore(), "compass.word", map[string]any{
 		"session_id": os.Getenv("PENGUPOOL_SESSION_ID"), "for": *forID, "none": *none, "kind": *kind, "body": *body, "condition": *cond,
-		"supports": sup, "contradicts": con, "lines": lines,
+		"lines": lines,
 	})
 	if err != nil {
 		return err
