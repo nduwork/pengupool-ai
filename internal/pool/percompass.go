@@ -101,6 +101,9 @@ func (p *Pool) askPerCompass(ctx context.Context, in perCompassIn) (any, error) 
 		p.logLine(in.SessionID, fmt.Sprintf("%s: the Compass decision refused: %s", it.ID, why))
 		return nil, protocol.Errorf(protocol.CodeForbidden, "%s; show %s to the owner and let them answer", why, in.ID)
 	}
+	if p.decider() == nil {
+		return refuse("no triage model is set up (Settings → Decision model)")
+	}
 	if len(cands) == 0 {
 		return refuse("not covered by the Compass")
 	}

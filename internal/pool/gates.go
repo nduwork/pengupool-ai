@@ -635,47 +635,8 @@ func (p *Pool) learnDecision(s store.Session, g agentdb.Gate) {
 	if err := p.db.SetGateDecision(g.ID, proceed, ""); err != nil {
 		p.logf("pool: gate %d: %v", g.ID, err)
 	}
-	p.askWording(sig, nil, g.ID)
+	p.askWording(sig, g.ID)
 }
-
-// ruleTemplate are the words every decision line shares ("The owner lets agents … without asking"),
-// so they say nothing about which decision it is.
-var ruleTemplate = map[string]bool{"the": true, "owner": true, "owners": true, "allow": true, "allows": true, "let": true, "lets": true,
-	"agent": true, "agents": true, "for": true, "to": true, "without": true, "asking": true, "ask": true, "does": true, "not": true, "may": true, "can": true}
-
-var negationRe = regexp.MustCompile(`(?i)\b(not|never|no)\b|n't\b`)
-
-// contentWords are a decision line's words that tell it apart: lowercased, without stopwords, the
-// template's words or single letters.
-func contentWords(s string) map[string]bool {
-	out := map[string]bool{}
-	for _, w := range wordRe.FindAllString(strings.ToLower(s), -1) {
-		if len(w) > 1 && !stopwords[w] && !ruleTemplate[w] {
-			out[w] = true
-		}
-	}
-	return out
-}
-
-// sameContent: two decision lines name the same thing when their content words overlap by at least
-// 80% (Jaccard).
-func sameContent(a, b string) bool {
-	wa, wb := contentWords(a), contentWords(b)
-	shared := 0
-	for w := range wa {
-		if wb[w] {
-			shared++
-		}
-	}
-	union := len(wa) + len(wb) - shared
-	return union > 0 && shared*5 >= 4*union
-}
-
-func negative(s string) bool { return negationRe.MatchString(s) }
-
-// similarRule: two check-in decision lines say the same when they name the same thing and both are
-// negative or neither is.
-func similarRule(a, b string) bool { return negative(a) == negative(b) && sameContent(a, b) }
 
 // lockKey serialises the decisions on one key (the Compass, or a permission key), so two arriving
 // together make one line. ponytail: the map keeps one mutex per key seen; fine at owner scale.
@@ -695,39 +656,16 @@ func (p *Pool) lockKey(k string) func() {
 }
 
 // keepDecision records a check-in decision (sig: the owner's words, the team and session) as a
-// chose signal on the Compass and returns the line's uid ("" when it could not be kept). A line
-// that says the same thing takes the choice as support; one that says the opposite about the same
-// thing takes it as contradiction. With no line saying the same, the decision becomes a new line.
-// With a decision model the choice is matched to the lines like any other signal (match, the line
-// being the question's context and the new line's words); without one, by words alone.
+// chose signal on the Compass and returns the line's uid ("" when it could not be kept): the triage
+// model matches it to the lines like any other signal (match, the line being the question's context
+// and the new line's words). With no model it waits in the ledger, judged by nothing else.
 func (p *Pool) keepDecision(sig agentdb.Signal, line string) string {
-	if sig.Kind = "chose"; p.decider() != nil {
-		return p.match(sig, line, line)
+	sig.Kind = "chose"
+	if p.decider() == nil {
+		p.record(sig, agentdb.WeightChose)
+		return ""
 	}
-	defer p.lockKey("compass")()
-	have, _ := p.db.Lines(p.owner(), line, "", 10)
-	var on []effectOn
-	same, how := "", "kept"
-	for _, l := range have {
-		if l.Tag != "" || !sameContent(l.Body, line) { // a tagged one is a permission decision, kept by its key
-			continue
-		}
-		if negative(l.Body) != negative(line) {
-			on, how = append(on, effectOn{l.UID, 0, 1}), "otherwise"
-		} else if same == "" {
-			same, how = l.UID, "as before"
-			on = append(on, effectOn{l.UID, 1, 0})
-		}
-	}
-	if same == "" {
-		if same = p.newDecision(agentdb.Line{Body: line, Source: "session"}); same == "" {
-			return ""
-		}
-		on = append(on, effectOn{same, 1, 0})
-	}
-	p.record(sig, agentdb.WeightChose, on...)
-	p.logLine(sig.SessionID, fmt.Sprintf("compass: the owner decided %s: %s", how, clip(line, 120)))
-	return same
+	return p.match(sig, line, line)
 }
 
 // newDecision stores l (body and, for a permission, its key as the tag) as a line of the owner's

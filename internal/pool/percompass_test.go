@@ -86,6 +86,11 @@ func TestPerCompassAsk(t *testing.T) {
 		}
 	}
 
+	// No triage model: PenguPool decides nothing, and says why.
+	a0 := ask("Merge PR #6 into main?", false)
+	refused(a0, "no triage model is set up")
+	setDecider(p, compassDecider{calibrated: true, yes: 0, opt: 0}) // a model that says no
+
 	// Not covered: no lines; a perm: line, a session-worded line and a learning line do not count.
 	a1 := ask("Merge PR #7 into main?", false)
 	refused(a1, "not covered by the Compass")
@@ -101,7 +106,7 @@ func TestPerCompassAsk(t *testing.T) {
 	// B1: the session line and the learning line left the version unchanged, so a1 stays decided.
 	refused(a1, "already decided per the Compass")
 
-	// A confident owner line, but no decider, an uncalibrated one, or one below the bar: not sure.
+	// A confident owner line, but a model that says no, an uncalibrated one, or one below the bar: not sure.
 	uid := ownerLine(t, p, "Merge PRs into main once the PR review agent approves", "owner")
 	a3 := ask("Merge PR #9 into main? The PR review agent approved.", false)
 	refused(a3, "not sure")

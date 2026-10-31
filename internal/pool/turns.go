@@ -2,14 +2,12 @@ package pool
 
 import (
 	"bufio"
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"maps"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -248,41 +246,17 @@ func (p *Pool) placeTurn(ctx context.Context, s store.Session, t turn, reply str
 	}
 }
 
-// standingRE is a sentence that states a standing preference whatever triage made of it: a small
-// model reads "if the risk is low, just approve for me" as a task, or times out. It asks for a rule's
-// shape (a time span, an order to the agents, a condition with a decision handed over), not a word:
-// "fix it so it never returns nil" is a task. ponytail: English phrases only; triage finds the rest.
-var standingRE = regexp.MustCompile(`(?i)(\b(from now on|going forward|from here on|in (the )?future)\b|^\s*(please\s+)?(always|never)\s+(ask|check|approve|use|run|merge|commit|push|wait|stop|touch|edit|skip)\b|\b(you|agents?|helpers?)\s+(should\s+)?(always|never)\b|\b(do not|don't|no need to)\s+(ask|check with)\s+me\b|\b(whenever|if)\b[^.!?]{0,80}\b(approve|decide|choose|accept|merge|go ahead)\b[^.!?]{0,20}\bfor me\b|\bremember (my|this) (choice|preference)\b|\b(if|when|whenever)\b[^.!?]{0,80}\b(agrees?|approves?|passes|is green)\b[^.!?]{0,40}\b(you can|go ahead|feel free)\b)`)
-
-// sentenceRE ends a sentence; unlike sentenceEnd it keeps "From now on: …" whole.
-var sentenceRE = regexp.MustCompile(`[.!?]+(\s+|$)`)
-
-// standingClause is the owner's sentence that states a standing preference, "" when none does.
-func standingClause(prompt string) string {
-	s := strings.Join(strings.Fields(strings.NewReplacer("’", "'", "‘", "'").Replace(prompt)), " ")
-	start := 0
-	for _, end := range append(sentenceRE.FindAllStringIndex(s, -1), []int{len(s), len(s)}) {
-		part, question := s[start:end[0]], strings.Contains(s[end[0]:end[1]], "?")
-		start = end[1]
-		if !question && standingRE.MatchString(part) { // a question is no rule
-			return strings.TrimSpace(part)
-		}
-	}
-	return ""
-}
-
-// ownerSaid acts on what the owner's prompt is: a correction, when it changes a preference, becomes a signal; a preference or a choice is a signal, and so
-// is an instruction worded as a standing one (standingRE). A choice that answered a recorded
-// check-in is a signal already (learnDecision).
+// ownerSaid acts on what the triage model read the owner's prompt as: a correction, when it changes
+// a preference, becomes a signal; a preference or a choice is a signal, and so is a task the model
+// reads as also stating a rule. A choice that answered a recorded check-in is a signal already
+// (learnDecision). With no model, or a failed call, the words are not judged, and not later either.
 func (p *Pool) ownerSaid(s store.Session, team *protocol.Team, t turn, pl placement) {
 	sig := agentdb.Signal{Words: clip(oneLine(redact(t.Prompt)), 240), SessionID: s.ID}
 	if team != nil {
 		sig.TeamID = team.ID
 	}
-	if p.decider() == nil { // no triage: only a standing sentence is worth the session's agent wording
-		if !p.answeredCheckin(s, t.Prompt) && p.standing(s, &sig, t, "no triage") {
-			p.match(sig, "", "")
-		}
+	if p.decider() == nil { // no triage model: the owner's words are judged by nothing else (the app asks for one)
+		p.logLine(s.ID, "compass: no triage model is set up, so the owner's words are not judged")
 		return
 	}
 	offered := ""
@@ -300,34 +274,17 @@ func (p *Pool) ownerSaid(s store.Session, team *protocol.Team, t turn, pl placem
 			p.wrongGoAhead(g)
 		}
 		if !pl.ChangesPref {
-			if !p.standing(s, &sig, t, "a one-off correction") {
-				return
-			}
-			break
+			return
 		}
 		sig.Kind = "correction"
 	default: // an instruction, or triage gave no answer
-		if !p.standing(s, &sig, t, cmp.Or(pl.Signal, "no answer")) {
-			if !pl.StatesPref { // a task that also states a rule: the agent that words it finds the rule in the whole message
-				return
-			}
-			sig.Kind = "said"
-			p.logLine(s.ID, "compass: the owner's task also reads as stating a preference")
+		if !pl.StatesPref { // a task that also states a rule: the agent that words it finds the rule in the whole message
+			return
 		}
+		sig.Kind = "said"
+		p.logLine(s.ID, "compass: the owner's task also reads as stating a preference")
 	}
 	p.match(sig, offered, "")
-}
-
-// standing makes sig a stated signal of the prompt's standing-preference sentence, whatever triage
-// read: its words are that sentence, so a long task before it cannot push it out of the clip.
-func (p *Pool) standing(s store.Session, sig *agentdb.Signal, t turn, triage string) bool {
-	c := standingClause(t.Prompt)
-	if c == "" {
-		return false
-	}
-	sig.Kind, sig.Words = "said", clip(oneLine(redact(c)), 240)
-	p.logLine(s.ID, "compass: the owner's words read as a standing preference (triage: "+triage+")")
-	return true
 }
 
 // answeredCheckin: the prompt is the owner's answer to the session's newest check-in, which
@@ -357,10 +314,8 @@ func (p *Pool) setTask(teamID, instruction string) {
 // With gate (state for an autonomous team's turn), the pack also asks checkInQuestions, and the
 // response is returned for gateTurn; it is nil when triage had no answers.
 func (p *Pool) triage(ctx context.Context, s store.Session, t turn, reply string, gate map[string]any) (placement, *decision.Response) {
-	rule := placement{Record: t.Tools > 0 || len(reply) >= 400}
-	if t.fromNotice() && t.Tools == 0 { // information that led to no work: not on the record
-		rule.Record = false
-	}
+	// Only the triage model places a turn: with none, or none answering, nothing is put on the record.
+	var rule placement
 	prov := p.decider()
 	if prov == nil {
 		return rule, nil
@@ -391,7 +346,7 @@ func (p *Pool) triage(ctx context.Context, s store.Session, t turn, reply string
 	defer cancel()
 	res, err := prov.Decide(ctx, decision.Request{State: state, Questions: qs})
 	if err != nil {
-		p.logf("pool: triage of %s's turn: %v (rules used)", s.Name, err)
+		p.logf("pool: triage of %s's turn: %v (not placed)", s.Name, err)
 		return rule, nil
 	}
 	sure := func(a decision.Answer) bool { return !res.Calibrated || a.Confidence >= 0.6 }

@@ -205,8 +205,8 @@ func (p *Pool) propose(ctx context.Context, t protocol.Task, version int) (proto
 		}
 		raw, _ := json.Marshal(map[string]string{"provider": res.Provider, "model": res.Model})
 		prop.Config = raw
-	} else {
-		helpers = rulesHelpers(cands)
+	} else if len(cands) > 0 {
+		prop.Warnings = append(prop.Warnings, "no triage model is set up (Settings → Decision model): main-only proposal")
 	}
 	covered := map[string]bool{}
 	installed := p.agentOptions()
@@ -302,16 +302,6 @@ func rankCandidates(d *protocol.Domain, t protocol.Task, required []string) []ca
 	})
 	if len(out) > maxCandidates {
 		out = out[:maxCandidates]
-	}
-	return out
-}
-
-func rulesHelpers(cands []candidate) []candidate {
-	var out []candidate
-	for _, c := range cands {
-		if len(c.covered) > 0 && len(out) < proposedHelpers {
-			out = append(out, c)
-		}
 	}
 	return out
 }

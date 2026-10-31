@@ -515,9 +515,9 @@ func TestCompassMergeRPC(t *testing.T) {
 	}
 }
 
-// An owner's standing preference is a signal even when triage reads it as a task or gives no answer
-// (the owner's words that a 4B model took for an instruction); a plain task stays none.
-func TestStandingPreferenceDespiteTriage(t *testing.T) {
+// Only the triage model reads the owner's words for a preference: a standing sentence it reads as a
+// task is a task, and with the model failing nothing is judged, no wording asked and no line made.
+func TestOnlyTheModelReadsPreferences(t *testing.T) {
 	p, st := twoTeams(t)
 	lead, _ := p.session("leadaaaaaaaa")
 	place := func(d decision.Provider, prompt string) {
@@ -526,56 +526,20 @@ func TestStandingPreferenceDespiteTriage(t *testing.T) {
 		p.mu.Unlock()
 		p.placeTurn(context.Background(), lead, turn{Prompt: prompt}, "ok")
 	}
-	kinds := func() string { return strings.Join(signalKinds(t, st), ",") }
-	place(fakeTriage{signal: "instruction"}, "fix the failing build and push it")
-	if kinds() != "" {
-		t.Fatalf("a task became a signal: %s", kinds())
-	}
 	place(fakeTriage{signal: "instruction"}, "If agent has recommended solution, and the risk is low, just approve for me")
-	if err := wordWith(t, p, lead.ID, compassWordIn{Lines: []string{"preference :: Approve a low-risk recommended solution without asking"}}); err != nil {
+	if ks := signalKinds(t, st); len(ks) != 0 || p.wordingNote(lead.ID) != "" {
+		t.Fatalf("a sentence pattern stood in for the model: %v", ks)
+	}
+	place(failDecider{}, "From now on, always ask me before pushing to main.")
+	if ks := signalKinds(t, st); len(ks) != 0 || p.wordingNote(lead.ID) != "" || len(p.lines("", 0)) != 0 {
+		t.Fatalf("with the model failing the owner's words were judged: %v, %d lines", ks, len(p.lines("", 0)))
+	}
+	place(fakeTriage{signal: "preference"}, "From now on, always ask me before pushing to main.")
+	if err := wordWith(t, p, lead.ID, compassWordIn{Lines: []string{"restriction :: Ask the owner before pushing to main"}}); err != nil {
 		t.Fatal(err)
 	}
-	if ls := p.lines("", 0); kinds() != "said" || len(ls) != 1 || ls[0].Origin != "stated" {
-		t.Fatalf("the standing preference: %s, %+v", kinds(), ls)
-	}
-	// Triage that fails still reaches the session's agent (no line to judge), and its none leaves the
-	// signal in the ledger rather than dropping it.
-	place(failDecider{}, "from now on, run the tests before every commit")
-	if err := wordWith(t, p, lead.ID, compassWordIn{None: true}); err != nil || kinds() != "said,said" {
-		t.Fatalf("with triage down: %s", kinds())
-	}
-}
-
-// standingClause finds the sentence that states a rule, not a word a task happens to use.
-func TestStandingClause(t *testing.T) {
-	for prompt, want := range map[string]string{
-		"If agent has recommended solution, and the risk is low, just approve for me":                    "If agent has recommended solution, and the risk is low, just approve for me",
-		"From now on, run the tests before every commit":                                                 "From now on, run the tests before every commit",
-		"from now on: approve low-risk changes":                                                          "from now on: approve low-risk changes",
-		"Don’t ask me before low-risk edits":                                                             "Don't ask me before low-risk edits",
-		"Do not\nask me about formatting":                                                                "Do not ask me about formatting",
-		"You should always run the linter first":                                                         "You should always run the linter first",
-		"Never push to main without a PR":                                                                "Never push to main without a PR",
-		"Whenever the tests pass, go ahead and merge for me":                                             "Whenever the tests pass, go ahead and merge for me",
-		strings.Repeat("Refactor the loader and its tests. ", 12) + "Going forward, keep the UI simple.": "Going forward, keep the UI simple",
-		"Fix the parser so it never returns nil":                                                         "",
-		"never mind, use the old loader":                                                                 "",
-		"the test fails every time I run it":                                                             "",
-		"make sure the cache always invalidates on write":                                                "",
-		"the flag is off by default; add a CLI option":                                                   "",
-		"merge it for me":                           "",
-		"Why does the agent always ask me twice?":   "",
-		"Investigate why retries never stop":        "",
-		"Please approve this for me just this once": "",
-		"add a login page":                          "",
-		"remember my choice for the common route, if the pr review agent is in team and agrees, you can go ahead merge and release": "remember my choice for the common route, if the pr review agent is in team and agrees, you can go ahead merge and release",
-		"When CI passes, you can go ahead and merge": "When CI passes, you can go ahead and merge",
-		"does the reviewer agree? you can go ahead":  "",
-		"remember to run the tests":                  "",
-	} {
-		if got := standingClause(prompt); got != want {
-			t.Errorf("%q: %q, want %q", prompt, got, want)
-		}
+	if ks := signalKinds(t, st); len(ks) != 1 || ks[0] != "said" || len(p.lines("", 0)) != 1 {
+		t.Fatalf("the model's preference: %v, %d lines", ks, len(p.lines("", 0)))
 	}
 }
 
@@ -603,32 +567,40 @@ func TestMixedMessageStatesPreference(t *testing.T) {
 	if ls, ks := p.lines("", 0), signalKinds(t, st); len(ks) != 1 || ks[0] != "said" || len(ls) != 1 || ls[0].Origin != "stated" {
 		t.Fatalf("a mixed message: %v, %+v", signalKinds(t, st), ls)
 	}
-	// The regex alone catches the quoted message, whatever triage says.
+	// What the model reads as a task stays a task, however it is worded.
 	place(fakeTriage{signal: "instruction"}, "remember my choice for the common route, if the pr review agent is in team and agrees, you can go ahead merge and release")
-	if err := wordWith(t, p, lead.ID, word); err != nil || len(signalKinds(t, st)) != 2 {
+	if len(signalKinds(t, st)) != 1 || p.wordingNote(lead.ID) != "" {
 		t.Fatalf("the quoted message: %v", signalKinds(t, st))
 	}
 }
 
-// Without a decision model every owner prompt reaches the session's own agent, with the lines it may
-// touch: it links lines, words up to 3 new ones, once, and only the asked session may.
-func TestSessionWordsWithoutDecider(t *testing.T) {
+// Without a triage model the owner's words are judged by nothing. A wording, once asked, is the
+// session's own agent wording up to 3 new lines, once; only the asked session may.
+func TestSessionWording(t *testing.T) {
 	p, st := twoTeams(t)
 	lead, _ := p.session("leadaaaaaaaa")
-	ui := stated(t, p, "Keep the UI simple")
-	good := compassWordIn{Supports: []string{ui}, Lines: []string{"restriction :: Never merge without the review agent :: ", "preference :: Run the tests before every commit :: on the loader"}}
+	stated(t, p, "Keep the UI simple")
+	good := compassWordIn{Lines: []string{"restriction :: Never merge without the review agent :: ", "preference :: Run the tests before every commit :: on the loader"}}
 	if err := wordWith(t, p, lead.ID, good); err == nil {
 		t.Fatal("a wording nobody asked for was taken")
 	}
-	p.placeTurn(context.Background(), lead, turn{Prompt: "From now on keep the UI simple and never merge without the review agent"}, "ok")
+	words := "From now on keep the UI simple and never merge without the review agent"
+	p.placeTurn(context.Background(), lead, turn{Prompt: words}, "ok")
+	if p.wordingNote(lead.ID) != "" || len(signalKinds(t, st)) != 0 {
+		t.Fatal("the owner's words were judged without a triage model")
+	}
+	p.askWording(agentdb.Signal{Kind: "said", Words: words, SessionID: lead.ID}, 0)
 	if len(p.lines("", 0)) != 1 || len(signalKinds(t, st)) != 0 {
 		t.Fatal("something was kept before the agent answered")
 	}
 	note := p.contextOut(lead.ID, "UserPromptSubmit", p.wordingNote(lead.ID)).Stdout
-	for _, want := range []string{"[PenguPool compass]", "never merge without the review agent", "[" + ui + "] Keep the UI simple", "--supports", "--line", "--for", "--none"} {
+	for _, want := range []string{"[PenguPool compass]", "never merge without the review agent", "--line", "--for", "--none"} {
 		if !strings.Contains(note, want) {
 			t.Fatalf("the note lacks %q: %q", want, note)
 		}
+	}
+	if strings.Contains(note, "--supports") || strings.Contains(note, "--contradicts") {
+		t.Fatalf("the note still offers lines to link: %q", note)
 	}
 	if err := wordWith(t, p, "webaaaaaaaaa", good); err == nil {
 		t.Fatal("another session's wording was taken")
@@ -636,26 +608,15 @@ func TestSessionWordsWithoutDecider(t *testing.T) {
 	if err := wordWith(t, p, lead.ID, compassWordIn{Lines: []string{"restriction :: no"}}); err == nil || len(p.lines("", 0)) != 1 {
 		t.Fatalf("a bare pick was taken: %v", err)
 	}
-	// A line that was not offered cannot be linked, nor one that is no line of the owner's.
-	bad := good
-	bad.Supports = []string{"nope"}
-	if err := wordWith(t, p, lead.ID, bad); err == nil || len(p.lines("", 0)) != 1 {
-		t.Fatalf("a line that was not offered was linked: %v", err)
-	}
-	other := stated(t, p, "Few panels")
-	bad.Supports = []string{other}
-	if err := wordWith(t, p, lead.ID, bad); err == nil || len(p.lines("", 0)) != 2 {
-		t.Fatalf("a line that was not offered was linked: %v", err)
-	}
 	if err := wordWith(t, p, lead.ID, compassWordIn{Lines: []string{"preference :: one two three", "preference :: one two three", "preference :: one two three", "preference :: one two three"}}); err == nil {
 		t.Fatal("four lines were taken")
 	}
-	// Two lines and a link: both lines kept, one signal, with its effect on the linked line.
+	// Two lines: both kept, one signal.
 	if err := wordWith(t, p, lead.ID, good); err != nil {
 		t.Fatal(err)
 	}
 	ls := p.lines("", 0)
-	if len(ls) != 4 || len(signalKinds(t, st)) != 1 {
+	if len(ls) != 3 || len(signalKinds(t, st)) != 1 {
 		t.Fatalf("lines %d, signals %v", len(ls), signalKinds(t, st))
 	}
 	for _, v := range ls {
@@ -663,18 +624,15 @@ func TestSessionWordsWithoutDecider(t *testing.T) {
 			t.Fatalf("the session's line: %+v", v)
 		}
 	}
-	if es, _ := p.db.Effects(ui); len(es[ui]) != 1 || es[ui][0].PSup != 1 || es[ui][0].Weight != agentdb.WeightSaid {
-		t.Fatalf("the linked line's effects: %+v", es[ui])
-	}
-	if err := wordWith(t, p, lead.ID, good); err == nil || len(p.lines("", 0)) != 4 {
+	if err := wordWith(t, p, lead.ID, good); err == nil || len(p.lines("", 0)) != 3 {
 		t.Fatalf("a second wording was taken: %v", err)
 	}
 	// --none clears the request and the signal waits in the ledger.
-	p.placeTurn(context.Background(), lead, turn{Prompt: "Always use tabs for indentation"}, "ok")
+	p.askWording(agentdb.Signal{Kind: "said", Words: "Always use tabs for indentation", SessionID: lead.ID}, 0)
 	if err := wordWith(t, p, lead.ID, compassWordIn{None: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := wordWith(t, p, lead.ID, good); err == nil || len(p.lines("", 0)) != 4 || len(signalKinds(t, st)) != 2 {
+	if err := wordWith(t, p, lead.ID, good); err == nil || len(p.lines("", 0)) != 3 || len(signalKinds(t, st)) != 2 {
 		t.Fatalf("after --none: %v, %d lines, %v", err, len(p.lines("", 0)), signalKinds(t, st))
 	}
 }
@@ -684,7 +642,7 @@ func TestSessionWordsWithoutDecider(t *testing.T) {
 func TestWordingGivenUp(t *testing.T) {
 	p, st := twoTeams(t)
 	lead, _ := p.session("leadaaaaaaaa")
-	p.askWording(agentdb.Signal{Kind: "said", Words: "keep the UI simple", SessionID: lead.ID}, nil, 0)
+	p.askWording(agentdb.Signal{Kind: "said", Words: "keep the UI simple", SessionID: lead.ID}, 0)
 	for i := 0; i < maxOffers; i++ {
 		if !strings.Contains(p.wordingNote(lead.ID), "keep the UI simple") || len(signalKinds(t, st)) != 0 {
 			t.Fatalf("prompt %d: no note, or the signal was kept", i+1)
@@ -880,24 +838,16 @@ func TestStartupSweepsDroppedLines(t *testing.T) {
 	}
 }
 
-// An answer must name the note it read, and the agent's contradiction moves neither a restriction nor an owner's line.
+// An answer must name the note it read.
 func TestSessionWordingGuards(t *testing.T) {
 	p, _ := twoTeams(t)
 	lead, _ := p.session("leadaaaaaaaa")
-	rs, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Kind: "restriction", Body: "Never push to main without asking", Origin: "stated"})
-	pin, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Keep the UI simple", Origin: "stated", Source: "owner"})
-	sig := agentdb.Signal{Kind: "said", Words: "push to main is fine now", SessionID: lead.ID}
-	p.askWording(sig, []agentdb.Line{{UID: rs}, {UID: pin}}, 0)
+	p.askWording(agentdb.Signal{Kind: "said", Words: "push to main is fine now", SessionID: lead.ID}, 0)
 	if err := wordWith(t, p, lead.ID, compassWordIn{For: "nope", None: true}); err == nil {
 		t.Fatal("a wording for another note was taken")
 	}
-	if err := wordWith(t, p, lead.ID, compassWordIn{Contradicts: []string{rs, pin}}); err != nil {
+	if err := wordWith(t, p, lead.ID, compassWordIn{None: true}); err != nil {
 		t.Fatal(err)
-	}
-	for _, uid := range []string{rs, pin} {
-		if es, _ := p.db.Effects(uid); len(es[uid]) != 0 {
-			t.Fatalf("an agent's contradiction moved %s: %+v", uid, es[uid])
-		}
 	}
 }
 
