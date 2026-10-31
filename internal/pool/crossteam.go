@@ -2,6 +2,7 @@ package pool
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -68,6 +69,22 @@ func treeParent(t *protocol.Team, id string) string {
 		}
 	}
 	return ""
+}
+
+// isAncestor: anc is an active member above id on the team's tree, following the recorded parents
+// (a closed member between them does not break the chain); a cycle in the record is no.
+func isAncestor(t *protocol.Team, anc, id string) bool {
+	if t == nil || anc == "" || anc == id {
+		return false
+	}
+	seen := map[string]bool{id: true}
+	for up := parentOf(t, id); up != "" && !seen[up]; up = parentOf(t, up) {
+		if up == anc {
+			return slices.ContainsFunc(t.Members, func(m protocol.Member) bool { return m.SessionID == anc && m.State == "active" })
+		}
+		seen[up] = true
+	}
+	return false
 }
 
 // adjacent: x and y are on one team and next to each other on its tree.

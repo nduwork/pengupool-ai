@@ -371,6 +371,7 @@ func cmdAsk(args []string) error {
 	}
 	fs := flag.NewFlagSet("ask", flag.ContinueOnError)
 	waitID := fs.String("wait", "", "go on waiting for the answer to this ask")
+	ownerOnly := fs.Bool("owner-only", false, "only the owner may answer it (a rule of yours only the owner can lift); never decided from the Compass")
 	var opts []string
 	fs.Func("option", "a choice to offer; repeatable", func(v string) error { opts = append(opts, v); return nil })
 	words, err := parseInterspersed(fs, args)
@@ -385,10 +386,10 @@ func cmdAsk(args []string) error {
 	if id == "" {
 		q := strings.TrimSpace(strings.Join(words, " "))
 		if q == "" {
-			return errors.New(`usage: pengupool ask [--option O]... QUESTION | pengupool ask --wait ID`)
+			return errors.New(`usage: pengupool ask [--owner-only] [--option O]... QUESTION | pengupool ask --wait ID`)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		res, err := rpc(ctx, poolStore(), "ask.create", map[string]any{"session_id": session, "question": q, "options": opts})
+		res, err := rpc(ctx, poolStore(), "ask.create", map[string]any{"session_id": session, "question": q, "options": opts, "owner_only": *ownerOnly})
 		cancel()
 		if err != nil {
 			return err
@@ -417,11 +418,12 @@ func cmdAsk(args []string) error {
 	}
 }
 
-// cmdAskAnswer carries the owner's answer, typed in this session, to a child's waiting ask.
+// cmdAskAnswer carries the owner's answer, typed in this session, to a question waiting on the owner
+// below it: an ask, or a check-in (checkin:<id>). `pengupool answer` and `pengupool ask answer`.
 func cmdAskAnswer(args []string) error {
-	fs := flag.NewFlagSet("ask answer", flag.ContinueOnError)
-	option := fs.Int("option", 0, "the option (1-based) the owner's whole prompt is; otherwise the prompt itself is the answer")
-	usage := errors.New(`usage: pengupool ask answer ASK_ID [--option N]`)
+	fs := flag.NewFlagSet("answer", flag.ContinueOnError)
+	option := fs.Int("option", 0, "the option (1-based) of an ask the owner's whole prompt is; otherwise the prompt itself is the answer")
+	usage := errors.New(`usage: pengupool answer ITEM_ID [--option N]`)
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		return usage
 	}
@@ -431,7 +433,7 @@ func cmdAskAnswer(args []string) error {
 	}
 	session := os.Getenv("PENGUPOOL_SESSION_ID")
 	if session == "" {
-		return errors.New("pengupool ask answer works inside an agent session PenguPool runs")
+		return errors.New("pengupool answer works inside an agent session PenguPool runs")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

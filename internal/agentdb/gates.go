@@ -33,8 +33,10 @@ type Gate struct {
 	// Evidence it rests on, for the owner to confirm; given automatically when it is confident enough.
 	Suggestion string `json:"suggestion,omitempty"`
 	Evidence   string `json:"evidence,omitempty"`
-	CreatedAt  string `json:"created_at"`
-	ResolvedAt string `json:"resolved_at,omitempty"`
+	// AnsweredVia is the ancestor session the owner's words came through, when they answered it there.
+	AnsweredVia string `json:"answered_via,omitempty"`
+	CreatedAt   string `json:"created_at"`
+	ResolvedAt  string `json:"resolved_at,omitempty"`
 }
 
 // AddGate stores a gate; a gate stored already resolved gets its resolved time.
@@ -58,14 +60,14 @@ func (d *DB) AddGate(g Gate) (int64, error) {
 }
 
 const gateCols = `id, team_id, session_id, agent, harness, kind, question, floor, floor_hit, predicted, confidence, calibrated,
-	outcome, owner_answer, owner_proceed, line_uid, lines, review, suggestion, evidence, created_at, resolved_at`
+	outcome, owner_answer, owner_proceed, line_uid, lines, review, suggestion, evidence, answered_via, created_at, resolved_at`
 
 func scanGate(row interface{ Scan(...any) error }) (Gate, error) {
 	var g Gate
 	var proceed sql.NullBool
 	var lines string
 	err := row.Scan(&g.ID, &g.TeamID, &g.SessionID, &g.Agent, &g.Harness, &g.Kind, &g.Question, &g.Floor, &g.FloorHit, &g.Predicted,
-		&g.Confidence, &g.Calibrated, &g.Outcome, &g.OwnerAnswer, &proceed, &g.LineUID, &lines, &g.Review, &g.Suggestion, &g.Evidence, &g.CreatedAt, &g.ResolvedAt)
+		&g.Confidence, &g.Calibrated, &g.Outcome, &g.OwnerAnswer, &proceed, &g.LineUID, &lines, &g.Review, &g.Suggestion, &g.Evidence, &g.AnsweredVia, &g.CreatedAt, &g.ResolvedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return g, ErrNotFound
 	}
@@ -185,6 +187,12 @@ func (d *DB) MovedOn(id int64) error {
 // went to.
 func (d *DB) SetGateDecision(id int64, proceed *bool, lineUID string) error {
 	_, err := d.db.Exec(`UPDATE gates SET owner_proceed = ?, line_uid = ? WHERE id = ?`, proceed, lineUID, id)
+	return err
+}
+
+// SetGateVia records the ancestor session the owner's answer to the gate came through.
+func (d *DB) SetGateVia(id int64, via string) error {
+	_, err := d.db.Exec(`UPDATE gates SET answered_via = ? WHERE id = ?`, via, id)
 	return err
 }
 

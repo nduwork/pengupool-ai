@@ -271,6 +271,16 @@ v0.9.46: Sync with GitHub starts only once the owner picks its repository. Turni
 picked syncs nothing and creates nothing; Settings says to choose a repository, suggesting
 pengupool-memory, which is created only if the owner saves that name. A config that already names a
 repository syncs as before.
+v0.9.41: The owner's words reach the whole subtree. Any active member above another on the team's
+tree (a closed member between them doesn't break the chain) sees the questions waiting on the owner
+below it, asks and check-ins, at most 20 listed, and carries the owner's answer with `pengupool
+answer ITEM_ID` (`ask answer` stays as an alias). The previous reply must show the item's id and
+quote its question as it stands: an ask's first 200 characters, a check-in's last 200 (case,
+spacing, `>` and backticks aside), so a paraphrase answers nothing. A check-in (`checkin:<id>`) is
+answered by typing the owner's whole prompt into the member as the owner's own words, with the app's
+check-in guards; the gate records the session it came through, and both run logs carry the full
+text. `pengupool ask --owner-only` marks a question only the owner may answer, and helpers are told
+to use it when one of their own rules stops them. Every #63 guard stays.
 
 ## Credits
 
