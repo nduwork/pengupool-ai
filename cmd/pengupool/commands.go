@@ -95,15 +95,13 @@ func readConfig(dir string) (store.Config, error) {
 func cmdDaemon(args []string) error {
 	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
 	storeFlag := fs.String("store", "", "store directory")
-	httpAddr := fs.String("http", "127.0.0.1:7787", "HTTP address for the browser app")
+	httpAddr := fs.String("http", "127.0.0.1:7787", "loopback HTTP address for the browser app (\":PORT\" means 127.0.0.1:PORT)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	addr := *httpAddr
-	if host, _, err := net.SplitHostPort(addr); err == nil {
-		if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
-			return fmt.Errorf("--http %s listens on every interface; PenguPool opens no listener on the local network: keep it on loopback and reach it from other devices through Tailscale Serve", addr)
-		}
+	addr, err := gateway.LoopbackAddr(*httpAddr) // ":PORT" means 127.0.0.1:PORT
+	if err != nil {
+		return fmt.Errorf("--http: %w", err)
 	}
 	dir := storeDir(*storeFlag)
 	if lanInConfig(dir) {

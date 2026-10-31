@@ -8,7 +8,7 @@
 //
 // No dependencies: Node 22+ (global fetch) and the standard library.
 //
-//   node serve.mjs [--port 7790] [--bind tailnet|<tailnet ip>]
+//   node serve.mjs [--port 7790] [--bind tailnet|<this machine's tailnet ip>]
 //                  [--api https://<this machine's Tailscale Serve name>]
 //
 // Env equivalents: MC_PORT, MC_BIND, MC_API.
@@ -25,6 +25,7 @@ import fs from "node:fs";
 import os from "node:os";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
+import net from "node:net";
 
 // ---------- config ----------
 function arg(name, env, dflt) {
@@ -222,17 +223,21 @@ document.getElementById("refresh").addEventListener("click",poll);
 </script></body></html>`;
 
 // ---------- http ----------
+// The page listens only on a tailnet address (Tailscale's 100.64.0.0/10 or fd7a:115c:a1e0::/48): like
+// PenguPool itself, it opens no listener on the local network.
+const tailnet = new net.BlockList();
+tailnet.addSubnet("100.64.0.0", 10, "ipv4");
+tailnet.addSubnet("fd7a:115c:a1e0::", 48, "ipv6");
+function onTailnet(addr) {
+  const family = net.isIPv4(addr) ? "ipv4" : net.isIPv6(addr) ? "ipv6" : "";
+  return family !== "" && tailnet.check(addr, family);
+}
 function resolveBind() {
-  if (BIND === "all" || BIND === "0.0.0.0" || BIND === "::") {
-    // Like PenguPool itself, the page opens no listener on the local network.
-    console.error("binding all interfaces is not supported; use the Tailscale address (the default) or one tailnet IP");
-    process.exit(1);
-  }
-  if (BIND !== "tailnet") return BIND;
-  const ip = tailscale(["ip", "-4"]).trim().split("\n")[0];
-  if (ip) return ip;
-  // No address: refuse to start rather than open the page to the local network.
-  console.error("cannot read this machine's Tailscale address; not starting (set MC_BIND to an address, or all)");
+  const ip = BIND === "tailnet" ? tailscale(["ip", "-4"]).trim().split("\n")[0] : BIND;
+  if (onTailnet(ip)) return ip;
+  console.error(ip === ""
+    ? "cannot read this machine's Tailscale address; not starting (set MC_BIND to this machine's tailnet IP)"
+    : `MC_BIND ${ip} is not a tailnet address; not starting (use the default, or this machine's tailnet IP)`);
   process.exit(1);
 }
 function keyOK(url) {

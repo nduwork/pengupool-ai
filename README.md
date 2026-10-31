@@ -264,7 +264,8 @@ supported"); start a new session on another agent. The plugin file earlier launc
 disk, unread.
 v0.9.45: Removed: Local network (Settings, `--lan`, and the plain-HTTP pairing URL on the tailnet
 name). Phones and other devices reach PenguPool only through Tailscale Serve; the host listens on
-loopback alone and refuses a wildcard `--http`. A config.json with Local network on is ignored,
+loopback alone and refuses any `--http` that is not a loopback address (`:PORT` means
+`127.0.0.1:PORT`). A config.json with Local network on is ignored,
 with a log line saying so.
 
 ## Credits

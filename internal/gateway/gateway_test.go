@@ -1524,3 +1524,17 @@ func TestTheTerminalCLIsEnterIsNobodysCredit(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 }
+
+// Only loopback listens: an empty host and localhost mean 127.0.0.1; anything else is refused.
+func TestLoopbackAddr(t *testing.T) {
+	for in, want := range map[string]string{
+		":7787": "127.0.0.1:7787", "localhost:7787": "127.0.0.1:7787", "127.0.0.1:7787": "127.0.0.1:7787",
+		"[::1]:7787": "[::1]:7787", "127.0.0.2:0": "127.0.0.2:0",
+		"0:7787": "", "0.0.0.0:7787": "", "[::]:7787": "", "192.168.1.5:7787": "", "mac.local:7787": "", "[::ffff:0.0.0.0]:7787": "", "7787": "",
+	} {
+		got, err := LoopbackAddr(in)
+		if got != want || (want == "") != (err != nil) {
+			t.Errorf("LoopbackAddr(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+}

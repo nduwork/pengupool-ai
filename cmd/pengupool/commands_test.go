@@ -183,7 +183,7 @@ func TestLocalNetworkRemoved(t *testing.T) {
 	if got := st.Config().Network.Tailscale; got != "mac.tail1.ts.net" {
 		t.Errorf("config with network.lan did not load: tailscale = %q", got)
 	}
-	for _, addr := range []string{"0.0.0.0:7787", "[::]:7787"} {
+	for _, addr := range []string{"0.0.0.0:7787", "[::]:7787", "0:7787", "192.168.1.5:7787", "mac.local:7787", "[::ffff:0.0.0.0]:7787"} {
 		if err := cmdDaemon([]string{"--store", t.TempDir(), "--http", addr}); err == nil || !strings.Contains(err.Error(), "no listener on the local network") {
 			t.Errorf("--http %s: %v, want refused", addr, err)
 		}

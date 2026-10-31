@@ -235,7 +235,10 @@ func (s *Server) Serve(ctx context.Context) error {
 	if addr == "" {
 		addr = "127.0.0.1:0"
 	}
-	addr = normalizeHTTPAddr(addr)
+	addr, err = LoopbackAddr(addr)
+	if err != nil {
+		return fmt.Errorf("gateway: %w", err)
+	}
 	httpLn, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("gateway: listen %s: %w", addr, err)
@@ -303,15 +306,21 @@ func randomToken() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-// normalizeHTTPAddr rewrites a listen address with an empty host (":7792") to loopback. An
-// address that asked for no host must not bind every interface: the host opens no listener on the
-// local network.
-func normalizeHTTPAddr(addr string) string {
+// LoopbackAddr is the listen address addr on loopback, or an error: the host opens no listener on
+// the local network, so only a loopback IP is accepted. An empty host (":7792") and "localhost" mean
+// 127.0.0.1; a hostname is not looked up, and any other address (a LAN IP, 0.0.0.0, "0") is refused.
+func LoopbackAddr(addr string) (string, error) {
 	host, port, err := net.SplitHostPort(addr)
-	if err != nil || host != "" {
-		return addr
+	if err != nil {
+		return "", fmt.Errorf("listen address %q: %w", addr, err)
 	}
-	return net.JoinHostPort("127.0.0.1", port)
+	if host == "" || strings.EqualFold(host, "localhost") {
+		return net.JoinHostPort("127.0.0.1", port), nil
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return addr, nil
+	}
+	return "", fmt.Errorf("listen address %s is not loopback; PenguPool opens no listener on the local network: keep it on loopback and reach it from other devices through Tailscale Serve", addr)
 }
 
 // takeOverSocket prepares path for a unix listener. A leftover socket that refuses a connection is

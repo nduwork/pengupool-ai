@@ -22,8 +22,9 @@ const Version = "0.9.45"
 const help = `usage: pengupool <command> [options]
 
   daemon [--store DIR] [--http ADDR]
-        run the host: state, sessions, browser app, on loopback only. Other devices
-        reach the device API through Tailscale Serve.
+        run the host: state, sessions, browser app, on loopback only (--http takes a
+        loopback address; ":PORT" means 127.0.0.1:PORT). Other devices reach the device
+        API through Tailscale Serve.
   new [--name N] [--cwd DIR] [--harness claude|muse|codex|pi|omp] [--model M]
         start an agent session (Claude Code by default) in that directory.
   ls [--json]
