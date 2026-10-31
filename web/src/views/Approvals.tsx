@@ -6,7 +6,8 @@ import { AGENTS, ago, harnessLabel, sessionName, skillName, useApp, usePersisted
 import { Button } from "../components/ui/button";
 import { Badge, Input, Label, RoleTag, Select, Textarea, submitOnEnter } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
-import type { Approval, Member, Proposal, ProposedMember, Team } from "../protocol/domain";
+import type { Approval, Member, PerCompass, Proposal, ProposedMember, Team } from "../protocol/domain";
+import { ownerViaLabel, perCompassLabel, type Line } from "./compass";
 import { FormationSheet, roleOf } from "./Formation";
 import { askNeeds, reconcileInbox, sessionNeeds, type InboxEntry, type Need } from "./inbox";
 import { age } from "./map/asks";
@@ -28,8 +29,9 @@ export function ApprovalsBell(): ReactElement {
     () => setInbox(reconcileInbox(inbox, [...sessionNeeds(app.sessions, app.gates), ...askNeeds(app.domain.messages, app.sessions)], Date.now())),
     [app.sessions, app.gates, app.domain.messages],
   );
+  const [open, setOpen] = useState(false);
   return (
-    <Popover.Root>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         <Button size="icon" variant="ghost" aria-label={`${pending.length} pending approvals`} className="relative">
           <Bell />
@@ -65,9 +67,94 @@ export function ApprovalsBell(): ReactElement {
               ))}
             </>
           ) : null}
+          {open ? <DecidedForYou /> : null}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  );
+}
+
+/** What was decided for the owner this week: a lead's per-Compass decisions and refusals (answer.per_compass),
+ *  and asks answered with the owner's words typed in another session. Loaded each time the bell opens. */
+function DecidedForYou(): ReactElement | null {
+  const app = useApp();
+  const [records, setRecords] = useState<PerCompass[]>([]);
+  const [lines, setLines] = useState<Line[]>([]);
+  const [rev, setRev] = useState(0);
+  useEffect(() => {
+    void app.call<PerCompass[]>("answer.per_compass", {}).then((r) => setRecords(r ?? []));
+    void app.call<{ lines: Line[] }>("compass.list", { query: "" }).then((r) => setLines(r?.lines ?? []));
+  }, [rev]);
+  const name = (id: string): string => sessionName(app.sessions, id);
+  const via = app.domain.approvals.filter((a) => a.kind === "ask" && a.state !== "pending" && ownerViaLabel(a.answered_by, name) !== undefined);
+  if (records.length === 0 && via.length === 0) return null;
+  return (
+    <>
+      <p className="px-2 pb-1 pt-2 text-label font-semibold">Decided for you</p>
+      <div className="grid max-h-64 grid-cols-1 gap-1 overflow-auto">
+        {records.map((r) => (
+          <PerCompassRow key={r.item + r.at} r={r} label={perCompassLabel(r, name, lines)} wrong={app.domain.approvals.find((a) => a.id === r.item)?.wrong === true} onChange={() => setRev(rev + 1)} />
+        ))}
+        {via.map((a) => (
+          <div key={a.id} className="grid gap-0.5 rounded-md p-2 text-label hover:bg-hover">
+            <span className="min-w-0 truncate" title={a.detail}>
+              <strong className="font-semibold">{name(a.session_id ?? "")}</strong>: {a.detail}
+            </span>
+            <span className="text-caption text-muted-foreground [overflow-wrap:anywhere]">
+              {ownerViaLabel(a.answered_by, name)}
+              {a.owner_words !== undefined && a.owner_words !== "" ? `: “${a.owner_words}”` : ""}
+            </span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** One per-Compass record; an answered one the owner has not called wrong offers "That was wrong" with optional words. */
+function PerCompassRow({ r, label, wrong, onChange }: { r: PerCompass; label: string; wrong: boolean; onChange: () => void }): ReactElement {
+  const app = useApp();
+  const [writing, setWriting] = useState(false);
+  const [words, setWords] = useState("");
+  const [done, setDone] = useState(wrong); // check-in records carry no wrong flag: hide after the owner's call
+  const send = async (): Promise<void> => {
+    if ((await app.call("answer.wrong", { id: r.item, words: words.trim() === "" ? undefined : words.trim() })) === undefined) return;
+    setDone(true);
+    setWriting(false);
+    onChange();
+  };
+  return (
+    <div className="grid gap-1 rounded-md p-2 text-label hover:bg-hover">
+      <span className="min-w-0 truncate" title={r.question}>
+        <strong className="font-semibold">{sessionName(app.sessions, r.session_id)}</strong>: {r.question}
+      </span>
+      <span className="text-caption text-muted-foreground [overflow-wrap:anywhere]">
+        {label}
+        {r.outcome === "answered" ? ` → “${r.detail}”` : ""} · {ago(r.at)}
+      </span>
+      {r.outcome === "answered" && !done && !wrong ? (
+        writing ? (
+          <form
+            className="flex gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void send();
+            }}
+          >
+            <Input value={words} onChange={(e) => setWords(e.target.value)} placeholder="What was right (optional)" aria-label="Why it was wrong" />
+            <Button size="sm" type="submit">
+              Send
+            </Button>
+          </form>
+        ) : (
+          <div className="flex justify-end">
+            <Button size="sm" variant="ghost" onClick={() => setWriting(true)}>
+              <ThumbsDown /> That was wrong
+            </Button>
+          </div>
+        )
+      ) : null}
+    </div>
   );
 }
 

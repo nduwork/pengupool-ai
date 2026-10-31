@@ -1,5 +1,7 @@
 // The Compass panel's data: a line as compass.list returns it.
 
+import type { PerCompass } from "../protocol/domain";
+
 export interface Line {
   uid: string;
   kind: string;
@@ -44,4 +46,18 @@ export interface ReviewItem {
   patterns?: string[];
   /** A conflict's pairs of line uids that contradict. */
   edges?: [string, string][];
+}
+
+/** How a lead's per-Compass decision reads: the line it followed (its text when known), or why it refused. */
+export function perCompassLabel(r: PerCompass, name: (id: string) => string, lines: Line[]): string {
+  const lead = name(r.lead);
+  if (r.outcome === "refused") return `${lead} checked the Compass: ${r.detail}`;
+  const line = lines.find((l) => l.uid === r.line_uid)?.body ?? `line ${r.line_uid ?? "?"}`;
+  return `decided by ${lead} per your line: ${line}`;
+}
+
+/** An ask answered with the owner's words typed in another session ("owner via <session id>"); otherwise undefined. */
+export function ownerViaLabel(answeredBy: string | undefined, name: (id: string) => string): string | undefined {
+  const p = "owner via ";
+  return answeredBy?.startsWith(p) === true ? `your words via ${name(answeredBy.slice(p.length))}` : undefined;
 }

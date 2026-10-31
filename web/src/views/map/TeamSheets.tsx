@@ -42,6 +42,13 @@ export function TeamSettingsSheet({ team }: { team: Team }): ReactElement {
           </span>
           <Switch checked={t.ios_access} onCheckedChange={(v) => void app.call("team.policy", { team_id: t.id, ios_access: v })} label="Allow iOS access" />
         </div>
+        <div className="flex items-center justify-between gap-3">
+          <span>
+            Lead decides from your Compass
+            <span className="block text-caption text-muted-foreground">When a lead asks, PenguPool may decide a member's waiting ask or check-in from your confident Compass lines; you can call each decision wrong.</span>
+          </span>
+          <Switch checked={t.no_lead_compass !== true} onCheckedChange={(v) => void app.call("team.lead_compass", { team_id: t.id, on: v })} label="Lead decides from your Compass" />
+        </div>
       </div>
     </Sheet>
   );

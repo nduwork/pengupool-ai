@@ -117,6 +117,8 @@ export interface Team {
   members: Member[];
   state: string;
   ios_access: boolean;
+  /** True: the lead may not decide members' waiting items from the owner's Compass (default: it may). */
+  no_lead_compass?: boolean;
   created_at: string;
 }
 
@@ -151,9 +153,31 @@ export interface Approval {
   answered_by?: string;
   /** Answered "owner via <session>": the owner's own prompt in that session, clipped and redacted. */
   owner_words?: string;
+  /** Decided per Compass: the line it followed (then answered_by is "lead per Compass line <uid>"). */
+  line_uid?: string;
+  /** The owner called this per-Compass answer wrong. */
+  wrong?: boolean;
   state: string;
   created_at: string;
   expires_at?: string;
+}
+
+/** A lead's per-Compass decision of a member's waiting item (answer.per_compass), newest first. */
+export interface PerCompass {
+  /** The ask id, or "checkin:<gate id>". */
+  item: string;
+  team_id: string;
+  /** The member who waited. */
+  session_id: string;
+  /** The lead's session id. */
+  lead: string;
+  question: string;
+  outcome: "answered" | "refused";
+  /** The answer given, "proceed" for a check-in, or the refusal reason. */
+  detail: string;
+  line_uid?: string;
+  version: string;
+  at: string;
 }
 
 export interface TeamMessage {

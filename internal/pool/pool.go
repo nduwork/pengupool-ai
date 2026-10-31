@@ -76,6 +76,7 @@ type Pool struct {
 	questionUse       map[string]string            // the tool_use_id a session's pending question is about (under mu)
 	askWaitedAt       map[string]time.Time         // when an agent last waited on its ask (under mu)
 	answersLater      map[string][]laterAnswer     // owner answers a busy member gets typed at its next Stop (under mu)
+	deciding          map[string]bool              // items a Compass decision is being made on (percompass.go, under mu)
 	hookAt            map[string]time.Time         // session id → its newest hook event (under mu; hookless.go)
 	promptAt          map[string]time.Time         // session id → the owner's first prompt in its launch (under mu)
 	routed            map[string]string            // LEAD session id → the teammate triage named for this turn (under mu)
@@ -298,6 +299,7 @@ var agentAllowed = map[string]bool{
 	"ask.create":           true, // puts a question to the owner; only the owner or a paired device answers it
 	"ask.wait":             true, // waits for the answer to the session's own ask
 	"ask.answer_for_owner": true, // carries the owner's own words in this session to a child's ask (askAnswerFor)
+	"ask.per_compass":      true, // asks the host to decide a subtree item from the owner's Compass; the host decides, not the agent
 }
 
 func (p *Pool) handlers() map[string]handler {
@@ -381,6 +383,10 @@ func (p *Pool) handlers() map[string]handler {
 		"ask.create":            bind(p.agentAsk),
 		"ask.wait":              bind(p.askWait),
 		"ask.answer_for_owner":  p.askAnswerForRPC,
+		"ask.per_compass":       p.askPerCompassRPC,
+		"answer.wrong":          bind(p.answerWrong),       // the owner's "That was wrong" on a Compass decision
+		"answer.per_compass":    bind(p.perCompassHistory), // the Compass decisions and refusals, for the app
+		"team.lead_compass":     bind(p.teamLeadCompass),   // the owner's per-team toggle
 		"ask.answer":            p.askAnswer,
 		"team.place_helper":     bind(p.placeHelperRPC),
 		"team.formation":        bind(p.teamFormation),

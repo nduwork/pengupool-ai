@@ -190,6 +190,18 @@ func (d *DB) SetGateDecision(id int64, proceed *bool, lineUID string) error {
 	return err
 }
 
+// ProceedGate settles a pending check-in as a go-ahead on one Compass line (pengupool answer
+// --per-compass): off the floor, the line on record. It reports whether the gate was still pending.
+func (d *DB) ProceedGate(id int64, lineUID string) (bool, error) {
+	lines, _ := json.Marshal([]string{lineUID})
+	r, err := d.db.Exec(`UPDATE gates SET outcome = 'auto_proceeded', floor = 0, lines = ?, resolved_at = ? WHERE id = ? AND outcome = 'pending'`, string(lines), now(), id)
+	if err != nil {
+		return false, err
+	}
+	n, _ := r.RowsAffected()
+	return n > 0, nil
+}
+
 // SetGateVia records the ancestor session the owner's answer to the gate came through.
 func (d *DB) SetGateVia(id int64, via string) error {
 	_, err := d.db.Exec(`UPDATE gates SET answered_via = ? WHERE id = ?`, via, id)

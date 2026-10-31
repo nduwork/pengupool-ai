@@ -17,7 +17,7 @@ import (
 )
 
 // Version of the prototype. It is not the protocol version; that is protocol.Version.
-const Version = "0.9.47"
+const Version = "0.9.48"
 
 const help = `usage: pengupool <command> [options]
 
@@ -55,7 +55,7 @@ const help = `usage: pengupool <command> [options]
         in their own words. Unanswered for 15 minutes, it expires: {"expired": …}; go on with a
         safe default. --owner-only marks a question only the owner may answer (a rule of yours only
         the owner can lift).
-  answer ITEM_ID [--option N]   (also: ask answer)
+  answer ITEM_ID [--option N | --per-compass]   (also: ask answer)
         (inside a session with members below it) carry the owner's answer, typed in this session, to
         a question waiting on the owner below you on the team's tree: an ask (its id), or a check-in
         (checkin:<id>). The owner's whole prompt goes, word for word, or option N of an ask when the

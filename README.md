@@ -281,6 +281,14 @@ answered by typing the owner's whole prompt into the member as the owner's own w
 check-in guards; the gate records the session it came through, and both run logs carry the full
 text. `pengupool ask --owner-only` marks a question only the owner may answer, and helpers are told
 to use it when one of their own rules stops them. Every #63 guard stays.
+v0.9.48: The lead may ask PenguPool to decide a waiting item from the owner's Compass:
+`pengupool answer ID --per-compass`. PenguPool decides, never the lead: only the owner's confident,
+trusted lines (not permission lines), judged by a calibrated decision model at 0.9 for every ask and
+check-in, once per item per Compass version, so a refused item is asked again only after the owner's
+lines change. Owner-only asks are never decided this way. An ask is answered with the chosen option
+("lead per Compass line <uid>"); a check-in gets triage's go-ahead quoting the line. The app's bell
+lists what was decided for the owner, with "That was wrong" (a correction against the line, and a
+notice to the member), and each team's settings have "Lead decides from your Compass" to turn it off.
 
 ## Credits
 
