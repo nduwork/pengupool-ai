@@ -92,10 +92,14 @@ func (p *Pool) thresholds() agentdb.Thresholds {
 
 // text is the line as an agent reads it.
 func (v lineView) text() string {
-	if v.Condition == "" {
+	c := strings.TrimSpace(v.Condition)
+	if len(c) > 5 && strings.EqualFold(c[:5], "when ") { // a condition worded "when …" reads once
+		c = strings.TrimSpace(c[5:])
+	}
+	if c == "" {
 		return v.Body
 	}
-	return v.Body + " (when " + v.Condition + ")"
+	return v.Body + " (when " + c + ")"
 }
 
 // beliefs replays the lines' beliefs from their effects, read once.
@@ -929,7 +933,7 @@ func (p *Pool) search(_ context.Context, in agentSearchIn) (any, error) {
 	}
 	entries, total := []agentdb.Entry{}, 0
 	if sk := p.helperOf(in.SessionID); sk != nil {
-		if entries, total, err = db.SearchExperience(agentOf(*sk), p.teamID(in.SessionID), in.Query, limit); err != nil {
+		if entries, total, _, err = db.SearchExperience(agentOf(*sk), p.teamID(in.SessionID), in.Query, limit); err != nil {
 			return nil, err
 		}
 	}

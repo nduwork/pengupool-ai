@@ -309,6 +309,11 @@ task's transferable lesson (not the diff git holds), durable know-how dated, the
 limit, and never a credential's value. The owner's `pengupool experience export FILE` writes every entry
 in full, and `experience import` takes a `drop` list (each with a reason) that it deletes first, so a
 rebuild is one export and one import.
+v0.10.5: Memory reads honestly. Experience search ranks by relevance first; the same team only
+breaks ties, then the newest. A helper's past-work list leaves common words out of its query, and with
+no match it says "Recent work (no matching entries)" instead of offering the newest as a best match; it
+shows whole rows only, within 2 KiB and at most 10. A Compass line is shown whole or not at all (no
+clipping that loses its condition), and a condition worded "when …" no longer reads "when when".
 
 ## Credits
 

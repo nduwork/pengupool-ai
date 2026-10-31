@@ -188,9 +188,9 @@ func (p *Pool) renderCompassCap(n int) string {
 		}
 		return ""
 	}
-	// n bounds the whole section, header and overflow line included. Each line is clipped to
-	// compassLineRunes (an owner's line may be 16 KiB), and one that still does not fit is skipped,
-	// not the end: the lines after it may.
+	// n bounds the whole section, header and overflow line included. A line is shown whole or not at
+	// all (a clipped one could lose its condition), and one that does not fit is skipped, not the end:
+	// the lines after it may.
 	if len(header)+len(compassMore) > n {
 		return ""
 	}
@@ -198,7 +198,7 @@ func (p *Pool) renderCompassCap(n int) string {
 	out.WriteString(header)
 	skipped := false
 	for _, v := range shown {
-		l := "- " + strings.ReplaceAll(clipRunes(v.text(), compassLineRunes), "\n", "\n  ") + "\n"
+		l := "- " + strings.ReplaceAll(v.text(), "\n", "\n  ") + "\n"
 		if out.Len()+len(l)+len(compassMore) > n {
 			skipped = true
 			continue
@@ -210,9 +210,6 @@ func (p *Pool) renderCompassCap(n int) string {
 	}
 	return out.String()
 }
-
-// compassLineRunes is the most of one line the compass section shows.
-const compassLineRunes = 360
 
 const compassMore = "… more: search with the command below\n"
 
