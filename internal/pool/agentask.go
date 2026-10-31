@@ -110,6 +110,7 @@ func (p *Pool) askWait(ctx context.Context, in askWaitIn) (any, error) {
 		}
 		switch a.State {
 		case "answered":
+			p.dropAnswersLater(a.SessionID, a.ID) // it has the answer now: the words do not come twice
 			return map[string]string{"id": a.ID, "answer": a.Answer, "by": a.AnsweredBy}, nil
 		case "expired":
 			if s, ok := p.session(a.SessionID); ok && s.State == "running" && olderThan(a.CreatedAt, time.Now(), askExpiry) {
@@ -216,7 +217,7 @@ func (p *Pool) answerAskWith(id, answer, by, words, prompt string) (any, error) 
 		p.notice(a.TeamID, a.SessionID, note) // an answer in the app, or a member that cannot be typed into
 		return map[string]string{"id": a.ID, "answer": a.Answer}, nil
 	}
-	later := laterAnswer{teamID: a.TeamID, text: "Answer to your ask " + a.ID + ": " + prompt, note: note}
+	later := laterAnswer{ask: a.ID, teamID: a.TeamID, text: "Answer to your ask " + a.ID + ": " + prompt, note: note, at: time.Now()}
 	if s.Status != "idle" {
 		// A notice would reach the member through its inbox, which its harness does not read as the
 		// owner's prompt: the owner's words wait for its next Stop instead (typeAnswersLater).
@@ -235,7 +236,10 @@ func (p *Pool) answerAskWith(id, answer, by, words, prompt string) (any, error) 
 }
 
 // laterAnswer is an owner's answer, given through an ancestor, waiting to be typed into a member.
-type laterAnswer struct{ teamID, text, note string }
+type laterAnswer struct {
+	ask, teamID, text, note string
+	at                      time.Time // when it was queued
+}
 
 // typeAnswer types the owner's words into the member as a delivered ask answer; a failed typing
 // leaves the notice instead.
@@ -256,12 +260,45 @@ func (p *Pool) typeAnswersLater(id string) {
 	delete(p.answersLater, id)
 	p.mu.Unlock()
 	for _, x := range q {
-		p.typeAnswer(id, x)
+		// Only for this session's answered ask, and not long after: a session ended and resumed
+		// meanwhile has had its asks expired (expireAsks drops what waited).
+		if a, ok := p.approval(x.ask); ok && a.State == "answered" && a.SessionID == id && time.Since(x.at) < askExpiry {
+			p.typeAnswer(id, x)
+		}
+	}
+}
+
+// dropAnswersLater drops what waits to be typed: one session's (a "" ask: all of it), or one ask's.
+func (p *Pool) dropAnswersLater(sessionID, ask string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if ask == "" {
+		delete(p.answersLater, sessionID)
+		return
+	}
+	q := p.answersLater[sessionID]
+	q = slices.DeleteFunc(q, func(x laterAnswer) bool { return x.ask == ask })
+	if len(q) == 0 {
+		delete(p.answersLater, sessionID)
+	} else {
+		p.answersLater[sessionID] = q
 	}
 }
 
 // expireAsks ends the pending asks of one session, or ("") of every session that is not running.
 func (p *Pool) expireAsks(sessionID string) {
+	// What waited to be typed into the session goes too: it ended, and a resumed one starts afresh.
+	if sessionID != "" {
+		p.dropAnswersLater(sessionID, "")
+	} else {
+		p.mu.Lock()
+		for id := range p.answersLater {
+			if s, ok := p.session(id); !ok || s.State != "running" {
+				delete(p.answersLater, id)
+			}
+		}
+		p.mu.Unlock()
+	}
 	_ = p.update(func(st *store.State) error {
 		for i := range st.Domain.Approvals {
 			x := &st.Domain.Approvals[i]

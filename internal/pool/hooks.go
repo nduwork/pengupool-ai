@@ -399,9 +399,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		p.markDelivered(ids)
 	case "SessionEnd":
 		p.wordingEnded(s.ID)
-		p.mu.Lock()
-		delete(p.answersLater, s.ID) // its answers stay on the asks' record; no later session gets them typed
-		p.mu.Unlock()
+		p.dropAnswersLater(s.ID, "") // its answers stay on the asks' record; no later session gets them typed
 		p.setStatus(s.ID, "ended")
 		p.logLine(s.ID, "session: harness session ended ("+firstNonEmpty(str("reason"), "exit")+")")
 	}

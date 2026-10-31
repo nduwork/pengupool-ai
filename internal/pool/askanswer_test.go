@@ -591,3 +591,94 @@ func TestDeliveredWordsActOnlyWhereGiven(t *testing.T) {
 	say("Go on with the refactor", "checkin")
 	waitGate(t, p, web, func(g agentdb.Gate) bool { return g.ID == gid && g.OwnerAnswer == "Go on with the refactor" })
 }
+
+// An answer waiting for a busy member's Stop is typed only into that session while it lives: one
+// that ended without a SessionEnd and was resumed under the same id gets nothing (review probe), and
+// one that got the answer from its wait gets the words only once.
+func TestLaterAnswerOnlyOnce(t *testing.T) {
+	p, _ := twoTeams(t)
+	p.requireOwnerInput = true
+	ctx := context.Background()
+	const lead, web = "leadaaaaaaaa", "webaaaaaaaaa"
+	_ = p.st.Update(func(s *store.State) error {
+		for i := range s.Sessions {
+			s.Sessions[i].Harness = "claude"
+		}
+		for i, m := range s.Domain.Teams[0].Members {
+			if m.SessionID == web {
+				s.Domain.Teams[0].Members[i].Parent = lead
+			}
+		}
+		return nil
+	})
+	var typed []string
+	p.testKeys = func(sid, text string) error { typed = append(typed, text); return nil }
+	queued := func() string { // web busy; the owner answers its ask through the lead
+		t.Helper()
+		p.expireAsks(web)
+		res, err := p.agentAsk(ctx, agentAskIn{SessionID: web, Question: "Force-push #65?", Options: []string{"Yes", "Hold"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := res.(map[string]string)["id"]
+		_ = p.st.Update(func(s *store.State) error {
+			for i := range s.Domain.Approvals {
+				if s.Domain.Approvals[i].ID == id {
+					s.Domain.Approvals[i].CreatedAt = store.RFC3339(time.Now().Add(-time.Minute))
+				}
+			}
+			return nil
+		})
+		p.mu.Lock()
+		if p.prevReply == nil {
+			p.prevReply, p.prevReplyAt = map[string]string{}, map[string]time.Time{}
+		}
+		p.prevReply[lead], p.prevReplyAt[lead] = "web waits on ask "+id, time.Now()
+		p.mu.Unlock()
+		p.setStatus(web, "working")
+		p.OwnerInput(lead, "Yes")
+		prompt(t, p, lead, "Yes")
+		if _, err := p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: id, Option: 1}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	stop := func() {
+		t.Helper()
+		b, _ := json.Marshal(map[string]any{"last_assistant_message": "done"})
+		if _, err := p.hookEvent(ctx, hookIn{SessionID: web, Harness: "claude", Event: "Stop", Payload: b}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setState := func(st string) {
+		_ = p.st.Update(func(s *store.State) error {
+			for i := range s.Sessions {
+				if s.Sessions[i].ID == web {
+					s.Sessions[i].State = st
+				}
+			}
+			return nil
+		})
+	}
+
+	// Ended without SessionEnd, then resumed (resume expires its asks): nothing typed at its Stop.
+	queued()
+	setState("exited")
+	p.expireAsks(web) // what resume does
+	setState("running")
+	p.setStatus(web, "working")
+	stop()
+	if len(typed) != 0 {
+		t.Fatalf("typed into the resumed session: %q", typed)
+	}
+
+	// The member went back to its wait and got the answer there: nothing typed at its Stop.
+	id := queued()
+	if res, _ := p.askWait(ctx, askWaitIn{SessionID: web, ID: id}); res.(map[string]string)["answer"] == "" {
+		t.Fatalf("wait = %v", res)
+	}
+	stop()
+	if len(typed) != 0 {
+		t.Fatalf("typed after the wait gave the answer: %q", typed)
+	}
+}
