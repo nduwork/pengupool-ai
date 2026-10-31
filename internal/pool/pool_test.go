@@ -2268,6 +2268,15 @@ func TestSyncWaitsForARepository(t *testing.T) {
 	if entries, _ := os.ReadDir(gh); slices.ContainsFunc(entries, func(e os.DirEntry) bool { return e.Name() == "me" }) {
 		t.Fatal("a repository was created before the owner picked one")
 	}
+	// Sync now and Compact say so; neither touches GitHub.
+	for name, f := range map[string]func() (any, error){
+		"sync now": func() (any, error) { return p.syncNow(ctx, struct{}{}) },
+		"compact":  func() (any, error) { return p.syncCompact(ctx, struct{}{}) },
+	} {
+		if _, err := f(); err == nil || !strings.Contains(err.Error(), "choose a repository to start") {
+			t.Fatalf("%s with no repository: %v", name, err)
+		}
+	}
 	if _, err := p.syncSet(ctx, syncSetIn{Repo: &repo}); err != nil {
 		t.Fatal(err)
 	}
@@ -2280,5 +2289,12 @@ func TestSyncWaitsForARepository(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(gh, "me", "my-record.git")); err != nil || p.syncView()["needs_repo"] != false {
 		t.Fatalf("the picked repository: %v, view %v", err, p.syncView())
+	}
+	// Compact rewrites history only on the picked repository's clone.
+	cfg := st.Config()
+	cfg.Sync.Repo = "me/another"
+	_ = st.SaveConfig(cfg)
+	if _, err := p.syncCompact(ctx, struct{}{}); err == nil || !strings.Contains(err.Error(), "local clone is of me/my-record") {
+		t.Fatalf("compact on another repository's clone: %v", err)
 	}
 }

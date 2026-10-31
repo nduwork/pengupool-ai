@@ -138,12 +138,13 @@ type Config struct {
 	CatalogRepo string `json:"catalog_repo,omitempty"`
 }
 
-// Sync: GitHub adds the sync of the record through a private repository in the signed-in account,
-// created on the first push. (The daily snapshots on this machine, BackupsDir, are always kept.)
+// Sync: GitHub adds the sync of the record through a private repository the owner picks (Repo), or
+// a new one created on the first push after the pick; nothing syncs while Repo is empty. (The daily
+// snapshots on this machine, BackupsDir, are always kept.)
 type Sync struct {
 	GitHub      bool   `json:"github"`
 	IntervalMin int    `json:"interval_min,omitempty"` // minutes between pushes; 0: every 5
-	Repo        string `json:"repo,omitempty"`         // owner/name, recorded once created
+	Repo        string `json:"repo,omitempty"`         // the owner's pick, owner/name once resolved; "": none yet
 }
 
 // AgentModels: the agents listed in Ollama ran on OllamaModel at OllamaURL instead of their own

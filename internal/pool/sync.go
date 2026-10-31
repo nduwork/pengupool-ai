@@ -376,8 +376,18 @@ func (p *Pool) syncCompact(ctx context.Context, _ struct{}) (any, error) {
 	}
 	defer p.roundMu.Unlock()
 	repoDir := filepath.Join(p.st.Dir(), "sync", "repo")
+	want, err := p.syncRepoSlug(ctx) // none picked: "choose a repository to start"
+	if err != nil {
+		return nil, err
+	}
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil {
 		return nil, invalid("nothing to compact: nothing has been synced yet")
+	}
+	// The clone must be of the picked repository (pushSync moves another aside on its next round):
+	// compacting rewrites history, so never on a repository the owner moved away from.
+	origin, _ := p.gitIn(ctx, repoDir, "config", "--get", "remote.origin.url")
+	if slug, _ := githubSlug(origin); !strings.EqualFold(slug, want) {
+		return nil, invalid("the local clone is of %s, not %s; sync once first", firstNonEmpty(slug, origin), want)
 	}
 	branch, err := p.fetchReset(ctx, repoDir)
 	if err != nil {
@@ -609,10 +619,14 @@ func (p *Pool) syncRepos(ctx context.Context, in refreshIn) (any, error) {
 	return out, nil
 }
 
-// syncNow runs a sync round and answers when it is done.
+// syncNow runs a sync round and answers when it is done. With sync on and no repository picked it
+// says so (the startup and periodic rounds skip quietly).
 func (p *Pool) syncNow(ctx context.Context, _ struct{}) (any, error) {
 	if err := p.syncOnce(ctx); err != nil {
 		return nil, err
+	}
+	if cfg := p.st.Config().Sync; cfg.GitHub && cfg.Repo == "" {
+		return nil, invalid("choose a repository to start")
 	}
 	return p.syncView(), nil
 }
