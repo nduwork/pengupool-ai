@@ -271,7 +271,7 @@ v0.9.46: Sync with GitHub starts only once the owner picks its repository. Turni
 picked syncs nothing and creates nothing; Settings says to choose a repository, suggesting
 pengupool-memory, which is created only if the owner saves that name. A config that already names a
 repository syncs as before.
-v0.9.41: The owner's words reach the whole subtree. Any active member above another on the team's
+v0.9.47: The owner's words reach the whole subtree. Any active member above another on the team's
 tree (a closed member between them doesn't break the chain) sees the questions waiting on the owner
 below it, asks and check-ins, at most 20 listed, and carries the owner's answer with `pengupool
 answer ITEM_ID` (`ask answer` stays as an alias). The previous reply must show the item's id and
