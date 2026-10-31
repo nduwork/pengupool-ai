@@ -14,7 +14,8 @@ contextBridge.exposeInMainWorld("pengupool", {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
   openExternal: (url: string) => ipcRenderer.send("shell:openExternal", url),
   revealPath: (path: string) => ipcRenderer.send("shell:reveal", path),
-  notify: (title: string, body: string) => ipcRenderer.send("app:notify", title, body),
+  notify: (title: string, body: string, key?: string) => ipcRenderer.send("app:notify", title, body, key ?? ""),
+  unnotify: (keys: string[]) => ipcRenderer.send("app:unnotify", keys),
   setBadge: (count: number) => ipcRenderer.send("app:badge", count),
   installUpdate: (path: string) => ipcRenderer.invoke("update:install", path),
 });

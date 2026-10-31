@@ -68,17 +68,17 @@ func TestExperienceSearchAndCount(t *testing.T) {
 	add(gcp, "2026-01-02T00:00:00Z", "Rotate keys", "Keys live in ~/creds; deploy needs none")
 	add(gcp, "2026-01-03T00:00:00Z", "Fix the linter", "Run it before the tests")
 	add(web, "2026-01-04T00:00:00Z", "Deploy the site", "another helper's entry")
-	hits, total, err := d.SearchExperience(gcp, "", `deploy "region" OR NOT(`, 5)
-	if err != nil || total != 2 || len(hits) != 2 || hits[0].Title != "Deploy the API" || hits[0].Snippet == "" || hits[0].Body != "" {
+	hits, total, matched, err := d.SearchExperience(gcp, "", `deploy "region" OR NOT(`, 5)
+	if err != nil || !matched || total != 2 || len(hits) != 2 || hits[0].Title != "Deploy the API" || hits[0].Snippet == "" || hits[0].Body != "" {
 		t.Fatalf("search = %+v %d %v", hits, total, err)
 	}
-	if hits, total, _ := d.SearchExperience(gcp, "", "deploy", 1); total != 2 || len(hits) != 1 {
+	if hits, total, _, _ := d.SearchExperience(gcp, "", "deploy", 1); total != 2 || len(hits) != 1 {
 		t.Fatalf("limit: %+v %d", hits, total)
 	}
 	// No words or no match: the newest, all counted; never another helper's.
 	for _, q := range []string{"", "zzzz"} {
-		hits, total, _ := d.SearchExperience(gcp, "", q, 2)
-		if total != 3 || len(hits) != 2 || hits[0].Title != "Fix the linter" {
+		hits, total, matched, _ := d.SearchExperience(gcp, "", q, 2)
+		if matched || total != 3 || len(hits) != 2 || hits[0].Title != "Fix the linter" {
 			t.Fatalf("newest for %q = %+v %d", q, hits, total)
 		}
 	}
@@ -96,7 +96,7 @@ func TestExperienceSearchAndCount(t *testing.T) {
 	if err := d.DeleteExperience(e.ID); err != nil {
 		t.Fatal(err)
 	}
-	if hits, _, _ := d.SearchExperience(gcp, "", "linter", 5); len(hits) > 0 && hits[0].Title == "Fix the linter" {
+	if hits, _, _, _ := d.SearchExperience(gcp, "", "linter", 5); len(hits) > 0 && hits[0].Title == "Fix the linter" {
 		t.Fatalf("a deleted entry is still found: %+v", hits)
 	}
 }
@@ -134,13 +134,18 @@ func TestExperienceBodyHashAndTeam(t *testing.T) {
 	if ok, _ := d.AddExperience(Entry{Helper: "b", At: "2026-02-01T00:00:00Z", Title: "two", Body: "same"}); !ok {
 		t.Fatal("another helper's same body refused")
 	}
-	_, _ = d.AddExperience(Entry{Helper: "a", At: "2026-03-01T00:00:00Z", Title: "other team", Body: "cache one", TeamID: "t1"})
-	_, _ = d.AddExperience(Entry{Helper: "a", At: "2026-03-02T00:00:00Z", Title: "this team", Body: "cache two", TeamID: "t2"})
-	_, _ = d.AddExperience(Entry{Helper: "a", At: "2026-03-03T00:00:00Z", Title: "newest", Body: "cache three", TeamID: "t1"})
-	if hits, _, _ := d.SearchExperience("a", "t2", "cache", 3); hits[0].Title != "this team" {
-		t.Fatalf("hits = %+v", hits)
+	// Relevance first; among equally relevant entries the caller's team, then the newest.
+	_, _ = d.AddExperience(Entry{Helper: "a", At: "2026-03-01T00:00:00Z", Title: "job one", Body: "cache warm one", TeamID: "t1"})
+	_, _ = d.AddExperience(Entry{Helper: "a", At: "2026-03-02T00:00:00Z", Title: "job two", Body: "cache warm two", TeamID: "t2"})
+	_, _ = d.AddExperience(Entry{Helper: "a", At: "2026-03-03T00:00:00Z", Title: "job six", Body: "cache warm six", TeamID: "t1"})
+	if hits, _, _, _ := d.SearchExperience("a", "t2", "cache", 3); hits[0].Title != "job two" || hits[1].Title != "job six" {
+		t.Fatalf("tie hits = %+v", hits)
 	}
-	if hits, _, _ := d.SearchExperience("a", "t2", "", 3); hits[0].Title != "this team" {
+	_, _ = d.AddExperience(Entry{Helper: "a", At: "2026-03-04T00:00:00Z", Title: "redis cache eviction", Body: "redis cache eviction policy", TeamID: "t1"})
+	if hits, _, _, _ := d.SearchExperience("a", "t2", "redis cache eviction", 3); hits[0].Title != "redis cache eviction" {
+		t.Fatalf("the team outranked relevance: %+v", hits)
+	}
+	if hits, _, _, _ := d.SearchExperience("a", "t2", "", 3); hits[0].Title != "job two" {
 		t.Fatalf("newest hits = %+v", hits)
 	}
 	if err := d.RekeyAgent("a", "c"); err != nil {
@@ -549,7 +554,7 @@ func TestOpensFileWithLessonIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d2.Close()
-	if hits, total, err := d2.SearchExperience("github.com/o/gcp", "", "deploy", 5); err != nil || total != 1 || len(hits) != 1 {
+	if hits, total, _, err := d2.SearchExperience("github.com/o/gcp", "", "deploy", 5); err != nil || total != 1 || len(hits) != 1 {
 		t.Fatalf("search after open: %+v %d %v", hits, total, err)
 	}
 }

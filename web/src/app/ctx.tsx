@@ -30,6 +30,8 @@ export interface AppCtx {
   unread: ReadonlySet<string>;
   /** The gates waiting on the owner (check-ins and permission prompts); a host without an agent database has none. */
   gates: OpenGate[];
+  /** The go-aheads triage picked for the owner to check (compass.spot_checks), read every 30 s and after each action. */
+  spots: SpotCheck[];
   select: (id: string | null) => void;
   nav: Nav;
   setNav: (n: Nav) => void;
@@ -254,4 +256,11 @@ export function hooksAction(h: string | undefined): string {
 
 export function harnessLabel(h: string | undefined): string {
   return AGENTS.find((a) => a.id === h)?.label ?? { shell: "Shell", custom: "Command" }[h ?? "shell"] ?? h ?? "Shell";
+}
+
+/** A go-ahead triage gave that the owner is asked to check: right or wrong. */
+export interface SpotCheck {
+  id: number;
+  agent: string;
+  question: string;
 }
