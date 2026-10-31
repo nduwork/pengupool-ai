@@ -314,6 +314,11 @@ breaks ties, then the newest. A helper's past-work list leaves common words out 
 no match it says "Recent work (no matching entries)" instead of offering the newest as a best match; it
 shows whole rows only, within 2 KiB and at most 10. A Compass line is shown whole or not at all (no
 clipping that loses its condition), and a condition worded "when …" no longer reads "when when".
+v0.10.6: Needs input stays true to what waits on the owner. A permission prompt keeps its needs-input
+status until that same call runs or the turn ends; an unrelated parallel tool no longer clears it. An
+AskUserQuestion needs the owner from its first moment. A session stuck on a first-run dialog (trust,
+login, setup) shows in Needs input, and an agent's question notifies as "An agent asks you", not
+"Team launch ready".
 
 ## Credits
 
