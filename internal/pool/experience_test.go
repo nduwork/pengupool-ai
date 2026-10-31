@@ -75,7 +75,8 @@ func waitEntry(t *testing.T, p *Pool) agentdb.Entry {
 }
 
 // A Done: report to the parent, then the helper's turn end: the compact is typed once and the entry's
-// body is the compaction summary the harness wrote after it, in each harness's transcript format.
+// body is the compaction summary the harness wrote after it, in each harness's transcript format,
+// with the report kept under it.
 func TestDoneReportKeepsTheCompaction(t *testing.T) {
 	record := map[string]string{
 		harness.Claude: `{"type":"user","isCompactSummary":true,"timestamp":"%s","message":{"role":"user","content":[{"type":"text","text":"%s"}]}}`,
@@ -101,7 +102,7 @@ func TestDoneReportKeepsTheCompaction(t *testing.T) {
 			}
 			p.journalTurnEnd(plan)
 			e := waitEntry(t, p)
-			if e.Title != "fixed the login redirect" || e.Body != "the summary of the work" || e.Helper != planKey {
+			if e.Title != "fixed the login redirect" || e.Body != "the summary of the work\n\n## Done report\n\ndone: fixed the login redirect\nIt now keeps the next page." || e.Helper != planKey {
 				t.Fatalf("entry = %+v", e)
 			}
 			if len(*typed) != 1 || (*typed)[0] != "/compact\r" {
@@ -169,6 +170,18 @@ func TestDoneReportFallsBackToTheReport(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 		if es := entries(t, p); len(es) != 1 {
 			t.Fatalf("entries %+v", es)
+		}
+	})
+	t.Run("the host shuts down first", func(t *testing.T) {
+		p, _, _ := journalSetup(t, harness.Claude)
+		p.doneReport(done("Done: migrated\nthe report"))
+		p.journalTurnEnd(plan) // the compact is typed; no summary lands before the host stops
+		p.StopJournal()
+		if es := entries(t, p); len(es) != 1 {
+			t.Fatalf("a waiting report was lost at shutdown: %+v", es)
+		}
+		if e := waitEntry(t, p); e.Body != "Done: migrated\nthe report" {
+			t.Fatalf("entry %+v", e)
 		}
 	})
 	t.Run("secrets", func(t *testing.T) {

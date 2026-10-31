@@ -808,6 +808,40 @@ func TestDroppedLineIsDeleted(t *testing.T) {
 	}
 }
 
+// The owner's own line (written or confirmed by them) holds until they replace or delete it: it does
+// not fade with time, and evidence against it never sweeps it. An inferred line does both.
+func TestOwnerLineKeptUntilReplaced(t *testing.T) {
+	p, _ := twoTeams(t)
+	own := p.owner()
+	put := func(body, source string) string { // a stated line, its one support three years old
+		uid, _ := p.db.PutLine(agentdb.Line{Owner: own, Body: body, Origin: "stated", Source: source})
+		ts := time.Now().AddDate(-3, 0, 0).UTC().Format(time.RFC3339)
+		sig, _ := p.db.AddSignal(agentdb.Signal{Owner: own, Kind: "said", At: ts})
+		_ = p.db.AddEffects([]agentdb.Effect{{SignalUID: sig, LineUID: uid, PSup: 1, Weight: 1, At: ts, Kind: "said"}})
+		return uid
+	}
+	mine, inferred := put("Always add panels", "owner"), put("Always add tabs", "")
+	ls, _ := p.db.Lines(own, "", "", 0)
+	for _, v := range p.beliefs(ls) {
+		if v.UID == mine && (!v.guides() || v.State != "confident") {
+			t.Errorf("the owner's line faded with time: %+v", v)
+		}
+		if v.UID == inferred && v.State == "confident" {
+			t.Errorf("an inferred line idle for three years still guides: %+v", v)
+		}
+	}
+	gone, _ := p.db.PutLine(agentdb.Line{Owner: own, Body: "Always add charts", Origin: "chose"})
+	confirm(t, p, mine, 20, 0, 1)
+	confirm(t, p, gone, 8, 0, 1)
+	p.record(agentdb.Signal{Kind: "said", Words: "neither"}, agentdb.WeightSaid, effectOn{mine, 0, 1}, effectOn{gone, 0, 1})
+	if _, err := p.db.Line(gone); err != agentdb.ErrNotFound {
+		t.Fatalf("the inferred line stayed: %v", err)
+	}
+	if _, err := p.db.Line(mine); err != nil {
+		t.Fatalf("the owner's line was swept: %v", err)
+	}
+}
+
 // The owner deleting a line takes the signals only it had.
 func TestOwnerDeleteTakesItsOwnSignals(t *testing.T) {
 	p, _ := twoTeams(t)
@@ -836,13 +870,13 @@ func TestStartupSweepsDroppedLines(t *testing.T) {
 	if w := signalWords(p); len(w) != 0 {
 		t.Fatalf("signals = %v", w)
 	}
-	// An owner's line goes like any other once belief drops it.
+	// An owner's line stays until the owner replaces or deletes it, whatever its belief.
 	kept, _ := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Always add charts", Origin: "chose", Source: "owner"})
 	confirm(t, p, kept, 8, 0, 1)
 	ls, _ = p.db.Lines(p.owner(), "", "", 0)
 	p.sweepDropped(ls)
-	if _, err := p.db.Line(kept); err != agentdb.ErrNotFound {
-		t.Fatalf("the owner's dropped line stayed: %v", err)
+	if _, err := p.db.Line(kept); err != nil {
+		t.Fatalf("the owner's line was swept: %v", err)
 	}
 }
 

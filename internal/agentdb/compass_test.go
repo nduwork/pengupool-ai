@@ -121,6 +121,23 @@ func TestSignalRoundTripAndUndo(t *testing.T) {
 	}
 }
 
+// A signal and its effects are written together: when an effect fails, the signal is not kept
+// either, so no signal stands without the effects it had.
+func TestSignalWithEffectsAllOrNothing(t *testing.T) {
+	d, _ := openRaw(t)
+	uid, err := d.AddSignal(Signal{Owner: "o", Kind: "said"}, Effect{LineUID: "l1", PSup: 1, Weight: 1, At: now()})
+	if m, _ := d.Effects("l1"); err != nil || len(m["l1"]) != 1 || m["l1"][0].SignalUID != uid {
+		t.Fatalf("signal with an effect: %v, %+v", err, m)
+	}
+	twice := Effect{LineUID: "l2", PSup: 1, Weight: 1, At: now()} // the same line twice breaks the key
+	if _, err := d.AddSignal(Signal{Owner: "o", Kind: "said", Words: "lost"}, twice, twice); err == nil {
+		t.Fatal("a failing effect was not reported")
+	}
+	if ss, _ := d.RecentSignals("o", 10); len(ss) != 1 {
+		t.Fatalf("a signal stayed without its effects: %+v", ss)
+	}
+}
+
 func TestMergeSignals(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "pengupool-agents.db")
 	a, _ := openRaw(t)

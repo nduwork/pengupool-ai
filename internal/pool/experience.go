@@ -181,18 +181,26 @@ func (p *Pool) journalFinish(id string, pe *pendingEntry, body string) {
 	p.mu.Unlock()
 	if body == "" {
 		body = pe.report
+	} else { // the summary leads; the report(s) it was made for stay under it
+		body += "\n\n## Done report\n\n" + pe.report
 	}
 	p.addEntry(pe.helper, pe.team, pe.at, pe.title, body)
 }
 
-// stopJournal ends every wait: the pool is shutting down. A report not yet kept is lost.
-func (p *Pool) stopJournal() {
+// StopJournal ends every wait: the pool is shutting down. Each waiting report is kept as its entry
+// now, without a summary. ponytail: a host killed outright still loses a waiting report.
+func (p *Pool) StopJournal() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	var waiting []*pendingEntry
 	for id, pe := range p.journal {
 		pe.timer.Stop()
 		close(pe.done)
 		delete(p.journal, id)
+		waiting = append(waiting, pe)
+	}
+	p.mu.Unlock()
+	for _, pe := range waiting {
+		p.addEntry(pe.helper, pe.team, pe.at, pe.title, pe.report)
 	}
 }
 

@@ -295,6 +295,11 @@ with GitHub waiting for a picked repository (0.9.46). No changes of its own.
 v0.10.1: Two fixes to answers through the lead. The shown check reads the last 8192 characters of the
 lead's previous reply, not 1500, so an id near the top of a long reply is no longer missed. A reply that failed no longer closes an ask; any
 other reply from the asked member still does, also one still queued for a busy asker.
+v0.10.2: Three stability fixes in the Compass and journal. A line the owner wrote or confirmed holds
+until they replace or delete it: it no longer fades with time, and evidence against it never sweeps it
+(inferred lines still do both). A helper's done report waiting for its compaction is kept as its
+journal entry when the host shuts down, and an entry with a summary keeps the report under it. A
+Compass signal and its effects are written together, so none is left without the effects it had.
 
 ## Credits
 
