@@ -260,11 +260,18 @@ func (p *Pool) typeAnswersLater(id string) {
 	delete(p.answersLater, id)
 	p.mu.Unlock()
 	for _, x := range q {
-		// Only for this session's answered ask, and not long after: a session ended and resumed
-		// meanwhile has had its asks expired (expireAsks drops what waited).
-		if a, ok := p.approval(x.ask); ok && a.State == "answered" && a.SessionID == id && time.Since(x.at) < askExpiry {
-			p.typeAnswer(id, x)
+		// Only for this session's answered ask: a session ended and resumed meanwhile has had its asks
+		// expired (expireAsks drops what waited). Long after (busy past askExpiry), the owner's words
+		// are no longer typed as a fresh prompt; the member still hears the answer, as a notice.
+		a, ok := p.approval(x.ask)
+		if !ok || a.State != "answered" || a.SessionID != id {
+			continue
 		}
+		if time.Since(x.at) >= askExpiry {
+			p.notice(x.teamID, id, x.note)
+			continue
+		}
+		p.typeAnswer(id, x)
 	}
 }
 

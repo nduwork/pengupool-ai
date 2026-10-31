@@ -681,4 +681,17 @@ func TestLaterAnswerOnlyOnce(t *testing.T) {
 	if len(typed) != 0 {
 		t.Fatalf("typed after the wait gave the answer: %q", typed)
 	}
+
+	// Busy past askExpiry: not typed, but the member still hears it, as a notice.
+	p.takeNotices(web)
+	id = queued()
+	p.mu.Lock()
+	for i := range p.answersLater[web] {
+		p.answersLater[web][i].at = time.Now().Add(-askExpiry - time.Minute)
+	}
+	p.mu.Unlock()
+	stop()
+	if n := p.takeNotices(web); len(typed) != 0 || !strings.Contains(n, "The owner answered your ask "+id) {
+		t.Fatalf("an old answer: typed %q, notices:\n%s", typed, n)
+	}
 }
