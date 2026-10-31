@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionView } from "../protocol/control";
-import type { TeamMessage } from "../protocol/domain";
-import { approvalTitle, ARCHIVE_MS, askNeeds, reconcileInbox, sessionNeeds, type Need, type OpenGate } from "./inbox";
+import type { Approval, TeamMessage } from "../protocol/domain";
+import { approvalTitle, askNeeds, sessionNeeds, type OpenGate, waitingOnOwner } from "./inbox";
 
 const s = (name: string, status: string, state = "running"): SessionView => ({ id: name, name, state, status, harness: "claude" }) as SessionView;
-const need = (session: string, text = "waiting on a permission prompt"): Need => ({ session, name: session, kind: "permission", text });
 
 describe("sessionNeeds", () => {
   it("lists running agents blocked on a prompt or a lost connection, never finished ones", () => {
@@ -34,25 +33,22 @@ describe("approvalTitle", () => {
   });
 });
 
-describe("reconcileInbox", () => {
-  it("merges a session's asks into one entry and keeps its first time while the ask stands", () => {
-    const one = reconcileInbox([], [need("a")], 100);
-    expect(reconcileInbox(one, [need("a")], 200)).toEqual(one);
-    expect(reconcileInbox(one, [need("a", "is lost")], 200)).toEqual([{ ...need("a", "is lost"), at: 200 }]);
+describe("waitingOnOwner", () => {
+  const ap = (id: string, kind: string, state = "pending", session_id?: string): Approval => ({ id, kind, state, detail: id, session_id, created_at: "" }) as Approval;
+  it("is one list: pending approvals (not permissions; an agent's ask while it runs), then each session's need", () => {
+    const sessions = [s("a", "approval"), s("b", "idle"), { ...s("c", "working"), state: "exited" } as SessionView];
+    const w = waitingOnOwner([ap("L", "launch"), ap("P", "permission"), ap("Q", "ask", "pending", "b"), ap("X", "ask", "pending", "c"), ap("D", "launch", "approved")], sessions, [], []);
+    expect(w.items.map((i) => i.key)).toEqual(["approval:L", "approval:Q", "need:a:permission"]);
+    expect(w.items.map((i) => i.title)).toEqual(["Team launch ready", "An agent asks you", "a needs you"]);
   });
-
-  it("resolves a gone ask, then archives it after a day", () => {
-    const one = reconcileInbox([], [need("a")], 100);
-    const done = reconcileInbox(one, [], 200);
-    expect(done[0].resolvedAt).toBe(200);
-    expect(reconcileInbox(done, [], 300)[0].resolvedAt).toBe(200);
-    expect(reconcileInbox(done, [], 200 + ARCHIVE_MS)).toEqual([]);
+  it("counts a go-ahead to check, even when nothing else waits", () => {
+    const w = waitingOnOwner([], [s("a", "idle")], [], [], [{ id: 7, agent: "a", question: "Ran the migration" }]);
+    expect(w.items.map((i) => [i.key, i.title])).toEqual([["spot:7", "Was this go-ahead right?"]]);
   });
-
-  it("keeps a block open while it is still live", () => {
-    const blocked: Need = { session: "a", name: "a", kind: "block", text: "is lost" };
-    const e = reconcileInbox([], [blocked], 0);
-    expect(reconcileInbox(e, [blocked], 5 * ARCHIVE_MS)[0].resolvedAt).toBeUndefined();
+  it("drops an item as soon as the state says it was answered, wherever that was", () => {
+    const before = waitingOnOwner([ap("Q", "ask", "pending", "b")], [s("a", "approval"), s("b", "idle")], [], []);
+    const after = waitingOnOwner([ap("Q", "ask", "answered", "b")], [s("a", "working"), s("b", "idle")], [], []);
+    expect([before.items.length, after.items.length]).toEqual([2, 0]);
   });
   it("leads a permission prompt with the agent's description and the floor item, the whole call kept as detail", () => {
     const long = "python3 - <<'EOF'; " + "x = 1; ".repeat(40) + "EOF";
@@ -75,11 +71,9 @@ describe("askNeeds", () => {
     const out = askNeeds([ask("1", { escalated_at: "x" }), ask("2"), ask("3", { escalated_at: "x", settled_at: "y" }), ask("4", { escalated_at: "x", from: "gone" })], [s("a", "idle"), s("b", "working"), s("gone", "idle", "exited")]);
     expect(out.map((n) => [n.key, n.name, n.toName])).toEqual([["ask:1", "a", "b"]]);
   });
-  it("keeps a check-in and an ask from one session apart in the inbox", () => {
-    const checkin: Need = { session: "a", name: "a", kind: "checkin", text: "Shall I go on?" };
-    const [askNeed] = askNeeds([ask("1", { escalated_at: "x" })], [s("a", "idle"), s("b", "idle")]);
-    const out = reconcileInbox([], [checkin, askNeed], 100);
-    expect(out.map((e) => e.kind).sort()).toEqual(["ask", "checkin"]);
-    expect(reconcileInbox(out, [checkin], 200).find((e) => e.kind === "ask")?.resolvedAt).toBe(200);
+  it("keeps a check-in and an ask from one session apart in the one list", () => {
+    const gate: OpenGate = { id: 1, session_id: "a", agent: "a", kind: "checkin", question: "Shall I go on?", floor: false };
+    const keys = waitingOnOwner([], [s("a", "idle"), s("b", "idle")], [ask("1", { escalated_at: "x" })], [gate]).items.map((i) => i.key);
+    expect(keys).toEqual(["need:a:checkin", "need:ask:1:ask"]);
   });
 });

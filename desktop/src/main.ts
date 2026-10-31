@@ -12,7 +12,11 @@ import { basename, dirname, extname, join, normalize } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { Host, storeDir, userEnv, type Environment, type HostConnection } from "./host";
+import { notices } from "./notices";
 import { bundleOf, installScript, isUpdateImage } from "./update";
+
+// The notifications shown for what waits on the owner, by item key (withdrawn once answered).
+const shown = notices<Notification>();
 
 app.setName("PenguPool AI");
 
@@ -278,15 +282,20 @@ function ipc(): void {
     if (plainFolder) void shell.openPath(path);
     else shell.showItemInFolder(path);
   });
-  ipcMain.on("app:notify", (_e, title: string, body: string) => {
-    // Only when the window is not focused: in the app, the bell and banner already show it.
+  ipcMain.on("app:notify", (_e, title: string, body: string, key: string) => {
+    // Only when the window is not focused: in the app, the bell already shows it.
     if (win?.isFocused() === true || !Notification.isSupported()) return;
     const n = new Notification({ title: String(title), body: String(body) });
     n.on("click", () => {
       win?.show();
       win?.focus();
     });
+    shown.add(String(key ?? ""), n);
     n.show();
+  });
+  // Items answered anywhere (the app, the phone, a terminal, through the lead): their notifications go.
+  ipcMain.on("app:unnotify", (_e, keys: unknown) => {
+    if (Array.isArray(keys)) shown.withdraw(keys.map(String));
   });
   ipcMain.on("app:badge", (_e, count: number) => {
     if (process.platform === "darwin") app.dock?.setBadge(count > 0 ? String(count) : "");
