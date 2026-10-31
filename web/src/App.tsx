@@ -18,6 +18,7 @@ import { T } from "./protocol/control";
 import { EMPTY_DOMAIN } from "./protocol/domain";
 import { SessionsStore, type SessionsView } from "./state/sessions";
 import { ApprovalsBell } from "./views/Approvals";
+import { type TriageStatus, triagePrompt, watchTriage } from "./views/triage";
 import { Welcome } from "./views/GettingStarted";
 import { NewSessionDialog } from "./views/NewSession";
 import { UpdatePill } from "./views/Update";
@@ -161,6 +162,14 @@ export function App(): ReactElement {
   useEffect(() => {
     if (info.status === "connected") void connection.request<OpenGate[]>("gates.open", {}).then((r) => setGates(r ?? []), () => setGates([]));
   }, [connection, info.status, settleKey, gatesTick]);
+
+  // The triage model PenguPool needs: read on connecting, every 30 s (its check may fail after the first
+  // read, or it may die mid-day) and whenever something settles (settleKey) or the page changes (back from Settings).
+  const [triage, setTriage] = useState<TriageStatus | null>(null);
+  useEffect(() => {
+    if (info.status !== "connected") return;
+    return watchTriage(() => connection.request<TriageStatus>("triage.status", {}), setTriage);
+  }, [connection, info.status, settleKey, nav]);
 
   // The go-aheads to check: read every 30 s, and after each action (gatesTick) so a verdict clears at once.
   const [spots, setSpots] = useState<SpotCheck[]>([]);
@@ -383,6 +392,14 @@ export function App(): ReactElement {
                   </Button>
                 </Tip>
               </header>
+              {triagePrompt(triage) !== null ? (
+                <div role="alert" className="flex items-center gap-2 border-b border-warning/30 bg-warning/15 px-3 py-1.5 text-label">
+                  <span className="min-w-0 flex-1">{triagePrompt(triage)}</span>
+                  <Button size="sm" variant="default" onClick={() => setNav("settings")}>
+                    Open Settings
+                  </Button>
+                </div>
+              ) : null}
               <main className="relative min-h-0 flex-1">
                 {/* The workbench stays mounted on other pages, so terminals keep their attachment. */}
                 <div className={cn("absolute inset-0", nav !== "workspace" && "invisible")}>

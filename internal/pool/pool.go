@@ -6,6 +6,7 @@ package pool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -103,6 +104,7 @@ type Pool struct {
 	clock func() time.Time
 	// testDecider stands in for the configured decision provider in tests.
 	testDecider decision.Provider
+	triageErr   string // the triage model's last call failed with this; "" after one that answered; triageUnchecked at start (guarded by mu)
 	// testSpawn stands in for starting a worker in tests.
 	testSpawn func(spawnReq) (store.Session, error)
 	// testScreen stands in for the hub's followed screens in tests.
@@ -154,7 +156,8 @@ func New(o Options) *Pool {
 		env = withUserPath(agentEnv(os.Environ()), os.Getenv("HOME"))
 	}
 	p := &Pool{
-		st: o.Store, hub: o.Hub, exe: o.Exe, env: env, logf: logf, nodes: o.Nodes, version: o.Version,
+		triageErr: triageUnchecked,
+		st:        o.Store, hub: o.Hub, exe: o.Exe, env: env, logf: logf, nodes: o.Nodes, version: o.Version,
 		msgSock: map[string]claudeInbox{}, crossOK: map[sessionPair]time.Time{}, injected: map[string]map[string]string{},
 		lastInput: map[string]time.Time{}, pending: map[string][]protocol.TeamMessage{},
 		ownerEnter: map[string][]credit{}, requireOwnerInput: o.RequireOwnerInput,
@@ -408,6 +411,7 @@ func (p *Pool) handlers() map[string]handler {
 		"provider.activate":     bind(p.providerActivate),
 		"settings.tailscale":    bind(p.settingsTailscale),
 		"settings.get":          bind(p.settingsGet),
+		"triage.status":         bind(p.triageStatus),
 		"settings.save":         bind(p.settingsSave),
 		"sync.get":              bind(p.syncGet),
 		"sync.set":              bind(p.syncSet),
@@ -572,10 +576,76 @@ func (p *Pool) decider() decision.Provider {
 	p.mu.Lock()
 	td := p.testDecider
 	p.mu.Unlock()
-	if td != nil {
-		return td
+	prov := td
+	if prov == nil {
+		prov = decision.FromConfig(p.st.Config().Decision, p.logf)
 	}
-	return decision.FromConfig(p.st.Config().Decision, p.logf)
+	if prov == nil {
+		return nil
+	}
+	return watched{prov, p}
+}
+
+const triageUnchecked = "\x00unchecked"
+
+// watched records whether the triage model answered its last call: the app's "set up a triage
+// model" prompt shows while it is missing or unreachable (triageStatus).
+type watched struct {
+	decision.Provider
+	p *Pool
+}
+
+func (w watched) Decide(ctx context.Context, req decision.Request) (decision.Response, error) {
+	res, err := w.Provider.Decide(ctx, req)
+	if !errors.Is(ctx.Err(), context.Canceled) { // a call its caller gave up says nothing; a timeout does
+		w.p.setTriage(err)
+	}
+	return res, err
+}
+
+// setTriage keeps the triage model's last outcome: "" after it answered, else why it did not.
+func (p *Pool) setTriage(err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.triageErr = ""
+	if err != nil {
+		p.triageErr = err.Error()
+	}
+}
+
+// checkTriage runs the active model's connection check (at start, and when the active one is saved
+// again), so a model that is broken shows as unreachable before any work asks it.
+func (p *Pool) checkTriage(ctx context.Context) {
+	c := p.st.Config().Decision
+	pc, ok := c.Providers[c.Active]
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	_, items, err := decision.Check(ctx, pc)
+	if err == nil && slices.ContainsFunc(items, func(i decision.CheckItem) bool { return !i.OK }) {
+		err = errors.New("it answered plain questions wrong")
+	}
+	p.setTriage(err)
+}
+
+// triageStatus is "missing" (no triage model set), "unchecked" (set, not asked yet since the host
+// started), "unreachable" (its last call or check failed) or "ok".
+func (p *Pool) triageStatus(_ context.Context, _ struct{}) (any, error) {
+	if p.decider() == nil {
+		return map[string]string{"status": "missing"}, nil
+	}
+	p.mu.Lock()
+	e := p.triageErr
+	p.mu.Unlock()
+	if e == triageUnchecked {
+		return map[string]string{"status": "unchecked"}, nil
+	}
+	if e != "" {
+		return map[string]string{"status": "unreachable", "error": e}, nil
+	}
+	return map[string]string{"status": "ok"}, nil
 }
 
 func errorf(format string, a ...any) error { return fmt.Errorf(format, a...) }

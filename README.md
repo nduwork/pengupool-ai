@@ -324,6 +324,10 @@ are one list: team launches and changes, an agent's question, check-ins, permiss
 check and unanswered asks, each with its action. An item leaves it as soon as it is answered anywhere (the
 app, the phone, its terminal, through the lead), and its desktop notification is withdrawn. The Inbox,
 which kept a copy of agent messages for a day, is gone; the needs-you bar lives in the panel.
+v0.10.8: PenguPool needs a triage model, local (Ollama) or remote. Settings can no longer set it to
+none, and a model becomes active only once its check passes. The app asks for one under the title bar on
+every page while none is set or the set one stops answering, and the prompt goes as soon as one works.
+"If the model fails, use simple matching" is removed; a config that still has it is told so once.
 
 ## Credits
 

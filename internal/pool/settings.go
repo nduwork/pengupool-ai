@@ -35,6 +35,12 @@ var providerTypes = map[string]bool{"ollama": true, "jev": true}
 // call after call; the active one goes to "no model" and the log says so.
 func (p *Pool) dropRetiredProviders() {
 	cfg := p.st.Config()
+	if cfg.Decision.RulesFallback { // removed: the triage model is required, there is no rules mode
+		cfg.Decision.RulesFallback = false
+		if err := p.st.SaveConfig(cfg); err == nil {
+			p.logf("pool: \"If the model fails, use simple matching\" is removed; PenguPool needs a working triage model (Settings → Decision model)")
+		}
+	}
 	var gone []string
 	for k, pc := range cfg.Decision.Providers {
 		if !providerTypes[pc.Type] || decision.Validate(pc) != nil {
@@ -62,7 +68,7 @@ func (p *Pool) providers(_ context.Context, _ struct{}) (any, error) {
 		"jev":    {Type: "jev", Format: "systemone", Address: "https://api.typesafe.ai/v1/systemone", Model: "jev-latest"},
 	}
 	return map[string]any{
-		"active": c.Active, "providers": c.Providers, "rules_fallback": c.RulesFallback,
+		"active": c.Active, "providers": c.Providers,
 		"formats": decision.Formats, "thresholds": decision.Thresholds,
 		"defaults": defaults,
 	}, nil
@@ -93,12 +99,20 @@ func (p *Pool) providerSave(ctx context.Context, in providerSaveIn) (any, error)
 		cfg.Decision.Providers = map[string]store.ProviderConfig{}
 	}
 	cfg.Decision.Providers[pc.Type] = pc
-	return pc, p.st.SaveConfig(cfg)
+	if err := p.st.SaveConfig(cfg); err != nil {
+		return nil, err
+	}
+	if cfg.Decision.Active == pc.Type { // the active model changed: check it again before trusting it
+		p.mu.Lock()
+		p.triageErr = triageUnchecked
+		p.mu.Unlock()
+		go p.checkTriage(context.WithoutCancel(ctx))
+	}
+	return pc, nil
 }
 
 type providerTypeIn struct {
-	Type          string `json:"type"`
-	RulesFallback *bool  `json:"rules_fallback,omitempty"`
+	Type string `json:"type"`
 }
 
 // providerCheck is the explicit host-side connection check; a saved form is not a working
@@ -126,18 +140,31 @@ func (p *Pool) providerCheck(ctx context.Context, in providerTypeIn) (any, error
 	return out, nil
 }
 
-func (p *Pool) providerActivate(_ context.Context, in providerTypeIn) (any, error) {
+// providerActivate makes a saved model the triage model. PenguPool needs one: it cannot be set to
+// none, and a model is made active only once its connection check passes.
+func (p *Pool) providerActivate(ctx context.Context, in providerTypeIn) (any, error) {
+	if in.Type == "" {
+		return nil, invalid("a triage model is required: PenguPool's memory and check-ins need one; pick a local (Ollama) or remote model")
+	}
 	cfg := p.st.Config()
-	if in.Type != "" {
-		if _, ok := cfg.Decision.Providers[in.Type]; !ok {
-			return nil, notFound("save the %s provider first", in.Type)
-		}
+	if _, ok := cfg.Decision.Providers[in.Type]; !ok {
+		return nil, notFound("save the %s provider first", in.Type)
+	}
+	res, err := p.providerCheck(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	if out, _ := res.(map[string]any); out["ok"] != true {
+		return nil, protocol.Errorf(protocol.CodeUnavailable, "the %s model did not pass its check: %v", in.Type, out["error"])
 	}
 	cfg.Decision.Active = in.Type
-	if in.RulesFallback != nil {
-		cfg.Decision.RulesFallback = *in.RulesFallback
+	if err := p.st.SaveConfig(cfg); err != nil {
+		return nil, err
 	}
-	return nil, p.st.SaveConfig(cfg)
+	p.mu.Lock()
+	p.triageErr = ""
+	p.mu.Unlock()
+	return nil, nil
 }
 
 // HTTPAddr reports the gateway's bound address.
@@ -698,6 +725,7 @@ func (p *Pool) endScribes(ctx context.Context) {
 // Run keeps node status fresh in the domain and runs the daily backup and the sync.
 func (p *Pool) Run(ctx context.Context) {
 	p.endScribes(ctx)
+	go p.checkTriage(ctx) // the triage model's state is known before work asks it
 	go p.syncLoop(ctx)
 	go p.updateLoop(ctx)
 	go p.readyLoop(ctx)

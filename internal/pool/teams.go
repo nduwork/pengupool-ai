@@ -165,10 +165,6 @@ func (p *Pool) propose(ctx context.Context, t protocol.Task, version int) (proto
 		p.logf("pool: %s", line)
 		prop.Decision = line
 		switch {
-		case err != nil && p.st.Config().Decision.RulesFallback:
-			prop.Fallback = true
-			prop.Warnings = append(prop.Warnings, "provider failed ("+err.Error()+"); rules fallback used")
-			helpers = rulesHelpers(cands)
 		case err != nil:
 			prop.Fallback = true
 			prop.Warnings = append(prop.Warnings, "provider failed ("+err.Error()+"); main-only proposal")
