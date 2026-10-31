@@ -286,3 +286,23 @@ func TestHelperOfByCwd(t *testing.T) {
 		}
 	}
 }
+
+// A session stored on OpenCode, dropped in v0.9.44, neither resumes nor launches: the owner reads why.
+func TestOpenCodeSessionsFailClearly(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(Options{Store: st, Exe: "pengupool"})
+	_ = st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions, store.Session{ID: "ocaaaaaaaaaa", Name: "oc", State: "exited", Harness: "opencode", ConvID: "c1", Cwd: t.TempDir()})
+		return nil
+	})
+	const want = "OpenCode is no longer supported"
+	if _, err := p.resume(context.Background(), sessionIn{SessionID: "ocaaaaaaaaaa"}); codeOf(err) != protocol.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
+		t.Fatalf("resume: %v", err)
+	}
+	if _, err := p.launch(context.Background(), launchIn{Harness: "opencode"}); codeOf(err) != protocol.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
+		t.Fatalf("launch: %v", err)
+	}
+}

@@ -20,16 +20,15 @@ import (
 )
 
 const (
-	Claude   = "claude"
-	Muse     = "muse"
-	OMP      = "omp"
-	Pi       = "pi"
-	Codex    = "codex"
-	Copilot  = "copilot"
-	Gemini   = "gemini"
-	OpenCode = "opencode"
-	Shell    = "shell"
-	Custom   = "custom"
+	Claude  = "claude"
+	Muse    = "muse"
+	OMP     = "omp"
+	Pi      = "pi"
+	Codex   = "codex"
+	Copilot = "copilot"
+	Gemini  = "gemini"
+	Shell   = "shell"
+	Custom  = "custom"
 )
 
 // Agent is an agent runtime PenguPool can run, watch and message. Shell and custom sessions are
@@ -62,7 +61,6 @@ var Agents = []Agent{
 	{ID: Codex, Label: "Codex", Hint: "OpenAI's coding agent", Compact: "/compact", Clear: "/new", Typed: true},
 	{ID: Pi, Label: "pi", Hint: "pi coding agent", Compact: "/compact", Clear: "/new"},
 	{ID: OMP, Label: "OMP", Hint: "oh-my-pi agent", Compact: "/compact", Clear: "/new"},
-	{ID: OpenCode, Label: "OpenCode", Hint: "open-source coding agent", Compact: "/compact", Clear: "/new"},
 	{ID: Copilot, Label: "GitHub Copilot", Hint: "GitHub Copilot CLI", Compact: "/compact", Clear: "/clear", Typed: true, Hidden: true},
 	{ID: Gemini, Label: "Gemini CLI", Hint: "Google's agent (Google login)", Compact: "/compress", Clear: "/clear", Typed: true, EarlyStart: true, Hidden: true},
 }
@@ -75,6 +73,14 @@ func Find(id string) (Agent, bool) {
 		}
 	}
 	return Agent{}, false
+}
+
+// Dropped returns the error for a session on a harness PenguPool no longer runs, or nil.
+func Dropped(kind string) error {
+	if kind == "opencode" {
+		return fmt.Errorf("OpenCode is no longer supported; start a new session on another agent")
+	}
+	return nil
 }
 
 // IsAgent reports whether id names a supported agent runtime.
@@ -103,9 +109,6 @@ var ClaudeEvents = []string{
 //go:embed omp_extension.ts
 var ompExtension []byte
 
-//go:embed opencode_plugin.js
-var opencodePlugin []byte
-
 // Params describe one launch.
 type Params struct {
 	SessionID string
@@ -124,11 +127,11 @@ type Params struct {
 	// (Claude --plugin-dir, pi --skill, OMP a per-run config overlay); nothing is installed. A helper
 	// works outside it (a worktree or a scratch folder), so the agents that ask before reading
 	// outside their working directory are given read access to it (Claude and Copilot --add-dir,
-	// Gemini --include-directories, OpenCode external_directory); Codex, OMP and pi read anywhere.
+	// Gemini --include-directories); Codex, OMP and pi read anywhere.
 	SkillRepo string
 	// ReadDirs are folders a helper may read outside its working directory (the team's repositories),
-	// given where a clean flag exists: Claude and Copilot --add-dir, Gemini --include-directories,
-	// OpenCode external_directory. ponytail: Codex, OMP and pi read anywhere already.
+	// given where a clean flag exists: Claude and Copilot --add-dir, Gemini --include-directories.
+	// ponytail: Codex, OMP and pi read anywhere already.
 	ReadDirs []string
 	// Effort is "" or a level the agent takes; Claude, Codex, omp and pi take it,
 	// the others ignore it.
@@ -296,39 +299,6 @@ func spec(kind string, p Params) ([]string, []string, error) {
 			cmd = append(cmd, "--add-dir", d)
 		}
 		return cmd, env, nil
-	case OpenCode:
-		bin, err := Lookup(OpenCode, p.Env)
-		if err != nil {
-			return nil, nil, err
-		}
-		plugin, err := writeFile(filepath.Join(p.StoreDir, "harness", "pengupool-opencode.js"), opencodePlugin)
-		if err != nil {
-			return nil, nil, err
-		}
-		// Inline config: layered over the user's opencode.json, never written into it.
-		cfg := map[string]any{"plugin": []string{"file://" + plugin}}
-		cmd := []string{bin}
-		if p.Model != "" {
-			cmd = append(cmd, "--model", p.Model)
-		}
-		if p.Resume != "" {
-			cmd = append(cmd, "--session", p.Resume)
-		}
-		if p.SkillRepo != "" {
-			cfg["permission"] = map[string]any{"external_directory": map[string]string{p.SkillRepo + "/**": "allow"}}
-		}
-		if len(p.ReadDirs) > 0 {
-			ext := map[string]string{}
-			if perm, ok := cfg["permission"].(map[string]any); ok {
-				ext = perm["external_directory"].(map[string]string)
-			}
-			for _, d := range p.ReadDirs {
-				ext[d+"/**"] = "allow"
-			}
-			cfg["permission"] = map[string]any{"external_directory": ext}
-		}
-		b, _ := json.Marshal(cfg)
-		return cmd, append(env, "OPENCODE_CONFIG_CONTENT="+string(b)), nil
 	case Gemini:
 		bin, err := Lookup(Gemini, p.Env)
 		if err != nil {
@@ -365,6 +335,9 @@ func spec(kind string, p Params) ([]string, []string, error) {
 			return nil, nil, fmt.Errorf("a custom session needs a command")
 		}
 		return p.Command, env, nil
+	}
+	if err := Dropped(kind); err != nil {
+		return nil, nil, err
 	}
 	return nil, nil, fmt.Errorf("unknown harness %q", kind)
 }

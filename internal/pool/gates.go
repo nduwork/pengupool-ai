@@ -63,7 +63,7 @@ func stopContinues(h string) bool {
 
 // sendsGoAhead: harnesses that take the go-ahead as a user message through their own extension or
 // plugin (sendUserMessage), so it is sent after the turn, behind goAhead's checks.
-func sendsGoAhead(h string) bool { return h == harness.OMP || h == harness.Pi || h == harness.OpenCode }
+func sendsGoAhead(h string) bool { return h == harness.OMP || h == harness.Pi }
 
 // continueTurn is the harness's Stop output that continues the turn with reason as its next input.
 func continueTurn(h, reason string) HookOut {
@@ -1374,7 +1374,7 @@ func patchFloor(patch string) string {
 func inGitDir(path string) bool { return gitDirRe.MatchString(filepath.ToSlash(filepath.Clean(path))) }
 
 // written is what a file-writing tool puts in the file: Write's content, an edit's new text
-// (Edit, MultiEdit's edits; OpenCode's and pi's spellings too), a notebook cell's new source.
+// (Edit, MultiEdit's edits; pi's spellings too), a notebook cell's new source.
 func written(in map[string]any) string {
 	var parts []string
 	take := func(m map[string]any) {

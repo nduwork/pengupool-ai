@@ -44,7 +44,7 @@ func TestAgentSpecsWireHooksPerLaunch(t *testing.T) {
 
 func TestWrapAndNewAgents(t *testing.T) {
 	dir := t.TempDir()
-	for _, k := range []string{Codex, Copilot, OpenCode, Gemini, Claude} {
+	for _, k := range []string{Codex, Copilot, Gemini, Claude} {
 		if err := os.WriteFile(filepath.Join(dir, k), []byte("#!/bin/sh\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -68,10 +68,6 @@ func TestWrapAndNewAgents(t *testing.T) {
 	if out, err := exec.Command("/bin/sh", "-c", `exec printf '%s|' "$@"`, "pp", "a b", "c").Output(); err != nil || string(out) != "a b|c|" {
 		t.Fatalf("arguments after the launcher keep their words: %q %v", out, err)
 	}
-	cmd, env, _ = Spec(OpenCode, p)
-	if e := strings.Join(env, " "); !strings.Contains(e, `"plugin":["file://`) || cmd[0] != filepath.Join(dir, OpenCode) {
-		t.Fatalf("opencode: %v %s", cmd, e)
-	}
 	_, env, err := Spec(Gemini, p)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +85,7 @@ func TestWrapAndNewAgents(t *testing.T) {
 // A helper's skills load for its own session only: a flag or a per-session overlay, never an install.
 func TestHelperSkillsLoadPerSession(t *testing.T) {
 	dir := t.TempDir()
-	for _, k := range []string{Claude, OMP, Pi, Copilot, Gemini, OpenCode} {
+	for _, k := range []string{Claude, OMP, Pi, Copilot, Gemini} {
 		os.WriteFile(filepath.Join(dir, k), []byte("#!/bin/sh\n"), 0o755)
 	}
 	p := Params{SessionID: "s1", Name: "n", Exe: "/x/pengupool", StoreDir: dir, Env: []string{"PATH=" + dir, "HOME=" + t.TempDir()}, SkillRepo: "/skills/ci-debug"}
@@ -101,9 +97,6 @@ func TestHelperSkillsLoadPerSession(t *testing.T) {
 		if err != nil || !strings.Contains(strings.Join(cmd, " "), w) {
 			t.Errorf("%s: %v %v, want %q", k, cmd, err, w)
 		}
-	}
-	if _, env, err := Spec(OpenCode, p); err != nil || !strings.Contains(strings.Join(env, "\n"), `"permission":{"external_directory":{"/skills/ci-debug/**":"allow"}}`) {
-		t.Errorf("opencode: %v %v", env, err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "harness", "omp-skills-s1.yml")); !strings.Contains(string(b), `"customDirectories":["/skills/ci-debug/skills"]`) {
 		t.Errorf("overlay %s", b)
@@ -148,12 +141,10 @@ func TestSpecEffort(t *testing.T) {
 }
 
 // The floor is enforced at the tool call: every harness gives PenguPool its PreToolUse, and the
-// extensions of the ones without hook settings (OMP, pi, OpenCode) block on its answer.
+// extensions of the ones without hook settings (OMP, pi) block on its answer.
 func TestToolCallsReachTheFloor(t *testing.T) {
-	for name, src := range map[string]string{"omp/pi": string(ompExtension), "opencode": string(opencodePlugin)} {
-		if !strings.Contains(src, `run("PreToolUse"`) || !strings.Contains(src, "permissionDecision") {
-			t.Errorf("%s: no tool-call hook that honours deny or ask", name)
-		}
+	if src := string(ompExtension); !strings.Contains(src, `run("PreToolUse"`) || !strings.Contains(src, "permissionDecision") {
+		t.Error("omp/pi: no tool-call hook that honours deny or ask")
 	}
 	if strings.Contains(ClaudeSettings("/x/pengupool"), `"matcher"`) {
 		t.Error("Claude's PreToolUse has a matcher: some tool would skip the hook")

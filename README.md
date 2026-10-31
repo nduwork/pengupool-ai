@@ -2,8 +2,8 @@
 
 PenguPool AI is the PenguPool agent-pool app — a Go host daemon with PTY worker
 sessions, a browser/desktop terminal UI, helper teams and an owner Compass —
-running Claude Code (account or Ollama), Muse Code, Codex, pi, OMP and
-OpenCode side by side, with the Muse app as the owner's remote.
+running Claude Code (account or Ollama), Muse Code, Codex, pi and OMP
+side by side, with the Muse app as the owner's remote.
 
 Say a preference once; every agent starts with it, helpers remember their
 finished work, and you answer waiting sessions from your phone.
@@ -21,7 +21,7 @@ From source: `make install` (Go 1.26.1 + Node 22 required).
 
 ```bash
 pengupool-ai daemon [--store DIR] [--http ADDR] [--lan]   # state, sessions, browser app
-pengupool-ai new [--name N] [--cwd DIR] [--harness claude|muse|codex|pi|omp|opencode]
+pengupool-ai new [--name N] [--cwd DIR] [--harness claude|muse|codex|pi|omp]
 pengupool-ai ls [--json]
 pengupool-ai attach <session>
 pengupool-ai kill <session>
@@ -45,7 +45,7 @@ browser UI talk to the daemon over its gateway. Data: `~/.pengupool-ai/v2`
   context); its next session starts with the index and the matches.
 - **Harnesses.** Claude Code, Muse Code (the app installs its PenguPool
   plugin), Codex (the app writes a rule so only the PenguPool CLI leaves the
-  sandbox), pi, OMP and OpenCode, plus Claude Code (Ollama): Claude through
+  sandbox), pi and OMP, plus Claude Code (Ollama): Claude through
   `ollama launch claude` on Ollama's own default model. Only agents found
   installed are offered.
 
@@ -129,7 +129,7 @@ from a disk image, or does not answer.
 v0.9.0: updated host and app. Muse Code is an agent (plugin hooks, the hook answer
 cap, Muse's read tools, the Muse app API and device pairing). No Teams page: group
 settings and close are on the map's group frame, closed groups in the map's
-background menu. Copilot, Gemini CLI and OpenCode are experimental agents;
+background menu. Copilot and Gemini CLI are experimental agents (OpenCode was, until v0.9.44);
 `pengupool doctor` can clean PenguPool v1 out of Claude's settings. A record
 written by 0.4–0.8 opens: its search indexes are remade and the experience lessons
 column is not kept; update every machine that shares the record together.
@@ -259,6 +259,10 @@ prompt ("Answer to your ask ID: …"), credited to the owner, so the member's ha
 prompt and not a teammate's relay; a waiting member still gets the answer from its wait, and a busy one
 gets the words typed at its next stop, once. `pengupool ask "QUESTION" --option A --option B` keeps its options: flags after the question
 were read as words of it.
+v0.9.44: OpenCode support is removed: it is no longer offered, launched or resumed, and its plugin
+is gone. A stored OpenCode session fails to resume with a clear error ("OpenCode is no longer
+supported"); start a new session on another agent. The plugin file earlier launches wrote stays on
+disk, unread.
 
 ## Credits
 

@@ -1067,7 +1067,7 @@ func TestStopHookAnswersNothingUnlessSure(t *testing.T) {
 }
 
 func TestGoAheadAfterTheTurnForExtensionAgents(t *testing.T) {
-	for _, h := range []string{harness.OMP, harness.Pi, harness.OpenCode} {
+	for _, h := range []string{harness.OMP, harness.Pi} {
 		p, _, sent := gateTeam(t)
 		guide(t, p)
 		p.setSession("leadaaaaaaaa", func(x *store.Session) { x.Harness = h })
@@ -1390,7 +1390,6 @@ func TestFloorGuardPayloadShapes(t *testing.T) {
 		{harness.Copilot, `{"toolName":"bash","toolArgs":"{\"command\":\"git push --force\"}"}`},
 		{harness.Codex, `{"tool_name":"Bash","tool_input":{"command":["bash","-lc","git push"]}}`},
 		{harness.OMP, `{"tool_name":"bash","tool_input":{"command":"git push"}}`},
-		{harness.OpenCode, `{"tool_name":"write","tool_input":{"filePath":".git/config","content":"x"}}`},
 	} {
 		_ = p.st.Update(func(s *store.State) error { s.Sessions[sessionIndex(s, id)].Harness = c.harness; return nil })
 		out, err := p.hookEvent(context.Background(), hookIn{SessionID: id, Harness: c.harness, Event: "PreToolUse", Payload: []byte(c.payload)})
