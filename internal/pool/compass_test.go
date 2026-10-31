@@ -881,3 +881,52 @@ func TestMergeSameKeepsTheOwnersLine(t *testing.T) {
 		t.Fatalf("lines = %+v", ls)
 	}
 }
+
+// A change of mind that only contradicts a line becomes a line of its own (plan PR B step 0): the
+// owner's yellow/red case. The contradiction is in the ledger at once, and the worded line links to
+// the same signal.
+func TestMatchChangeOfMindMakesALine(t *testing.T) {
+	p, st := twoTeams(t)
+	effects := func(uid string) []agentdb.Effect { es, _ := p.db.Effects(uid); return es[uid] }
+	yellow := stated(t, p, "The owner's favorite color is yellow")
+	sig := agentdb.Signal{Kind: "said", Words: "red is my favorite color now", SessionID: "leadaaaaaaaa", TeamID: "team1"}
+	p.testDecider = &lineDecider{calibrated: true, answers: []decision.Answer{prob(0.05, 0.9, 0.05)}}
+	before := len(signalKinds(t, st))
+	if got := p.match(sig, "", ""); got != "" {
+		t.Fatalf("match = %q", got)
+	}
+	if e := effects(yellow); len(e) != 1 || e[0].PCon != 0.9 || len(signalKinds(t, st)) != before+1 || p.wording[sig.SessionID] == nil {
+		t.Fatalf("the contradiction: %+v, %d signals, wording %v", e, len(signalKinds(t, st))-before, p.wording[sig.SessionID])
+	}
+	if err := wordWith(t, p, sig.SessionID, compassWordIn{Lines: []string{"preference :: The owner's favorite color is red"}}); err != nil {
+		t.Fatal(err)
+	}
+	var red string
+	for _, v := range p.lines("", 0) {
+		if v.Body == "The owner's favorite color is red" {
+			red = v.UID
+		}
+	}
+	if red == "" || len(signalKinds(t, st)) != before+1 {
+		t.Fatalf("no red line (%q), or the signal was recorded twice: %d", red, len(signalKinds(t, st))-before)
+	}
+	if e := effects(red); len(e) != 1 || e[0].PSup != 1 || e[0].SignalUID != effects(yellow)[0].SignalUID {
+		t.Fatalf("the red line's effect: %+v", e)
+	}
+
+	// A check-in's decision (already worded) that only contradicts: kept as a line, recorded once
+	// with both effects.
+	blue := "The owner's favorite color is blue"
+	p.testDecider = &lineDecider{calibrated: true, answers: []decision.Answer{prob(0.05, 0.9, 0.05), prob(0.05, 0.9, 0.05)}}
+	got := p.matchLines(agentdb.Signal{Kind: "chose", Words: "blue then", SessionID: "leadaaaaaaaa"}, "", blue, true)
+	if got == "" || len(effects(yellow)) != 2 || len(signalKinds(t, st)) != before+2 {
+		t.Fatalf("a worded change of mind: %q, yellow %+v, %d signals", got, effects(yellow), len(signalKinds(t, st))-before)
+	}
+
+	// Without mk (a check-in answer that is no rule) it only weighs on the lines.
+	n := len(p.lines("", 0))
+	p.matchLines(agentdb.Signal{Kind: "chose", Words: "green favorite color", SessionID: "leadaaaaaaaa"}, "", "", false)
+	if len(p.lines("", 0)) != n {
+		t.Fatal("a one-off made a line")
+	}
+}

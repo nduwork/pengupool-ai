@@ -83,6 +83,7 @@ type Pool struct {
 	pending           map[string][]protocol.TeamMessage
 	turns             map[string]*turn     // session id → its open turn (guarded by mu)
 	wording           map[string]*wording  // session id → the owner's words it is asked to word for the Compass (under mu)
+	conflicts         conflictCache        // the Compass review's conflict items, for one set of lines (under mu)
 	prevReply         map[string]string    // session id → the reply of its last placed turn: the options a choice is made from (guarded by mu)
 	prevReplyAt       map[string]time.Time // session id → when that reply was placed (guarded by mu)
 	nativeTo          map[string]time.Time // session id → the last native SendMessage to it the guard let through (guarded by mu)
@@ -347,6 +348,7 @@ func (p *Pool) handlers() map[string]handler {
 		"compass.merge":         bind(p.compassMerge),
 		"compass.review":        bind(p.compassReview),
 		"compass.apply_merge":   bind(p.compassApplyMerge),
+		"compass.keep_one":      bind(p.compassKeepOne),
 		"compass.spot_checks":   bind(p.compassSpotChecks),
 		"compass.answer_replay": bind(p.compassAnswerReplay),
 		"gates.open":            bind(p.gatesOpen),

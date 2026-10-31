@@ -278,43 +278,51 @@ func (p *Pool) matchLines(sig agentdb.Signal, offered, line string, mk bool) str
 			}
 		}
 	}
-	if len(on) == 0 {
-		if !mk || line == "" && sig.SessionID == "" {
-			p.record(sig, weight) // waits in the ledger
-			return ""
-		}
+	// A signal that supports no line makes its own: a new preference, or a change of mind that only
+	// contradicts lines (their effects are recorded with it), so the conflict review can show both.
+	if mk && (line != "" || sig.SessionID != "") && !slices.ContainsFunc(on, func(e effectOn) bool { return e.sup >= e.con }) {
 		if line == "" {
-			p.askWording(sig, nil, 0) // the owner's own agent words it; the signal is recorded with its line
+			p.askWording(sig, nil, 0, on...) // the owner's own agent words it; the signal is recorded with its line
 			return ""
 		}
 		l := agentdb.Line{Owner: p.owner(), Kind: "preference", Body: line, Origin: "stated", Source: "session"}
 		if sig.Kind == "chose" {
 			l.Origin = "chose"
 		}
-		return p.keepLine(prov, sig, l, weight, "compass: a preference noted, guiding once confirmed: ")
+		return p.keepLine(prov, sig, l, weight, "compass: a preference noted, guiding once confirmed: ", on...)
+	}
+	if len(on) == 0 {
+		p.record(sig, weight) // waits in the ledger
+		return ""
 	}
 	p.record(sig, weight, on...)
 	p.logLine(sig.SessionID, fmt.Sprintf("compass: the owner's %s moved %d line(s)", sig.Kind, len(on)))
 	return slices.MaxFunc(on, func(a, b effectOn) int { return cmp.Compare(a.sup, b.sup) }).line
 }
 
-// keepLine stores a worded line l as the signal's new line, records the signal's effect on it and
-// merges it with a neighbour that says the same. A line that cannot be kept leaves the signal in the
-// ledger alone. Called under the compass lock; prov may be nil (no merge).
-func (p *Pool) keepLine(prov decision.Provider, sig agentdb.Signal, l agentdb.Line, weight float64, logPrefix string) string {
+// keepLine stores a worded line l as the signal's new line, records the signal with its effects on
+// (lines it contradicts) and on the new line, and merges the new line with a neighbour that says the
+// same. A line that cannot be kept leaves the signal in the ledger with on alone. Called under the
+// compass lock; prov may be nil (no merge).
+func (p *Pool) keepLine(prov decision.Provider, sig agentdb.Signal, l agentdb.Line, weight float64, logPrefix string, on ...effectOn) string {
 	uid, err := "", checkLine(&l)
 	if err == nil {
 		uid, err = p.db.PutLine(l)
 	}
 	if err != nil {
 		p.logf("pool: the owner's preference not kept: %v (it waits in the ledger)", err)
-		p.record(sig, weight)
+		p.record(sig, weight, on...)
 		return ""
 	}
+	sigUID := p.record(sig, weight, on...)
 	if l.Origin == "stated" {
 		weight = 0 // its prior is this signal already; the effect only links it to the line
 	}
-	p.record(sig, weight, effectOn{uid, 1, 0})
+	if sigUID != "" {
+		if err := p.db.AddEffects([]agentdb.Effect{{SignalUID: sigUID, LineUID: uid, PSup: 1, Weight: weight, At: p.at().UTC().Format(time.RFC3339), SessionID: sig.SessionID, Kind: sig.Kind}}); err != nil {
+			p.logf("pool: record a signal's effects: %v", err)
+		}
+	}
 	p.logLine(sig.SessionID, logPrefix+clip(l.Body, 120))
 	if prov == nil {
 		return uid
@@ -466,6 +474,7 @@ type wording struct {
 	sig    agentdb.Signal
 	cands  []agentdb.Line // the lines offered, the only ones it may support or contradict
 	gate   int64          // the check-in whose answer it words, 0 for none
+	sigUID string         // the signal, when recorded already (with the lines it contradicts); its line links to it
 	offers int            // prompts the note went with
 	id     string         // the note's --for: an answer must name the wording it read
 }
@@ -477,17 +486,23 @@ const maxOffers = 3
 // signal replaces an older one, which waits in the ledger). It is offered first inside the turn the
 // owner's words opened (wordingNow: the turn's next tool round, else one continuation at its Stop),
 // then at the session's next prompts (wordingNote). cands are the lines the agent may link the
-// owner's words to. Each wording's fate is in the session's run log, by its id: asked, offered,
+// owner's words to. on are effects the decision model found already (the lines a change of mind
+// contradicts): the signal is recorded with them at once, and the worded line links to it later.
+// Each wording's fate is in the session's run log, by its id: asked, offered,
 // worded or answered none, replaced, given up, or the session ended first.
-// ponytail: in memory, so a restart drops it (it is not in the ledger yet): its id then has
+// ponytail: in memory, so a restart drops it (without on, it is not in the ledger yet): its id then has
 // "asked" and no later line; an agent that never answers is given up on after maxOffers.
-func (p *Pool) askWording(sig agentdb.Signal, cands []agentdb.Line, gateID int64) {
+func (p *Pool) askWording(sig agentdb.Signal, cands []agentdb.Line, gateID int64, on ...effectOn) {
+	sigUID := ""
+	if len(on) > 0 { // effects found already are kept now: a wording lives in memory only
+		sigUID = p.record(sig, signalWeight[sig.Kind], on...)
+	}
 	p.mu.Lock()
 	if p.wording == nil {
 		p.wording = map[string]*wording{}
 	}
 	old := p.wording[sig.SessionID]
-	w := &wording{sig: sig, cands: cands, gate: gateID, id: fmt.Sprintf("%x", sha256.Sum256([]byte(sig.Words+p.at().String())))[:8]}
+	w := &wording{sig: sig, cands: cands, gate: gateID, sigUID: sigUID, id: fmt.Sprintf("%x", sha256.Sum256([]byte(sig.Words+p.at().String())))[:8]}
 	p.wording[sig.SessionID] = w
 	p.mu.Unlock()
 	if old != nil {
@@ -565,7 +580,9 @@ func (p *Pool) unworded(w *wording) {
 		go p.gateWorded(w, "")
 		return
 	}
-	p.record(w.sig, signalWeight[w.sig.Kind])
+	if w.sigUID == "" {
+		p.record(w.sig, signalWeight[w.sig.Kind])
+	}
 }
 
 // gateWorded settles a check-in's wording: rule is the owner's decision as a rule, "" for a one-off,
@@ -739,7 +756,10 @@ func (p *Pool) compassWord(_ context.Context, in compassWordIn) (any, error) {
 	}
 	// Recorded once with every effect; each new line only links to the signal (its prior is the
 	// signal already, so weight 0), as keepLine does for one.
-	sigUID := p.record(w.sig, weight, on...)
+	sigUID := w.sigUID
+	if sigUID == "" { // when recorded already it was offered no lines, so on is empty
+		sigUID = p.record(w.sig, weight, on...)
+	}
 	kept := 0
 	for _, l := range ls {
 		uid, err := p.db.PutLine(l)
