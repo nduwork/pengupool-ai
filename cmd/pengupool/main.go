@@ -71,6 +71,11 @@ const help = `usage: pengupool <command> [options]
         (the owner's terminal only) add journal entries from a JSON file (- for stdin), an array of
         {"helper": NAME, "at": RFC3339, "title": "...", "body": "..."}. An entry already there
         (same helper, at and title), or deleted before, is skipped; nothing is written if any is refused.
+        The file may instead be {"entries": [...], "drop": [{"id": N, "reason": "..."}]}: the dropped
+        entries are deleted first, in the same run.
+  experience export FILE
+        (the owner's terminal only) write every helper's journal entries, bodies and ids included,
+        to FILE in the import format: the source for a rebuild.
   decide [--file PACK.json]
         (inside a helper session) ask the owner's decision model typed questions: JSON
         {state, questions: [{name, type: predicate|choice|score, instructions, options|levels}]}

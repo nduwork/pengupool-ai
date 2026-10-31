@@ -112,7 +112,7 @@ func (p *Pool) buildContextCap(id string, compassCap int) string {
 			p.renderSkill(&b, sk)
 		}
 		if reportsTo(&d, t, id) != "" && p.helperOf(id) != nil {
-			b.WriteString("\nWhen your job is finished, start your report to your parent with `Done:` and a one-line title (`Done: fixed the login redirect`), then the details (or send it with `--type done`). PenguPool keeps a report like that as an entry of your past work, and may type your agent's compact command once you are idle. A question or a progress note does not start with `Done:`.\n")
+			b.WriteString("\nWhen your job is finished, report to your parent with `Done:` and a title of the subject and its result, about 8-14 words, with no date, path or \"completed\" (`Done: login redirect lost the next page; fixed by keeping it in the state`), then the details (or send it with `--type done`). PenguPool keeps that report, whole, as an entry of your past work for later jobs, so make it one task's lesson, not a log: the result and its status (proposed, implemented, tested, merged), 1-3 bullets of what you learned that transfers (the cause, the choice, the approach that failed and why; what this repo or domain taught you), not a restatement of the diff git already holds; then the evidence and its limit. Know-how about something durable counts as a result: where and how to do a recurring operation (a release or deploy runbook and its gotchas, App Store Connect or console ids and paths, how to run a test suite and its flaky tests, which cluster, dashboard or dataset, where a credential lives but never its value, a build or generated-asset command, a service quirk), with the date you last checked it. A pointer to a temporary file alone is not a report. Leave out tool narration, copied instructions and next steps, and claim nothing you did not check. A question or a progress note does not start with `Done:`.\n")
 		}
 	}
 	b.WriteString(p.subtreeAsks(&st, t, id))
@@ -188,9 +188,9 @@ func (p *Pool) renderCompassCap(n int) string {
 		}
 		return ""
 	}
-	// n bounds the whole section, header and overflow line included. Each line is clipped to
-	// compassLineRunes (an owner's line may be 16 KiB), and one that still does not fit is skipped,
-	// not the end: the lines after it may.
+	// n bounds the whole section, header and overflow line included. A line is shown whole or not at
+	// all (a clipped one could lose its condition), and one that does not fit is skipped, not the end:
+	// the lines after it may.
 	if len(header)+len(compassMore) > n {
 		return ""
 	}
@@ -198,7 +198,7 @@ func (p *Pool) renderCompassCap(n int) string {
 	out.WriteString(header)
 	skipped := false
 	for _, v := range shown {
-		l := "- " + strings.ReplaceAll(clipRunes(v.text(), compassLineRunes), "\n", "\n  ") + "\n"
+		l := "- " + strings.ReplaceAll(v.text(), "\n", "\n  ") + "\n"
 		if out.Len()+len(l)+len(compassMore) > n {
 			skipped = true
 			continue
@@ -210,9 +210,6 @@ func (p *Pool) renderCompassCap(n int) string {
 	}
 	return out.String()
 }
-
-// compassLineRunes is the most of one line the compass section shows.
-const compassLineRunes = 360
 
 const compassMore = "… more: search with the command below\n"
 
