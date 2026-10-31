@@ -382,8 +382,9 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			}
 		}
 		p.setStatus(s.ID, "idle")
-		p.journalTurnEnd(s.ID) // before the queue: a delivered message starts the next turn
-		p.flushQueue(s.ID)     // after the turn's end: a message it delivers starts the next turn
+		p.journalTurnEnd(s.ID)   // before the queue: a delivered message starts the next turn
+		p.typeAnswersLater(s.ID) // the owner's answers first, typed as the member's next prompt
+		p.flushQueue(s.ID)       // after the turn's end: a message it delivers starts the next turn
 		return out, nil
 	case "Status":
 	case "Delivered":
@@ -398,6 +399,9 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		p.markDelivered(ids)
 	case "SessionEnd":
 		p.wordingEnded(s.ID)
+		p.mu.Lock()
+		delete(p.answersLater, s.ID) // its answers stay on the asks' record; no later session gets them typed
+		p.mu.Unlock()
 		p.setStatus(s.ID, "ended")
 		p.logLine(s.ID, "session: harness session ended ("+firstNonEmpty(str("reason"), "exit")+")")
 	}

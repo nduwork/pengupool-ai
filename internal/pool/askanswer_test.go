@@ -416,7 +416,7 @@ func TestAskAnswerTypedWhenNotWaiting(t *testing.T) {
 		t.Fatalf("waiting member: typed %q, wait %v", typed, res)
 	}
 
-	// Busy: a notice, nothing typed.
+	// Busy: answered on the record now, nothing typed and no notice; typed at its next Stop, once.
 	p.setStatus(web, "working")
 	id, words = answered()
 	p.OwnerInput(lead, words)
@@ -424,9 +424,26 @@ func TestAskAnswerTypedWhenNotWaiting(t *testing.T) {
 	if _, err := p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: id}); err != nil {
 		t.Fatal(err)
 	}
-	if n := notices(); len(typed) != 0 || !strings.Contains(n, "The owner answered your ask "+id) {
-		t.Fatalf("busy member: typed %q, notices:\n%s", typed, n)
+	if a, _ := p.approval(id); a.State != "answered" || len(typed) != 0 || strings.Contains(notices(), id) {
+		t.Fatalf("busy member: ask %s, typed %q", a.State, typed)
 	}
+	stop := func() {
+		t.Helper()
+		b, _ := json.Marshal(map[string]any{"stop_hook_active": false, "last_assistant_message": "Done for now."})
+		if _, err := p.hookEvent(ctx, hookIn{SessionID: web, Harness: "claude", Event: "Stop", Payload: b}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stop()
+	want = "Answer to your ask " + id + ": Yes, force-push it and tell me after\r"
+	if len(typed) != 1 || typed[0] != want || !fromOwner {
+		t.Fatalf("at Stop: typed %q (want %q), from the owner %v", typed, want, fromOwner)
+	}
+	stop()
+	if len(typed) != 1 || strings.Contains(notices(), id) {
+		t.Fatalf("typed again at the next Stop: %q", typed)
+	}
+	typed = nil
 
 	// A typing that fails: a notice, and the owner's credit taken back.
 	p.setStatus(web, "idle")

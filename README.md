@@ -257,7 +257,7 @@ v0.9.41: An ask the owner answers through the lead reaches the member as the own
 the member is no longer waiting in `pengupool ask`, the owner's whole words are typed in as its next
 prompt ("Answer to your ask ID: …"), credited to the owner, so the member's harness sees the owner's
 prompt and not a teammate's relay; a waiting member still gets the answer from its wait, and a busy one
-a notice. `pengupool ask "QUESTION" --option A --option B` keeps its options: flags after the question
+gets the words typed at its next stop, once. `pengupool ask "QUESTION" --option A --option B` keeps its options: flags after the question
 were read as words of it.
 
 ## Credits

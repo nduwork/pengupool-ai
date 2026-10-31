@@ -207,18 +207,57 @@ func (p *Pool) answerAskWith(id, answer, by, words, prompt string) (any, error) 
 	waiting := time.Since(p.askWaitedAt[a.ID]) < askWaitGrace
 	delete(p.askWaitedAt, a.ID)
 	p.mu.Unlock()
-	if !waiting {
-		// ponytail: a member that is busy, or a typing that fails, gets the notice instead; typing it
-		// once the member goes idle needs a queue.
-		s, _ := p.session(a.SessionID)
-		if _, agent := harness.Find(s.Harness); prompt == "" || !agent || s.Status != "idle" ||
-			p.typeOwnerPrompt(a.SessionID, "Answer to your ask "+a.ID+": "+prompt, "ask") != nil {
-			p.notice(a.TeamID, a.SessionID, "The owner answered your ask "+a.ID+" (\""+clipRunes(oneLine(a.Detail), 120)+"\"): "+a.Answer)
-		} else {
-			return map[string]string{"id": a.ID, "answer": a.Answer, "typed": "true"}, nil
-		}
+	if waiting {
+		return map[string]string{"id": a.ID, "answer": a.Answer}, nil
 	}
-	return map[string]string{"id": a.ID, "answer": a.Answer}, nil
+	note := "The owner answered your ask " + a.ID + " (\"" + clipRunes(oneLine(a.Detail), 120) + "\"): " + a.Answer
+	s, _ := p.session(a.SessionID)
+	if _, agent := harness.Find(s.Harness); prompt == "" || !agent {
+		p.notice(a.TeamID, a.SessionID, note) // an answer in the app, or a member that cannot be typed into
+		return map[string]string{"id": a.ID, "answer": a.Answer}, nil
+	}
+	later := laterAnswer{teamID: a.TeamID, text: "Answer to your ask " + a.ID + ": " + prompt, note: note}
+	if s.Status != "idle" {
+		// A notice would reach the member through its inbox, which its harness does not read as the
+		// owner's prompt: the owner's words wait for its next Stop instead (typeAnswersLater).
+		p.mu.Lock()
+		if p.answersLater == nil {
+			p.answersLater = map[string][]laterAnswer{}
+		}
+		p.answersLater[a.SessionID] = append(p.answersLater[a.SessionID], later)
+		p.mu.Unlock()
+		return map[string]string{"id": a.ID, "answer": a.Answer, "typed": "at its next stop"}, nil
+	}
+	if !p.typeAnswer(a.SessionID, later) {
+		return map[string]string{"id": a.ID, "answer": a.Answer}, nil
+	}
+	return map[string]string{"id": a.ID, "answer": a.Answer, "typed": "true"}, nil
+}
+
+// laterAnswer is an owner's answer, given through an ancestor, waiting to be typed into a member.
+type laterAnswer struct{ teamID, text, note string }
+
+// typeAnswer types the owner's words into the member as a delivered ask answer; a failed typing
+// leaves the notice instead.
+func (p *Pool) typeAnswer(id string, x laterAnswer) bool {
+	if err := p.typeOwnerPrompt(id, x.text, "ask"); err != nil {
+		p.notice(x.teamID, id, x.note)
+		return false
+	}
+	return true
+}
+
+// typeAnswersLater types the answers that waited for the member to go idle (its Stop), each once.
+// ponytail: in memory: a host restart drops a waiting answer; the ask's record keeps it, and the
+// member gets it from `pengupool ask --wait ID`.
+func (p *Pool) typeAnswersLater(id string) {
+	p.mu.Lock()
+	q := p.answersLater[id]
+	delete(p.answersLater, id)
+	p.mu.Unlock()
+	for _, x := range q {
+		p.typeAnswer(id, x)
+	}
 }
 
 // expireAsks ends the pending asks of one session, or ("") of every session that is not running.

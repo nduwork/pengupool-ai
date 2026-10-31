@@ -75,6 +75,7 @@ type Pool struct {
 	askingOwner       map[string]bool              // sessions with a question or plan tool open (under mu)
 	questionUse       map[string]string            // the tool_use_id a session's pending question is about (under mu)
 	askWaitedAt       map[string]time.Time         // when an agent last waited on its ask (under mu)
+	answersLater      map[string][]laterAnswer     // owner answers a busy member gets typed at its next Stop (under mu)
 	hookAt            map[string]time.Time         // session id → its newest hook event (under mu; hookless.go)
 	promptAt          map[string]time.Time         // session id → the owner's first prompt in its launch (under mu)
 	routed            map[string]string            // LEAD session id → the teammate triage named for this turn (under mu)
