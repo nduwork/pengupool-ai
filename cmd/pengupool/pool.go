@@ -423,7 +423,8 @@ func cmdAsk(args []string) error {
 func cmdAskAnswer(args []string) error {
 	fs := flag.NewFlagSet("answer", flag.ContinueOnError)
 	option := fs.Int("option", 0, "the option (1-based) of an ask the owner's whole prompt is; otherwise the prompt itself is the answer")
-	usage := errors.New(`usage: pengupool answer ITEM_ID [--option N]`)
+	perCompass := fs.Bool("per-compass", false, "ask PenguPool to decide it from the owner's Compass instead; it decides or refuses")
+	usage := errors.New(`usage: pengupool answer ITEM_ID [--option N | --per-compass]`)
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		return usage
 	}
@@ -435,8 +436,18 @@ func cmdAskAnswer(args []string) error {
 	if session == "" {
 		return errors.New("pengupool answer works inside an agent session PenguPool runs")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
+	if *perCompass {
+		res, err := rpc(ctx, poolStore(), "ask.per_compass", map[string]any{"session_id": session, "id": id})
+		if err != nil {
+			return err
+		}
+		var out map[string]string
+		_ = json.Unmarshal(res, &out)
+		fmt.Println(out["detail"])
+		return nil
+	}
 	res, err := rpc(ctx, poolStore(), "ask.answer_for_owner", map[string]any{"session_id": session, "id": id, "option": *option})
 	if err != nil {
 		return err

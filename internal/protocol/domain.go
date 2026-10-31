@@ -158,7 +158,10 @@ type Team struct {
 	Members   []Member `json:"members"`
 	State     string   `json:"state"` // active | closed
 	IOSAccess bool     `json:"ios_access"`
-	CreatedAt string   `json:"created_at"`
+	// NoLeadCompass: the owner turned off "Lead decides from your Compass" for this team, so
+	// `pengupool answer --per-compass` is refused (on by default).
+	NoLeadCompass bool   `json:"no_lead_compass,omitempty"`
+	CreatedAt     string `json:"created_at"`
 }
 
 // Approval is an urgent owner decision: a team launch, a change to who is on a team (formation),
@@ -184,7 +187,11 @@ type Approval struct {
 	OwnerWords string `json:"owner_words,omitempty"`
 	// OwnerOnly: the asker marked it for the owner alone (a rule of its own that only the owner may
 	// lift), so it is never decided from the Compass.
-	OwnerOnly bool   `json:"owner_only,omitempty"`
+	OwnerOnly bool `json:"owner_only,omitempty"`
+	// LineUID: an ask the host decided from the Compass at a lead's request (AnsweredBy "lead per
+	// Compass line <uid>"): the line that decided it. Wrong: the owner called that decision wrong.
+	LineUID   string `json:"line_uid,omitempty"`
+	Wrong     bool   `json:"wrong,omitempty"`
 	State     string `json:"state"` // pending | approved | denied | expired | answered
 	CreatedAt string `json:"created_at"`
 	ExpiresAt string `json:"expires_at,omitempty"`

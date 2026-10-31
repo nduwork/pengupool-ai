@@ -93,10 +93,19 @@ var tables = []struct{ name, cols string }{
   evidence TEXT NOT NULL DEFAULT '',      -- what it rests on: how often the owner chose it
   answered_via TEXT NOT NULL DEFAULT '',  -- the ancestor session whose owner's words answered it
   created_at TEXT NOT NULL, resolved_at TEXT NOT NULL DEFAULT ''`},
+	// A lead's request that the host decide a waiting item from the Compass (pengupool answer
+	// --per-compass): the last outcome per item, and the Compass version it was decided at, so the
+	// same item is decided once per version.
+	{"per_compass", `item TEXT PRIMARY KEY,  -- an ask id or checkin:<gate id>
+  team_id TEXT NOT NULL, session_id TEXT NOT NULL, lead TEXT NOT NULL,
+  question TEXT NOT NULL DEFAULT '',
+  outcome TEXT NOT NULL,                  -- answered | refused
+  detail TEXT NOT NULL DEFAULT '',        -- the answer, or why it was refused
+  line_uid TEXT NOT NULL DEFAULT '', version TEXT NOT NULL DEFAULT '', at TEXT NOT NULL`},
 }
 
 // guarded are the tables only the host may write.
-var guarded = []string{"meta", "tombstones", "compass", "experience", "signals", "signal_effects", "gates", "removed_entries"}
+var guarded = []string{"meta", "tombstones", "compass", "experience", "signals", "signal_effects", "gates", "removed_entries", "per_compass"}
 
 // extra are the indexes, full-text indexes and triggers, created after the tables.
 const extra = `

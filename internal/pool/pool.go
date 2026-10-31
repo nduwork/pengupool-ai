@@ -298,6 +298,7 @@ var agentAllowed = map[string]bool{
 	"ask.create":           true, // puts a question to the owner; only the owner or a paired device answers it
 	"ask.wait":             true, // waits for the answer to the session's own ask
 	"ask.answer_for_owner": true, // carries the owner's own words in this session to a child's ask (askAnswerFor)
+	"ask.per_compass":      true, // asks the host to decide a subtree item from the owner's Compass; the host decides, not the agent
 }
 
 func (p *Pool) handlers() map[string]handler {
@@ -381,6 +382,10 @@ func (p *Pool) handlers() map[string]handler {
 		"ask.create":            bind(p.agentAsk),
 		"ask.wait":              bind(p.askWait),
 		"ask.answer_for_owner":  p.askAnswerForRPC,
+		"ask.per_compass":       p.askPerCompassRPC,
+		"answer.wrong":          bind(p.answerWrong),       // the owner's "That was wrong" on a Compass decision
+		"answer.per_compass":    bind(p.perCompassHistory), // the Compass decisions and refusals, for the app
+		"team.lead_compass":     bind(p.teamLeadCompass),   // the owner's per-team toggle
 		"ask.answer":            p.askAnswer,
 		"team.place_helper":     bind(p.placeHelperRPC),
 		"team.formation":        bind(p.teamFormation),
