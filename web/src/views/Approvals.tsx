@@ -2,7 +2,7 @@ import { Bell, MessageCircleQuestion, MessagesSquare, ShieldQuestion, Rocket, Th
 import { Popover } from "radix-ui";
 import { useEffect, useState, type ReactElement } from "react";
 
-import { AGENTS, ago, harnessLabel, sessionName, skillName, useApp } from "../app/ctx";
+import { AGENTS, ago, harnessLabel, sessionName, skillName, type SpotCheck, useApp } from "../app/ctx";
 import { Button } from "../components/ui/button";
 import { Badge, Input, Label, RoleTag, Select, Textarea, submitOnEnter } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
@@ -20,7 +20,7 @@ import { age } from "./map/asks";
 
 export function ApprovalsBell(): ReactElement {
   const app = useApp();
-  const { approvals: pending, items } = waitingOnOwner(app.domain.approvals, app.sessions, app.domain.messages, app.gates);
+  const { approvals: pending, items } = waitingOnOwner(app.domain.approvals, app.sessions, app.domain.messages, app.gates, app.spots);
   const [open, setOpen] = useState(false);
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -134,17 +134,11 @@ function PerCompassRow({ r, label, wrong, onChange }: { r: PerCompass; label: st
 }
 
 /** The go-aheads waiting for the owner's 👍/👎, refreshed every 30 s; shared by the Needs-you bar and the Compass panel. */
-export function useSpotChecks(): { spots: { id: number; agent: string; question: string }[]; verdict: (id: number, right: boolean) => Promise<void> } {
+export function useSpotChecks(): { spots: SpotCheck[]; verdict: (id: number, right: boolean) => Promise<void> } {
   const app = useApp();
-  const [spots, setSpots] = useState<{ id: number; agent: string; question: string }[]>([]);
-  const loadSpots = (): void => void app.call<typeof spots>("compass.spot_checks", {}).then((r) => setSpots(r ?? []));
-  useEffect(() => {
-    loadSpots();
-    const t = window.setInterval(loadSpots, 30_000);
-    return () => window.clearInterval(t);
-  }, []);
-  const verdict = (id: number, right: boolean): Promise<void> => app.call("compass.spot_check", { gate_id: id, right }).then(loadSpots);
-  return { spots, verdict };
+  // The list is App's (read every 30 s and after each action); a verdict is an action, so it clears at once.
+  const verdict = async (id: number, right: boolean): Promise<void> => void (await app.call("compass.spot_check", { gate_id: id, right }));
+  return { spots: app.spots, verdict };
 }
 
 /** Sessions blocked on a permission prompt: the prompt lives in their terminal, so offer to open it. */

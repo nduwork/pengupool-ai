@@ -41,6 +41,10 @@ describe("waitingOnOwner", () => {
     expect(w.items.map((i) => i.key)).toEqual(["approval:L", "approval:Q", "need:a:permission"]);
     expect(w.items.map((i) => i.title)).toEqual(["Team launch ready", "An agent asks you", "a needs you"]);
   });
+  it("counts a go-ahead to check, even when nothing else waits", () => {
+    const w = waitingOnOwner([], [s("a", "idle")], [], [], [{ id: 7, agent: "a", question: "Ran the migration" }]);
+    expect(w.items.map((i) => [i.key, i.title])).toEqual([["spot:7", "Was this go-ahead right?"]]);
+  });
   it("drops an item as soon as the state says it was answered, wherever that was", () => {
     const before = waitingOnOwner([ap("Q", "ask", "pending", "b")], [s("a", "approval"), s("b", "idle")], [], []);
     const after = waitingOnOwner([ap("Q", "ask", "answered", "b")], [s("a", "working"), s("b", "idle")], [], []);

@@ -1,6 +1,6 @@
 import type { SessionView } from "../protocol/control";
 import type { Approval, TeamMessage } from "../protocol/domain";
-import { sessionStatus } from "../app/ctx";
+import { type SpotCheck, sessionStatus } from "../app/ctx";
 import { openAsks } from "./map/asks";
 
 /** A gate waiting on the owner (the host's gates.open): a check-in or a permission prompt. */
@@ -108,10 +108,10 @@ export interface Waiting {
 /**
  * Everything waiting on the owner, the one list the badge, the bell and its panel show: pending
  * approvals (an agent's ask only while the agent runs; a permission is a need instead), then what
- * each running session needs, then the asks triage could not settle. An item leaves the list as soon
+ * each running session needs, then the asks triage could not settle, then the go-aheads to check. An item leaves the list as soon
  * as the state says it was answered, wherever it was answered.
  */
-export function waitingOnOwner(approvals: Approval[], sessions: SessionView[], messages: TeamMessage[], gates: OpenGate[]): { approvals: Approval[]; needs: Need[]; items: Waiting[] } {
+export function waitingOnOwner(approvals: Approval[], sessions: SessionView[], messages: TeamMessage[], gates: OpenGate[], spots: SpotCheck[] = []): { approvals: Approval[]; needs: Need[]; items: Waiting[] } {
   const running = (id?: string): boolean => sessions.some((s) => s.id === id && s.state === "running");
   const pending = approvals.filter((a) => a.state === "pending" && a.kind !== "permission" && (a.kind !== "ask" || running(a.session_id)));
   const needs = [...sessionNeeds(sessions, gates), ...askNeeds(messages, sessions)];
@@ -119,6 +119,7 @@ export function waitingOnOwner(approvals: Approval[], sessions: SessionView[], m
   const items: Waiting[] = [
     ...pending.map((a) => ({ key: `approval:${a.id}`, title: approvalTitle(a.kind), body: a.detail ?? "Review the proposal", session: a.session_id })),
     ...needs.map((n) => ({ key: `need:${keyOf(n)}:${n.kind}`, title: `${n.name} needs you`, body: words(n), session: n.session })),
+    ...spots.map((g) => ({ key: `spot:${g.id}`, title: "Was this go-ahead right?", body: `${g.agent}: ${g.question}` })),
   ];
   return { approvals: pending, needs, items };
 }

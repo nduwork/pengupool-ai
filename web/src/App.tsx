@@ -4,7 +4,7 @@ import { Group, Panel, useDefaultLayout, usePanelRef } from "react-resizable-pan
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Toaster, toast } from "sonner";
 
-import { Ctx, harnessLabel, HOOKS_LONG, hooksAction, isAgent, useApp, usePersisted, type AppCtx, type EditorTab, type Nav } from "./app/ctx";
+import { Ctx, harnessLabel, HOOKS_LONG, hooksAction, isAgent, useApp, usePersisted, type AppCtx, type EditorTab, type Nav, type SpotCheck } from "./app/ctx";
 import { desktop, onSSHHost } from "./app/desktop";
 import { AttachSession, type AttachState } from "./client/attach";
 import { Connection, type ConnectionInfo } from "./client/connection";
@@ -162,18 +162,28 @@ export function App(): ReactElement {
     if (info.status === "connected") void connection.request<OpenGate[]>("gates.open", {}).then((r) => setGates(r ?? []), () => setGates([]));
   }, [connection, info.status, settleKey, gatesTick]);
 
+  // The go-aheads to check: read every 30 s, and after each action (gatesTick) so a verdict clears at once.
+  const [spots, setSpots] = useState<SpotCheck[]>([]);
+  useEffect(() => {
+    if (info.status !== "connected") return;
+    const load = (): void => void connection.request<SpotCheck[]>("compass.spot_checks", {}).then((r) => setSpots(r ?? []), () => setSpots([]));
+    load();
+    const t = window.setInterval(load, 30_000);
+    return () => window.clearInterval(t);
+  }, [connection, info.status, gatesTick]);
+
   // One list of what waits on the owner: the dock badge counts it, a native notification announces each
   // new item, and one that leaves the list (answered anywhere) has its notification withdrawn.
   const notified = useRef(new Set<string>());
   useEffect(() => {
-    const { items } = waitingOnOwner(view.domain.approvals, view.sessions, view.domain.messages, gates);
+    const { items } = waitingOnOwner(view.domain.approvals, view.sessions, view.domain.messages, gates, spots);
     desktop?.setBadge(items.length);
     const now = new Set(items.map((i) => i.key));
     for (const i of items) if (!notified.current.has(i.key)) desktop?.notify(i.title, i.body, i.key);
     const gone = [...notified.current].filter((k) => !now.has(k));
     if (gone.length > 0) desktop?.unnotify?.(gone);
     notified.current = now;
-  }, [view.domain.approvals, view.domain.messages, view.sessions, gates]);
+  }, [view.domain.approvals, view.domain.messages, view.sessions, gates, spots]);
 
   // Unread dots: output since the owner last viewed a session (the selected one is always read).
   const [viewed, setViewed] = usePersisted<Viewed>("viewed", {});
@@ -252,6 +262,7 @@ export function App(): ReactElement {
       selected,
       unread,
       gates,
+      spots,
       select,
       nav,
       setNav,
@@ -259,7 +270,7 @@ export function App(): ReactElement {
       openTab,
       showDialog: setDialog,
     }),
-    [connection, info.status, view, selected, unread, gates, select, nav, call, openTab],
+    [connection, info.status, view, selected, unread, gates, spots, select, nav, call, openTab],
   );
 
   const onAttach = useCallback((attach: AttachSession | null) => {
