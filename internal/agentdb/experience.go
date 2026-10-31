@@ -73,14 +73,15 @@ func addExperience(tx *sql.Tx, e Entry) (bool, error) {
 }
 
 // RebuildExperience deletes the drop entries and adds es in one transaction: all or nothing. An entry
-// whose uid was dropped in the same run (same helper, at and title) takes a fresh uid, so the
-// dropped one's tombstone still deletes the old row on every machine and the new one syncs as new.
+// that replaces a dropped one (same helper, at and title, read from the dropped row) takes a uid made
+// from that row's id, new on every rebuild, so the dropped uid's tombstone still deletes the old row
+// on every machine and the new one syncs as new.
 func (d *DB) RebuildExperience(drop []int64, es []Entry) (added, skipped int, err error) {
 	err = d.tx(func(tx *sql.Tx) error {
-		gone := map[string]bool{}
+		gone := map[[3]string]int64{} // helper, at, title of a dropped row → its id
 		for _, id := range drop {
-			var uid string
-			if err := tx.QueryRow(`SELECT uid FROM experience WHERE id = ?`, id).Scan(&uid); err != nil {
+			var k [3]string
+			if err := tx.QueryRow(`SELECT helper, at, title FROM experience WHERE id = ?`, id).Scan(&k[0], &k[1], &k[2]); err != nil {
 				if errors.Is(err, sql.ErrNoRows) {
 					return fmt.Errorf("no entry %d: %w", id, ErrNotFound)
 				}
@@ -89,14 +90,11 @@ func (d *DB) RebuildExperience(drop []int64, es []Entry) (added, skipped int, er
 			if _, err := tx.Exec(`DELETE FROM experience WHERE id = ?`, id); err != nil {
 				return err
 			}
-			gone[uid] = true
+			gone[k] = id
 		}
 		for _, e := range es {
-			if e.UID == "" {
-				e.UID = EntryUID(e.Helper, e.At, e.Title)
-			}
-			if gone[e.UID] {
-				e.UID = EntryUID(e.Helper, e.At, e.Title+"\x00rebuilt")
+			if id, ok := gone[[3]string{e.Helper, e.At, e.Title}]; ok {
+				e.UID = EntryUID(e.Helper, e.At, fmt.Sprintf("%s\x00rebuilt from %d", e.Title, id))
 			}
 			ok, err := addExperience(tx, e)
 			if err != nil {

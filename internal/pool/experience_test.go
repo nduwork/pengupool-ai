@@ -183,6 +183,20 @@ func TestExperienceExportAndRebuild(t *testing.T) {
 	if e, _ := p.db.ExperienceEntry(l2[0].ID); e.Body != "Done: rewritten digest" || e.Title != l[0].Title {
 		t.Fatalf("rebuilt entry = %+v", e)
 	}
+	// Rebuilt again, and again: each run replaces the entry, never loses it.
+	for i, body := range []string{"Done: v3", "Done: v4"} {
+		cur, _ := p.db.ListExperience(planKey)
+		again := map[string]any{"entries": []map[string]string{{"helper": planKey, "at": l[0].At, "title": l[0].Title, "body": body}},
+			"drop": []map[string]any{{"id": cur[0].ID, "reason": "rewritten"}}}
+		res, err := call(t, p, true, "experience.import", again)
+		cur, _ = p.db.ListExperience(planKey)
+		if c, _ := res.(importCount); err != nil || c.Added != 1 || len(cur) != 1 {
+			t.Fatalf("rebuild %d lost the entry: %+v %v %+v", i+3, res, err, cur)
+		}
+		if e, _ := p.db.ExperienceEntry(cur[0].ID); e.Body != body {
+			t.Fatalf("rebuild %d = %+v", i+3, e)
+		}
+	}
 	if _, err := call(t, p, false, "experience.export", map[string]any{"session_id": plan}); err == nil {
 		t.Fatal("an agent exported the journal")
 	}
