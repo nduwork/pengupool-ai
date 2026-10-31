@@ -213,8 +213,14 @@ function ReviewSheet({ items, onChange }: { items: ReviewItem[]; onChange: () =>
     setLeft((l) => l.filter((_, j) => j !== i));
     onChange();
   };
+  // A conflict resolved may settle others that shared a line: the review is fetched again.
+  const refresh = async (): Promise<void> => {
+    const r = await app.call<{ items: ReviewItem[] }>("compass.review");
+    setLeft(r?.items ?? []);
+    onChange();
+  };
   return (
-    <Sheet title="Review the Compass" description="Broad lines first. Nothing changes until you choose." onClose={() => app.showDialog(null)} wide>
+    <Sheet title="Review the Compass" description="Broad lines first, then lines that contradict. Nothing changes until you choose." onClose={() => app.showDialog(null)} wide>
       {left.length === 0 ? <p className="text-label text-muted-foreground">Nothing left to review.</p> : null}
       <ul className="grid gap-3">
         {left.map((it, i) => (
@@ -222,14 +228,30 @@ function ReviewSheet({ items, onChange }: { items: ReviewItem[]; onChange: () =>
             key={it.lines[0].uid + it.kind}
             className={cn("grid gap-1.5 rounded-lg border p-3 text-label", it.kind === "broad" ? "border-warning/50 bg-warning/5" : "border-border")}
           >
-            <p className="text-caption font-semibold">{it.kind === "broad" ? `Broad: ${it.why}` : `Merge: ${it.why}`}</p>
-            <ul className="grid gap-0.5 text-muted-foreground">
+            <p className="text-caption font-semibold">{`${{ broad: "Broad", conflict: "Conflict", merge: "Merge" }[it.kind]}: ${it.why}`}</p>
+            <ul className="grid gap-1 text-muted-foreground">
               {it.lines.map((l) => (
-                <li key={l.uid} className="[overflow-wrap:anywhere]">
-                  {l.body}
+                <li key={l.uid} className="flex items-start gap-2 [overflow-wrap:anywhere]">
+                  <span className="min-w-0 flex-1">
+                    {l.body}
+                    {it.kind === "conflict" ? <span className="text-faint"> · when {l.condition || "always"}</span> : null}
+                  </span>
+                  {it.kind === "conflict" ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={async () => {
+                        await app.call("compass.keep_one", { keep: l.uid, lines: it.lines, edges: it.edges ?? [] });
+                        await refresh(); // after a stale refusal too: the owner sees the review as it is now
+                      }}
+                    >
+                      Keep this
+                    </Button>
+                  ) : null}
                 </li>
               ))}
             </ul>
+            {it.kind === "conflict" ? <p>Keeping one deletes the lines that contradict it, with their evidence.</p> : null}
             {it.kind === "merge" ? <p>Becomes {it.patterns?.map((p) => `\`${p}\``).join(", ")}, keeping the evidence.</p> : null}
             <div className="flex flex-wrap justify-end gap-2">
               {it.kind === "broad" ? (
@@ -245,7 +267,7 @@ function ReviewSheet({ items, onChange }: { items: ReviewItem[]; onChange: () =>
                     Remove (answers are kept per subcommand from now on)
                   </Button>
                 </>
-              ) : (
+              ) : it.kind === "merge" ? (
                 <Button
                   size="sm"
                   variant="default"
@@ -253,7 +275,7 @@ function ReviewSheet({ items, onChange }: { items: ReviewItem[]; onChange: () =>
                 >
                   Merge
                 </Button>
-              )}
+              ) : null}
             </div>
           </li>
         ))}

@@ -244,6 +244,15 @@ permission prompts but no longer fill agents' context, and every line is a candi
 so a run of newer permission answers can no longer push the owner's preferences out. Each line shows
 at most 360 characters, and a line that doesn't fit is skipped rather than ending the list, so one
 long line can't hide the rest.
+v0.9.40: A change of mind gets its own Compass line, and the Compass review shows lines that
+contradict. When the owner's words only go against existing lines ("red is my favorite" after
+"yellow"), the contradiction is recorded at once and the words are worded as a new line, so agents
+still see the owner's current preference. With a decision model, the review lists preference lines
+that contradict where their conditions overlap: a connected group is one item, each line shown with
+its condition. The owner keeps one, and the lines that contradict it directly are deleted with their
+evidence; a line that only contradicted another stays for the next review, and the kept line is
+unchanged. A line edited since the review is refused ("refresh"). Without a decision model there are
+no conflict items, and a review asks the model again only when a shown line changes.
 
 ## Credits
 

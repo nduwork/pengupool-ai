@@ -27,11 +27,21 @@ export function groupLines(lines: Line[]): Array<{ title: string; lines: Line[] 
     .filter((g) => g.lines.length > 0);
 }
 
-/** One thing compass.review asks the owner to tidy: a broad line (remove it or keep it), or lines to merge into patterns. */
+/** One line in a review item; a conflict's lines carry updated_at, sent back so a stale view is refused. */
+export interface ReviewLine {
+  uid: string;
+  body: string;
+  condition?: string;
+  updated_at?: string;
+}
+
+/** One thing compass.review asks the owner to tidy: a broad line (remove it or keep it), lines that contradict (keep one), or lines to merge into patterns. */
 export interface ReviewItem {
-  kind: "broad" | "merge";
-  way: "allow" | "deny";
+  kind: "broad" | "conflict" | "merge";
+  way?: "allow" | "deny";
   why: string;
-  lines: { uid: string; body: string }[];
+  lines: ReviewLine[];
   patterns?: string[];
+  /** A conflict's pairs of line uids that contradict. */
+  edges?: [string, string][];
 }

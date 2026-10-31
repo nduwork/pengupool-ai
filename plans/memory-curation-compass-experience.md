@@ -83,6 +83,15 @@ sync change and is deferred (see the open item at the end).
    belief and condition unchanged (A's effects are compared before and after); a stale item (a line
    edited after the review) is refused; with no decider there are no items.
 
+6. Built (v0.9.40): step 0 records a contradiction-only signal's effects at once (wordings live in
+   memory) and links the worded line to that signal later. Conflict pairs: at most 24 per review,
+   judged at 0.8 like `mergeSame`; the result is kept per set of shown lines (uid, updated_at, body,
+   condition). The stale check compares body and condition as well as `updated_at`, since an edit
+   within the same second leaves `updated_at` unchanged. The apply RPC is `compass.keep_one`
+   (owner only). After review: an item carries its contradicting pairs, and keeping a line deletes
+   only the lines with a pair to it (in A–B–C where only B contradicts A, keeping A leaves C); the
+   app fetches the review again after every keep, a stale refusal included.
+
 ### Deferred (re-propose only with evidence)
 
 - Retiring a line but keeping it for audit (`superseded_by`): a schema and sync-format change.
