@@ -18,7 +18,7 @@ import { T } from "./protocol/control";
 import { EMPTY_DOMAIN } from "./protocol/domain";
 import { SessionsStore, type SessionsView } from "./state/sessions";
 import { ApprovalsBell, NeedsYouBar } from "./views/Approvals";
-import { type TriageStatus, triagePrompt } from "./views/triage";
+import { type TriageStatus, triagePrompt, watchTriage } from "./views/triage";
 import { Welcome } from "./views/GettingStarted";
 import { NewSessionDialog } from "./views/NewSession";
 import { UpdatePill } from "./views/Update";
@@ -157,11 +157,12 @@ export function App(): ReactElement {
     if (info.status === "connected") void connection.request<OpenGate[]>("gates.open", {}).then((r) => setGates(r ?? []), () => setGates([]));
   }, [connection, info.status, statusKey]);
 
-  // The triage model PenguPool needs: read on connecting and whenever a session changes status or the
-  // page changes (back from Settings), so the prompt below goes as soon as one works.
+  // The triage model PenguPool needs: read on connecting, every 30 s (its check may fail after the first
+  // read, or it may die mid-day) and whenever a session's status or the page changes (back from Settings).
   const [triage, setTriage] = useState<TriageStatus | null>(null);
   useEffect(() => {
-    if (info.status === "connected") void connection.request<TriageStatus>("triage.status", {}).then(setTriage, () => setTriage(null));
+    if (info.status !== "connected") return;
+    return watchTriage(() => connection.request<TriageStatus>("triage.status", {}), setTriage);
   }, [connection, info.status, statusKey, nav]);
 
   // Approvals: dock badge (pending proposals plus waiting agents), and a native notification for each new team launch proposal.
