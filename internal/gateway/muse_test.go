@@ -148,11 +148,11 @@ func TestMuseTeamRoutes(t *testing.T) {
 	}
 }
 
-// The machine's own live tailnet name reaches the API over plain HTTP; a lookalike name is refused
-// before the token check, and the token still gates every call.
-func TestMuseTailnetNameHost(t *testing.T) {
+// The Tailscale Serve name reaches the API; a lookalike name is refused before the token check,
+// and the token still gates every call.
+func TestMuseServeNameHost(t *testing.T) {
 	srv, _ := newTestServerOpts(t, Options{Sessions: &fakeSessions{},
-		PhoneHosts: func() []string { return []string{"", "muse-1.tail1234.ts.net"} }})
+		PhoneHosts: func() []string { return []string{"muse-1.tail1234.ts.net"} }})
 	for host, want := range map[string]int{
 		"muse-1.tail1234.ts.net":          http.StatusUnauthorized,
 		"MUSE-1.tail1234.ts.net":          http.StatusUnauthorized,

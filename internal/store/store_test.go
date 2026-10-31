@@ -38,9 +38,6 @@ func TestOpenCreatesDirectoriesAndDefaults(t *testing.T) {
 	if len(s.Nodes) != 1 || s.Nodes[0].Kind != "local" {
 		t.Fatalf("expected one local node, got %+v", s.Nodes)
 	}
-	if got := st.Config().Listener; got.Kind != "loopback" {
-		t.Fatalf("a fresh store must listen on loopback only, got %+v", got)
-	}
 	if _, err := os.Stat(filepath.Join(dir, StateFile)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("Open must not write state.json before there is state to write")
 	}
@@ -201,7 +198,7 @@ func TestSaveConfigRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := st.Config()
-	cfg.Listener = Listener{Kind: "lan", Addr: "0.0.0.0:7787"}
+	cfg.Network.Tailscale = "https://mac.tail1.ts.net"
 	if err := st.SaveConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -209,8 +206,8 @@ func TestSaveConfigRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := reopened.Config().Listener; got != cfg.Listener {
-		t.Fatalf("got %+v, want %+v", got, cfg.Listener)
+	if got := reopened.Config().Network; got != cfg.Network {
+		t.Fatalf("got %+v, want %+v", got, cfg.Network)
 	}
 }
 

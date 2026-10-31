@@ -15,8 +15,9 @@ Usage:
 The paired device token is read from ./device-token (mode 0600) or $PENGUPOOL_DEVICE_TOKEN.
 It is the only credential: the owner's app token never works on this API.
 
-PENGUPOOL_PORT=443 speaks HTTPS to the Tailscale Serve name, end to end through any proxy. On
-plain HTTP (port 7787) a proxy on the way ($HTTPS_PROXY) sees the token and every call.
+PenguPool is reached only through Tailscale Serve: set PENGUPOOL_HOST to its Serve name, and calls
+go over HTTPS on port 443 (the default), end to end through any proxy. PENGUPOOL_PORT overrides the
+port (the self-test's local server).
 """
 import json
 import os
@@ -26,8 +27,8 @@ import sys
 import uuid
 from urllib.parse import quote, urlparse
 
-HOST = os.environ.get("PENGUPOOL_HOST", "")  # the workstation's Tailscale name; set it in the environment
-PORT = int(os.environ.get("PENGUPOOL_PORT", "7787"))
+HOST = os.environ.get("PENGUPOOL_HOST", "")  # the workstation's Tailscale Serve name; set it in the environment
+PORT = int(os.environ.get("PENGUPOOL_PORT", "443"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 

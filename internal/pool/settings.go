@@ -140,9 +140,6 @@ func (p *Pool) providerActivate(_ context.Context, in providerTypeIn) (any, erro
 	return nil, p.st.SaveConfig(cfg)
 }
 
-// Restarter re-executes the daemon so a new listener takes effect; workers survive it.
-var Restarter func()
-
 // HTTPAddr reports the gateway's bound address.
 var HTTPAddr func() string
 
@@ -170,22 +167,13 @@ func (p *Pool) settingsGet(_ context.Context, _ struct{}) (any, error) {
 }
 
 type settingsIn struct {
-	LAN         *bool   `json:"lan,omitempty"`
-	LANAddr     *string `json:"lan_addr,omitempty"`
 	Tailscale   *string `json:"tailscale,omitempty"`
 	EnableServe bool    `json:"enable_serve,omitempty"`
-	Restart     bool    `json:"restart,omitempty"`
 }
 
 func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 	// One locked read-modify-write: a Muse device revoked meanwhile stays revoked.
 	err := p.st.UpdateConfig(func(cfg *store.Config) error {
-		if in.LAN != nil {
-			cfg.Network.LAN = *in.LAN
-		}
-		if in.LANAddr != nil {
-			cfg.Network.LANAddr = strings.TrimSpace(*in.LANAddr)
-		}
 		if in.Tailscale != nil {
 			cfg.Network.Tailscale = strings.TrimRight(strings.TrimSpace(*in.Tailscale), "/")
 		}
@@ -210,10 +198,6 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 				res["serve_error"] = err.Error()
 			}
 		}
-	}
-	if in.Restart && Restarter != nil {
-		go func() { time.Sleep(300 * time.Millisecond); Restarter() }()
-		res["restarting"] = true
 	}
 	return res, nil
 }
@@ -273,38 +257,6 @@ func tailscaleName() (string, error) {
 		return "", errors.New("no tailnet name")
 	}
 	return strings.TrimSuffix(st.Self.DNSName, "."), nil
-}
-
-// lookupTailnetName is tailscaleName; a test stands in for the CLI.
-var lookupTailnetName = tailscaleName
-
-var tailnetName struct {
-	sync.Mutex
-	name    string
-	at      time.Time
-	running bool
-}
-
-// TailnetName is this machine's own Tailscale DNS name, or "" off a tailnet. It never blocks a
-// request: it returns the last answer and refreshes one older than a minute in the background. A
-// failed lookup (tailscaled restarting, busy) keeps the last name: the token still gates every call.
-func TailnetName() string {
-	t := &tailnetName
-	t.Lock()
-	defer t.Unlock()
-	if !t.running && time.Since(t.at) > time.Minute {
-		t.running = true
-		go func() {
-			name, err := lookupTailnetName()
-			t.Lock()
-			if err == nil {
-				t.name = name
-			}
-			t.at, t.running = time.Now(), false
-			t.Unlock()
-		}()
-	}
-	return t.name
 }
 
 // tailscaleFix is the one fix a failing checklist row offers: a link to

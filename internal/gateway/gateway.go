@@ -88,9 +88,9 @@ type Options struct {
 	// A connection from such a process is not the owner's terminal, whatever token it sends: an agent
 	// can read the token file and unset the variable the CLI looks at.
 	InSession func(pid int) bool
-	// PhoneHosts are extra Host names accepted on the HTTP listener (the Tailscale Serve name, and
-	// this machine's tailnet name). Through them, as from any non-loopback address, only the
-	// device API and the health check answer.
+	// PhoneHosts are extra Host names accepted on the HTTP listener (the Tailscale Serve name).
+	// Through them, as from any non-loopback address, only the device API and the health check
+	// answer.
 	PhoneHosts func() []string
 }
 
@@ -304,8 +304,8 @@ func randomToken() (string, error) {
 }
 
 // normalizeHTTPAddr rewrites a listen address with an empty host (":7792") to loopback. An
-// address that asked for no host must not bind every interface: a caller that wants the LAN passes
-// an explicit wildcard address, which is exactly what --lan does.
+// address that asked for no host must not bind every interface: the host opens no listener on the
+// local network.
 func normalizeHTTPAddr(addr string) string {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil || host != "" {
@@ -768,10 +768,9 @@ func tunneled(r *http.Request) bool {
 
 // hostAllowed reports whether the request's Host may reach a listener bound at bound.
 //
-// The bound address with its port is always accepted. On a wildcard bind (0.0.0.0, ::) the only
-// Hosts accepted are an IP literal — the address the user actually reached — and localhost, so a
-// DNS name that resolves to this machine (DNS rebinding) is refused. A loopback bind is also
-// reachable as localhost. Everything else, including another port, is refused.
+// The bound address with its port is always accepted. A loopback bind is also reachable as
+// localhost. Everything else, including another port and a DNS name that resolves to this machine
+// (DNS rebinding), is refused.
 func hostAllowed(r *http.Request, bound string) bool {
 	if bound == "" {
 		return true
@@ -791,9 +790,6 @@ func hostAllowed(r *http.Request, bound string) bool {
 	if ip == nil {
 		// A named bind address resolved by the listener matches only itself.
 		return false
-	}
-	if ip.IsUnspecified() {
-		return net.ParseIP(rHost) != nil || strings.EqualFold(rHost, "localhost")
 	}
 	if ip.IsLoopback() {
 		return strings.EqualFold(rHost, "localhost")

@@ -124,9 +124,9 @@ queued, no transcript, the timeout, or no `/compact`), the Done report is the en
 
 ## Muse app API
 
-The owner's phone reaches waiting sessions through the Muse app's agent, over the tailnet: this machine's
-own Tailscale name on the Local network listener, or Tailscale Serve (Settings ▸ Tailscale walks that
-setup: installed, logged in, HTTPS, Serve, reachable). Every call arrives on a Tailscale host name;
+The owner's phone reaches waiting sessions through the Muse app's agent, over the tailnet, through
+Tailscale Serve (Settings ▸ Tailscale walks that setup: installed, logged in, HTTPS, Serve,
+reachable). Every call arrives on a Tailscale host name;
 every call but `/pair` carries a per-device bearer token. The app's own token
 never works here, and a device token works nowhere else.
 

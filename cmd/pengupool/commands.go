@@ -96,27 +96,23 @@ func cmdDaemon(args []string) error {
 	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
 	storeFlag := fs.String("store", "", "store directory")
 	httpAddr := fs.String("http", "127.0.0.1:7787", "HTTP address for the browser app")
-	lan := fs.Bool("lan", false, "listen on the LAN, not only loopback")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	addr := *httpAddr
-	dir := storeDir(*storeFlag)
-	if cfg, err := readConfig(dir); err == nil && cfg.Network.LAN {
-		*lan = true
-		if cfg.Network.LANAddr != "" {
-			addr = cfg.Network.LANAddr
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+			return fmt.Errorf("--http %s listens on every interface; PenguPool opens no listener on the local network: keep it on loopback and reach it from other devices through Tailscale Serve", addr)
 		}
 	}
-	if *lan {
-		if host, port, err := net.SplitHostPort(addr); err == nil && (host == "127.0.0.1" || host == "localhost" || host == "") {
-			addr = net.JoinHostPort("0.0.0.0", port)
-		}
+	dir := storeDir(*storeFlag)
+	if lanInConfig(dir) {
+		logf("Local network was removed; ignoring network.lan in config.json; use Tailscale Serve")
 	}
 
 	// The default port may belong to another store's host (or anything else): fall back to a free
 	// loopback port. The bound address is published in run/hub.addr, so clients still find it.
-	if !explicitHTTP(fs) && !*lan {
+	if !explicitHTTP(fs) {
 		if l, err := net.Listen("tcp", addr); err != nil {
 			logf("%s is in use; using a free port", addr)
 			addr = "127.0.0.1:0"
@@ -175,22 +171,13 @@ func cmdDaemon(args []string) error {
 		RPC:        pl.RPC,
 		OwnerInput: pl.OwnerInput,
 		InSession:  pl.InAgentSession,
-		PhoneHosts: func() []string { return phoneHosts(st.Config().Network.Tailscale, pool.TailnetName()) },
+		PhoneHosts: func() []string { return phoneHosts(st.Config().Network.Tailscale) },
 	})
 	if err != nil {
 		return err
 	}
 	pool.HTTPAddr = srv.HTTPAddr
 	go pl.HealTailscaleServe() // re-serve after a port change; owner's home only
-	pool.TailnetName()         // look the name up now, so the first remote call already matches it
-	pool.Restarter = func() {
-		logf("restarting to apply listener settings; sessions keep running")
-		lock.Release()
-		if err := syscall.Exec(selfPath(), os.Args, os.Environ()); err != nil {
-			logf("restart failed: %v", err)
-			os.Exit(1)
-		}
-	}
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ctx) }()
@@ -198,10 +185,10 @@ func cmdDaemon(args []string) error {
 	go func() {
 		for range 200 {
 			if bound := srv.HTTPAddr(); bound != "" {
-				os.WriteFile(filepath.Join(dir, "run", "hub.addr"), []byte(localAddr(bound)+"\n"), 0o600)
+				os.WriteFile(filepath.Join(dir, "run", "hub.addr"), []byte(bound+"\n"), 0o600)
 				logf("host listening on %s", bound)
 				logf("unix socket %s", srv.SocketPath())
-				logf("browser app: %s", browserURL(dir, localAddr(bound)))
+				logf("browser app: %s", browserURL(dir, bound))
 				return
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -219,30 +206,21 @@ func cmdDaemon(args []string) error {
 }
 
 // phoneHosts are the Host names a phone or remote device may use: the Tailscale Serve name set up
-// in Settings, and this machine's own live tailnet name for plain HTTP over the LAN listener.
-func phoneHosts(serve, tailnet string) []string {
+// in Settings.
+func phoneHosts(serve string) []string {
 	serve = strings.TrimPrefix(strings.TrimPrefix(serve, "https://"), "http://")
-	return []string{strings.TrimSuffix(serve, "/"), tailnet}
+	return []string{strings.TrimSuffix(serve, "/")}
 }
 
-// localAddr is how a client on this machine reaches a listener bound at bound: a wildcard bind
-// is not an address to dial, so it becomes loopback of the same family on the same port. A dual-stack
-// [::] (what Go reports for 0.0.0.0 on macOS) becomes [::1], not 127.0.0.1: another host may hold
-// 127.0.0.1 on the same port, and the more specific bind would take the connection. An IPv4-only
-// 0.0.0.0 becomes 127.0.0.1.
-// ponytail: an IPv4-only host with another host on 127.0.0.1:<port> still dials the wrong one; the
-// desktop's owner check refuses it, so it fails closed. Fall back to a free port if that ever happens.
-func localAddr(bound string) string {
-	host, port, err := net.SplitHostPort(bound)
-	ip := net.ParseIP(host)
-	switch {
-	case err != nil || ip == nil || !ip.IsUnspecified():
-		return bound
-	case ip.To4() != nil:
-		return net.JoinHostPort("127.0.0.1", port)
-	default:
-		return net.JoinHostPort("::1", port)
+// lanInConfig reports a config.json that still turns on Local network, a setting since removed.
+func lanInConfig(dir string) bool {
+	var c struct {
+		Network struct {
+			LAN bool `json:"lan"`
+		} `json:"network"`
 	}
+	b, err := os.ReadFile(filepath.Join(dir, store.ConfigFile))
+	return err == nil && json.Unmarshal(b, &c) == nil && c.Network.LAN
 }
 
 // browserURL builds the app URL with the bootstrap token. The app takes the token from the URL
