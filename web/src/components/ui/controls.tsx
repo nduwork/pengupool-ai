@@ -88,12 +88,16 @@ export function Kbd({ children }: { children: ReactNode }): React.ReactElement {
   return <kbd className="rounded border border-border bg-muted px-1 font-mono text-micro text-muted-foreground">{children}</kbd>;
 }
 
+/** A tip never runs off the screen: it keeps clear of the edges and, taller than the room it has,
+ * scrolls. The pointer may move into it (Radix's hoverable content), so it stays open to scroll. */
+export const TIP_CONTENT = "z-50 max-h-[var(--radix-tooltip-content-available-height)] overflow-y-auto rounded-md border border-border bg-raised px-2 py-1 text-caption text-foreground shadow-lg";
+
 export function Tip({ label, children, side = "bottom" }: { label: ReactNode; children: React.ReactElement; side?: "top" | "bottom" | "left" | "right" }): React.ReactElement {
   return (
     <RTooltip.Root delayDuration={350}>
       <RTooltip.Trigger asChild>{children}</RTooltip.Trigger>
       <RTooltip.Portal>
-        <RTooltip.Content side={side} sideOffset={6} className="z-50 rounded-md border border-border bg-raised px-2 py-1 text-caption text-foreground shadow-lg">
+        <RTooltip.Content side={side} sideOffset={6} collisionPadding={8} className={TIP_CONTENT}>
           {label}
         </RTooltip.Content>
       </RTooltip.Portal>
