@@ -174,6 +174,16 @@ func (p *Pool) experienceSearch(_ context.Context, in entryIn) (any, error) {
 	return map[string]any{"entries": es, "total": total}, err
 }
 
+// experienceExport is the owner's terminal reading every helper's entries in full, in the import
+// format plus each entry's id: the source of a rebuild (edit, then import with a drop list).
+func (p *Pool) experienceExport(_ context.Context, _ struct{}) (any, error) {
+	db, err := p.agentDB()
+	if err != nil {
+		return nil, err
+	}
+	return db.AllExperience()
+}
+
 // experienceShow is one of a helper's own entries in full.
 func (p *Pool) experienceShow(_ context.Context, in entryIn) (any, error) {
 	db, err := p.agentDB()
@@ -241,15 +251,23 @@ type importIn struct {
 		Title  string `json:"title"`
 		Body   string `json:"body"`
 	} `json:"entries"`
+	// Drop are old entries the same run deletes first, each with the reason (logged): a rebuild in
+	// one step. An entry kept as it is is neither dropped nor imported again.
+	Drop []struct {
+		ID     int64  `json:"id"`
+		Reason string `json:"reason"`
+	} `json:"drop,omitempty"`
 }
 
 type importCount struct {
 	Added   int `json:"added"`
 	Skipped int `json:"skipped"`
+	Dropped int `json:"dropped"`
 }
 
 // experienceImport is the owner's terminal adding entries from a file: each one not already there
-// (same helper, at and title) and not deleted before. All or nothing: an entry that is refused writes none.
+// (same helper, at and title) and not deleted before, after deleting the entries it drops. All or
+// nothing for refusals: an entry or a drop that is refused writes none.
 func (p *Pool) experienceImport(_ context.Context, in importIn) (any, error) {
 	db, err := p.agentDB()
 	if err != nil {
@@ -289,7 +307,22 @@ func (p *Pool) experienceImport(_ context.Context, in importIn) (any, error) {
 		es = append(es, agentdb.Entry{Helper: key, At: at, Title: clipRunes(oneLine(redactSecrets(x.Title)), journalTitle),
 			Body: clipBytes(redactSecrets(x.Body), journalBodyMax)})
 	}
+	for i, x := range in.Drop {
+		if strings.TrimSpace(x.Reason) == "" {
+			return nil, invalid("drop %d: a reason is required", i+1)
+		}
+		if _, err := db.ExperienceEntry(x.ID); err != nil {
+			return nil, notFound("drop %d: no entry %d", i+1, x.ID)
+		}
+	}
 	var out importCount
+	for _, x := range in.Drop { // first: a rebuilt entry may carry a dropped one's body
+		if err := db.DeleteExperience(x.ID); err != nil {
+			return nil, err
+		}
+		p.logf("pool: experience import dropped entry %d: %s", x.ID, oneLine(x.Reason))
+		out.Dropped++
+	}
 	for _, e := range es {
 		if ok, err := db.AddExperience(e); err != nil {
 			return nil, err

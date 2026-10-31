@@ -304,7 +304,9 @@ v0.10.4: A helper's journal entry is its Done report itself, kept whole: PenguPo
 agent's compact command or reads its compaction summary, which mixed every task since the last
 compact. Helpers are told how to write that report: a title of the subject and its result, one
 task's transferable lesson (not the diff git holds), durable know-how dated, the evidence and its
-limit, and never a credential's value.
+limit, and never a credential's value. The owner's `pengupool experience export FILE` writes every entry
+in full, and `experience import` takes a `drop` list (each with a reason) that it deletes first, so a
+rebuild is one export and one import.
 
 ## Credits
 

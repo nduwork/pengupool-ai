@@ -129,6 +129,45 @@ func TestJournalIndexInContext(t *testing.T) {
 	}
 }
 
+// The owner's rebuild: export every entry in full, then one import that adds the rebuilt entries and
+// drops the old ones first, each drop with a reason. A drop without a reason, or of an unknown entry,
+// writes nothing. Agents can do neither.
+func TestExperienceExportAndRebuild(t *testing.T) {
+	p, _ := helperPool(t)
+	_, _ = p.db.AddExperience(agentdb.Entry{Helper: planKey, At: "2026-09-01T10:00:00Z", Title: "four tasks mixed", Body: "a long compaction"})
+	_, _ = p.db.AddExperience(agentdb.Entry{Helper: "someone-else", At: "2026-09-02T10:00:00Z", Title: "theirs", Body: "kept"})
+	res, err := call(t, p, true, "experience.export", map[string]any{})
+	es, _ := res.([]agentdb.Entry)
+	if err != nil || len(es) != 2 || es[0].Body == "" || es[0].ID == 0 {
+		t.Fatalf("export = %+v %v", res, err)
+	}
+	old := es[0].ID
+	if es[0].Helper != planKey {
+		old = es[1].ID
+	}
+	rebuilt := func(drop []map[string]any) map[string]any {
+		return map[string]any{"entries": []map[string]string{{"helper": planKey, "at": "2026-09-01T10:00:00Z", "title": "cache warm-up cut cold starts; run it before deploy", "body": "Done: ..."}}, "drop": drop}
+	}
+	for _, bad := range [][]map[string]any{{{"id": old}}, {{"id": 999, "reason": "gone"}}} {
+		if _, err := call(t, p, true, "experience.import", rebuilt(bad)); err == nil {
+			t.Fatalf("drop %v was accepted", bad)
+		}
+	}
+	if l, _ := p.db.ListExperience(planKey); len(l) != 1 || l[0].Title != "four tasks mixed" {
+		t.Fatalf("a refused import wrote: %+v", l)
+	}
+	res, err = call(t, p, true, "experience.import", rebuilt([]map[string]any{{"id": old, "reason": "mixed four tasks; split and rewritten"}}))
+	if c, _ := res.(importCount); err != nil || c.Added != 1 || c.Dropped != 1 {
+		t.Fatalf("rebuild = %+v %v", res, err)
+	}
+	if l, _ := p.db.ListExperience(planKey); len(l) != 1 || l[0].Title != "cache warm-up cut cold starts; run it before deploy" {
+		t.Fatalf("after rebuild: %+v", l)
+	}
+	if _, err := call(t, p, false, "experience.export", map[string]any{"session_id": plan}); err == nil {
+		t.Fatal("an agent exported the journal")
+	}
+}
+
 // An agent searches and reads its own entries only.
 func TestAgentExperienceRPCs(t *testing.T) {
 	p, _, _ := journalSetup(t, harness.Claude)

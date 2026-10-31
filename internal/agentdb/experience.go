@@ -92,6 +92,24 @@ func (d *DB) SearchExperience(helper, team, query string, limit int) (hits []Ent
 	return hits, total, err
 }
 
+// AllExperience is every entry of every helper, bodies included, oldest first: the owner's export.
+func (d *DB) AllExperience() ([]Entry, error) {
+	rows, err := d.db.Query(`SELECT id, uid, helper, at, title, body FROM experience ORDER BY helper, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Entry{}
+	for rows.Next() {
+		var e Entry
+		if err := rows.Scan(&e.ID, &e.UID, &e.Helper, &e.At, &e.Title, &e.Body); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // ListExperience is all of a helper's entries, newest first, without bodies.
 func (d *DB) ListExperience(helper string) ([]Entry, error) {
 	es, err := d.entries(`SELECT `+entryCols+`, '' FROM experience e WHERE e.helper = ? ORDER BY e.id DESC`, helper)

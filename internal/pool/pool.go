@@ -282,9 +282,9 @@ func (p *Pool) RPC(ctx context.Context, c gateway.Caller, typ string, params jso
 
 // terminalAllowed are the owner's terminal requests (the CLI outside any agent session, with the
 // host's token): `pengupool new` and the desktop app's environment menu,
-// which lists and opens the owner's SSH hosts through the CLI, and `pengupool experience import`. Never an approval, Compass or team
+// which lists and opens the owner's SSH hosts through the CLI, and `pengupool experience import` and `export`. Never an approval, Compass or team
 // decision: those stay in the app.
-var terminalAllowed = map[string]bool{"session.launch": true, "node.list": true, "node.connect": true, "experience.import": true,
+var terminalAllowed = map[string]bool{"session.launch": true, "node.list": true, "node.connect": true, "experience.import": true, "experience.export": true,
 	"doctor.record": true, "doctor.removed": true}
 
 // agentAllowed are the requests an agent makes for itself, through the CLI. Each one checks the
@@ -305,6 +305,7 @@ func (p *Pool) handlers() map[string]handler {
 	return map[string]handler{
 		"team.delete":           bind(p.teamDelete),
 		"experience.import":     bind(p.experienceImport),
+		"experience.export":     bind(p.experienceExport),
 		"doctor.record":         bind(p.doctorRecord),
 		"doctor.removed":        bind(p.doctorRemoved),
 		"experience.search":     bind(p.experienceSearch),
