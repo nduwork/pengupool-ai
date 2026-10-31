@@ -111,7 +111,6 @@ type Pool struct {
 	testSend        func(id, text string) error
 	testNotice      func(id, text string) error // stands in for a wording notice's delivery (wordingAtIdle)
 	testKeys        func(id, keys string) error
-	journal         map[string]*pendingEntry  // helper session id → its done report waiting for the compaction (guarded by mu)
 	museMu          sync.Mutex                // guards the muse pairing/answer caches below
 	museCodes       map[string]*musePairCode  // one-time pairing codes
 	musePairFails   int                       // wrong codes since the last success: throttles guessing

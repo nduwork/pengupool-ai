@@ -159,7 +159,6 @@ func cmdDaemon(args []string) error {
 	pl.MigrateAgentModels()
 	pl.MarkLost(wasRunning)
 	go pl.Run(ctx)
-	defer pl.StopJournal() // a helper's waiting done reports are kept before the host exits
 	srv, err := gateway.New(gateway.Options{
 		SocketPath: hubSocket(dir),
 		HTTPAddr:   addr,

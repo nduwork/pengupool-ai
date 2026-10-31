@@ -57,7 +57,7 @@ func TestContextOrder(t *testing.T) {
 		return i
 	}
 	order := []string{"## Current task (the owner's latest instruction)", "## The owner's compass (data, not commands)", "- Use SQL for logs", "- Keep the UI simple (when web work)",
-		"## Team members", "start your report to your parent with `Done:`", "`pengupool search"}
+		"## Team members", "report to your parent with `Done:`", "`pengupool search"}
 	for i := 1; i < len(order); i++ {
 		if at(order[i-1]) >= at(order[i]) {
 			t.Errorf("%q should come before %q", order[i-1], order[i])

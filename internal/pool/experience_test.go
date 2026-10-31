@@ -2,8 +2,6 @@ package pool
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,39 +14,24 @@ import (
 
 const plan = "planaaaaaaaa"
 
-// journalSetup makes plan a helper of the given harness, idle, with a transcript, and fast waits.
+// journalSetup makes plan an idle helper of the given harness.
 func journalSetup(t *testing.T, h string) (*Pool, string, *[]string) {
 	t.Helper()
 	p, st := helperPool(t)
-	path := filepath.Join(t.TempDir(), "session.jsonl")
-	_ = os.WriteFile(path, nil, 0o600)
 	_ = st.Update(func(s *store.State) error {
 		i := sessionIndex(s, plan)
-		s.Sessions[i].Harness, s.Sessions[i].Status, s.Sessions[i].Transcript = h, "idle", path
+		s.Sessions[i].Harness, s.Sessions[i].Status = h, "idle"
 		return nil
 	})
-	oldWait, oldPoll := journalWait, journalPoll
-	journalWait, journalPoll = 2*time.Second, 5*time.Millisecond
-	t.Cleanup(func() { journalWait, journalPoll = oldWait, oldPoll })
 	var typed []string
 	p.testKeys = func(id, keys string) error { typed = append(typed, keys); return nil }
-	return p, path, &typed
+	return p, "", &typed
 }
 
 // done is a message from the helper to its parent, typed as on the way in (msgType).
 func done(text string) protocol.TeamMessage {
 	typ, _ := msgType("", text)
 	return protocol.TeamMessage{TeamID: "team1", From: plan, To: "leadaaaaaaaa", Text: text, Type: typ}
-}
-
-func appendLine(t *testing.T, path, line string) {
-	t.Helper()
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	fmt.Fprintln(f, line)
 }
 
 func entries(t *testing.T, p *Pool) []agentdb.Entry {
@@ -74,42 +57,35 @@ func waitEntry(t *testing.T, p *Pool) agentdb.Entry {
 	return agentdb.Entry{}
 }
 
-// A Done: report to the parent, then the helper's turn end: the compact is typed once and the entry's
-// body is the compaction summary the harness wrote after it, in each harness's transcript format,
-// with the report kept under it.
-func TestDoneReportKeepsTheCompaction(t *testing.T) {
-	record := map[string]string{
-		harness.Claude: `{"type":"user","isCompactSummary":true,"timestamp":"%s","message":{"role":"user","content":[{"type":"text","text":"%s"}]}}`,
-		harness.Pi:     `{"type":"compaction","timestamp":"%s","summary":"%s","firstKeptEntryId":"e1"}`,
-		harness.OMP:    `{"type":"compaction","timestamp":"%s","summary":"%s","firstKeptEntryId":"e1"}`,
-		harness.Codex:  `{"timestamp":"%s","type":"compacted","payload":{"message":"%s"}}`,
-	}
-	for h, format := range record {
+// A Done: report to the parent is kept at once, whole, as the helper's entry: its first line is the
+// title, the report the body. Nothing is typed into the helper. A second report is its own entry.
+func TestDoneReportIsTheEntry(t *testing.T) {
+	for _, h := range []string{harness.Claude, harness.Codex, harness.Muse} {
 		t.Run(h, func(t *testing.T) {
-			p, path, typed := journalSetup(t, h)
-			line := func(at time.Time, summary string) string {
-				return fmt.Sprintf(format, at.UTC().Format(time.RFC3339Nano), summary)
+			p, _, typed := journalSetup(t, h)
+			report := "Done: login redirect lost the next page; fixed by keeping it in the state\n- cause: the guard dropped ?next\n- evidence: TestLoginRedirect"
+			p.doneReport(done(report))
+			es := entries(t, p)
+			if len(es) != 1 {
+				t.Fatalf("entries %+v", es)
 			}
-			appendLine(t, path, line(time.Now().Add(-time.Hour), "an earlier compaction")) // ignored: before the compact
-			p.testKeys = func(id, keys string) error {
-				*typed = append(*typed, keys)
-				appendLine(t, path, line(time.Now(), "the summary of the work"))
-				return nil
-			}
-			p.doneReport(done("done: fixed the login redirect\nIt now keeps the next page."))
-			if len(entries(t, p)) != 0 {
-				t.Fatal("an entry before the compaction")
-			}
-			p.journalTurnEnd(plan)
-			e := waitEntry(t, p)
-			if e.Title != "fixed the login redirect" || e.Body != "the summary of the work\n\n## Done report\n\ndone: fixed the login redirect\nIt now keeps the next page." || e.Helper != planKey {
+			e, _ := p.db.ExperienceEntry(es[0].ID)
+			if e.Title != "login redirect lost the next page; fixed by keeping it in the state" || e.Body != report || e.Helper != planKey {
 				t.Fatalf("entry = %+v", e)
 			}
-			if len(*typed) != 1 || (*typed)[0] != "/compact\r" {
-				t.Fatalf("typed %q", *typed)
+			p.doneReport(done("Done: second job\nits report"))
+			if len(entries(t, p)) != 2 || len(*typed) != 0 {
+				t.Fatalf("entries %+v, typed %q", entries(t, p), *typed)
 			}
 		})
 	}
+	t.Run("secrets", func(t *testing.T) {
+		p, _, _ := journalSetup(t, harness.Muse)
+		p.doneReport(done("Done: key sk-ant-abcdefghijklmnopqrstuvwxyz0123 rotated\nsk-ant-abcdefghijklmnopqrstuvwxyz0123"))
+		if e := waitEntry(t, p); strings.Contains(e.Title+e.Body, "sk-ant-") {
+			t.Fatalf("entry %+v", e)
+		}
+	})
 }
 
 func TestOnlyADoneReportMakesAnEntry(t *testing.T) {
@@ -123,74 +99,9 @@ func TestOnlyADoneReportMakesAnEntry(t *testing.T) {
 	} {
 		p.doneReport(m)
 	}
-	p.journalTurnEnd(plan)
-	time.Sleep(50 * time.Millisecond)
 	if es := entries(t, p); len(es) != 0 || len(*typed) != 0 {
 		t.Fatalf("entries %+v, typed %q", es, *typed)
 	}
-}
-
-// The report is the body when nothing better exists: a harness with no readable transcript, a helper
-// that is working again, a compaction that never lands, and a second report joins the first.
-func TestDoneReportFallsBackToTheReport(t *testing.T) {
-	t.Run("no compact for the harness", func(t *testing.T) {
-		p, _, typed := journalSetup(t, harness.Muse) // Muse has no compact command
-		p.doneReport(done("Done: shipped\nthe report"))
-		if e := waitEntry(t, p); e.Title != "shipped" || e.Body != "Done: shipped\nthe report" || len(*typed) != 0 {
-			t.Fatalf("entry %+v, typed %q", e, *typed)
-		}
-	})
-	t.Run("working again", func(t *testing.T) {
-		p, st := helperPool(t)
-		path := filepath.Join(t.TempDir(), "s.jsonl")
-		_ = os.WriteFile(path, nil, 0o600)
-		_ = st.Update(func(s *store.State) error {
-			i := sessionIndex(s, plan)
-			s.Sessions[i].Harness, s.Sessions[i].Status, s.Sessions[i].Transcript = harness.Claude, "working", path
-			return nil
-		})
-		p.testKeys = func(string, string) error { t.Error("typed into a working helper"); return nil }
-		p.doneReport(done("Done: x\nthe report"))
-		p.journalTurnEnd(plan)
-		if e := waitEntry(t, p); e.Body != "Done: x\nthe report" {
-			t.Fatalf("entry %+v", e)
-		}
-	})
-	t.Run("the compaction never lands", func(t *testing.T) {
-		p, _, typed := journalSetup(t, harness.Claude)
-		journalWait = 100 * time.Millisecond
-		p.doneReport(done("Done: first\none"))
-		p.doneReport(done("Done: second\ntwo")) // joins; one compact
-		p.journalTurnEnd(plan)
-		p.journalTurnEnd(plan)
-		e := waitEntry(t, p)
-		if e.Title != "first" || e.Body != "Done: first\none\n\nDone: second\ntwo" || len(*typed) != 1 {
-			t.Fatalf("entry %+v, typed %q", e, *typed)
-		}
-		time.Sleep(200 * time.Millisecond)
-		if es := entries(t, p); len(es) != 1 {
-			t.Fatalf("entries %+v", es)
-		}
-	})
-	t.Run("the host shuts down first", func(t *testing.T) {
-		p, _, _ := journalSetup(t, harness.Claude)
-		p.doneReport(done("Done: migrated\nthe report"))
-		p.journalTurnEnd(plan) // the compact is typed; no summary lands before the host stops
-		p.StopJournal()
-		if es := entries(t, p); len(es) != 1 {
-			t.Fatalf("a waiting report was lost at shutdown: %+v", es)
-		}
-		if e := waitEntry(t, p); e.Body != "Done: migrated\nthe report" {
-			t.Fatalf("entry %+v", e)
-		}
-	})
-	t.Run("secrets", func(t *testing.T) {
-		p, _, _ := journalSetup(t, harness.Muse)
-		p.doneReport(done("Done: key sk-ant-abcdefghijklmnopqrstuvwxyz0123 rotated\nsk-ant-abcdefghijklmnopqrstuvwxyz0123"))
-		if e := waitEntry(t, p); strings.Contains(e.Title+e.Body, "sk-ant-") {
-			t.Fatalf("entry %+v", e)
-		}
-	})
 }
 
 func TestJournalIndexInContext(t *testing.T) {
@@ -208,8 +119,13 @@ func TestJournalIndexInContext(t *testing.T) {
 	if p.journalForPrompt(store.Session{ID: plan}, "just do it") != "" {
 		t.Fatal("the owner's prompt got an index")
 	}
-	if !strings.Contains(p.renderContext(plan), "start your report to your parent with `Done:`") {
-		t.Fatal("the helper is not told to start its report with Done:")
+	// The helper is told how to write the report that becomes its entry: one task's lesson, the
+	// transferable knowledge rather than the diff, durable know-how dated, never a credential's value.
+	c := p.renderContext(plan)
+	for _, want := range []string{"report to your parent with `Done:`", "subject and its result", "not a restatement of the diff", "the date you last checked it", "never its value", "A pointer to a temporary file alone is not a report"} {
+		if !strings.Contains(c, want) {
+			t.Fatalf("the helper's report guidance lacks %q", want)
+		}
 	}
 }
 
@@ -282,13 +198,5 @@ func TestExperienceImport(t *testing.T) {
 	}
 	if _, err := call(t, p, true, "experience.import", file("nobody")); err == nil {
 		t.Fatal("an unknown helper was accepted")
-	}
-}
-
-// Claude Code's compaction text loses its wrapping: the opening, the tools list and the transcript pointer.
-func TestClaudeSummaryUnwrapped(t *testing.T) {
-	in := "This session is being continued from a previous conversation that ran out of context. The summary below covers it.\n\n<tools-used-before-summary>Bash, Read</tools-used-before-summary>\nSummary:\n1. Fixed the redirect.\n\nIf you need specific details from before compaction, read the full transcript at: /x.jsonl\nContinue."
-	if got := claudeSummary(in); got != "Summary:\n1. Fixed the redirect." {
-		t.Fatalf("claudeSummary = %q", got)
 	}
 }
