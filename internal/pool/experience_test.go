@@ -163,6 +163,26 @@ func TestExperienceExportAndRebuild(t *testing.T) {
 	if l, _ := p.db.ListExperience(planKey); len(l) != 1 || l[0].Title != "cache warm-up cut cold starts; run it before deploy" {
 		t.Fatalf("after rebuild: %+v", l)
 	}
+	// A rebuild that keeps the helper, time and title (a body rewritten in place) keeps the entry; the
+	// same id twice is refused before anything is deleted.
+	l, _ := p.db.ListExperience(planKey)
+	same := map[string]any{"entries": []map[string]string{{"helper": planKey, "at": l[0].At, "title": l[0].Title, "body": "Done: rewritten digest"}}}
+	same["drop"] = []map[string]any{{"id": l[0].ID, "reason": "x"}, {"id": l[0].ID, "reason": "x"}}
+	if _, err := call(t, p, true, "experience.import", same); err == nil {
+		t.Fatal("the same drop twice was accepted")
+	}
+	if l2, _ := p.db.ListExperience(planKey); len(l2) != 1 || l2[0].ID != l[0].ID {
+		t.Fatalf("a refused import deleted: %+v", l2)
+	}
+	same["drop"] = []map[string]any{{"id": l[0].ID, "reason": "body rewritten"}}
+	res, err = call(t, p, true, "experience.import", same)
+	l2, _ := p.db.ListExperience(planKey)
+	if c, _ := res.(importCount); err != nil || c.Added != 1 || c.Dropped != 1 || len(l2) != 1 {
+		t.Fatalf("an in-place rebuild lost the entry: %+v %v %+v", res, err, l2)
+	}
+	if e, _ := p.db.ExperienceEntry(l2[0].ID); e.Body != "Done: rewritten digest" || e.Title != l[0].Title {
+		t.Fatalf("rebuilt entry = %+v", e)
+	}
 	if _, err := call(t, p, false, "experience.export", map[string]any{"session_id": plan}); err == nil {
 		t.Fatal("an agent exported the journal")
 	}

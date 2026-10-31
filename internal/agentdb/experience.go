@@ -48,24 +48,72 @@ func hashBodies(tx *sql.Tx) error {
 // added: not when its uid is already there or was deleted (its tombstone), or the helper already
 // has an entry with the same body.
 func (d *DB) AddExperience(e Entry) (added bool, err error) {
+	err = d.tx(func(tx *sql.Tx) error {
+		added, err = addExperience(tx, e)
+		return err
+	})
+	return added, err
+}
+
+func addExperience(tx *sql.Tx, e Entry) (bool, error) {
 	if e.At == "" {
 		e.At = now()
 	}
 	if e.UID == "" {
 		e.UID = EntryUID(e.Helper, e.At, e.Title)
 	}
+	var n int
+	if err := tx.QueryRow(`SELECT (SELECT count(*) FROM experience WHERE uid = ?1) + (SELECT count(*) FROM tombstones WHERE key = 'experience:' || ?1) + (SELECT count(*) FROM experience WHERE helper = ?2 AND body_hash = ?3)`, e.UID, e.Helper, bodyHash(e.Body)).Scan(&n); err != nil || n > 0 {
+		return false, err
+	}
+	if _, err := tx.Exec(`INSERT INTO experience(uid, helper, at, title, body, body_hash, team_id) VALUES (?,?,?,?,?,?,?)`, e.UID, e.Helper, e.At, e.Title, e.Body, bodyHash(e.Body), e.TeamID); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// RebuildExperience deletes the drop entries and adds es in one transaction: all or nothing. An entry
+// whose uid was dropped in the same run (same helper, at and title) takes a fresh uid, so the
+// dropped one's tombstone still deletes the old row on every machine and the new one syncs as new.
+func (d *DB) RebuildExperience(drop []int64, es []Entry) (added, skipped int, err error) {
 	err = d.tx(func(tx *sql.Tx) error {
-		var n int
-		if err := tx.QueryRow(`SELECT (SELECT count(*) FROM experience WHERE uid = ?1) + (SELECT count(*) FROM tombstones WHERE key = 'experience:' || ?1) + (SELECT count(*) FROM experience WHERE helper = ?2 AND body_hash = ?3)`, e.UID, e.Helper, bodyHash(e.Body)).Scan(&n); err != nil || n > 0 {
-			return err
+		gone := map[string]bool{}
+		for _, id := range drop {
+			var uid string
+			if err := tx.QueryRow(`SELECT uid FROM experience WHERE id = ?`, id).Scan(&uid); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return fmt.Errorf("no entry %d: %w", id, ErrNotFound)
+				}
+				return err
+			}
+			if _, err := tx.Exec(`DELETE FROM experience WHERE id = ?`, id); err != nil {
+				return err
+			}
+			gone[uid] = true
 		}
-		if _, err := tx.Exec(`INSERT INTO experience(uid, helper, at, title, body, body_hash, team_id) VALUES (?,?,?,?,?,?,?)`, e.UID, e.Helper, e.At, e.Title, e.Body, bodyHash(e.Body), e.TeamID); err != nil {
-			return err
+		for _, e := range es {
+			if e.UID == "" {
+				e.UID = EntryUID(e.Helper, e.At, e.Title)
+			}
+			if gone[e.UID] {
+				e.UID = EntryUID(e.Helper, e.At, e.Title+"\x00rebuilt")
+			}
+			ok, err := addExperience(tx, e)
+			if err != nil {
+				return err
+			}
+			if ok {
+				added++
+			} else {
+				skipped++
+			}
 		}
-		added = true
 		return nil
 	})
-	return added, err
+	if err != nil {
+		return 0, 0, err
+	}
+	return added, skipped, nil
 }
 
 const entryCols = `e.id, e.uid, e.helper, e.at, e.title`

@@ -2,6 +2,7 @@ package pool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -307,30 +308,27 @@ func (p *Pool) experienceImport(_ context.Context, in importIn) (any, error) {
 		es = append(es, agentdb.Entry{Helper: key, At: at, Title: clipRunes(oneLine(redactSecrets(x.Title)), journalTitle),
 			Body: clipBytes(redactSecrets(x.Body), journalBodyMax)})
 	}
+	var drop []int64
+	seen := map[int64]bool{}
 	for i, x := range in.Drop {
 		if strings.TrimSpace(x.Reason) == "" {
 			return nil, invalid("drop %d: a reason is required", i+1)
 		}
-		if _, err := db.ExperienceEntry(x.ID); err != nil {
-			return nil, notFound("drop %d: no entry %d", i+1, x.ID)
+		if seen[x.ID] {
+			return nil, invalid("drop %d: entry %d is listed twice", i+1, x.ID)
 		}
+		seen[x.ID] = true
+		drop = append(drop, x.ID)
 	}
-	var out importCount
-	for _, x := range in.Drop { // first: a rebuilt entry may carry a dropped one's body
-		if err := db.DeleteExperience(x.ID); err != nil {
-			return nil, err
-		}
+	added, skipped, err := db.RebuildExperience(drop, es) // drops first: a rebuilt entry may carry a dropped one's body
+	if errors.Is(err, agentdb.ErrNotFound) {
+		return nil, notFound("drop: %v", err)
+	} else if err != nil {
+		return nil, err
+	}
+	for _, x := range in.Drop {
 		p.logf("pool: experience import dropped entry %d: %s", x.ID, oneLine(x.Reason))
-		out.Dropped++
 	}
-	for _, e := range es {
-		if ok, err := db.AddExperience(e); err != nil {
-			return nil, err
-		} else if ok {
-			out.Added++
-		} else {
-			out.Skipped++
-		}
-	}
+	out := importCount{Added: added, Skipped: skipped, Dropped: len(drop)}
 	return out, nil
 }
