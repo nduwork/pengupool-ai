@@ -13,7 +13,8 @@ export function UnreadDot({ id }: { id: string }): ReactElement | null {
   return app.unread.has(id) ? <span role="img" aria-label="Unread output" className="size-2 shrink-0 rounded-full bg-primary" /> : null;
 }
 
-/** The hover card of a tile or row: status, last message, branch and working directory. */
+/** The hover card of a tile or row: status, last message, branch and working directory, whole: a long
+ * one scrolls inside the tip (Tip) rather than being cut. */
 export function SessionHover({ s }: { s: SessionView }): ReactElement {
   const app = useApp();
   const [last, setLast] = useState("");
@@ -32,16 +33,16 @@ export function SessionHover({ s }: { s: SessionView }): ReactElement {
       <span className={statusStyle(shownStatus(s, app.gates)).text}>
         {statusStyle(shownStatus(s, app.gates)).label} · {harnessLabel(s.harness)}
       </span>
-      {s.question !== undefined && s.question !== "" ? <span className="line-clamp-3 text-foreground [overflow-wrap:anywhere]">{s.question}</span> : null}
+      {s.question !== undefined && s.question !== "" ? <span className="text-foreground [overflow-wrap:anywhere]">{s.question}</span> : null}
       {s.hooks_missing === true ? (
         <span className="flex items-start gap-1 text-foreground">
           <Unplug className="mt-0.5 size-3 shrink-0" aria-hidden />
           {HOOKS_LONG} {hooksAction(s.harness)}
         </span>
       ) : null}
-      {last !== "" ? <span className="line-clamp-3 text-muted-foreground [overflow-wrap:anywhere]">{last}</span> : null}
+      {last !== "" ? <span className="text-muted-foreground [overflow-wrap:anywhere]">{last}</span> : null}
       {s.branch !== undefined && s.branch !== "" ? <span className="font-mono text-muted-foreground">{s.branch}</span> : null}
-      <span className="truncate font-mono text-faint">{s.cwd}</span>
+      <span className="font-mono text-faint [overflow-wrap:anywhere]">{s.cwd}</span>
     </div>
   );
 }

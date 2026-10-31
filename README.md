@@ -336,6 +336,9 @@ model is set up". Words left unjudged are not judged later either; the app's pro
 until a model works. Check-ins, permissions and asks still go to the owner. `compass word` loses
 `--supports` and `--contradicts`: which existing lines the owner's words move is the model's call, and the
 session's agent only words new lines.
+v0.10.10: The map's hover card shows a session's question, last message and folder whole, and a card
+taller than the room it has scrolls; the pointer can move into it to scroll, and it keeps clear of the
+screen edges. The same holds for every tip in the app.
 
 ## Credits
 
