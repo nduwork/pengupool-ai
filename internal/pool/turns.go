@@ -200,7 +200,7 @@ type placement struct {
 	StatesPref  bool   // the message, whatever else it is (a task), states how the owner wants things in general
 }
 
-// prevReplyKeep is how much of a reply is kept for the next turn: an item shown at the top of a
+// prevReplyKeep is how many runes of a reply are kept for the next turn: an item shown at the top of a
 // long reply still counts as shown.
 const prevReplyKeep = 8 << 10
 
