@@ -17,7 +17,7 @@ import (
 )
 
 // Version of the prototype. It is not the protocol version; that is protocol.Version.
-const Version = "0.9.46"
+const Version = "0.9.47"
 
 const help = `usage: pengupool <command> [options]
 
@@ -48,18 +48,21 @@ const help = `usage: pengupool <command> [options]
         "Done: <title>".
   team request add --skill S|--repo R [--assignment A] | remove MEMBER [--reason R]
         (inside a team session) ask the owner to change who is on the team; it waits for approval.
-  ask [--option O]... QUESTION | ask --wait ID
+  ask [--owner-only] [--option O]... QUESTION | ask --wait ID
         (inside an agent session) put a question to the owner, answered in the app or from a paired
         Muse device; waits up to 2 minutes and prints {"answer": …, "by": …} as JSON, else
         {"pending": ID}: run "ask --wait ID" to go on waiting. The owner may pick an option or reply
         in their own words. Unanswered for 15 minutes, it expires: {"expired": …}; go on with a
-        safe default.
-  ask answer ASK_ID [--option N]
-        (inside a parent's session) carry the owner's answer, typed in this session, to a direct
-        child's waiting ask: the owner's whole prompt, word for word, or option N when the prompt is
-        exactly it. Only in a turn the owner's own prompt opened, with no teammate's message to you
-        since your previous reply, for an ask that reply showed (the only one it showed, or one the
-        owner names by id); a prompt over 2000 characters is refused, not clipped.
+        safe default. --owner-only marks a question only the owner may answer (a rule of yours only
+        the owner can lift).
+  answer ITEM_ID [--option N]   (also: ask answer)
+        (inside a session with members below it) carry the owner's answer, typed in this session, to
+        a question waiting on the owner below you on the team's tree: an ask (its id), or a check-in
+        (checkin:<id>). The owner's whole prompt goes, word for word, or option N of an ask when the
+        prompt is exactly it; a check-in's answer is typed into the member as the owner's own prompt.
+        Only in a turn the owner's own prompt opened, with no teammate's message to you since your
+        previous reply, for a question that reply showed by id and quoted as it stands (the only one
+        it showed, or one the owner names by id); a prompt over 2000 characters is refused, not clipped.
   compass word [--supports UID]... [--contradicts UID]... [--line "preference|restriction :: BODY :: WHEN"]... | compass word --none
         (inside a session asked to) say which Compass lines the owner's last words support or go
         against and word up to 3 new lasting preferences, or say they hold none. Only the session
@@ -142,6 +145,8 @@ func main() {
 		err = cmdTeam(args[1:])
 	case "ask":
 		err = cmdAsk(args[1:])
+	case "answer":
+		err = cmdAskAnswer(args[1:])
 	case "compass":
 		err = cmdCompass(args[1:])
 	case "experience":

@@ -32,6 +32,7 @@ type agentAskIn struct {
 	SessionID string   `json:"session_id"`
 	Question  string   `json:"question"`
 	Options   []string `json:"options"`
+	OwnerOnly bool     `json:"owner_only,omitempty"` // for the owner alone: never decided from the Compass
 }
 
 // agentAsk records the calling session's question as a pending ask.
@@ -54,7 +55,7 @@ func (p *Pool) agentAsk(_ context.Context, in agentAskIn) (any, error) {
 		}
 	}
 	a := protocol.Approval{ID: protocol.NewID(), Kind: "ask", TeamID: s.TeamID, SessionID: s.ID,
-		Detail: clipRunes(redact(q), 2000), Options: opts, State: "pending", CreatedAt: now()}
+		Detail: clipRunes(redact(q), 2000), Options: opts, OwnerOnly: in.OwnerOnly, State: "pending", CreatedAt: now()}
 	cut := time.Now().Add(-24 * time.Hour)
 	if err := p.update(func(st *store.State) error {
 		// An ask whose session is not running expires: its waiter went with it (a session restored

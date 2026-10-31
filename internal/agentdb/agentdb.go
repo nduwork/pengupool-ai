@@ -91,6 +91,7 @@ var tables = []struct{ name, cols string }{
   review TEXT NOT NULL DEFAULT '',        -- spot | right | wrong: the owner's check of a go-ahead
   suggestion TEXT NOT NULL DEFAULT '',    -- the Compass's answer to the question, for the owner to confirm
   evidence TEXT NOT NULL DEFAULT '',      -- what it rests on: how often the owner chose it
+  answered_via TEXT NOT NULL DEFAULT '',  -- the ancestor session whose owner's words answered it
   created_at TEXT NOT NULL, resolved_at TEXT NOT NULL DEFAULT ''`},
 }
 

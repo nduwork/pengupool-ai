@@ -115,7 +115,7 @@ func (p *Pool) buildContextCap(id string, compassCap int) string {
 			b.WriteString("\nWhen your job is finished, start your report to your parent with `Done:` and a one-line title (`Done: fixed the login redirect`), then the details (or send it with `--type done`). PenguPool keeps a report like that as an entry of your past work, and may type your agent's compact command once you are idle. A question or a progress note does not start with `Done:`.\n")
 		}
 	}
-	b.WriteString(p.childAsks(&st, t, id))
+	b.WriteString(p.subtreeAsks(&st, t, id))
 	b.WriteString(p.renderNotes(id))
 	return b.String()
 }
@@ -147,6 +147,7 @@ func (p *Pool) renderSkill(b *strings.Builder, sk *protocol.Skill) {
 	if sk.Method != "" {
 		fmt.Fprintf(b, "Method: %s\n", sk.Method)
 	}
+	fmt.Fprintf(b, "When one of your skill's rules stops you (a round cap, a limit) and only the owner could lift it, ask with `%s ask --owner-only \"<question>\"`: it is the owner's alone to answer.\n", p.exe)
 	for _, f := range sk.Files {
 		if f.Problem == "" {
 			fmt.Fprintf(b, "- skill `%s`: %s (skills/%s/SKILL.md)\n", f.Name, f.Description, f.Name)

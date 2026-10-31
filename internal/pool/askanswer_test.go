@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -77,7 +78,7 @@ func TestAskAnswerForOwner(t *testing.T) {
 	a1 := ask(web, time.Minute)
 	shown(a1)
 	// The lead's context lists the child's ask, with its options; web's own context does not.
-	if c := p.renderContext(lead); !strings.Contains(c, "## Your children's asks waiting on the owner") || !strings.Contains(c, "ask "+a1+" from web") || !strings.Contains(c, "[1] Yes [2] No") {
+	if c := p.renderContext(lead); !strings.Contains(c, "## Questions below you waiting on the owner") || !strings.Contains(c, a1+" from web") || !strings.Contains(c, "[1] Yes [2] No") {
 		t.Fatalf("lead's context:\n%s", c)
 	}
 	if strings.Contains(p.renderContext(web), a1) {
@@ -94,13 +95,18 @@ func TestAskAnswerForOwner(t *testing.T) {
 	if err := answer(a1, 1); protocol.CodeOf(err) != protocol.CodeForbidden || !pending(a1) {
 		t.Fatalf("an unverified prompt answered the ask: %v", err)
 	}
-	// The owner's prompt, but for a grandchild's ask, an ask the lead never showed, or one made after it.
+	// A grandchild's ask is in the lead's subtree: shown with another, the owner names it.
 	a2 := ask(plan, time.Minute)
 	shown(a1, a2)
 	owner("yes, push it")
 	if err := answer(a2, 1); protocol.CodeOf(err) != protocol.CodeForbidden || !pending(a2) {
-		t.Fatalf("a grandchild's ask was answered: %v", err)
+		t.Fatalf("one of two shown questions was answered on an unnamed prompt: %v", err)
 	}
+	owner("for " + a2 + ": yes")
+	if err := answer(a2, 0); err != nil || pending(a2) {
+		t.Fatalf("a named grandchild's ask: %v", err)
+	}
+	// The owner's prompt, but for an ask the lead never showed, or one made after it.
 	a3 := ask(web, 0)
 	shown(a1, a3)
 	if err := answer(a3, 1); protocol.CodeOf(err) != protocol.CodeForbidden || !pending(a3) {
@@ -330,6 +336,186 @@ func TestAskAnswerForOwnerRace(t *testing.T) {
 	}
 }
 
+// Part 1 of the lead-decisions design: the owner's words through any active ancestor, the question
+// quoted as it stands, owner-only asks, and check-ins typed into the member as the owner's prompt.
+func TestAnswerSubtree(t *testing.T) {
+	p, _ := twoTeams(t)
+	p.requireOwnerInput = true
+	if _, err := p.agentDB(); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	const lead, web, plan = "leadaaaaaaaa", "webaaaaaaaaa", "planaaaaaaaa"
+	team := ""
+	_ = p.st.Update(func(s *store.State) error { // lead ─ web ─ plan
+		team = s.Domain.Teams[0].ID
+		for i := range s.Sessions {
+			s.Sessions[i].Harness = "claude"
+		}
+		for i, m := range s.Domain.Teams[0].Members {
+			switch m.SessionID {
+			case web:
+				s.Domain.Teams[0].Members[i].Parent = lead
+			case plan:
+				s.Domain.Teams[0].Members[i].Parent = web
+			}
+		}
+		return nil
+	})
+	const q = "Shall I force-push the release branch? It rewrites two commits."
+	ask := func(from string, ownerOnly bool) string {
+		t.Helper()
+		res, err := p.agentAsk(ctx, agentAskIn{SessionID: from, Question: q, OwnerOnly: ownerOnly})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := res.(map[string]string)["id"]
+		_ = p.st.Update(func(s *store.State) error {
+			for i := range s.Domain.Approvals {
+				if s.Domain.Approvals[i].ID == id {
+					s.Domain.Approvals[i].CreatedAt = store.RFC3339(time.Now().Add(-time.Minute))
+				}
+			}
+			return nil
+		})
+		return id
+	}
+	reply := func(who, text string) {
+		p.mu.Lock()
+		if p.prevReply == nil {
+			p.prevReply, p.prevReplyAt = map[string]string{}, map[string]time.Time{}
+		}
+		p.prevReply[who], p.prevReplyAt[who] = text, time.Now()
+		p.mu.Unlock()
+	}
+	owner := func(who, words string) { p.OwnerInput(who, words); prompt(t, p, who, words) }
+	answer := func(who, id string) (any, error) {
+		return p.askAnswerFor(ctx, askAnswerForIn{SessionID: who, ID: id})
+	}
+	pending := func(id string) bool { a, _ := p.approval(id); return a.State == "pending" }
+
+	// The id alone, or a paraphrase, is not the question shown.
+	a1 := ask(plan, true)
+	for _, r := range []string{"plan waits on ask " + a1, "plan asks (" + a1 + ") whether it may run the tests"} {
+		reply(lead, r)
+		owner(lead, "yes")
+		if _, err := answer(lead, a1); protocol.CodeOf(err) != protocol.CodeForbidden || !strings.Contains(err.Error(), "as it stands") || !pending(a1) {
+			t.Fatalf("%q: %v", r, err)
+		}
+	}
+	// Quoted as it stands (case, spacing, quote markers and backticks aside): answered, through a
+	// mid-level member too; an owner-only ask is the owner's to answer, which this is.
+	if c := p.renderContext(lead); !strings.Contains(c, a1+" from plan (session "+plan+", 2 below you), owner-only ask") {
+		t.Fatalf("lead's context:\n%s", c)
+	}
+	reply(lead, "plan asks `"+a1+"`:\n> SHALL I force-push   the release branch?\n> It rewrites two commits.")
+	owner(lead, "no, keep the history")
+	if _, err := answer(lead, a1); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := p.approval(a1); a.Answer != "no, keep the history" || a.AnsweredBy != "owner via "+lead || !a.OwnerOnly {
+		t.Fatalf("answered = %+v", a)
+	}
+	a2 := ask(plan, false)
+	reply(web, "plan: "+a2+" "+q)
+	owner(web, "go ahead")
+	if _, err := answer(web, a2); err != nil {
+		t.Fatalf("a mid-level parent: %v", err)
+	}
+	// Not below the caller: web cannot answer its parent's ask.
+	a3 := ask(lead, false)
+	reply(web, "lead: "+a3+" "+q)
+	owner(web, "yes")
+	if _, err := answer(web, a3); protocol.CodeOf(err) != protocol.CodeNotFound || !pending(a3) {
+		t.Fatalf("a parent's ask answered from below: %v", err)
+	}
+
+	// A question with no text to quote (here, only quote markers and backticks) is never shown.
+	a4 := ask(plan, false)
+	_ = p.st.Update(func(s *store.State) error {
+		for i := range s.Domain.Approvals {
+			if s.Domain.Approvals[i].ID == a4 {
+				s.Domain.Approvals[i].Detail = "> ``"
+			}
+		}
+		return nil
+	})
+	reply(lead, "plan asks "+a4)
+	owner(lead, "yes")
+	if _, err := answer(lead, a4); protocol.CodeOf(err) != protocol.CodeForbidden || !pending(a4) {
+		t.Fatalf("an empty question was answered: %v", err)
+	}
+	p.expireAsks(plan)
+
+	// A closed member between them does not break the chain; a cycle in the record is no.
+	tm := p.st.State().Domain.Teams[0]
+	for i := range tm.Members {
+		if tm.Members[i].SessionID == web {
+			tm.Members[i].State = "closed"
+		}
+	}
+	if !isAncestor(&tm, lead, plan) || isAncestor(&tm, web, plan) || isAncestor(&tm, plan, lead) {
+		t.Fatal("isAncestor across a closed member")
+	}
+	cyc := protocol.Team{Members: []protocol.Member{{SessionID: "a", Parent: "b", State: "active"}, {SessionID: "b", Parent: "a", State: "active"}, {SessionID: "c", Parent: "a", State: "active"}}}
+	if isAncestor(&cyc, "x", "c") || !isAncestor(&cyc, "b", "c") {
+		t.Fatal("isAncestor on a cycle")
+	}
+
+	// A check-in of the grandchild: the owner's whole prompt is typed into plan as the owner's own,
+	// the gate takes it as the owner's answer, and records the lead it came through.
+	question := strings.Repeat("Some context the reply carries first. ", 20) + "Shall I delete the old staging bucket?"
+	gid, err := p.db.AddGate(agentdb.Gate{TeamID: team, SessionID: plan, Agent: "plan", Harness: "claude", Kind: "checkin", Question: question})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := fmt.Sprintf("checkin:%d", gid)
+	time.Sleep(1100 * time.Millisecond) // the gate's second must be before the owner's prompt
+	p.setStatus(plan, "idle")
+	var typed string
+	p.testKeys = func(sid, text string) error {
+		typed = text
+		ownerSays(t, p, sid, strings.TrimSuffix(text, "\r"))
+		return nil
+	}
+	if c := p.renderContext(lead); !strings.Contains(c, item+" from plan") || !strings.Contains(c, "whole** prompt") {
+		t.Fatalf("lead's context:\n%s", c)
+	}
+	reply(lead, "plan asks ("+item+"): "+question[:200]) // the reply's start, not its end
+	owner(lead, "Yes, delete it,\nthe data is copied")
+	if _, err := answer(lead, item); protocol.CodeOf(err) != protocol.CodeForbidden || typed != "" {
+		t.Fatalf("a check-in quoted by its start: %v, typed %q", err, typed)
+	}
+	reply(lead, "plan asks ("+item+"): …"+tailRunes(question, 200))
+	owner(lead, "Yes, delete it,\nthe data is copied")
+	res, err := answer(lead, item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if typed != "Yes, delete it, the data is copied\r" || res.(map[string]string)["sent"] != "Yes, delete it, the data is copied" {
+		t.Fatalf("typed %q, result %+v", typed, res)
+	}
+	// Claimed with the owner's answer (whether it answered the question is triage's call after).
+	g := waitGate(t, p, plan, func(g agentdb.Gate) bool { return g.Outcome != "pending" && g.OwnerAnswer != "" })
+	if g.ID != gid || g.AnsweredVia != lead || g.OwnerAnswer != "Yes, delete it, the data is copied" {
+		t.Fatalf("gate = %+v", g)
+	}
+
+	// At most maxListed items are listed; the rest are left to the app.
+	for range maxListed + 1 {
+		if _, err := p.db.AddGate(agentdb.Gate{TeamID: team, SessionID: plan, Agent: "plan", Kind: "checkin", Question: q}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if c := p.renderContext(lead); strings.Count(c, " from plan (session ") != maxListed || !strings.Contains(c, "… 1 more: the owner answers them in the app") {
+		t.Fatalf("lead's context:\n%s", c)
+	}
+	// A helper is told how to ask what only the owner may lift.
+	if c := p.renderContext(plan); !strings.Contains(c, "ask --owner-only") {
+		t.Fatalf("plan's context:\n%s", c)
+	}
+}
+
 // An answer the owner gives through the lead reaches a member no longer waiting in `pengupool ask` as
 // the owner's own prompt, typed and credited, so the member's harness sees the owner's words; a
 // waiting member gets it from its wait, and a busy one as a notice.
@@ -515,8 +701,8 @@ func TestTypedAnswerNotCarriedOn(t *testing.T) {
 	if p.prevReply == nil {
 		p.prevReply, p.prevReplyAt = map[string]string{}, map[string]time.Time{}
 	}
-	p.prevReply[lead], p.prevReplyAt[lead] = "web waits on the owner: ask "+x, time.Now()
-	p.prevReply[web], p.prevReplyAt[web] = "I asked the owner "+x+"; plan waits on ask "+y, time.Now()
+	p.prevReply[lead], p.prevReplyAt[lead] = "web waits on the owner: ask "+x+" (Rename the README heading?)", time.Now()
+	p.prevReply[web], p.prevReplyAt[web] = "I asked the owner "+x+"; plan waits on ask "+y+" (Delete the prod bucket?)", time.Now()
 	p.mu.Unlock()
 	var fromOwner bool
 	p.testKeys = func(sid, text string) error {
@@ -549,7 +735,7 @@ func TestTypedAnswerNotCarriedOn(t *testing.T) {
 	// The owner's own prompt in web, naming another ask, answers no other: not even the one shown.
 	z := ask(web, "Bump the version?")
 	p.mu.Lock()
-	p.prevReply[lead], p.prevReplyAt[lead] = "web waits on the owner: ask "+z, time.Now()
+	p.prevReply[lead], p.prevReplyAt[lead] = "web waits on the owner: ask "+z+" (Bump the version?)", time.Now()
 	p.mu.Unlock()
 	words := "yes, the same as " + x
 	p.OwnerInput(lead, words)
@@ -557,6 +743,19 @@ func TestTypedAnswerNotCarriedOn(t *testing.T) {
 	_, err = p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: z})
 	if a, _ := p.approval(z); protocol.CodeOf(err) != protocol.CodeForbidden || a.State != "pending" {
 		t.Fatalf("words naming %s answered %s: %v", x, z, err)
+	}
+
+	// Nor words that name a check-in below.
+	gid, err := p.db.AddGate(agentdb.Gate{TeamID: p.teamID(web), SessionID: web, Agent: "web", Kind: "checkin", Question: "Shall I go on?", CreatedAt: store.RFC3339(time.Now().Add(-time.Minute))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	words = fmt.Sprintf("yes, the same as checkin:%d", gid)
+	p.OwnerInput(lead, words)
+	prompt(t, p, lead, words)
+	_, err = p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: z})
+	if a, _ := p.approval(z); protocol.CodeOf(err) != protocol.CodeForbidden || !strings.Contains(err.Error(), "checkin:") || a.State != "pending" {
+		t.Fatalf("words naming checkin:%d answered %s: %v", gid, z, err)
 	}
 }
 
@@ -633,7 +832,7 @@ func TestLaterAnswerOnlyOnce(t *testing.T) {
 		if p.prevReply == nil {
 			p.prevReply, p.prevReplyAt = map[string]string{}, map[string]time.Time{}
 		}
-		p.prevReply[lead], p.prevReplyAt[lead] = "web waits on ask "+id, time.Now()
+		p.prevReply[lead], p.prevReplyAt[lead] = "web waits on ask "+id+" (Force-push #65?)", time.Now()
 		p.mu.Unlock()
 		p.setStatus(web, "working")
 		p.OwnerInput(lead, "Yes")

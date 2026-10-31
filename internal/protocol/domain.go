@@ -182,9 +182,12 @@ type Approval struct {
 	// OwnerWords: for an ask the owner answered through a parent's session ("owner via <id>"), the
 	// owner's own prompt there, clipped and redacted: the provenance of that answer.
 	OwnerWords string `json:"owner_words,omitempty"`
-	State      string `json:"state"` // pending | approved | denied | expired | answered
-	CreatedAt  string `json:"created_at"`
-	ExpiresAt  string `json:"expires_at,omitempty"`
+	// OwnerOnly: the asker marked it for the owner alone (a rule of its own that only the owner may
+	// lift), so it is never decided from the Compass.
+	OwnerOnly bool   `json:"owner_only,omitempty"`
+	State     string `json:"state"` // pending | approved | denied | expired | answered
+	CreatedAt string `json:"created_at"`
+	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
 // FormationChange is one change to who is on a team: add a member (a skill as a freelancer, or a
