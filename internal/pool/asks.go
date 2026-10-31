@@ -50,14 +50,16 @@ func msgType(given, text string) (string, error) {
 	return "tell", nil
 }
 
-// askOpen says whether ms[i] is an ask still waiting for its answer.
+// askOpen says whether ms[i] is an ask still waiting for its answer: until a reply reaches the
+// asker (one sent with --reply-to, or any message back from the recipient) or it is settled. A reply
+// that failed, or waits undelivered, answers nothing yet.
 func askOpen(ms []protocol.TeamMessage, i int) bool {
 	a := ms[i]
 	if a.Type != "ask" || a.SettledAt != "" || a.State == "failed" {
 		return false
 	}
 	for _, m := range ms[i+1:] {
-		if m.ReplyTo == a.ID || m.From == a.To && m.To == a.From {
+		if m.State == "delivered" && (m.ReplyTo == a.ID || m.From == a.To && m.To == a.From) {
 			return false
 		}
 	}

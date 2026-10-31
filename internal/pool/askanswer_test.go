@@ -422,6 +422,14 @@ func TestAnswerSubtree(t *testing.T) {
 	if _, err := answer(web, a2); err != nil {
 		t.Fatalf("a mid-level parent: %v", err)
 	}
+	// Shown at the top of a long reply, kept as the turn is placed: still shown.
+	long := ask(plan, false)
+	ls, _ := p.session(lead)
+	p.placeTurn(ctx, ls, turn{GateDone: true}, "plan waits on the owner: ask "+long+" ("+q+")\n\n"+strings.Repeat("Other work went on meanwhile. ", 150))
+	owner(lead, "yes, go ahead")
+	if _, err := answer(lead, long); err != nil {
+		t.Fatalf("an item at the top of a long reply: %v", err)
+	}
 	// Not below the caller: web cannot answer its parent's ask.
 	a3 := ask(lead, false)
 	reply(web, "lead: "+a3+" "+q)

@@ -73,22 +73,33 @@ func TestTypedSend(t *testing.T) {
 	if !askOpen(p.st.State().Domain.Messages, len(p.st.State().Domain.Messages)-1) {
 		t.Fatal("the ask was not open before its answer")
 	}
-	if _, err := p.messageSend(ctx, sendIn{From: "leadaaaaaaaa", To: "web", Text: "8080", ReplyTo: ask}); err != nil {
+	res, err = p.messageSend(ctx, sendIn{From: "leadaaaaaaaa", To: "web", Text: "8080", ReplyTo: ask})
+	if err != nil {
 		t.Fatal(err)
 	}
-	ms := p.st.State().Domain.Messages
-	for i, m := range ms {
-		if m.ID == ask && askOpen(ms, i) {
-			t.Fatal("the answered ask is still open")
+	open := func() bool {
+		ms := p.st.State().Domain.Messages
+		for i, m := range ms {
+			if m.ID == ask {
+				return askOpen(ms, i)
+			}
 		}
+		return false
+	}
+	if !open() {
+		t.Fatal("an answer still queued closed the ask")
+	}
+	p.markDelivered([]string{res.(map[string]string)["id"]})
+	if open() {
+		t.Fatal("the delivered answer left the ask open")
 	}
 }
 
-// An ask is open until its recipient sends the asker anything, or it is settled.
+// An ask is open until a reply from its recipient reaches the asker, or it is settled.
 func TestAskOpen(t *testing.T) {
 	ask := protocol.TeamMessage{ID: "a1", From: "web", To: "lead", Type: "ask", State: "delivered"}
 	other := protocol.TeamMessage{ID: "m2", From: "plan", To: "web", Type: "tell"}
-	back := protocol.TeamMessage{ID: "m3", From: "lead", To: "web", Type: "tell"}
+	back := protocol.TeamMessage{ID: "m3", From: "lead", To: "web", Type: "tell", State: "delivered"}
 	if !askOpen([]protocol.TeamMessage{ask, other}, 0) {
 		t.Error("a message from someone else answered the ask")
 	}
@@ -107,6 +118,19 @@ func TestAskOpen(t *testing.T) {
 	failed.State = "failed"
 	if askOpen([]protocol.TeamMessage{failed}, 0) {
 		t.Error("an ask that never arrived is open")
+	}
+	// A reply that failed, or still waits, has not reached the asker; one with --reply-to has.
+	for _, st := range []string{"failed", "queued"} {
+		b, r := back, back
+		b.State, r.State, r.ReplyTo = st, st, ask.ID
+		if !askOpen([]protocol.TeamMessage{ask, b}, 0) || !askOpen([]protocol.TeamMessage{ask, r}, 0) {
+			t.Errorf("a %s reply answered the ask", st)
+		}
+	}
+	r := back
+	r.From, r.ReplyTo = "plan", ask.ID
+	if askOpen([]protocol.TeamMessage{ask, r}, 0) {
+		t.Error("a delivered --reply-to answer did not answer the ask")
 	}
 }
 
