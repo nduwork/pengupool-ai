@@ -99,7 +99,16 @@ func (p *Pool) providerSave(ctx context.Context, in providerSaveIn) (any, error)
 		cfg.Decision.Providers = map[string]store.ProviderConfig{}
 	}
 	cfg.Decision.Providers[pc.Type] = pc
-	return pc, p.st.SaveConfig(cfg)
+	if err := p.st.SaveConfig(cfg); err != nil {
+		return nil, err
+	}
+	if cfg.Decision.Active == pc.Type { // the active model changed: check it again before trusting it
+		p.mu.Lock()
+		p.triageErr = triageUnchecked
+		p.mu.Unlock()
+		go p.checkTriage(context.WithoutCancel(ctx))
+	}
+	return pc, nil
 }
 
 type providerTypeIn struct {
@@ -716,6 +725,7 @@ func (p *Pool) endScribes(ctx context.Context) {
 // Run keeps node status fresh in the domain and runs the daily backup and the sync.
 func (p *Pool) Run(ctx context.Context) {
 	p.endScribes(ctx)
+	go p.checkTriage(ctx) // the triage model's state is known before work asks it
 	go p.syncLoop(ctx)
 	go p.updateLoop(ctx)
 	go p.readyLoop(ctx)

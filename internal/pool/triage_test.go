@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/decision"
 	"github.com/nduwork/pengupool-ai/internal/store"
@@ -29,6 +30,32 @@ func TestTriageModelRequired(t *testing.T) {
 	if _, err := call(t, p, true, "provider.activate", map[string]any{"type": "ollama"}); err == nil || st.Config().Decision.Active != "" {
 		t.Fatalf("a model that fails its check was made active: %v", err)
 	}
+	// A broken active model (set before this start, or saved broken since) is found by the start's check.
+	cfg = st.Config()
+	cfg.Decision.Active = "ollama"
+	_ = st.SaveConfig(cfg)
+	p.checkTriage(context.Background())
+	if s := status(); s != "unreachable" {
+		t.Fatalf("the start's check of a broken model: %s", s)
+	}
+	cfg.Decision.Active = ""
+	_ = st.SaveConfig(cfg)
+	p.mu.Lock()
+	p.triageErr = triageUnchecked
+	p.mu.Unlock()
+	p.mu.Lock()
+	p.testDecider = hangDecider{}
+	p.mu.Unlock()
+	if s := status(); s != "unchecked" {
+		t.Fatalf("a model not asked yet since the start: %s", s)
+	}
+	// A model that hangs past its caller's deadline is unreachable, not ok.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	_, _ = p.decider().Decide(ctx, decision.Request{})
+	cancel()
+	if s := status(); s != "unreachable" {
+		t.Fatalf("a hanging model: %s", s)
+	}
 	p.mu.Lock()
 	p.testDecider = failDecider{}
 	p.mu.Unlock()
@@ -43,4 +70,13 @@ func TestTriageModelRequired(t *testing.T) {
 	if s := status(); s != "ok" {
 		t.Fatalf("an answering model: %s", s)
 	}
+}
+
+// hangDecider answers nothing until its caller gives up.
+type hangDecider struct{}
+
+func (hangDecider) Name() string { return "hang" }
+func (hangDecider) Decide(ctx context.Context, _ decision.Request) (decision.Response, error) {
+	<-ctx.Done()
+	return decision.Response{}, ctx.Err()
 }
