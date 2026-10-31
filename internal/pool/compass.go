@@ -228,12 +228,8 @@ func (p *Pool) matchLines(sig agentdb.Signal, offered, line string, mk bool) str
 	defer p.lockKey("compass")()
 	cands := p.candidates(sig.Words + " " + line) // a check-in's decision is a rule (line), matched by its own words too
 	weight := signalWeight[sig.Kind]
-	if prov == nil {
-		if mk && sig.SessionID != "" {
-			p.askWording(sig, cands, 0)
-		} else {
-			p.record(sig, weight) // waits in the ledger
-		}
+	if prov == nil { // no triage model: the signal waits in the ledger, judged by nothing else
+		p.record(sig, weight)
 		return ""
 	}
 	var on []effectOn

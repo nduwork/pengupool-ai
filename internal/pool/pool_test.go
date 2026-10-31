@@ -914,9 +914,16 @@ func TestTurnsArePlacedByTriage(t *testing.T) {
 		hook("Stop", map[string]any{})
 		time.Sleep(150 * time.Millisecond) // placed in the background
 	}
-	// No provider: the Compass is left alone, and no raw row is made for a main worker.
-	// The owner's instruction becomes the team's goal. No job file or card is made.
+	// No triage model: nothing places a turn, so the Compass is left alone and the goal is not set.
+	turn("redeploy on Cloud Run", 2)
+	if d := st.State().Domain; findTeam(&d, "team1").Goal != "" {
+		t.Fatalf("a turn was placed without a triage model: task = %q", findTeam(&d, "team1").Goal)
+	}
+	// With one, a question it skips sets nothing, and the owner's recorded instruction becomes the
+	// team's goal. No raw row, job file or card is made for a main worker.
+	setDecider(p, fakeTriage{record: "skip"})
 	turn("what's the status?", 0)
+	setDecider(p, fakeTriage{record: "record"})
 	turn("redeploy on Cloud Run", 2)
 	if d := st.State().Domain; findTeam(&d, "team1").Goal != "redeploy on Cloud Run" {
 		t.Fatalf("task = %q", findTeam(&d, "team1").Goal)

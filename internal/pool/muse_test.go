@@ -236,6 +236,9 @@ func TestMuseSayCreditsOwner(t *testing.T) {
 		}
 		return nil
 	})
+	p.mu.Lock()
+	p.testDecider = fakeTriage{record: "record", signal: "preference"} // the triage model reads it as a preference
+	p.mu.Unlock()
 	words := "From now on, always run the tests before committing."
 	before := signalKinds(t, st)
 	museCall(t, p, "muse.say", map[string]any{"session": "leadaaaaaaaa", "words": words})

@@ -620,7 +620,14 @@ func TestSessionWordsWithoutDecider(t *testing.T) {
 	if err := wordWith(t, p, lead.ID, good); err == nil {
 		t.Fatal("a wording nobody asked for was taken")
 	}
+	// Without a triage model the owner's words are judged by nothing: no wording is asked.
 	p.placeTurn(context.Background(), lead, turn{Prompt: "From now on keep the UI simple and never merge without the review agent"}, "ok")
+	if p.wordingNote(lead.ID) != "" || len(signalKinds(t, st)) != 0 {
+		t.Fatal("the owner's words were judged without a triage model")
+	}
+	// The wording itself, once asked (the line candidates offered with it).
+	words := "From now on keep the UI simple and never merge without the review agent"
+	p.askWording(agentdb.Signal{Kind: "said", Words: words, SessionID: lead.ID}, p.candidates(words), 0)
 	if len(p.lines("", 0)) != 1 || len(signalKinds(t, st)) != 0 {
 		t.Fatal("something was kept before the agent answered")
 	}
@@ -670,7 +677,7 @@ func TestSessionWordsWithoutDecider(t *testing.T) {
 		t.Fatalf("a second wording was taken: %v", err)
 	}
 	// --none clears the request and the signal waits in the ledger.
-	p.placeTurn(context.Background(), lead, turn{Prompt: "Always use tabs for indentation"}, "ok")
+	p.askWording(agentdb.Signal{Kind: "said", Words: "Always use tabs for indentation", SessionID: lead.ID}, p.candidates("Always use tabs for indentation"), 0)
 	if err := wordWith(t, p, lead.ID, compassWordIn{None: true}); err != nil {
 		t.Fatal(err)
 	}

@@ -279,10 +279,8 @@ func (p *Pool) ownerSaid(s store.Session, team *protocol.Team, t turn, pl placem
 	if team != nil {
 		sig.TeamID = team.ID
 	}
-	if p.decider() == nil { // no triage: only a standing sentence is worth the session's agent wording
-		if !p.answeredCheckin(s, t.Prompt) && p.standing(s, &sig, t, "no triage") {
-			p.match(sig, "", "")
-		}
+	if p.decider() == nil { // no triage model: the owner's words are judged by nothing else (the app asks for one)
+		p.logLine(s.ID, "compass: no triage model is set up, so the owner's words are not judged")
 		return
 	}
 	offered := ""
@@ -357,10 +355,8 @@ func (p *Pool) setTask(teamID, instruction string) {
 // With gate (state for an autonomous team's turn), the pack also asks checkInQuestions, and the
 // response is returned for gateTurn; it is nil when triage had no answers.
 func (p *Pool) triage(ctx context.Context, s store.Session, t turn, reply string, gate map[string]any) (placement, *decision.Response) {
-	rule := placement{Record: t.Tools > 0 || len(reply) >= 400}
-	if t.fromNotice() && t.Tools == 0 { // information that led to no work: not on the record
-		rule.Record = false
-	}
+	// Only the triage model places a turn: with none, or none answering, nothing is put on the record.
+	var rule placement
 	prov := p.decider()
 	if prov == nil {
 		return rule, nil
@@ -391,7 +387,7 @@ func (p *Pool) triage(ctx context.Context, s store.Session, t turn, reply string
 	defer cancel()
 	res, err := prov.Decide(ctx, decision.Request{State: state, Questions: qs})
 	if err != nil {
-		p.logf("pool: triage of %s's turn: %v (rules used)", s.Name, err)
+		p.logf("pool: triage of %s's turn: %v (not placed)", s.Name, err)
 		return rule, nil
 	}
 	sure := func(a decision.Answer) bool { return !res.Calibrated || a.Confidence >= 0.6 }

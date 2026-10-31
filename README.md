@@ -304,6 +304,11 @@ v0.10.8: PenguPool needs a triage model, local (Ollama) or remote. Settings can 
 none, and a model becomes active only once its check passes. The app asks for one under the title bar on
 every page while none is set or the set one stops answering, and the prompt goes as soon as one works.
 "If the model fails, use simple matching" is removed; a config that still has it is told so once.
+v0.10.9: No rules stand in for the triage model. Without one (or with one not answering) PenguPool
+judges nothing: the owner's words are not read for preferences by sentence patterns or by the session's
+own agent, a turn is not placed by its tool count or length, a team proposal is the main worker with a
+note, and a lead's per-Compass decision is refused with "no triage model is set up". Check-ins,
+permissions and asks still go to the owner, and the app asks for a model until one works.
 
 ## Credits
 
