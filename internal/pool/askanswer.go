@@ -104,7 +104,8 @@ func (p *Pool) askAnswerFor(ctx context.Context, in askAnswerForIn) (any, error)
 	}
 	// ponytail: prevReply keeps the reply's last 1500 runes; an item shown earlier in a long reply is
 	// not seen. It is set at Stop (placeTurn), so a turn with no Stop yet has none: both fail closed.
-	if !namesItem(prev, it.ID) || !strings.Contains(quoteNorm(prev), quoteNorm(it.Quote)) {
+	// An empty quote (an ask or check-in with no text) is in every reply: never shown, so refused.
+	if quote := quoteNorm(it.Quote); quote == "" || !namesItem(prev, it.ID) || !strings.Contains(quoteNorm(prev), quote) {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "your previous reply did not show %s with its question as it stands (quoted, not paraphrased, near the end of the reply); show it to the owner and let them answer", in.ID)
 	}
 	// Which question the owner answered must not be the caller's choice: exactly one was shown, or

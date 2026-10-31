@@ -430,6 +430,23 @@ func TestAnswerSubtree(t *testing.T) {
 		t.Fatalf("a parent's ask answered from below: %v", err)
 	}
 
+	// A question with no text to quote (here, only quote markers and backticks) is never shown.
+	a4 := ask(plan, false)
+	_ = p.st.Update(func(s *store.State) error {
+		for i := range s.Domain.Approvals {
+			if s.Domain.Approvals[i].ID == a4 {
+				s.Domain.Approvals[i].Detail = "> ``"
+			}
+		}
+		return nil
+	})
+	reply(lead, "plan asks "+a4)
+	owner(lead, "yes")
+	if _, err := answer(lead, a4); protocol.CodeOf(err) != protocol.CodeForbidden || !pending(a4) {
+		t.Fatalf("an empty question was answered: %v", err)
+	}
+	p.expireAsks(plan)
+
 	// A closed member between them does not break the chain; a cycle in the record is no.
 	tm := p.st.State().Domain.Teams[0]
 	for i := range tm.Members {
