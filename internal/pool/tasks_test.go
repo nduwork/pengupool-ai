@@ -8,6 +8,7 @@ import (
 // The owner's answer, typed into the asking member, answers its ask; it is not the team's new task.
 func TestTypedAnswerSetsNoTask(t *testing.T) {
 	p, st := twoTeams(t)
+	setDecider(p, fakeTriage{record: "record"}) // only the triage model places a turn, and so sets the task
 	s, _ := p.session("leadaaaaaaaa")
 	goal := func() string { d := st.State().Domain; return findTeam(&d, "team1").Goal }
 	p.placeTurn(context.Background(), s, turn{Prompt: "Answer to your ask a1: yes, push both", Delivered: "ask", Tools: 2}, "pushed")
