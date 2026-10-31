@@ -267,6 +267,10 @@ name). Phones and other devices reach PenguPool only through Tailscale Serve; th
 loopback alone and refuses any `--http` that is not a loopback address (`:PORT` means
 `127.0.0.1:PORT`). A config.json with Local network on is ignored,
 with a log line saying so.
+v0.9.46: Sync with GitHub starts only once the owner picks its repository. Turning it on with none
+picked syncs nothing and creates nothing; Settings says to choose a repository, suggesting
+pengupool-memory, which is created only if the owner saves that name. A config that already names a
+repository syncs as before.
 
 ## Credits
 

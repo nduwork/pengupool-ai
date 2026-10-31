@@ -1022,7 +1022,8 @@ esac
 }
 
 // A backup round keeps today's snapshot and pushes the record to the backup repository, once per
-// change; the repository is created private in the account on the first push.
+// change; the repository is created private in the account on the first push. With sync on and no
+// repository picked, nothing is created or pushed: Settings asks the owner to choose one.
 func TestBackupSnapshotAndPush(t *testing.T) {
 	gh, env := fakeGitHub(t)
 	st, err := store.Open(t.TempDir())
@@ -1038,6 +1039,15 @@ func TestBackupSnapshotAndPush(t *testing.T) {
 	cfg.Sync.GitHub = true
 	_ = st.SaveConfig(cfg)
 	ctx := context.Background()
+	if err := p.syncOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(origin); err == nil || st.Config().Sync.Repo != "" || p.syncView()["needs_repo"] != true || p.syncView()["status"].(syncStatus).LastPush != "" {
+		t.Fatalf("synced with no repository picked: repo %q, view %v", st.Config().Sync.Repo, p.syncView())
+	}
+	cfg = st.Config()
+	cfg.Sync.Repo = "pengupool-memory" // the owner picks the suggested name
+	_ = st.SaveConfig(cfg)
 	if err := p.syncOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -2233,5 +2243,42 @@ func TestCatalogRepoDefaultsToAgentHubAndCanBeSet(t *testing.T) {
 	// the default hub in any spelling clears the setting
 	if _, err := c.p.marketplaceSet(context.Background(), marketSetIn{Repo: "git@github.com:nduwork/pengupool-agent-hub"}); err != nil || c.p.st.Config().CatalogRepo != "" {
 		t.Fatalf("reset: %v, %q", err, c.p.st.Config().CatalogRepo)
+	}
+}
+
+// Turning sync on in Settings starts nothing until the owner picks a repository; picking one starts
+// one round, which creates it when it is new.
+func TestSyncWaitsForARepository(t *testing.T) {
+	gh, env := fakeGitHub(t)
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(Options{Store: st, Exe: "pengupool", Env: env})
+	ctx := context.Background()
+	on, repo := true, "my-record"
+	v, err := p.syncSet(ctx, syncSetIn{GitHub: &on})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond) // a round started now would have run
+	if v.(map[string]any)["needs_repo"] != true || p.syncView()["status"].(syncStatus).LastChecked != "" {
+		t.Fatalf("turning it on started a round: %v", p.syncView())
+	}
+	if entries, _ := os.ReadDir(gh); slices.ContainsFunc(entries, func(e os.DirEntry) bool { return e.Name() == "me" }) {
+		t.Fatal("a repository was created before the owner picked one")
+	}
+	if _, err := p.syncSet(ctx, syncSetIn{Repo: &repo}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for p.syncView()["status"].(syncStatus).LastPush == "" {
+		if time.Now().After(deadline) {
+			t.Fatalf("no round after the pick: %v", p.syncView())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if _, err := os.Stat(filepath.Join(gh, "me", "my-record.git")); err != nil || p.syncView()["needs_repo"] != false {
+		t.Fatalf("the picked repository: %v, view %v", err, p.syncView())
 	}
 }
