@@ -17,5 +17,6 @@ describe("map hover card", () => {
     expect(html).not.toMatch(/line-clamp|truncate/);
     expect(TIP_CONTENT).toContain("max-h-[var(--radix-tooltip-content-available-height)]");
     expect(TIP_CONTENT).toContain("overflow-y-auto");
+    expect(TIP_CONTENT).toContain("overscroll-contain"); // at its scroll end the wheel does not move the map behind it
   });
 });
