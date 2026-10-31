@@ -200,6 +200,10 @@ type placement struct {
 	StatesPref  bool   // the message, whatever else it is (a task), states how the owner wants things in general
 }
 
+// prevReplyKeep is how many runes of a reply are kept for the next turn: an item shown at the top of a
+// long reply still counts as shown.
+const prevReplyKeep = 8 << 10
+
 const leftOut = "[left out: looked like a secret]"
 
 func (p *Pool) placeTurn(ctx context.Context, s store.Session, t turn, reply string) {
@@ -211,7 +215,7 @@ func (p *Pool) placeTurn(ctx context.Context, s store.Session, t turn, reply str
 	if p.prevReply == nil {
 		p.prevReply = map[string]string{}
 	}
-	p.prevReply[s.ID] = tailRunes(reply, 1500) // all a choice reads of it
+	p.prevReply[s.ID] = tailRunes(reply, prevReplyKeep) // the shown check reads all of it; a choice its own tail
 	if p.prevReplyAt == nil {
 		p.prevReplyAt = map[string]time.Time{}
 	}

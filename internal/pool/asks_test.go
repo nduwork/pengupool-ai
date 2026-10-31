@@ -73,22 +73,45 @@ func TestTypedSend(t *testing.T) {
 	if !askOpen(p.st.State().Domain.Messages, len(p.st.State().Domain.Messages)-1) {
 		t.Fatal("the ask was not open before its answer")
 	}
-	if _, err := p.messageSend(ctx, sendIn{From: "leadaaaaaaaa", To: "web", Text: "8080", ReplyTo: ask}); err != nil {
+	res, err = p.messageSend(ctx, sendIn{From: "leadaaaaaaaa", To: "web", Text: "8080", ReplyTo: ask})
+	if err != nil {
 		t.Fatal(err)
 	}
-	ms := p.st.State().Domain.Messages
-	for i, m := range ms {
-		if m.ID == ask && askOpen(ms, i) {
-			t.Fatal("the answered ask is still open")
+	open := func() bool {
+		ms := p.st.State().Domain.Messages
+		for i, m := range ms {
+			if m.ID == ask {
+				return askOpen(ms, i)
+			}
 		}
+		return false
+	}
+	if open() {
+		t.Fatal("an answer queued for the busy asker left the ask open")
+	}
+	p.setMessage(res.(map[string]string)["id"], "failed", "recipient is gone")
+	if !open() {
+		t.Fatal("an answer that failed closed the ask")
 	}
 }
 
-// An ask is open until its recipient sends the asker anything, or it is settled.
+// An ask whose answer waits queued for the busy asker is answered: the sweep hands it to no one.
+func TestQueuedReplyIsNotEscalated(t *testing.T) {
+	p, _ := twoTeams(t)
+	old := store.RFC3339(time.Now().Add(-askWait - time.Minute))
+	putMessage(t, p, protocol.TeamMessage{ID: "askq", TeamID: "team1", From: "webaaaaaaaaa", To: "leadaaaaaaaa", Text: "Ask: which port?", Type: "ask", State: "delivered", At: old})
+	putMessage(t, p, protocol.TeamMessage{ID: "rep", TeamID: "team1", From: "leadaaaaaaaa", To: "webaaaaaaaaa", Text: "8080", Type: "tell", ReplyTo: "askq", State: "queued", At: old})
+	sweep(p, time.Now())
+	if m := message(p, "askq"); m.EscalatedAt != "" {
+		t.Fatalf("an answered ask was escalated: %+v", m)
+	}
+}
+
+// An ask is open until its recipient replies (a failed reply aside), or it is settled.
 func TestAskOpen(t *testing.T) {
 	ask := protocol.TeamMessage{ID: "a1", From: "web", To: "lead", Type: "ask", State: "delivered"}
 	other := protocol.TeamMessage{ID: "m2", From: "plan", To: "web", Type: "tell"}
-	back := protocol.TeamMessage{ID: "m3", From: "lead", To: "web", Type: "tell"}
+	back := protocol.TeamMessage{ID: "m3", From: "lead", To: "web", Type: "tell", State: "delivered"}
 	if !askOpen([]protocol.TeamMessage{ask, other}, 0) {
 		t.Error("a message from someone else answered the ask")
 	}
@@ -107,6 +130,21 @@ func TestAskOpen(t *testing.T) {
 	failed.State = "failed"
 	if askOpen([]protocol.TeamMessage{failed}, 0) {
 		t.Error("an ask that never arrived is open")
+	}
+	// A reply that failed answers nothing; one still queued for a busy asker answers it.
+	b, r := back, back
+	b.State, r.State, r.ReplyTo = "failed", "failed", ask.ID
+	if !askOpen([]protocol.TeamMessage{ask, b}, 0) || !askOpen([]protocol.TeamMessage{ask, r}, 0) {
+		t.Error("a failed reply answered the ask")
+	}
+	b.State = "queued"
+	if askOpen([]protocol.TeamMessage{ask, b}, 0) {
+		t.Error("a queued reply left the ask open")
+	}
+	r = back
+	r.From, r.ReplyTo = "plan", ask.ID
+	if askOpen([]protocol.TeamMessage{ask, r}, 0) {
+		t.Error("a delivered --reply-to answer did not answer the ask")
 	}
 }
 

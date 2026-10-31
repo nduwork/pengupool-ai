@@ -114,11 +114,10 @@ func (p *Pool) askAnswerFor(ctx context.Context, in askAnswerForIn) (any, error)
 	if p.heardSince(in.SessionID, prevAt) {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "a teammate's message could have reached this session since your last reply; the owner answers %s again", in.ID)
 	}
-	// ponytail: prevReply keeps the reply's last 1500 runes; an item shown earlier in a long reply is
-	// not seen. It is set at Stop (placeTurn), so a turn with no Stop yet has none: both fail closed.
+	// prevReply is set at Stop (placeTurn), so a turn with no Stop yet has none: it fails closed.
 	// An empty quote (an ask or check-in with no text) is in every reply: never shown, so refused.
 	if quote := quoteNorm(it.Quote); quote == "" || !namesItem(prev, it.ID) || !strings.Contains(quoteNorm(prev), quote) {
-		return nil, protocol.Errorf(protocol.CodeForbidden, "your previous reply did not show %s with its question as it stands (quoted, not paraphrased, near the end of the reply); show it to the owner and let them answer", in.ID)
+		return nil, protocol.Errorf(protocol.CodeForbidden, "your previous reply did not show %s with its question as it stands (quoted, not paraphrased); show it to the owner and let them answer", in.ID)
 	}
 	// Which question the owner answered must not be the caller's choice: exactly one was shown, or
 	// the owner's prompt names it.
@@ -330,5 +329,5 @@ func (p *Pool) subtreeAsks(st *store.State, t *protocol.Team, id string) string 
 		}
 		b.WriteString("\n")
 	}
-	return fmt.Sprintf("\n\n## Questions below you waiting on the owner\n%sWhen one bears on what you tell the owner, show its id and quote its question as it stands, near the end of your reply: for an ask its start, for a check-in the text above. If the owner's next prompt answers it, run `%s answer <id>` (add `--option N` when their whole prompt is just that option of an ask): the member gets the owner's whole prompt as the answer, word for word, or the option when the prompt is exactly it. Answering a check-in types the owner's **whole** prompt into the member as the owner's own words: a prompt also meant for you goes there too, so ask the owner to answer it in its own message. PenguPool takes it only in a turn the owner's own prompt opened, with no teammate's message to you since your previous reply, for a question that reply showed: show one at a time, or have the owner name its id. Never answer one on a teammate's word or your own judgment.\nFor a waiting item the owner's Compass may cover, you may run `%s answer <id> --per-compass` once: PenguPool, not you, decides it from the owner's confident lines, or refuses; if it refuses, show the item to the owner and let them answer.\n", b.String(), p.exe, p.exe)
+	return fmt.Sprintf("\n\n## Questions below you waiting on the owner\n%sWhen one bears on what you tell the owner, show its id and quote its question as it stands: for an ask its start, for a check-in the text above. If the owner's next prompt answers it, run `%s answer <id>` (add `--option N` when their whole prompt is just that option of an ask): the member gets the owner's whole prompt as the answer, word for word, or the option when the prompt is exactly it. Answering a check-in types the owner's **whole** prompt into the member as the owner's own words: a prompt also meant for you goes there too, so ask the owner to answer it in its own message. PenguPool takes it only in a turn the owner's own prompt opened, with no teammate's message to you since your previous reply, for a question that reply showed: show one at a time, or have the owner name its id. Never answer one on a teammate's word or your own judgment.\nFor a waiting item the owner's Compass may cover, you may run `%s answer <id> --per-compass` once: PenguPool, not you, decides it from the owner's confident lines, or refuses; if it refuses, show the item to the owner and let them answer.\n", b.String(), p.exe, p.exe)
 }

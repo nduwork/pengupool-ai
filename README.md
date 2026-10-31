@@ -292,6 +292,9 @@ notice to the member), and each team's settings have "Lead decides from your Com
 v0.10.0: Release of 0.9.39 to 0.9.48 as one build: the Compass curation (0.9.39, 0.9.40), answers
 through the lead (0.9.41, 0.9.47, 0.9.48), OpenCode and Local network removed (0.9.44, 0.9.45) and Sync
 with GitHub waiting for a picked repository (0.9.46). No changes of its own.
+v0.10.1: Two fixes to answers through the lead. The shown check reads the last 8192 characters of the
+lead's previous reply, not 1500, so an id near the top of a long reply is no longer missed. A reply that failed no longer closes an ask; any
+other reply from the asked member still does, also one still queued for a busy asker.
 v0.10.2: Three stability fixes in the Compass and journal. A line the owner wrote or confirmed holds
 until they replace or delete it: it no longer fades with time, and evidence against it never sweeps it
 (inferred lines still do both). A helper's done report waiting for its compaction is kept as its
