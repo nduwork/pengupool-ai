@@ -209,8 +209,8 @@ func TestCompassReviewConflicts(t *testing.T) {
 	d := &contraDecider{clash: [][2]string{{"yellow", "red"}, {"red", "green"}}}
 	p.testDecider = d
 	got := items()
-	if len(got) != 1 || len(got[0].Lines) != 3 {
-		t.Fatalf("one item of three: %+v", got)
+	if len(got) != 1 || len(got[0].Lines) != 3 || len(got[0].Edges) != 2 {
+		t.Fatalf("one item of three lines and two pairs: %+v", got)
 	}
 	cond := map[string]string{}
 	for _, l := range got[0].Lines {
@@ -239,14 +239,15 @@ func TestCompassReviewConflicts(t *testing.T) {
 	if _, err := p.compassSave(nil, compassSaveIn{UID: green, Body: "The owner's favorite color is green, mostly"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := call(t, p, true, "compass.keep_one", compassKeepIn{Keep: yellow, Lines: stale}); err == nil || !strings.Contains(err.Error(), "refresh") {
+	if _, err := call(t, p, true, "compass.keep_one", compassKeepIn{Keep: yellow, Lines: stale, Edges: got[0].Edges}); err == nil || !strings.Contains(err.Error(), "refresh") {
 		t.Fatalf("a stale item was applied: %v", err)
 	}
 	if _, err := p.db.Line(red); err != nil {
 		t.Fatal("a stale apply deleted a line")
 	}
 
-	// Refreshed: keep yellow, red and green go, yellow is unchanged (body, condition, effects).
+	// Refreshed: keep yellow. Red, which contradicts it, goes; green contradicted only red, so it
+	// stays; yellow is unchanged (body, condition, effects).
 	got = items()
 	if len(got) != 1 {
 		t.Fatalf("after the edit: %+v", got)
@@ -255,13 +256,16 @@ func TestCompassReviewConflicts(t *testing.T) {
 	p.record(sig, agentdb.WeightSaid, effectOn{yellow, 1, 0}, effectOn{red, 0, 1})
 	before, _ := p.db.Line(yellow)
 	beforeEff := effects(yellow)
-	if _, err := call(t, p, false, "compass.keep_one", compassKeepIn{Keep: yellow, Lines: got[0].Lines}); err == nil {
+	if _, err := call(t, p, false, "compass.keep_one", compassKeepIn{Keep: yellow, Lines: got[0].Lines, Edges: got[0].Edges}); err == nil {
 		t.Fatal("an agent resolved a conflict")
 	}
-	if _, err := call(t, p, true, "compass.keep_one", compassKeepIn{Keep: "nope", Lines: got[0].Lines}); err == nil {
+	if _, err := call(t, p, true, "compass.keep_one", compassKeepIn{Keep: "nope", Lines: got[0].Lines, Edges: got[0].Edges}); err == nil {
 		t.Fatal("kept a line not in the item")
 	}
-	if _, err := call(t, p, true, "compass.keep_one", compassKeepIn{Keep: yellow, Lines: got[0].Lines}); err != nil {
+	if _, err := call(t, p, true, "compass.keep_one", compassKeepIn{Keep: yellow, Lines: got[0].Lines, Edges: [][2]string{{red, "nope"}}}); err == nil {
+		t.Fatal("a pair naming a line not in the item was taken")
+	}
+	if _, err := call(t, p, true, "compass.keep_one", compassKeepIn{Keep: yellow, Lines: got[0].Lines, Edges: got[0].Edges}); err != nil {
 		t.Fatal(err)
 	}
 	after, err := p.db.Line(yellow)
@@ -271,10 +275,11 @@ func TestCompassReviewConflicts(t *testing.T) {
 	if a := effects(yellow); len(a) != len(beforeEff) || a[0].SignalUID != beforeEff[0].SignalUID || a[0].PSup != beforeEff[0].PSup {
 		t.Fatalf("yellow's effects: %+v → %+v", beforeEff, a)
 	}
-	for _, u := range []string{red, green} {
-		if _, err := p.db.Line(u); err == nil {
-			t.Fatalf("%s was not deleted", u)
-		}
+	if _, err := p.db.Line(red); err == nil {
+		t.Fatal("red was not deleted")
+	}
+	if _, err := p.db.Line(green); err != nil {
+		t.Fatal("green, which never contradicted yellow, was deleted")
 	}
 	if got := items(); len(got) != 0 {
 		t.Fatalf("after keep-one: %+v", got)

@@ -42,4 +42,6 @@ export interface ReviewItem {
   why: string;
   lines: ReviewLine[];
   patterns?: string[];
+  /** A conflict's pairs of line uids that contradict. */
+  edges?: [string, string][];
 }

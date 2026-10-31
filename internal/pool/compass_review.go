@@ -17,7 +17,8 @@ import (
 //     `gh pr`, `gh release`…); listed first. The owner removes it (new answers are then kept per
 //     subcommand) or edits it to say it stays.
 //   - conflict: preference lines the decision model judges to contradict where their conditions
-//     overlap, a connected group as one item. The owner keeps one; the others are deleted.
+//     overlap, a connected group as one item with its contradicting pairs. The owner keeps one; the
+//     lines that contradict it directly are deleted, and the review is computed again.
 //   - merge: allow/deny lines kept as a whole command before 0.11.4 ("The owner allows Bash for
 //     `cd x && go test ./...`") that the command patterns of today ("go test") cover. The owner
 //     applies each one; the lines' evidence moves to the pattern's line.
@@ -52,6 +53,7 @@ type reviewItem struct {
 	Why      string       `json:"why"`
 	Lines    []reviewLine `json:"lines"`
 	Patterns []string     `json:"patterns,omitempty"` // merge: the patterns the lines become
+	Edges    [][2]string  `json:"edges,omitempty"`    // conflict: the pairs of line uids that contradict
 }
 
 // broadWhy says why a Bash pattern (a command, or a command and its subcommand) is broad, "" when it is not.
@@ -217,6 +219,8 @@ func (p *Pool) conflictItems() []reviewItem {
 		return c.items
 	}
 	type pair struct{ a, b agentdb.Line }
+	// ponytail: the first maxConflictPairs pairs in uid order, kept with the lines; a pair past the cap
+	// is never asked until the lines change. Rotate or rank the pairs if owners hit the cap.
 	var pairs []pair
 	for _, u := range uids {
 		l := shown[u]
@@ -238,6 +242,12 @@ func (p *Pool) conflictItems() []reviewItem {
 			p.logf("pool: the Compass review's conflicts: %v", err)
 			return nil // not kept: asked again at the next review
 		}
+		var edges [][2]string
+		for i, pr := range pairs {
+			if a, ok := res.Answers[fmt.Sprintf("contradict_%d", i)]; ok && a.Yes >= 0.8 {
+				edges = append(edges, [2]string{pr.a.UID, pr.b.UID})
+			}
+		}
 		root := map[string]string{} // union-find over the contradicting pairs
 		find := func(u string) string {
 			for root[u] != "" && root[u] != u {
@@ -245,15 +255,13 @@ func (p *Pool) conflictItems() []reviewItem {
 			}
 			return u
 		}
-		for i, pr := range pairs {
-			if a, ok := res.Answers[fmt.Sprintf("contradict_%d", i)]; ok && a.Yes >= 0.8 {
-				for _, u := range []string{pr.a.UID, pr.b.UID} {
-					if root[u] == "" {
-						root[u] = u
-					}
+		for _, e := range edges {
+			for _, u := range e {
+				if root[u] == "" {
+					root[u] = u
 				}
-				root[find(pr.b.UID)] = find(pr.a.UID)
 			}
+			root[find(e[1])] = find(e[0])
 		}
 		groups := map[string][]reviewLine{}
 		for _, u := range uids { // in uid order, so an item and its lines are stable
@@ -263,7 +271,13 @@ func (p *Pool) conflictItems() []reviewItem {
 			}
 		}
 		for _, r := range slices.Sorted(maps.Keys(groups)) {
-			items = append(items, reviewItem{Kind: "conflict", Why: fmt.Sprintf("%d lines that contradict where they apply: keep one", len(groups[r])), Lines: groups[r]})
+			var es [][2]string
+			for _, e := range edges {
+				if find(e[0]) == r {
+					es = append(es, e)
+				}
+			}
+			items = append(items, reviewItem{Kind: "conflict", Why: fmt.Sprintf("%d lines that contradict where they apply: keep one", len(groups[r])), Lines: groups[r], Edges: es})
 		}
 	}
 	p.mu.Lock()
@@ -275,18 +289,38 @@ func (p *Pool) conflictItems() []reviewItem {
 type compassKeepIn struct {
 	Keep  string       `json:"keep"`
 	Lines []reviewLine `json:"lines"` // the item's lines as the owner saw them (uid, updated_at)
+	Edges [][2]string  `json:"edges"` // the item's contradicting pairs
 }
 
-// compassKeepOne resolves a conflict item: the owner keeps one line and the others are deleted with
-// their effects (DeleteLine). The kept line is left as it is. Refused when any line is gone or changed
-// since the review (its body, condition or updated_at), so the owner never discards on a stale view.
+// compassKeepOne resolves a conflict item: the owner keeps one line, and the lines that contradict it
+// directly (an edge to it) are deleted with their effects (DeleteLine). A line that contradicted only
+// another stays, for the next review to show again. The kept line is left as it is. Refused when any
+// line is gone or changed since the review (its body, condition or updated_at), so the owner never
+// discards on a stale view.
+// ponytail: one DeleteLine per line, not one transaction; a failure part way leaves the rest, which
+// the next review shows again.
 func (p *Pool) compassKeepOne(_ context.Context, in compassKeepIn) (any, error) {
 	db, err := p.agentDB()
 	if err != nil {
 		return nil, err
 	}
-	if len(in.Lines) < 2 || !slices.ContainsFunc(in.Lines, func(l reviewLine) bool { return l.UID == in.Keep }) {
+	listed := func(uid string) bool {
+		return slices.ContainsFunc(in.Lines, func(l reviewLine) bool { return l.UID == uid })
+	}
+	if len(in.Lines) < 2 || !listed(in.Keep) {
 		return nil, invalid("keep one of the item's lines")
+	}
+	var drop []string
+	for _, e := range in.Edges {
+		if !listed(e[0]) || !listed(e[1]) {
+			return nil, invalid("a pair names a line not in the item")
+		}
+		if other := map[string]string{e[0]: e[1], e[1]: e[0]}[in.Keep]; other != "" && other != in.Keep && !slices.Contains(drop, other) {
+			drop = append(drop, other)
+		}
+	}
+	if len(drop) == 0 {
+		return nil, invalid("no line in the item contradicts the one kept")
 	}
 	defer p.lockKey("compass")()
 	for _, rl := range in.Lines {
@@ -295,15 +329,12 @@ func (p *Pool) compassKeepOne(_ context.Context, in compassKeepIn) (any, error) 
 			return nil, conflict("the review changed; refresh it")
 		}
 	}
-	for _, rl := range in.Lines {
-		if rl.UID == in.Keep {
-			continue
-		}
-		if err := db.DeleteLine(rl.UID); err != nil {
+	for _, uid := range drop {
+		if err := db.DeleteLine(uid); err != nil {
 			return nil, err
 		}
 	}
-	return map[string]any{}, nil
+	return map[string]any{"deleted": drop}, nil
 }
 
 type compassApplyIn struct {

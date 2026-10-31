@@ -240,7 +240,10 @@ function ReviewSheet({ items, onChange }: { items: ReviewItem[]; onChange: () =>
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={async () => (await app.call("compass.keep_one", { keep: l.uid, lines: it.lines })) !== undefined && void refresh()}
+                      onClick={async () => {
+                        await app.call("compass.keep_one", { keep: l.uid, lines: it.lines, edges: it.edges ?? [] });
+                        await refresh(); // after a stale refusal too: the owner sees the review as it is now
+                      }}
                     >
                       Keep this
                     </Button>
@@ -248,7 +251,7 @@ function ReviewSheet({ items, onChange }: { items: ReviewItem[]; onChange: () =>
                 </li>
               ))}
             </ul>
-            {it.kind === "conflict" ? <p>Keeping one deletes the others, with their evidence.</p> : null}
+            {it.kind === "conflict" ? <p>Keeping one deletes the lines that contradict it, with their evidence.</p> : null}
             {it.kind === "merge" ? <p>Becomes {it.patterns?.map((p) => `\`${p}\``).join(", ")}, keeping the evidence.</p> : null}
             <div className="flex flex-wrap justify-end gap-2">
               {it.kind === "broad" ? (
