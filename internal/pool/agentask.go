@@ -159,11 +159,14 @@ func (p *Pool) askAnswer(_ context.Context, c gateway.Caller, raw json.RawMessag
 // answerAsk records the answer once: a second answer, or one to an ask that went, is a conflict.
 // The session gets it from its wait, or as a notice when nothing waits.
 func (p *Pool) answerAsk(id, answer, by string) (any, error) {
-	return p.answerAskWith(id, answer, by, "")
+	return p.answerAskWith(id, answer, by, "", "")
 }
 
 // answerAskWith is answerAsk recording the owner's words that carried the answer (askAnswerFor).
-func (p *Pool) answerAskWith(id, answer, by, words string) (any, error) {
+// prompt is those words whole: a member no longer waiting gets them typed in as its next prompt,
+// credited to the owner, so its harness sees the owner's own prompt; a waiting member gets the answer
+// from its wait.
+func (p *Pool) answerAskWith(id, answer, by, words, prompt string) (any, error) {
 	answer = strings.TrimSpace(answer)
 	if answer == "" {
 		return nil, invalid("no answer")
@@ -205,7 +208,15 @@ func (p *Pool) answerAskWith(id, answer, by, words string) (any, error) {
 	delete(p.askWaitedAt, a.ID)
 	p.mu.Unlock()
 	if !waiting {
-		p.notice(a.TeamID, a.SessionID, "The owner answered your ask "+a.ID+" (\""+clipRunes(oneLine(a.Detail), 120)+"\"): "+a.Answer)
+		// ponytail: a member that is busy, or a typing that fails, gets the notice instead; typing it
+		// once the member goes idle needs a queue.
+		s, _ := p.session(a.SessionID)
+		if _, agent := harness.Find(s.Harness); prompt == "" || !agent || s.Status != "idle" ||
+			p.typeOwnerPrompt(a.SessionID, "Answer to your ask "+a.ID+": "+prompt) != nil {
+			p.notice(a.TeamID, a.SessionID, "The owner answered your ask "+a.ID+" (\""+clipRunes(oneLine(a.Detail), 120)+"\"): "+a.Answer)
+		} else {
+			return map[string]string{"id": a.ID, "answer": a.Answer, "typed": "true"}, nil
+		}
 	}
 	return map[string]string{"id": a.ID, "answer": a.Answer}, nil
 }

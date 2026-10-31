@@ -87,11 +87,12 @@ func (p *Pool) askAnswerFor(_ context.Context, in askAnswerForIn) (any, error) {
 		return nil, invalid("ask %s has %d options", in.ID, len(a.Options))
 	}
 	answer := redact(strings.TrimSpace(cur.Prompt)) // the owner's whole prompt, for the child to read
+	whole := answer
 	if in.Option > 0 && isOption(cur.Prompt, a.Options[in.Option-1], in.Option) {
 		answer = a.Options[in.Option-1]
 	}
 	by := "owner via " + in.SessionID
-	res, err := p.answerAskWith(a.ID, answer, by, clipRunes(redact(oneLine(cur.Prompt)), 500))
+	res, err := p.answerAskWith(a.ID, answer, by, clipRunes(redact(oneLine(cur.Prompt)), 500), whole)
 	if err != nil {
 		return nil, err
 	}
