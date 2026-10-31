@@ -1539,10 +1539,11 @@ func (p *Pool) checkinAnswer(_ context.Context, in answerIn) (any, error) {
 // typeOwnerPrompt types the owner's words into session id as its next prompt, on one line (a newline
 // typed into the terminal would send the prompt early), credited to the owner like keystrokes on the
 // app's connection: else it would arrive unverified, teach the Compass nothing (ownerinput.go), and
-// the member's harness would not see the owner's prompt.
+// the member's harness would not see the owner's prompt. The credit is a delivered one: the turn it
+// opens cannot carry the words on as an answer to another question.
 func (p *Pool) typeOwnerPrompt(id, text string) error {
 	line := strings.Join(strings.Fields(text), " ")
-	p.OwnerInput(id, line)
+	p.ownerInputAs(id, line, true)
 	if err := p.typeInto(id, line+"\r"); err != nil {
 		p.withdrawOwnerInput(id, line) // nothing was typed: the credit must not wait for an agent to post that text
 		return err

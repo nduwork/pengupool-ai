@@ -41,6 +41,9 @@ type turn struct {
 	// Enter in this session to send it (ownerinput.go): an agent can post a user turn into its own
 	// session. It is treated as a teammate's words, not the owner's.
 	Unverified bool
+	// Delivered: the owner's words the host typed in for them (credit.delivered); they cannot carry an
+	// answer on to another question.
+	Delivered bool
 }
 
 // turnStart is the owner's (or a teammate's) prompt opening a turn.

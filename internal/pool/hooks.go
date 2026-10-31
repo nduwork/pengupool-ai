@@ -209,9 +209,13 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		if from := p.outsideSender(t.Prompt); from != "" {
 			p.nativeArrived(s.ID, from, entered)
 		}
-		if t.fromOwner() && !p.ownerSent(s.ID, t.Prompt) {
-			t.Unverified = true // looks like the owner's, but the owner sent nothing: not the owner's
-			p.logLine(s.ID, "prompt: a user turn the owner did not send; treated as a teammate's words ("+p.ownerInputSeen(s.ID)+")")
+		if t.fromOwner() {
+			if ok, delivered := p.ownerSentAs(s.ID, t.Prompt); !ok {
+				t.Unverified = true // looks like the owner's, but the owner sent nothing: not the owner's
+				p.logLine(s.ID, "prompt: a user turn the owner did not send; treated as a teammate's words ("+p.ownerInputSeen(s.ID)+")")
+			} else {
+				t.Delivered = delivered
+			}
 		}
 		owner := t.fromOwner()
 		wait := p.promptArrived(s, owner)
@@ -224,6 +228,11 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			p.turnOpen(s.ID, "")
 		} else {
 			p.turnStartAs(s.ID, t.Prompt, t.Unverified)
+			if t.Delivered {
+				p.mu.Lock()
+				p.turns[s.ID].Delivered = true
+				p.mu.Unlock()
+			}
 		}
 		if s.JobStart.IsZero() { // the first prompt since its last log entry starts a job
 			p.setSession(s.ID, func(x *store.Session) { x.JobStart = time.Now().UTC() })

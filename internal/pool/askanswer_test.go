@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -424,5 +425,119 @@ func TestAskAnswerTypedWhenNotWaiting(t *testing.T) {
 	}
 	if n := notices(); len(typed) != 0 || !strings.Contains(n, "The owner answered your ask "+id) {
 		t.Fatalf("busy member: typed %q, notices:\n%s", typed, n)
+	}
+
+	// A typing that fails: a notice, and the owner's credit taken back.
+	p.setStatus(web, "idle")
+	p.testKeys = func(string, string) error { return errors.New("hub gone") }
+	id, words = answered()
+	p.OwnerInput(lead, words)
+	prompt(t, p, lead, words)
+	if _, err := p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: id}); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	credits := len(p.ownerEnter[web])
+	p.mu.Unlock()
+	if n := notices(); credits != 0 || !strings.Contains(n, "The owner answered your ask "+id) {
+		t.Fatalf("failed typing: %d credits left, notices:\n%s", credits, n)
+	}
+
+	// An answer in the app carries no words to type: a notice.
+	p.testKeys = func(_, text string) error { typed = append(typed, text); return nil }
+	id, _ = answered()
+	if _, err := p.answerAsk(id, "Yes", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if n := notices(); len(typed) != 0 || !strings.Contains(n, "The owner answered your ask "+id) {
+		t.Fatalf("app answer: typed %q, notices:\n%s", typed, n)
+	}
+}
+
+// The owner's answer to web's ask X, typed into web, is the owner's prompt for web, but it cannot
+// be carried on to web's own child's ask Y (review repro); nor can owner words that name another ask.
+func TestTypedAnswerNotCarriedOn(t *testing.T) {
+	p, _ := twoTeams(t)
+	p.requireOwnerInput = true
+	ctx := context.Background()
+	const lead, web, plan = "leadaaaaaaaa", "webaaaaaaaaa", "planaaaaaaaa"
+	_ = p.st.Update(func(s *store.State) error {
+		for i := range s.Sessions {
+			s.Sessions[i].Harness = "claude"
+		}
+		for i, m := range s.Domain.Teams[0].Members {
+			switch m.SessionID {
+			case web:
+				s.Domain.Teams[0].Members[i].Parent = lead
+			case plan:
+				s.Domain.Teams[0].Members[i].Parent = web
+			}
+		}
+		return nil
+	})
+	ask := func(sid, q string) string {
+		res, err := p.agentAsk(ctx, agentAskIn{SessionID: sid, Question: q, Options: []string{"Yes", "No"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := res.(map[string]string)["id"]
+		_ = p.st.Update(func(s *store.State) error {
+			for i := range s.Domain.Approvals {
+				if s.Domain.Approvals[i].ID == id {
+					s.Domain.Approvals[i].CreatedAt = store.RFC3339(time.Now().Add(-time.Minute))
+				}
+			}
+			return nil
+		})
+		return id
+	}
+	y := ask(plan, "Delete the prod bucket?")
+	x := ask(web, "Rename the README heading?")
+	p.mu.Lock()
+	if p.prevReply == nil {
+		p.prevReply, p.prevReplyAt = map[string]string{}, map[string]time.Time{}
+	}
+	p.prevReply[lead], p.prevReplyAt[lead] = "web waits on the owner: ask "+x, time.Now()
+	p.prevReply[web], p.prevReplyAt[web] = "I asked the owner "+x+"; plan waits on ask "+y, time.Now()
+	p.mu.Unlock()
+	var fromOwner bool
+	p.testKeys = func(sid, text string) error {
+		fromOwner = prompt(t, p, sid, strings.TrimSuffix(text, "\r")).fromOwner()
+		return nil
+	}
+	p.setStatus(web, "idle")
+	p.OwnerInput(lead, "Yes")
+	prompt(t, p, lead, "Yes")
+	if _, err := p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: x, Option: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if !fromOwner {
+		t.Fatal("the typed answer is not the owner's prompt for web")
+	}
+	_, err := p.askAnswerFor(ctx, askAnswerForIn{SessionID: web, ID: y})
+	if a, _ := p.approval(y); protocol.CodeOf(err) != protocol.CodeForbidden || a.State != "pending" {
+		t.Fatalf("the owner's answer to %s was carried to %s: %v, %s by %q", x, y, err, a.State, a.AnsweredBy)
+	}
+
+	// Delivered words that name no ask (a check-in answer typed in) are no answer for y either.
+	if err := p.typeOwnerPrompt(web, "Yes, go ahead"); err != nil || !fromOwner {
+		t.Fatalf("typed: %v, from the owner %v", err, fromOwner)
+	}
+	_, err = p.askAnswerFor(ctx, askAnswerForIn{SessionID: web, ID: y})
+	if a, _ := p.approval(y); protocol.CodeOf(err) != protocol.CodeForbidden || a.State != "pending" {
+		t.Fatalf("delivered words answered %s: %v", y, err)
+	}
+
+	// The owner's own prompt in web, naming another ask, answers no other: not even the one shown.
+	z := ask(web, "Bump the version?")
+	p.mu.Lock()
+	p.prevReply[lead], p.prevReplyAt[lead] = "web waits on the owner: ask "+z, time.Now()
+	p.mu.Unlock()
+	words := "yes, the same as " + x
+	p.OwnerInput(lead, words)
+	prompt(t, p, lead, words)
+	_, err = p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: z})
+	if a, _ := p.approval(z); protocol.CodeOf(err) != protocol.CodeForbidden || a.State != "pending" {
+		t.Fatalf("words naming %s answered %s: %v", x, z, err)
 	}
 }
