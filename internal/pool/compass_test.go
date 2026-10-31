@@ -881,3 +881,91 @@ func TestMergeSameKeepsTheOwnersLine(t *testing.T) {
 		t.Fatalf("lines = %+v", ls)
 	}
 }
+
+// The agent's compass renders prose lines only: a perm: line is an answer autoAnswer reads from the
+// store, and stays there; the render leaves it out.
+func TestCompassRenderLeavesOutPermLines(t *testing.T) {
+	p, _ := twoTeams(t)
+	stated(t, p, "Keep the UI simple")
+	if _, err := p.db.PutLine(agentdb.Line{Owner: p.owner(), Origin: "stated", Source: "gate", Tag: "perm:allow:Bash:go test", Body: "The owner allows Bash for `go test`"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range p.lines("", 0) {
+		if strings.HasPrefix(v.Tag, "perm:") && !v.shown() {
+			t.Fatal("the permission line must be shown at its belief for this test to mean anything")
+		}
+	}
+	c := p.renderCompass()
+	if !strings.Contains(c, "Keep the UI simple") || strings.Contains(c, "allows Bash") {
+		t.Fatalf("compass:\n%s", c)
+	}
+	lead, _ := p.session("leadaaaaaaaa")
+	if way, _ := p.autoAnswer(lead, "Bash", map[string]any{"command": "go test ./..."}); way != "allow" {
+		t.Fatalf("autoAnswer after the render change = %q, want allow", way)
+	}
+}
+
+// Lines are chosen before any limit: 250 newer permission lines do not push out an older prose line.
+func TestCompassRenderPicksBeforeLimit(t *testing.T) {
+	p, _ := twoTeams(t)
+	if _, err := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Prefer standard library over third-party packages", Origin: "stated", CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 250 {
+		if _, err := p.db.PutLine(agentdb.Line{Owner: p.owner(), Origin: "chose", Source: "gate", Tag: fmt.Sprintf("perm:allow:Bash:tool%d", i), Body: fmt.Sprintf("The owner allows Bash for `tool%d`", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if c := p.renderCompass(); !strings.Contains(c, "Prefer standard library") || strings.Contains(c, "No preferences yet") {
+		t.Fatalf("the older prose line was pushed out:\n%s", c)
+	}
+}
+
+// The budget bounds the whole section, header and overflow line included, and guiding lines come
+// before the rest.
+func TestCompassRenderBudget(t *testing.T) {
+	p, _ := twoTeams(t)
+	for i := range 200 {
+		origin := "chose"
+		if i%2 == 0 {
+			origin = "stated"
+		}
+		if _, err := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: fmt.Sprintf("Preference %02d: ", i) + strings.Repeat("keep it simple. ", 8), Origin: origin}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, n := range []int{400, 1000, 4 << 10, maxCompassContext} {
+		c := p.renderCompassCap(n)
+		if len(c) > n || !strings.HasSuffix(c, compassMore) {
+			t.Fatalf("cap %d: %d bytes, overflow notice %v", n, len(c), strings.HasSuffix(c, compassMore))
+		}
+	}
+	if c := p.renderCompassCap(50); c != "" {
+		t.Fatalf("a cap below the header and the notice rendered %q", c)
+	}
+	// Guiding lines first: no shown line that guides comes after one that does not.
+	guides := map[string]bool{}
+	for _, v := range p.lines("", 0) {
+		guides["- "+v.text()] = v.guides()
+	}
+	n := 0
+	for _, g := range guides {
+		if g {
+			n++
+		}
+	}
+	if n == 0 || n == len(guides) {
+		t.Fatalf("%d of %d lines guide: the order check needs both kinds", n, len(guides))
+	}
+	seenOther := false
+	for _, l := range strings.Split(p.renderCompass(), "\n") {
+		g, ok := guides[l]
+		if !ok {
+			continue
+		}
+		if g && seenOther {
+			t.Fatalf("a guiding line came after one that does not guide: %q", l)
+		}
+		seenOther = seenOther || !g
+	}
+}
