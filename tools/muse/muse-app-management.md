@@ -12,26 +12,17 @@ WebSocket API at the end of this guide.
   machine your Muse agent runs on) both on it. The free plan is enough. Check that both show as
   connected under Machines in the Tailscale admin console.
 
-## 1. Turn on Local network
+## 1. Set up Tailscale Serve
 
-PenguPool AI › Settings › **Local network** › switch it on.
-
-- The host then listens on every interface at port 7787 (`0.0.0.0:7787`, which macOS reports as
-  `[::]:7787`) instead of loopback only. Settings › Local network › Bind address sets another
-  `host:port` if you need one.
-- Turning it on restarts the host. Your sessions keep running, and the app reconnects by itself.
-- Settings › Local network › Host address shows where it listens now.
+PenguPool AI › Settings › **Tailscale** › **Serve over HTTPS**. The checklist there walks the
+setup: Tailscale installed, logged in, HTTPS certificates enabled in the Tailscale admin console,
+Serve, reachable. The host itself listens on loopback only; Serve forwards the tailnet to it, on
+your private tailnet only, never Funnel.
 
 ## 2. How the host check works
 
-Every Muse API call names a host in its URL, and PenguPool answers only these names:
-
-- **This machine's own Tailscale name**, for example `http://mac.tail1234.ts.net:7787`. PenguPool
-  reads it from Tailscale itself, so there is nothing to save. This works over plain HTTP: the
-  tailnet already encrypts the traffic (WireGuard).
-- **The Tailscale Serve name**, `https://mac.tail1234.ts.net`, if you set up Serve under
-  Settings › Tailscale. Serve stays an alternative. It needs HTTPS certificates enabled in the
-  Tailscale admin console.
+Every Muse API call names a host in its URL, and PenguPool answers only **the Tailscale Serve
+name**, for example `https://mac.tail1234.ts.net`.
 
 Any other name, even one that resolves to this machine, gets `403 forbidden host`. That blocks web
 pages that try to reach PenguPool through a borrowed DNS name. The host name is not the credential.
@@ -41,14 +32,12 @@ The device token is, and every call except pairing needs it.
 
 1. On the PenguPool machine: Settings › **Muse app** › **Pair a Muse device**. It shows a 6-digit
    code (valid for 5 minutes, one use) and the API URL to give the Muse app, for example
-   `http://mac.tail1234.ts.net:7787/api/muse/v1`. The URL's host is the Serve name when Serve is
-   set up, otherwise this machine's Tailscale name. If it shows `https://<tailnet-name>`, Serve is
-   not set up and either Local network is off (do step 1 first), Bind address names one address
-   instead of every interface, or Tailscale is not running on this machine.
+   `https://mac.tail1234.ts.net/api/muse/v1`. The URL's host is the Serve name. If it shows
+   `https://<tailnet-name>`, Serve is not set up: do step 1 first.
 2. In the Muse app, give your Muse the URL and the code. It pairs with:
 
    ```bash
-   API=http://mac.tail1234.ts.net:7787/api/muse/v1
+   API=https://mac.tail1234.ts.net/api/muse/v1
    curl -s -X POST "$API/pair" -H 'Content-Type: application/json' \
      -d '{"code":"123456","device_name":"My phone"}'
    # {"token":"9f2c…"}
@@ -72,7 +61,7 @@ request (see [The owner WebSocket API](#the-owner-websocket-api)). It answers `{
 Every call carries the token: `Authorization: Bearer <token>`. Set this up once:
 
 ```bash
-API=http://mac.tail1234.ts.net:7787/api/muse/v1
+API=https://mac.tail1234.ts.net/api/muse/v1
 AUTH="Authorization: Bearer 9f2c…"
 ```
 
@@ -187,7 +176,7 @@ this PenguPool, so keep it on machines you own. On the PenguPool machine, `pengu
 prints the app URL, and the token is the part after `#token=`.
 
 This API answers only on the PenguPool machine itself (or through an SSH port forward to it).
-Over the network, the tailnet name, Serve or the local network, only the device API and
+Through Tailscale Serve, only the device API and
 `/api/healthz` answer; everything else is `404`.
 
 Connect to `ws://127.0.0.1:7787/ws?token=<owner token>` on the PenguPool machine. Every WebSocket message is one binary frame: a 17-byte big-endian header, then the
@@ -216,7 +205,7 @@ Then:
   `state.delta` whenever something changes.
 - **App requests** go as `{"id":"4","type":"<request>","params":{…}}` and are answered with the same
   `type` and a `result`, or with `{"type":"error","code":…,"message":…}`. For example:
-  `settings.get`, `settings.save` (`{"lan":true,"restart":true}`), `muse.pairCode`, `muse.devices`
+  `settings.get`, `settings.save` (`{"tailscale":"https://mac.tail1234.ts.net"}`), `muse.pairCode`, `muse.devices`
   and `muse.revoke` (`{"name":"My phone"}`).
 - **Read a session's screen.** Send `{"id":"5","type":"session.attach","session_id":"01a1…","channel":1}`.
   You get `session.attached`, then `snapshot.begin`, one or more snapshot frames (type 5, channel 1)
@@ -277,8 +266,8 @@ const typeLine = async (text) => {
 
 ## Security in plain words
 
-- **Transport.** Calls travel inside your tailnet, which WireGuard encrypts end to end, whether you
-  use plain HTTP on the Tailscale name or HTTPS through Serve. PenguPool never uses Tailscale
+- **Transport.** Calls travel inside your tailnet, which WireGuard encrypts end to end, over HTTPS
+  through Serve. PenguPool never uses Tailscale
   Funnel, so nothing is exposed to the public internet.
 - **Credential.** A device token is the only thing that lets a device in. Each device has its own,
   stored only as a hash, revocable any time under Settings › Muse app.
@@ -286,20 +275,19 @@ const typeLine = async (text) => {
   and asks for team changes you approve. It cannot read screens, run commands, start new sessions,
   or change settings. The owner's token, used by the WebSocket API above, can do everything the
   app can, and it works only on the PenguPool machine.
-- **With Local network on,** other machines on your local network can reach port 7787 as well,
-  but only the device API and the health check answer there. The PenguPool app, its WebSocket
-  and every other route answer only on this machine.
+- **No local-network listener.** The host listens on loopback only, so other machines on your
+  local network cannot reach it. The PenguPool app, its WebSocket and every other route answer
+  only on this machine.
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| `403 forbidden host` | The URL's host is not this machine's Tailscale name or Serve name: an IP, a different name, a typo. | Use the URL that Pair a Muse device shows. `tailscale status` on the PenguPool machine shows its name. |
-| Connection refused or times out on port 7787 | Local network is off: the host listens on loopback only. | Settings › Local network on (step 1), or set up Serve and use its HTTPS URL. |
-| Pair a Muse device shows `https://<tailnet-name>` | Serve is not set up, and Local network is off, Bind address names one address, or Tailscale is not running here. | Step 1 (leave Bind address empty), check `tailscale status`, then make a new code. |
+| `403 forbidden host` | The URL's host is not the Serve name: an IP, a different name, a typo. | Use the URL that Pair a Muse device shows. `tailscale status` on the PenguPool machine shows its name. |
+| Connection refused or times out on port 7787 | The host listens on loopback only; port 7787 is not for other devices. | Set up Serve (step 1) and use its HTTPS URL. |
+| Pair a Muse device shows `https://<tailnet-name>` | Serve is not set up, or Tailscale is not running here. | Step 1, check `tailscale status`, then make a new code. |
 | `401 unauthorized` | Token missing, mistyped, or revoked; for `/pair`, a wrong or expired code. | Check the `Authorization: Bearer` header. Pair again for a revoked device, or make a new code. |
 | `409` on pairing | A device with that name is already paired. | Make a new code, and pair under another name or revoke the old one first. |
 | `409` on an answer | The ask changed or was already answered. | Read `/next` again. |
 | `503` with `Retry-After` | A tap still running (1 s), or pairing paused after wrong codes (60 s). | Retry after the stated time. |
-| The desktop app shows Reconnecting… after turning on Local network | An older build published the wildcard address to the app. | Update PenguPool AI: the host now publishes a loopback address. If it persists, `pengupool-ai web` shows the address the app uses. |
 | The phone was never asked to approve, or the device doesn't appear | Tailscale has not approved the device, or the approval link lapsed. | In the Tailscale admin console, under Machines, check that the device is there, approved and connected. |

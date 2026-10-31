@@ -8,7 +8,7 @@ when something material changes.
 
 ```
 workstation (PenguPool)  ──Tailscale──  Muse's VM (this package)
-   gateway :7787                          hook → detector → wake/silent
+   Tailscale Serve :443                   hook → detector → wake/silent
    Muse device API                        companion CLI + status gadget
 ```
 
@@ -47,16 +47,11 @@ Steps:
    (`100.x.y.z`) — `tailscale status` shows both.
 2. Join Muse's VM to the same tailnet when Muse offers it, and
    approve the new device in the admin console (owner step 0.1).
-3. Make sure the workstation's gateway listens beyond loopback:
-   PenguPool Settings → **Local network** on (owner step 0.2). The
-   gateway then listens on `[::]:7787` (health check: `http://[::1]:7787`
-   from the workstation itself).
-4. **No Tailscale Serve, no HTTPS certificates, no public funnel.**
-   Since pengupool-ai v0.9.28 the Muse device API accepts requests
-   addressed to the machine's own live Tailscale name, so plain HTTP
-   inside the tailnet just works. (Before v0.9.28 the API only
-   accepted a name saved by the Serve setup flow, and every call
-   returned 403.)
+3. Set up Tailscale Serve on the workstation: PenguPool Settings →
+   **Tailscale** → Serve over HTTPS (owner step 0.2). The gateway
+   listens on loopback only; since pengupool-ai v0.9.45 Serve is the
+   only way in from another device, at `https://<machine>.<tailnet>.ts.net`.
+   Serve uses the private tailnet only, never a public funnel.
 
 ## 2. Pair Muse as a device (agent does this)
 
@@ -93,12 +88,10 @@ This installs `pp.py`/`detect.py`/`gadget.py` to
 `~/workspace/pengupool-agent/`, the CLI to `~/workspace/companion/`,
 seeds `config.json` (enabled, every 1m), and installs the hook
 wrapper. Export `PENGUPOOL_HOST=<the workstation's Tailscale name>` in
-the hook's environment; there is no default. From a Muse VM, calls go
-through the runtime's CONNECT tunnel proxy (`pp.py` handles it). On
-plain HTTP (port 7787) that proxy sees the device token, so when the
-workstation has Tailscale Serve set up (Settings › Tailscale), also
-export `PENGUPOOL_PORT=443`: `pp.py` then speaks HTTPS to the Serve
-name, end to end.
+the hook's environment; there is no default. PenguPool is reached only
+through Tailscale Serve (Settings › Tailscale), so also export
+`PENGUPOOL_PORT=443`: `pp.py` then speaks HTTPS to the Serve name, end to
+end, through the runtime's CONNECT tunnel proxy (`pp.py` handles it).
 
 Then register and enable the **pengupool-status** hook (agent, with
 owner approval — step 0.4): a 60-second poll running
@@ -159,9 +152,9 @@ such as `Status site`), save its token on that machine, then install:
 cd tools/muse/companion && ./install-host.sh   # PORT=7791 changes the port
 ```
 
-It needs Node 22+ on that machine, and Local network on (it calls the
-device API at `http://<this machine's Tailscale name>:7787`; with
-Serve instead, run it as `MC_API=https://<name> ./install-host.sh`). launchd keeps it
+It needs Node 22+ on that machine, and Tailscale Serve set up: the site
+calls the device API at `https://<this machine's Serve name>` (PenguPool
+answers only through Serve; `MC_API=https://<name>` overrides it). launchd keeps it
 running, it binds to the machine's Tailscale address only, and it reads
 `/api/muse/v1/sessions` with that device token; it never holds the
 owner's app token. Every request but `/health` needs the site key the

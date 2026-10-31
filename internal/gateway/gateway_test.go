@@ -1119,65 +1119,6 @@ func TestRelayedAttachCarriesClientKind(t *testing.T) {
 	}
 }
 
-// TestWildcardHostCheck: on a wildcard bind only an IP literal or localhost may reach the daemon.
-// A DNS name that resolves here (DNS rebinding) is refused, and so is another port.
-func TestWildcardHostCheck(t *testing.T) {
-	srv, st := newTestServerOpts(t, Options{HTTPAddr: "0.0.0.0:0", Sessions: &fakeSessions{}})
-	addr := srv.HTTPAddr()
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		t.Fatalf("bound address %q: %v", addr, err)
-	}
-	if ip := net.ParseIP(host); ip == nil || !ip.IsUnspecified() {
-		t.Fatalf("bound host %q, want the requested wildcard", host)
-	}
-
-	get := func(t *testing.T, reqHost string) int {
-		t.Helper()
-		req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:"+port+"/api/healthz", nil)
-		if err != nil {
-			t.Fatalf("request: %v", err)
-		}
-		req.Host = reqHost
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("get %q: %v", reqHost, err)
-		}
-		defer resp.Body.Close()
-		return resp.StatusCode
-	}
-
-	if code := get(t, "127.0.0.1:"+port); code != http.StatusOK {
-		t.Errorf("IP-literal Host = %d, want 200", code)
-	}
-	if code := get(t, "localhost:"+port); code != http.StatusOK {
-		t.Errorf("localhost Host = %d, want 200", code)
-	}
-	if code := get(t, "evil.example:"+port); code != http.StatusForbidden {
-		t.Errorf("DNS-name Host = %d, want 403", code)
-	}
-	if code := get(t, "localhost:1"); code != http.StatusForbidden {
-		t.Errorf("wrong-port name Host = %d, want 403", code)
-	}
-	// An SSH forward from the app on another Mac arrives from loopback naming its own local port.
-	if code := get(t, "127.0.0.1:1"); code != http.StatusOK {
-		t.Errorf("tunnelled Host = %d, want 200", code)
-	}
-
-	// A foreign Origin is refused even though the Host passed, because the origin is compared with
-	// the request's own (validated) Host.
-	url := "ws://127.0.0.1:" + port + "/ws?token=" + readToken(t, st)
-	_, resp, err := websocket.Dial(context.Background(), url, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Origin": []string{"http://evil.example"}},
-	})
-	if err == nil {
-		t.Fatal("upgrade from a foreign origin succeeded on a wildcard bind")
-	}
-	if resp == nil || resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("foreign-origin response = %+v, want 403", resp)
-	}
-}
-
 // TestLocalhostAcceptedOnLoopbackBind: a URL printed for a loopback bind must not be rejected when
 // the user follows it as localhost.
 func TestLocalhostAcceptedOnLoopbackBind(t *testing.T) {
@@ -1581,5 +1522,19 @@ func TestTheTerminalCLIsEnterIsNobodysCredit(t *testing.T) {
 	case text := <-heard:
 		t.Fatalf("the terminal CLI's Enter was the owner's: %q", text)
 	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// Only loopback listens: an empty host and localhost mean 127.0.0.1; anything else is refused.
+func TestLoopbackAddr(t *testing.T) {
+	for in, want := range map[string]string{
+		":7787": "127.0.0.1:7787", "localhost:7787": "127.0.0.1:7787", "127.0.0.1:7787": "127.0.0.1:7787",
+		"[::1]:7787": "[::1]:7787", "127.0.0.2:0": "127.0.0.2:0",
+		"0:7787": "", "0.0.0.0:7787": "", "[::]:7787": "", "192.168.1.5:7787": "", "mac.local:7787": "", "[::ffff:0.0.0.0]:7787": "", "7787": "",
+	} {
+		got, err := LoopbackAddr(in)
+		if got != want || (want == "") != (err != nil) {
+			t.Errorf("LoopbackAddr(%q) = %q, %v; want %q", in, got, err, want)
+		}
 	}
 }

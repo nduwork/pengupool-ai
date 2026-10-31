@@ -9,9 +9,8 @@
 # Every page request needs the site key this script makes; the URL it
 # prints carries it.
 #
-#   ./install-host.sh            # port 7790
-#   PORT=7791 ./install-host.sh  # another port
-#   MC_API=https://<name> ./install-host.sh   # with Tailscale Serve and Local network off
+#   MC_API=https://<name> ./install-host.sh             # port 7790, PenguPool through Tailscale Serve
+#   PORT=7791 MC_API=https://<name> ./install-host.sh   # another port
 #
 # Idempotent: re-running refreshes the code and reloads the agent.
 set -euo pipefail

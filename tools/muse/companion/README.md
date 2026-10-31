@@ -20,7 +20,7 @@ prove the install works.
 
 | File | Role |
 | --- | --- |
-| `src/pp.py` | Paired-device API client (`/api/muse/v1`): sessions, next, answer, say, action, compass. Token from `./device-token` (0600) or `$PENGUPOOL_DEVICE_TOKEN`, the only credential; host from `$PENGUPOOL_HOST` (required, the workstation's Tailscale name), port `$PENGUPOOL_PORT`. Goes through `$HTTPS_PROXY`'s CONNECT tunnel when set. |
+| `src/pp.py` | Paired-device API client (`/api/muse/v1`): sessions, next, answer, say, action, compass. Token from `./device-token` (0600) or `$PENGUPOOL_DEVICE_TOKEN`, the only credential; host from `$PENGUPOOL_HOST` (required, the workstation's Tailscale Serve name), over HTTPS on port 443 (`$PENGUPOOL_PORT` overrides it). Goes through `$HTTPS_PROXY`'s CONNECT tunnel when set. |
 | `src/detect.py` | The change detector. One poll prints one JSON line: `{"decision": "silent"|"wake", ...}`. Wakes only on material change: a session appearing/disappearing, a status change, an ask waiting on the owner (`/next`), a daemon restart (the `/api/healthz` epoch changes), reachability flips. |
 | `src/companion.py` | The CLI (below). Owns the monitor config. |
 | `src/gadget.py` | Renders the team status card (chat-widget HTML) from live API data. |
@@ -162,10 +162,10 @@ Then, once:
    (mode 0600). It is the only credential, and it does not rotate.
    **Tokens are never part of this package**: they live beside the
    installed code only, and `.gitignore` guards them here.
-2. Export `PENGUPOOL_HOST=<the workstation's Tailscale name>` where the
-   hook runs, and `PENGUPOOL_PORT=443` when the workstation has Tailscale
-   Serve: `pp.py` then speaks HTTPS end to end, so a proxy on the way
-   never sees the device token (on plain HTTP, port 7787, it does).
+2. Export `PENGUPOOL_HOST=<the workstation's Tailscale Serve name>` and
+   `PENGUPOOL_PORT=443` where the hook runs: PenguPool is reached only
+   through Tailscale Serve, so `pp.py` speaks HTTPS end to end and a proxy
+   on the way never sees the device token.
 3. Register/enable the `pengupool-status` hook (60-second poll) pointing
    at `~/hooks/scripts/pengupool-status.sh` — in Muse this is a hook
    definition, so ask Muse to set it up.
@@ -174,5 +174,5 @@ Then, once:
 ## Requirements
 
 Python 3 (standard library only), `jq` for the hook wrapper, and
-Tailscale reachability from Muse's VM to the workstation's gateway
-(port 7787) — via the runtime tunnel proxy, which `pp.py` handles.
+Tailscale reachability from Muse's VM to the workstation's Tailscale Serve
+name (HTTPS, port 443) — via the runtime tunnel proxy, which `pp.py` handles.

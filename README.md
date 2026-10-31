@@ -20,7 +20,7 @@ From source: `make install` (Go 1.26.1 + Node 22 required).
 ## The host (PenguPool base)
 
 ```bash
-pengupool-ai daemon [--store DIR] [--http ADDR] [--lan]   # state, sessions, browser app
+pengupool-ai daemon [--store DIR] [--http ADDR]   # state, sessions, browser app
 pengupool-ai new [--name N] [--cwd DIR] [--harness claude|muse|codex|pi|omp]
 pengupool-ai ls [--json]
 pengupool-ai attach <session>
@@ -61,9 +61,8 @@ make dist            # PenguPool-AI-<version>-mac-arm64.dmg
 
 ## Muse app
 
-With Local network on, the Muse app reaches this machine on its own Tailscale name over the
-tailnet (`http://<machine>.<tailnet>.ts.net:7787`); Tailscale Serve (Settings › Tailscale) is the
-HTTPS alternative. Settings › Muse app › "Pair a Muse device" shows the API URL and a
+The Muse app reaches this machine over the tailnet through Tailscale Serve (Settings › Tailscale),
+at `https://<machine>.<tailnet>.ts.net`. Settings › Muse app › "Pair a Muse device" shows the API URL and a
 6-digit code for the Muse app. The Muse app then walks waiting sessions one
 card at a time — Allow, Deny or Chat — over `/api/muse/v1` (contract in
 DESIGN.md, spec at `/api/muse/v1/openapi.json`). Step by step, with curl examples and the owner
@@ -263,6 +262,11 @@ v0.9.44: OpenCode support is removed: it is no longer offered, launched or resum
 is gone. A stored OpenCode session fails to resume with a clear error ("OpenCode is no longer
 supported"); start a new session on another agent. The plugin file earlier launches wrote stays on
 disk, unread.
+v0.9.45: Removed: Local network (Settings, `--lan`, and the plain-HTTP pairing URL on the tailnet
+name). Phones and other devices reach PenguPool only through Tailscale Serve; the host listens on
+loopback alone and refuses any `--http` that is not a loopback address (`:PORT` means
+`127.0.0.1:PORT`). A config.json with Local network on is ignored,
+with a log line saying so.
 
 ## Credits
 

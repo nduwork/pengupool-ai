@@ -8,8 +8,8 @@
 //
 // No dependencies: Node 22+ (global fetch) and the standard library.
 //
-//   node serve.mjs [--port 7790] [--bind tailnet|all|<ip>]
-//                  [--api http://<this machine's Tailscale name>:7787]
+//   node serve.mjs [--port 7790] [--bind tailnet|<this machine's tailnet ip>]
+//                  [--api https://<this machine's Tailscale Serve name>]
 //
 // Env equivalents: MC_PORT, MC_BIND, MC_API.
 // Files (made by install-host.sh, mode 0600): ~/.muse-companion/device-token
@@ -25,6 +25,7 @@ import fs from "node:fs";
 import os from "node:os";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
+import net from "node:net";
 
 // ---------- config ----------
 function arg(name, env, dflt) {
@@ -47,13 +48,13 @@ function tailscale(args) {
   }
   return "";
 }
-// The device API answers only on this machine's Tailscale name, so that is the address the site calls.
+// PenguPool is reached only through Tailscale Serve: the site calls this machine's Serve name over HTTPS.
 let apiBase = arg("api", "MC_API", "");
 function api() {
   if (apiBase) return apiBase;
   try {
     const name = (JSON.parse(tailscale(["status", "--json"])).Self || {}).DNSName || "";
-    if (name) apiBase = "http://" + name.replace(/\.$/, "") + ":7787";
+    if (name) apiBase = "https://" + name.replace(/\.$/, "");
   } catch {}
   return apiBase;
 }
@@ -222,12 +223,21 @@ document.getElementById("refresh").addEventListener("click",poll);
 </script></body></html>`;
 
 // ---------- http ----------
+// The page listens only on a tailnet address (Tailscale's 100.64.0.0/10 or fd7a:115c:a1e0::/48): like
+// PenguPool itself, it opens no listener on the local network.
+const tailnet = new net.BlockList();
+tailnet.addSubnet("100.64.0.0", 10, "ipv4");
+tailnet.addSubnet("fd7a:115c:a1e0::", 48, "ipv6");
+function onTailnet(addr) {
+  const family = net.isIPv4(addr) ? "ipv4" : net.isIPv6(addr) ? "ipv6" : "";
+  return family !== "" && tailnet.check(addr, family);
+}
 function resolveBind() {
-  if (BIND !== "tailnet") return BIND === "all" ? "0.0.0.0" : BIND;
-  const ip = tailscale(["ip", "-4"]).trim().split("\n")[0];
-  if (ip) return ip;
-  // No address: refuse to start rather than open the page to the LAN (MC_BIND=all does that on purpose).
-  console.error("cannot read this machine's Tailscale address; not starting (set MC_BIND to an address, or all)");
+  const ip = BIND === "tailnet" ? tailscale(["ip", "-4"]).trim().split("\n")[0] : BIND;
+  if (onTailnet(ip)) return ip;
+  console.error(ip === ""
+    ? "cannot read this machine's Tailscale address; not starting (set MC_BIND to this machine's tailnet IP)"
+    : `MC_BIND ${ip} is not a tailnet address; not starting (use the default, or this machine's tailnet IP)`);
   process.exit(1);
 }
 function keyOK(url) {
@@ -273,5 +283,4 @@ const server = http.createServer(async (req, res) => {
 const bindAddr = resolveBind();
 server.listen(PORT, bindAddr, () => {
   console.log(`muse-companion mini site on http://${bindAddr}:${PORT}/?key=… (device API ${api() || "not found yet"})`);
-  if (bindAddr === "0.0.0.0") console.log("warning: bound to all interfaces — reachable from the LAN as well as the tailnet");
 });

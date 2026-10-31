@@ -302,7 +302,6 @@ func (p *Pool) teamGroup(ctx context.Context, in groupIn) (any, error) {
 
 // regroup changes the state for teamGroup: the sessions that changed team, from which team to which.
 func (p *Pool) regroup(_ context.Context, in groupIn) (moved []string, from, to string, err error) {
-	lan := p.st.Config().Network.LAN
 	err = p.update(func(st *store.State) error {
 		si := sessionIndex(st, in.SessionID)
 		if si < 0 {
@@ -407,7 +406,7 @@ func (p *Pool) regroup(_ context.Context, in groupIn) (moved []string, from, to 
 		}
 		// A new team only now: appending to the teams may move them, and cur with them.
 		if in.ParentID == "" {
-			target = newTeam(st, &st.Sessions[si], lan)
+			target = newTeam(st, &st.Sessions[si])
 			// The new team's root keeps its worktree, branch and repository: it stays a worktree session.
 			r := &target.Members[0]
 			r.SkillID, r.RepoID, r.Worktree, r.Branch, r.BaseCommit = sub[0].SkillID, sub[0].RepoID, sub[0].Worktree, sub[0].Branch, sub[0].BaseCommit
@@ -422,7 +421,7 @@ func (p *Pool) regroup(_ context.Context, in groupIn) (moved []string, from, to 
 			sub = sub[1:]
 		} else {
 			if target = teamOf(&st.Domain, in.ParentID); target == nil {
-				target = newTeam(st, &st.Sessions[sessionIndex(st, in.ParentID)], lan)
+				target = newTeam(st, &st.Sessions[sessionIndex(st, in.ParentID)])
 			}
 			sub[0].Parent = in.ParentID
 		}
@@ -455,9 +454,9 @@ func (p *Pool) regroup(_ context.Context, in groupIn) (moved []string, from, to 
 }
 
 // newTeam forms a team rooted at a session, which becomes its main worker.
-func newTeam(st *store.State, root *store.Session, lan bool) *protocol.Team {
+func newTeam(st *store.State, root *store.Session) *protocol.Team {
 	st.Domain.Teams = append(st.Domain.Teams, protocol.Team{
-		ID: protocol.NewID(), Name: root.Name, Harness: root.Harness, State: "active", IOSAccess: !lan, CreatedAt: now(),
+		ID: protocol.NewID(), Name: root.Name, Harness: root.Harness, State: "active", IOSAccess: true, CreatedAt: now(),
 		Members: []protocol.Member{{SessionID: root.ID, Name: root.Name, Role: "main", Coordinator: true, State: "active", Assignment: root.Summary}},
 	})
 	t := &st.Domain.Teams[len(st.Domain.Teams)-1]

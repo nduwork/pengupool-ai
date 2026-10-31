@@ -1,4 +1,4 @@
-import { Bot, Check, GitBranch, KeyRound, Loader2, Lock, MonitorUp, Network, RefreshCw, Server, Settings2, Smartphone, Sparkles, Terminal, Waypoints, X } from "lucide-react";
+import { Bot, Check, GitBranch, KeyRound, Loader2, Lock, MonitorUp, RefreshCw, Server, Settings2, Smartphone, Sparkles, Terminal, Waypoints, X } from "lucide-react";
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -16,8 +16,8 @@ import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
 
 // Settings, one subpanel per topic: General (the host, updates, terminal history, the daily backup),
-// Agents (which are installed, Claude Code on Ollama), Decision model, GitHub (the account and sync), Local
-// network, Tailscale, Muse app and SSH hosts.
+// Agents (which are installed, Claude Code on Ollama), Decision model, GitHub (the account and sync),
+// Tailscale, Muse app and SSH hosts.
 
 // [id, label, icon]
 const SECTIONS: Array<[string, string, ReactElement]> = [
@@ -25,7 +25,6 @@ const SECTIONS: Array<[string, string, ReactElement]> = [
   ["agents", "Agents", <Terminal key="a" />],
   ["models", "Decision model", <Sparkles key="p" />],
   ["github", "GitHub", <GitBranch key="g" />],
-  ["network", "Local network", <Network key="c" />],
   ["tailscale", "Tailscale", <Waypoints key="t" />],
   ["muse", "Muse app", <Smartphone key="m" />],
   ["nodes", "SSH hosts", <Server key="n" />],
@@ -62,7 +61,6 @@ export function Settings(): ReactElement {
             {section === "agents" ? <Agents /> : null}
             {section === "models" ? <Providers /> : null}
             {section === "github" ? <GitHub /> : null}
-            {section === "network" ? <LocalNetwork /> : null}
             {section === "tailscale" ? <Tailscale /> : null}
             {section === "muse" ? <MuseApp /> : null}
             {section === "nodes" ? <Nodes /> : null}
@@ -411,7 +409,7 @@ function Providers(): ReactElement {
 }
 
 interface SettingsResp {
-  network: { lan: boolean; lan_addr?: string; tailscale?: string };
+  network: { tailscale?: string };
   bound?: string;
   tailscale_name?: string;
   tailscale_error?: string;
@@ -465,64 +463,6 @@ function TerminalHistory(): ReactElement {
   );
 }
 
-/** The local network: where the host listens, and whether paired devices may reach it over the network. */
-function LocalNetwork(): ReactElement {
-  const app = useApp();
-  const [n, setN] = useState(0);
-  const s = useSettings(n);
-  const [lanAddr, setLanAddr] = useState("");
-  if (s === null) return <p className="text-label text-faint">Loading…</p>;
-  const port = s.bound?.split(":").pop() ?? "7787";
-  return (
-    <div>
-      <H title="Local network">
-        Paired Muse devices reach this machine on its Tailscale name. The network gets the device API only; this app stays on this machine.
-      </H>
-      <Card className="px-4">
-        <Row title="Host address" hint="Where this machine listens.">
-          <span className="font-mono text-label">{s.bound}</span>
-        </Row>
-        <Row
-          title="Local network"
-          hint={
-            s.network.lan
-              ? `On: paired devices reach the device API on port ${port}.`
-              : "Off: only this machine can connect. Turning it on restarts the host; sessions keep running."
-          }
-        >
-          <Switch
-            checked={s.network.lan}
-            label="Local network"
-            onCheckedChange={async (v) => {
-              await app.call("settings.save", { lan: v, restart: true });
-              setTimeout(() => setN(n + 1), 2000);
-            }}
-          />
-        </Row>
-        <Row title="Bind address" hint="Optional host:port for the LAN listener.">
-          <div className="flex gap-2">
-            <Input className="w-44 font-mono" value={lanAddr} onChange={(e) => setLanAddr(e.target.value)} placeholder={s.network.lan_addr ?? "0.0.0.0:7787"} />
-            <Button
-              onClick={async () => {
-                await app.call("settings.save", {
-                  lan_addr: lanAddr,
-                  restart: s.network.lan,
-                });
-                setN(n + 1);
-              }}
-            >
-              Save
-            </Button>
-          </div>
-        </Row>
-      </Card>
-      <p className="mt-3 rounded-md bg-warning/10 p-3 text-caption text-warning">
-        Plain HTTP is not encrypted on the local network; the tailnet is. Every device API call needs a device token; new teams get iOS access off while it is on.
-      </p>
-    </div>
-  );
-}
-
 /** Tailscale: Serve over the owner's tailnet, and the setup checklist. */
 function Tailscale(): ReactElement {
   const app = useApp();
@@ -560,7 +500,7 @@ function MuseApp(): ReactElement {
   return (
     <div>
       <H title="Muse app">
-        Pair a phone running the Muse app; it walks waiting sessions one card at a time. Each device has its own token, revocable here. The phone reaches this machine over your tailnet once Local network is on (or Tailscale Serve is set up); the pairing shows the URL to use.
+        Pair a phone running the Muse app; it walks waiting sessions one card at a time. Each device has its own token, revocable here. The phone reaches this machine over your tailnet through Tailscale Serve; the pairing shows the URL to use.
       </H>
       <MuseDevices key={n} onChanged={() => setN(n + 1)} />
     </div>

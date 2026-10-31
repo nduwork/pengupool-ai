@@ -116,17 +116,10 @@ type State struct {
 	Restore []string `json:"restore,omitempty"`
 }
 
-// Listener describes where the daemon accepts connections.
-type Listener struct {
-	Kind string `json:"kind"` // "loopback" | "lan"
-	Addr string `json:"addr"` // host:port for HTTP/WS; the unix socket path is derived from the store dir
-}
-
 // Config is the whole of config.json. Secrets are never stored here, only references.
 type Config struct {
 	Version   int            `json:"version"`
 	UpdatedAt time.Time      `json:"updated_at"`
-	Listener  Listener       `json:"listener"`
 	Decision  DecisionConfig `json:"decision"`
 	Network   Network        `json:"network"`
 	// AgentModels is the old Claude-on-Ollama setting: read once (pool.MigrateAgentModels), then dropped.
@@ -181,8 +174,6 @@ type DecisionConfig struct {
 
 // Network holds the phone connection endpoints the owner saved.
 type Network struct {
-	LAN       bool   `json:"lan"`
-	LANAddr   string `json:"lan_addr,omitempty"`
 	Tailscale string `json:"tailscale,omitempty"`
 }
 
@@ -275,12 +266,11 @@ func DefaultState(nodeID string, now time.Time) State {
 	}
 }
 
-// DefaultConfig is the configuration of a fresh store directory: loopback only.
+// DefaultConfig is the configuration of a fresh store directory.
 func DefaultConfig(now time.Time) Config {
 	return Config{
 		Version:   Version,
 		UpdatedAt: now.UTC(),
-		Listener:  Listener{Kind: "loopback", Addr: "127.0.0.1:0"},
 	}
 }
 

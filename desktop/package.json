@@ -1,7 +1,7 @@
 {
   "name": "pengupool-ai-desktop",
   "productName": "PenguPool AI",
-  "version": "0.9.44",
+  "version": "0.9.45",
   "private": true,
   "description": "PenguPool AI desktop: the native app around the PenguPool host, with the Compass built in.",
   "license": "MIT",
@@ -64,7 +64,7 @@
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
-        "NSLocalNetworkUsageDescription": "PenguPool AI connects to your SSH hosts on the local network and serves the app to your phone on it."
+        "NSLocalNetworkUsageDescription": "PenguPool AI connects to your SSH hosts on the local network."
       }
     },
     "npmRebuild": false

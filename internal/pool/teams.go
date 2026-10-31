@@ -509,7 +509,7 @@ func (p *Pool) launchTeam(ctx context.Context, a protocol.Approval) (any, error)
 	}
 	team := protocol.Team{
 		ID: protocol.NewID(), Name: t.Title, TaskID: t.ID, RepoID: repo.ID, Harness: t.Harness, Goal: t.Objective,
-		State: "active", IOSAccess: !p.st.Config().Network.LAN, CreatedAt: now(),
+		State: "active", IOSAccess: true, CreatedAt: now(),
 	}
 	base := headCommit(repo.Path)
 	var started []protocol.Member
@@ -1010,10 +1010,9 @@ func (p *Pool) teamCreate(_ context.Context, in teamCreateIn) (any, error) {
 		return nil, invalid("a team needs a name and at least one session")
 	}
 	var team protocol.Team
-	lan := p.st.Config().Network.LAN // read before the update: the store's lock is not reentrant
 	err := p.update(func(st *store.State) error {
 		team = protocol.Team{ID: protocol.NewID(), Name: strings.TrimSpace(in.Name), Goal: in.Goal, State: "active",
-			IOSAccess: !lan, CreatedAt: now()}
+			IOSAccess: true, CreatedAt: now()}
 		for k, id := range in.SessionIDs {
 			i := sessionIndex(st, id)
 			if i < 0 {
