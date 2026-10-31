@@ -744,6 +744,19 @@ func TestTypedAnswerNotCarriedOn(t *testing.T) {
 	if a, _ := p.approval(z); protocol.CodeOf(err) != protocol.CodeForbidden || a.State != "pending" {
 		t.Fatalf("words naming %s answered %s: %v", x, z, err)
 	}
+
+	// Nor words that name a check-in below.
+	gid, err := p.db.AddGate(agentdb.Gate{TeamID: p.teamID(web), SessionID: web, Agent: "web", Kind: "checkin", Question: "Shall I go on?", CreatedAt: store.RFC3339(time.Now().Add(-time.Minute))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	words = fmt.Sprintf("yes, the same as checkin:%d", gid)
+	p.OwnerInput(lead, words)
+	prompt(t, p, lead, words)
+	_, err = p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: z})
+	if a, _ := p.approval(z); protocol.CodeOf(err) != protocol.CodeForbidden || !strings.Contains(err.Error(), "checkin:") || a.State != "pending" {
+		t.Fatalf("words naming checkin:%d answered %s: %v", gid, z, err)
+	}
 }
 
 // Delivered owner words act only where they were given: an @mention in them opens no channel for
@@ -819,7 +832,7 @@ func TestLaterAnswerOnlyOnce(t *testing.T) {
 		if p.prevReply == nil {
 			p.prevReply, p.prevReplyAt = map[string]string{}, map[string]time.Time{}
 		}
-		p.prevReply[lead], p.prevReplyAt[lead] = "web waits on ask "+id, time.Now()
+		p.prevReply[lead], p.prevReplyAt[lead] = "web waits on ask "+id+" (Force-push #65?)", time.Now()
 		p.mu.Unlock()
 		p.setStatus(web, "working")
 		p.OwnerInput(lead, "Yes")

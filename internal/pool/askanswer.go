@@ -79,8 +79,10 @@ func (p *Pool) askAnswerFor(ctx context.Context, in askAnswerForIn) (any, error)
 	}
 	st := p.st.State()
 	var it *ownerItem
+	var items []ownerItem
 	if t := teamOf(&st.Domain, in.SessionID); t != nil {
-		for _, x := range p.subtreeItems(&st, t, in.SessionID) {
+		items = p.subtreeItems(&st, t, in.SessionID)
+		for _, x := range items {
 			if x.ID == in.ID {
 				it = &x
 			}
@@ -89,10 +91,20 @@ func (p *Pool) askAnswerFor(ctx context.Context, in askAnswerForIn) (any, error)
 	if it == nil {
 		return nil, notFound("no question %s waits on the owner below you on the team's tree", in.ID)
 	}
-	// Words that name another ask are about that one (or carry its answer), never this one's.
+	// Words that name another question (any ask, or a check-in below) are about that one, or carry
+	// its answer, never this one's.
+	others := []string{}
 	for _, x := range st.Domain.Approvals {
-		if x.Kind == "ask" && x.ID != in.ID && namesItem(cur.Prompt, x.ID) {
-			return nil, protocol.Errorf(protocol.CodeForbidden, "the owner's prompt names ask %s, not %s; it answers no other", x.ID, in.ID)
+		if x.Kind == "ask" {
+			others = append(others, x.ID)
+		}
+	}
+	for _, x := range items {
+		others = append(others, x.ID)
+	}
+	for _, id := range others {
+		if id != in.ID && namesItem(cur.Prompt, id) {
+			return nil, protocol.Errorf(protocol.CodeForbidden, "the owner's prompt names %s, not %s; it answers no other", id, in.ID)
 		}
 	}
 	// Timestamps are whole seconds: an item from the prompt's own second counts as after it.
