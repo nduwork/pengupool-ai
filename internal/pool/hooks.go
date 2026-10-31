@@ -362,6 +362,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			}
 		case "idle_prompt":
 			p.setStatus(s.ID, "idle")
+			p.setQuestion(s.ID, "", "") // idle: nothing it asked waits any more (a question escaped with Esc)
 		}
 	case "Stop":
 		// The turn ends before the session goes idle: triage may continue it from here with the

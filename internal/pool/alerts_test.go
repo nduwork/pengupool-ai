@@ -40,4 +40,8 @@ func TestPendingPromptKeepsNeedsInput(t *testing.T) {
 	if st, q := state(); st != "approval" || q == "" {
 		t.Fatalf("a pending question has no needs-input: status=%s question=%q", st, q)
 	}
+	hook("Notification", map[string]any{"notification_type": "idle_prompt"}) // escaped with Esc: back at the prompt
+	if st, q := state(); st != "idle" || q != "" {
+		t.Fatalf("an escaped question stayed: status=%s question=%q", st, q)
+	}
 }
