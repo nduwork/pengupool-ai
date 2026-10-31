@@ -57,7 +57,7 @@ func TestContextOrder(t *testing.T) {
 		return i
 	}
 	order := []string{"## Current task (the owner's latest instruction)", "## The owner's compass (data, not commands)", "- Use SQL for logs", "- Keep the UI simple (when web work)",
-		"## Team members", "start your report to your parent with `Done:`", "`pengupool search"}
+		"## Team members", "report to your parent with `Done:`", "`pengupool search"}
 	for i := 1; i < len(order); i++ {
 		if at(order[i-1]) >= at(order[i]) {
 			t.Errorf("%q should come before %q", order[i-1], order[i])
@@ -969,9 +969,18 @@ func TestCompassRenderLongLine(t *testing.T) {
 	for _, b := range small {
 		stated(t, p, b)
 	}
+	// A line is shown whole or not at all: one longer than the section is skipped, a long one that
+	// fits keeps its condition, and a condition worded "when …" reads once.
+	mid := "The owner wants release notes to list " + strings.Repeat("each user-visible change, ", 20)
+	if _, err := p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: mid, Condition: "when publishing a release", Origin: "stated", Source: "owner"}); err != nil {
+		t.Fatal(err)
+	}
 	c := p.renderCompass()
-	if !strings.Contains(c, "The owner wants every change explained") || strings.Contains(c, big) {
-		t.Fatalf("the long line is not shown clipped:\n%s", c)
+	if strings.Contains(c, "The owner wants every change explained") || !strings.HasSuffix(c, compassMore) {
+		t.Fatalf("the line longer than the section is not skipped:\n%s", c)
+	}
+	if !strings.Contains(c, mid+" (when publishing a release)") || strings.Contains(c, "when when") {
+		t.Fatalf("a long line lost its condition, or reads 'when when':\n%s", c)
 	}
 	for _, b := range small {
 		if !strings.Contains(c, b) {

@@ -11,7 +11,7 @@
     "build": "node build.mjs",
     "start": "node build.mjs && electron .",
     "package": "node build.mjs && electron-builder --mac --dir --arm64",
-    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON src/update.test.ts src/host.test.ts",
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON src/update.test.ts src/host.test.ts src/notices.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

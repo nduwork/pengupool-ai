@@ -13,7 +13,10 @@ export interface DesktopBridge {
   pathForFile(file: File): string;
   openExternal(url: string): void;
   revealPath(path: string): void;
-  notify(title: string, body: string): void;
+  /** A native notification; key names what it is about, so unnotify can withdraw it once answered. */
+  notify(title: string, body: string, key?: string): void;
+  /** Withdraws the notifications of these keys (their items were answered); older apps lack it. */
+  unnotify?(keys: string[]): void;
   setBadge(count: number): void;
   /** Replaces this app with a disk image the host downloaded under <store>/updates, then restarts into it. */
   installUpdate(path: string): Promise<void>;

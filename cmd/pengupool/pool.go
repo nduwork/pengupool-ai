@@ -576,10 +576,10 @@ func printEntries(es []journalEntry) {
 	}
 }
 
-const experienceUsage = "usage: pengupool experience search WORDS | show ID | import FILE"
+const experienceUsage = "usage: pengupool experience search WORDS | show ID | import FILE | export FILE"
 
 // cmdExperience: `experience search WORDS` and `experience show ID` (a helper's own entries), and
-// `experience import FILE` (the owner's terminal adding entries).
+// `experience import FILE` and `experience export FILE` (the owner's terminal).
 func cmdExperience(args []string) error {
 	if len(args) == 0 {
 		return errors.New(experienceUsage)
@@ -635,19 +635,47 @@ func cmdExperience(args []string) error {
 		if err != nil {
 			return err
 		}
-		var entries []json.RawMessage
-		if err := json.Unmarshal(raw, &entries); err != nil {
-			return fmt.Errorf("the file is not a JSON array of entries: %w", err)
+		// An array of entries, or {"entries": [...], "drop": [{"id": N, "reason": "..."}]}.
+		var in struct {
+			Entries []json.RawMessage `json:"entries"`
+			Drop    []json.RawMessage `json:"drop"`
 		}
-		res, err := rpc(ctx, storeDir(*storeFlag), "experience.import", map[string]any{"entries": entries})
+		if err := json.Unmarshal(raw, &in.Entries); err != nil {
+			if err := json.Unmarshal(raw, &in); err != nil {
+				return fmt.Errorf("the file is neither a JSON array of entries nor {\"entries\", \"drop\"}: %w", err)
+			}
+		}
+		res, err := rpc(ctx, storeDir(*storeFlag), "experience.import", map[string]any{"entries": in.Entries, "drop": in.Drop})
 		if err != nil {
 			return err
 		}
-		var out struct{ Added, Skipped int }
+		var out struct{ Added, Skipped, Dropped int }
 		if err := json.Unmarshal(res, &out); err != nil {
 			return err
 		}
-		fmt.Printf("%d added, %d skipped (already there)\n", out.Added, out.Skipped)
+		fmt.Printf("%d added, %d skipped (already there), %d dropped\n", out.Added, out.Skipped, out.Dropped)
+	case "export":
+		fs := flag.NewFlagSet("experience export", flag.ContinueOnError)
+		storeFlag := fs.String("store", "", "store directory")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 1 {
+			return errors.New("usage: pengupool experience export FILE")
+		}
+		res, err := rpc(ctx, storeDir(*storeFlag), "experience.export", map[string]any{})
+		if err != nil {
+			return err
+		}
+		var es []json.RawMessage
+		if err := json.Unmarshal(res, &es); err != nil {
+			return err
+		}
+		out, _ := json.MarshalIndent(es, "", "  ")
+		if err := os.WriteFile(fs.Arg(0), append(out, '\n'), 0o600); err != nil {
+			return err
+		}
+		fmt.Printf("%d entries written to %s\n", len(es), fs.Arg(0))
 	default:
 		return errors.New(experienceUsage)
 	}
