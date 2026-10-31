@@ -695,39 +695,16 @@ func (p *Pool) lockKey(k string) func() {
 }
 
 // keepDecision records a check-in decision (sig: the owner's words, the team and session) as a
-// chose signal on the Compass and returns the line's uid ("" when it could not be kept). A line
-// that says the same thing takes the choice as support; one that says the opposite about the same
-// thing takes it as contradiction. With no line saying the same, the decision becomes a new line.
-// With a decision model the choice is matched to the lines like any other signal (match, the line
-// being the question's context and the new line's words); without one, by words alone.
+// chose signal on the Compass and returns the line's uid ("" when it could not be kept): the triage
+// model matches it to the lines like any other signal (match, the line being the question's context
+// and the new line's words). With no model it waits in the ledger, judged by nothing else.
 func (p *Pool) keepDecision(sig agentdb.Signal, line string) string {
-	if sig.Kind = "chose"; p.decider() != nil {
-		return p.match(sig, line, line)
+	sig.Kind = "chose"
+	if p.decider() == nil {
+		p.record(sig, agentdb.WeightChose)
+		return ""
 	}
-	defer p.lockKey("compass")()
-	have, _ := p.db.Lines(p.owner(), line, "", 10)
-	var on []effectOn
-	same, how := "", "kept"
-	for _, l := range have {
-		if l.Tag != "" || !sameContent(l.Body, line) { // a tagged one is a permission decision, kept by its key
-			continue
-		}
-		if negative(l.Body) != negative(line) {
-			on, how = append(on, effectOn{l.UID, 0, 1}), "otherwise"
-		} else if same == "" {
-			same, how = l.UID, "as before"
-			on = append(on, effectOn{l.UID, 1, 0})
-		}
-	}
-	if same == "" {
-		if same = p.newDecision(agentdb.Line{Body: line, Source: "session"}); same == "" {
-			return ""
-		}
-		on = append(on, effectOn{same, 1, 0})
-	}
-	p.record(sig, agentdb.WeightChose, on...)
-	p.logLine(sig.SessionID, fmt.Sprintf("compass: the owner decided %s: %s", how, clip(line, 120)))
-	return same
+	return p.match(sig, line, line)
 }
 
 // newDecision stores l (body and, for a permission, its key as the tag) as a line of the owner's

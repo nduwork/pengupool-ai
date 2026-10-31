@@ -515,9 +515,9 @@ func TestCompassMergeRPC(t *testing.T) {
 	}
 }
 
-// An owner's standing preference is a signal even when triage reads it as a task or gives no answer
-// (the owner's words that a 4B model took for an instruction); a plain task stays none.
-func TestStandingPreferenceDespiteTriage(t *testing.T) {
+// Only the triage model reads the owner's words for a preference: a standing sentence it reads as a
+// task is a task, and with the model failing nothing is judged, no wording asked and no line made.
+func TestOnlyTheModelReadsPreferences(t *testing.T) {
 	p, st := twoTeams(t)
 	lead, _ := p.session("leadaaaaaaaa")
 	place := func(d decision.Provider, prompt string) {
@@ -526,56 +526,20 @@ func TestStandingPreferenceDespiteTriage(t *testing.T) {
 		p.mu.Unlock()
 		p.placeTurn(context.Background(), lead, turn{Prompt: prompt}, "ok")
 	}
-	kinds := func() string { return strings.Join(signalKinds(t, st), ",") }
-	place(fakeTriage{signal: "instruction"}, "fix the failing build and push it")
-	if kinds() != "" {
-		t.Fatalf("a task became a signal: %s", kinds())
-	}
 	place(fakeTriage{signal: "instruction"}, "If agent has recommended solution, and the risk is low, just approve for me")
-	if err := wordWith(t, p, lead.ID, compassWordIn{Lines: []string{"preference :: Approve a low-risk recommended solution without asking"}}); err != nil {
+	if ks := signalKinds(t, st); len(ks) != 0 || p.wordingNote(lead.ID) != "" {
+		t.Fatalf("a sentence pattern stood in for the model: %v", ks)
+	}
+	place(failDecider{}, "From now on, always ask me before pushing to main.")
+	if ks := signalKinds(t, st); len(ks) != 0 || p.wordingNote(lead.ID) != "" || len(p.lines("", 0)) != 0 {
+		t.Fatalf("with the model failing the owner's words were judged: %v, %d lines", ks, len(p.lines("", 0)))
+	}
+	place(fakeTriage{signal: "preference"}, "From now on, always ask me before pushing to main.")
+	if err := wordWith(t, p, lead.ID, compassWordIn{Lines: []string{"restriction :: Ask the owner before pushing to main"}}); err != nil {
 		t.Fatal(err)
 	}
-	if ls := p.lines("", 0); kinds() != "said" || len(ls) != 1 || ls[0].Origin != "stated" {
-		t.Fatalf("the standing preference: %s, %+v", kinds(), ls)
-	}
-	// Triage that fails still reaches the session's agent (no line to judge), and its none leaves the
-	// signal in the ledger rather than dropping it.
-	place(failDecider{}, "from now on, run the tests before every commit")
-	if err := wordWith(t, p, lead.ID, compassWordIn{None: true}); err != nil || kinds() != "said,said" {
-		t.Fatalf("with triage down: %s", kinds())
-	}
-}
-
-// standingClause finds the sentence that states a rule, not a word a task happens to use.
-func TestStandingClause(t *testing.T) {
-	for prompt, want := range map[string]string{
-		"If agent has recommended solution, and the risk is low, just approve for me":                    "If agent has recommended solution, and the risk is low, just approve for me",
-		"From now on, run the tests before every commit":                                                 "From now on, run the tests before every commit",
-		"from now on: approve low-risk changes":                                                          "from now on: approve low-risk changes",
-		"Don’t ask me before low-risk edits":                                                             "Don't ask me before low-risk edits",
-		"Do not\nask me about formatting":                                                                "Do not ask me about formatting",
-		"You should always run the linter first":                                                         "You should always run the linter first",
-		"Never push to main without a PR":                                                                "Never push to main without a PR",
-		"Whenever the tests pass, go ahead and merge for me":                                             "Whenever the tests pass, go ahead and merge for me",
-		strings.Repeat("Refactor the loader and its tests. ", 12) + "Going forward, keep the UI simple.": "Going forward, keep the UI simple",
-		"Fix the parser so it never returns nil":                                                         "",
-		"never mind, use the old loader":                                                                 "",
-		"the test fails every time I run it":                                                             "",
-		"make sure the cache always invalidates on write":                                                "",
-		"the flag is off by default; add a CLI option":                                                   "",
-		"merge it for me":                           "",
-		"Why does the agent always ask me twice?":   "",
-		"Investigate why retries never stop":        "",
-		"Please approve this for me just this once": "",
-		"add a login page":                          "",
-		"remember my choice for the common route, if the pr review agent is in team and agrees, you can go ahead merge and release": "remember my choice for the common route, if the pr review agent is in team and agrees, you can go ahead merge and release",
-		"When CI passes, you can go ahead and merge": "When CI passes, you can go ahead and merge",
-		"does the reviewer agree? you can go ahead":  "",
-		"remember to run the tests":                  "",
-	} {
-		if got := standingClause(prompt); got != want {
-			t.Errorf("%q: %q, want %q", prompt, got, want)
-		}
+	if ks := signalKinds(t, st); len(ks) != 1 || ks[0] != "said" || len(p.lines("", 0)) != 1 {
+		t.Fatalf("the model's preference: %v, %d lines", ks, len(p.lines("", 0)))
 	}
 }
 
@@ -603,9 +567,9 @@ func TestMixedMessageStatesPreference(t *testing.T) {
 	if ls, ks := p.lines("", 0), signalKinds(t, st); len(ks) != 1 || ks[0] != "said" || len(ls) != 1 || ls[0].Origin != "stated" {
 		t.Fatalf("a mixed message: %v, %+v", signalKinds(t, st), ls)
 	}
-	// The regex alone catches the quoted message, whatever triage says.
+	// What the model reads as a task stays a task, however it is worded.
 	place(fakeTriage{signal: "instruction"}, "remember my choice for the common route, if the pr review agent is in team and agrees, you can go ahead merge and release")
-	if err := wordWith(t, p, lead.ID, word); err != nil || len(signalKinds(t, st)) != 2 {
+	if len(signalKinds(t, st)) != 1 || p.wordingNote(lead.ID) != "" {
 		t.Fatalf("the quoted message: %v", signalKinds(t, st))
 	}
 }

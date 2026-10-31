@@ -881,11 +881,15 @@ func TestPermissionDecisionKey(t *testing.T) {
 	}
 }
 
+// A check-in decision is matched by the triage model: the newer rule that contradicts an older one
+// moves it, both by one signal. With no model the decision waits in the ledger and makes no line.
 func TestNewestCheckInDecisionWins(t *testing.T) {
-	p, _, _ := gateTeam(t)
-	p.testDecider = nil // no decision model: the words decide
+	p, dec, _ := gateTeam(t)
 	sig := agentdb.Signal{Words: "w", TeamID: "team1", SessionID: "leadaaaaaaaa"}
 	yes := p.keepDecision(sig, "The owner lets agents push to their own branch.")
+	dec.mu.Lock()
+	dec.line = decision.Answer{Type: decision.Choice, Choice: "contradicts", Probabilities: map[string]float64{"supports": 0, "contradicts": 1, "unrelated": 0}, Confidence: 0.9}
+	dec.mu.Unlock()
 	no := p.keepDecision(sig, "The owner does not let agents push to their own branch.")
 	if yes == "" || no == "" || yes == no {
 		t.Fatalf("uids %q %q", yes, no)
@@ -897,19 +901,19 @@ func TestNewestCheckInDecisionWins(t *testing.T) {
 	if e := es[no]; len(e) != 1 || e[0].PSup != 1 || e[0].PCon != 0 {
 		t.Fatalf("the newer rule: %+v", e)
 	}
-	var contra, support string // one signal moved both lines
+	var contra string // one signal moved both lines
 	for _, e := range es[yes] {
 		if e.PCon == 1 {
 			contra = e.SignalUID
 		}
 	}
-	support = es[no][0].SignalUID
-	if contra != support {
-		t.Fatalf("two signals: %q %q", contra, support)
+	if contra != es[no][0].SignalUID {
+		t.Fatalf("two signals: %q %q", contra, es[no][0].SignalUID)
 	}
-	// Saying the first again supports it and contradicts the second.
-	if again := p.keepDecision(sig, "The owner lets agents push to their own branch."); again != yes {
-		t.Fatalf("a repeat made line %q, want %q", again, yes)
+	setDecider(p, nil)
+	before := len(p.lines("", 0))
+	if got := p.keepDecision(sig, "The owner lets agents merge their own branch."); got != "" || len(p.lines("", 0)) != before {
+		t.Fatalf("a decision made a line without a triage model: %q", got)
 	}
 }
 
