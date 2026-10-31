@@ -36,12 +36,16 @@ func (d *DB) PerCompassFor(item string) (PerCompass, bool, error) {
 	return x, err == nil, err
 }
 
-// PutPerCompass records an item's Compass decision, replacing the one before.
+// PutPerCompass records an item's Compass decision, replacing the one before, except that an
+// answered item keeps its record.
 func (d *DB) PutPerCompass(x PerCompass) error {
 	if x.At == "" {
 		x.At = now()
 	}
-	_, err := d.db.Exec(`INSERT OR REPLACE INTO per_compass (`+perCompassCols+`) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+	_, err := d.db.Exec(`INSERT INTO per_compass (`+perCompassCols+`) VALUES (?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(item) DO UPDATE SET team_id = excluded.team_id, session_id = excluded.session_id, lead = excluded.lead,
+		question = excluded.question, outcome = excluded.outcome, detail = excluded.detail, line_uid = excluded.line_uid,
+		version = excluded.version, at = excluded.at WHERE per_compass.outcome != 'answered'`,
 		x.Item, x.TeamID, x.SessionID, x.Lead, x.Question, x.Outcome, x.Detail, x.LineUID, x.Version, x.At)
 	return err
 }

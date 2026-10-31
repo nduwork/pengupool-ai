@@ -69,6 +69,12 @@ func (p *Pool) askPerCompass(ctx context.Context, in perCompassIn) (any, error) 
 	if it.OwnerOnly {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "%s is for the owner alone; show it to the owner", in.ID)
 	}
+	// One decision at a time per item, from the version check to the record: parallel calls would
+	// each sample the decider, and the first yes would answer it.
+	if !p.claimDecision(it.ID) {
+		return nil, conflict("%s is being decided per the Compass now; wait for that answer", in.ID)
+	}
+	defer p.releaseDecision(it.ID)
 	question := it.Detail
 	if it.gate != 0 {
 		g, err := p.db.Gate(it.gate)
@@ -76,6 +82,10 @@ func (p *Pool) askPerCompass(ctx context.Context, in perCompassIn) (any, error) 
 			return nil, notFound("no open check-in %s", in.ID)
 		}
 		question = g.Question
+		// Before deciding, so a yes is always applied and recorded.
+		if err := p.checkinReady(it.SessionID); err != nil {
+			return nil, err
+		}
 	}
 	cands := p.perCompassCands(question)
 	ver := compassVersion(cands)
@@ -210,16 +220,10 @@ func (p *Pool) perCompassDecide(ctx context.Context, question string, options []
 // is typed into the member as its next prompt (the [PenguPool prefix: not the owner's words).
 // ponytail: the Stop hook's run count (goAhead's maxAutoRun) does not see it.
 func (p *Pool) proceedPerCompass(gateID int64, member string, line lineView) error {
-	s, ok := p.session(member)
-	if !ok || s.State != "running" {
-		return conflict("%s is not running", member)
+	if err := p.checkinReady(member); err != nil {
+		return err
 	}
-	if _, ok := harness.Find(s.Harness); !ok {
-		return invalid("%s is not an agent session", s.Name)
-	}
-	if s.Status != "idle" {
-		return conflict("%s is %s; ask again when it is idle", s.Name, s.Status)
-	}
+	s, _ := p.session(member)
 	if !p.claimAnswer(gateID) {
 		return conflict("checkin:%d is already being answered", gateID)
 	}
@@ -236,6 +240,41 @@ func (p *Pool) proceedPerCompass(gateID int64, member string, line lineView) err
 		p.logWaiver(s, g)
 	}
 	return nil
+}
+
+// checkinReady: the member can take a go-ahead now (running, an agent, idle).
+func (p *Pool) checkinReady(member string) error {
+	s, ok := p.session(member)
+	if !ok || s.State != "running" {
+		return conflict("%s is not running", member)
+	}
+	if _, ok := harness.Find(s.Harness); !ok {
+		return invalid("%s is not an agent session", s.Name)
+	}
+	if s.Status != "idle" {
+		return conflict("%s is %s; ask again when it is idle", s.Name, s.Status)
+	}
+	return nil
+}
+
+// claimDecision marks an item as being decided, once: false when it already is.
+func (p *Pool) claimDecision(item string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.deciding[item] {
+		return false
+	}
+	if p.deciding == nil {
+		p.deciding = map[string]bool{}
+	}
+	p.deciding[item] = true
+	return true
+}
+
+func (p *Pool) releaseDecision(item string) {
+	p.mu.Lock()
+	delete(p.deciding, item)
+	p.mu.Unlock()
 }
 
 type answerWrongIn struct {

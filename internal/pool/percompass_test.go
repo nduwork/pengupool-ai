@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -219,5 +220,89 @@ func TestPerCompassCheckin(t *testing.T) {
 	// A permission prompt is no item.
 	if _, err := p.askPerCompass(ctx, perCompassIn{SessionID: lead, ID: gate("permission")}); protocol.CodeOf(err) != protocol.CodeNotFound {
 		t.Fatalf("a permission prompt: %v", err)
+	}
+}
+
+// heldDecider counts its calls and holds each one until release is closed; it never says yes.
+type heldDecider struct {
+	calls   *int32
+	release chan struct{}
+}
+
+func (heldDecider) Name() string { return "held" }
+func (d heldDecider) Decide(ctx context.Context, r decision.Request) (decision.Response, error) {
+	atomic.AddInt32(d.calls, 1)
+	select {
+	case <-d.release:
+	case <-ctx.Done():
+		return decision.Response{}, ctx.Err()
+	}
+	ans := map[string]decision.Answer{}
+	for _, q := range r.Questions {
+		ans[q.Name] = decision.Answer{Type: decision.Predicate, Yes: 0.5}
+	}
+	return decision.Response{Calibrated: true, Answers: ans}, nil
+}
+
+// Parallel --per-compass calls on one item cannot fish for a yes (review probe): while one decision
+// is being made the others are refused, the decider is asked once, and the refusal then stands for
+// that Compass version. An answered item's record is never replaced by a later refusal; a check-in
+// whose member is busy is not decided at all.
+func TestPerCompassOneAtATime(t *testing.T) {
+	p, ask := perCompassTeam(t)
+	ctx := context.Background()
+	const lead, web = "leadaaaaaaaa", "webaaaaaaaaa"
+	ownerLine(t, p, "Merge PRs into main once the PR review agent approves", "owner")
+	id := ask("Merge PR #9 into main? The PR review agent approved.", false)
+	var calls int32
+	release := make(chan struct{})
+	setDecider(p, heldDecider{calls: &calls, release: release})
+	first := make(chan error, 1)
+	go func() { _, err := p.askPerCompass(ctx, perCompassIn{SessionID: lead, ID: id}); first <- err }()
+	for atomic.LoadInt32(&calls) == 0 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	for range 3 {
+		short, cancel := context.WithTimeout(ctx, time.Second) // a call that reached the decider gives up, not hangs
+		_, err := p.askPerCompass(short, perCompassIn{SessionID: lead, ID: id})
+		cancel()
+		if err == nil || !strings.Contains(err.Error(), "being decided") {
+			t.Fatalf("a parallel call: %v", err)
+		}
+	}
+	close(release)
+	if err := <-first; protocol.CodeOf(err) != protocol.CodeForbidden {
+		t.Fatalf("the first call: %v", err)
+	}
+	if _, err := p.askPerCompass(ctx, perCompassIn{SessionID: lead, ID: id}); err == nil || !strings.Contains(err.Error(), "already decided") {
+		t.Fatalf("after it: %v", err)
+	}
+	if n := atomic.LoadInt32(&calls); n != 1 {
+		t.Fatalf("the decider was asked %d times", n)
+	}
+
+	// An answered record stays answered.
+	if err := p.db.PutPerCompass(agentdb.PerCompass{Item: "x1", TeamID: "t", SessionID: web, Lead: lead, Outcome: "answered", Detail: "Yes", Version: "v1"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = p.db.PutPerCompass(agentdb.PerCompass{Item: "x1", TeamID: "t", SessionID: web, Lead: lead, Outcome: "refused", Detail: "not sure", Version: "v2"})
+	if rec, _, _ := p.db.PerCompassFor("x1"); rec.Outcome != "answered" || rec.Version != "v1" {
+		t.Fatalf("record = %+v", rec)
+	}
+
+	// A busy member's check-in: refused before any decision (the decider is not asked), nothing recorded.
+	calls = 0
+	setDecider(p, heldDecider{calls: &calls, release: release})
+	gid, err := p.db.AddGate(agentdb.Gate{TeamID: p.teamID(web), SessionID: web, Agent: "web", Kind: "checkin", Question: "Shall I merge PR #9 into main? The PR review agent approved.", CreatedAt: store.RFC3339(time.Now().Add(-time.Minute))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.setStatus(web, "working")
+	item := fmt.Sprintf("checkin:%d", gid)
+	if _, err := p.askPerCompass(ctx, perCompassIn{SessionID: lead, ID: item}); err == nil || !strings.Contains(err.Error(), "idle") {
+		t.Fatalf("a busy member's check-in: %v", err)
+	}
+	if _, ok, _ := p.db.PerCompassFor(item); ok || atomic.LoadInt32(&calls) != 0 {
+		t.Fatalf("a busy member's check-in was decided: %d decider calls", calls)
 	}
 }
