@@ -166,11 +166,14 @@ type ProviderConfig struct {
 	KeyRef  string `json:"key_ref,omitempty"`
 }
 
-// DecisionConfig selects the triage provider. Active is a key of Providers, or "" for rules only.
+// DecisionConfig selects the triage model, which PenguPool needs: Active is a key of Providers; ""
+// only before the owner sets one up (the app asks until they do).
 type DecisionConfig struct {
-	Active        string                    `json:"active,omitempty"`
-	Providers     map[string]ProviderConfig `json:"providers,omitempty"`
-	RulesFallback bool                      `json:"rules_fallback"`
+	Active    string                    `json:"active,omitempty"`
+	Providers map[string]ProviderConfig `json:"providers,omitempty"`
+	// RulesFallback is removed: a config that still has it is told so once (dropRetiredProviders)
+	// and the field is cleared; nothing reads it.
+	RulesFallback bool `json:"rules_fallback,omitempty"`
 }
 
 // Network holds the phone connection endpoints the owner saved.

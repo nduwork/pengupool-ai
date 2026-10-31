@@ -300,6 +300,10 @@ until they replace or delete it: it no longer fades with time, and evidence agai
 (inferred lines still do both). A helper's done report waiting for its compaction is kept as its
 journal entry when the host shuts down, and an entry with a summary keeps the report under it. A
 Compass signal and its effects are written together, so none is left without the effects it had.
+v0.10.8: PenguPool needs a triage model, local (Ollama) or remote. Settings can no longer set it to
+none, and a model becomes active only once its check passes. The app asks for one under the title bar on
+every page while none is set or the set one stops answering, and the prompt goes as soon as one works.
+"If the model fails, use simple matching" is removed; a config that still has it is told so once.
 
 ## Credits
 

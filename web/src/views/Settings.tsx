@@ -92,7 +92,6 @@ interface ProviderCfg {
 interface ProvidersResp {
   active: string;
   providers: Record<string, ProviderCfg> | null;
-  rules_fallback: boolean;
   defaults: Record<string, ProviderCfg>;
 }
 
@@ -257,25 +256,11 @@ function Providers(): ReactElement {
       </H>
       <Card className="mb-4 flex items-center gap-3 p-3 text-label">
         <Bot className="size-4 text-primary" />
-        Active: <strong>{data.active === "" ? "No model" : TYPES.find((t) => t.id === data.active)?.label}</strong>
-        <span className="ml-auto flex items-center gap-2 text-muted-foreground" title="When the model can't be reached, propose teams from PenguPool's simple built-in matching instead of the main worker alone.">
-          If the model fails, use simple matching
-          <Switch
-            checked={data.rules_fallback}
-            label="If the model fails, use simple matching"
-            onCheckedChange={async (v) => {
-              await app.call("provider.activate", {
-                type: data.active,
-                rules_fallback: v,
-              });
-              setN(n + 1);
-            }}
-          />
-        </span>
+        Active: <strong>{data.active === "" ? "None yet (required)" : TYPES.find((t) => t.id === data.active)?.label}</strong>
       </Card>
       {data.active === "" ? (
-        <p className="-mt-2 mb-4 text-label text-faint">
-          Without a model PenguPool proposes no memories, and proposes teams with the main worker alone.
+        <p className="-mt-2 mb-4 text-label text-warning">
+          PenguPool needs a triage model: its memory, check-ins and team proposals rely on it. Set up a local one (Ollama) or a remote one, run its check, and make it active.
         </p>
       ) : null}
       <div className="mb-4 flex gap-1 rounded-lg bg-muted p-1 text-label">
@@ -387,16 +372,7 @@ function Providers(): ReactElement {
           >
             Use for triage
           </Button>
-          <Button
-            variant="ghost"
-            disabled={data.active === ""}
-            onClick={async () => {
-              await app.call("provider.activate", { type: "" });
-              setN(n + 1);
-            }}
-          >
-            Stop using a model
-          </Button>
+          {/* No "stop using a model": PenguPool needs one; switch to another instead. Activating runs the check. */}
         </div>
         <CheckResult
           r={check}

@@ -18,6 +18,7 @@ import { T } from "./protocol/control";
 import { EMPTY_DOMAIN } from "./protocol/domain";
 import { SessionsStore, type SessionsView } from "./state/sessions";
 import { ApprovalsBell, NeedsYouBar } from "./views/Approvals";
+import { type TriageStatus, triagePrompt } from "./views/triage";
 import { Welcome } from "./views/GettingStarted";
 import { NewSessionDialog } from "./views/NewSession";
 import { UpdatePill } from "./views/Update";
@@ -155,6 +156,13 @@ export function App(): ReactElement {
   useEffect(() => {
     if (info.status === "connected") void connection.request<OpenGate[]>("gates.open", {}).then((r) => setGates(r ?? []), () => setGates([]));
   }, [connection, info.status, statusKey]);
+
+  // The triage model PenguPool needs: read on connecting and whenever a session changes status or the
+  // page changes (back from Settings), so the prompt below goes as soon as one works.
+  const [triage, setTriage] = useState<TriageStatus | null>(null);
+  useEffect(() => {
+    if (info.status === "connected") void connection.request<TriageStatus>("triage.status", {}).then(setTriage, () => setTriage(null));
+  }, [connection, info.status, statusKey, nav]);
 
   // Approvals: dock badge (pending proposals plus waiting agents), and a native notification for each new team launch proposal.
   const seen = useRef(new Set<string>());
@@ -372,6 +380,14 @@ export function App(): ReactElement {
                   </Button>
                 </Tip>
               </header>
+              {triagePrompt(triage) !== null ? (
+                <div role="alert" className="flex items-center gap-2 border-b border-warning/30 bg-warning/15 px-3 py-1.5 text-label">
+                  <span className="min-w-0 flex-1">{triagePrompt(triage)}</span>
+                  <Button size="sm" variant="default" onClick={() => setNav("settings")}>
+                    Open Settings
+                  </Button>
+                </div>
+              ) : null}
               <NeedsYouBar />
               <main className="relative min-h-0 flex-1">
                 {/* The workbench stays mounted on other pages, so terminals keep their attachment. */}

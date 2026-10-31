@@ -103,6 +103,7 @@ type Pool struct {
 	clock func() time.Time
 	// testDecider stands in for the configured decision provider in tests.
 	testDecider decision.Provider
+	triageErr   string // the triage model's last call failed with this; "" after one that answered (guarded by mu)
 	// testSpawn stands in for starting a worker in tests.
 	testSpawn func(spawnReq) (store.Session, error)
 	// testScreen stands in for the hub's followed screens in tests.
@@ -408,6 +409,7 @@ func (p *Pool) handlers() map[string]handler {
 		"provider.activate":     bind(p.providerActivate),
 		"settings.tailscale":    bind(p.settingsTailscale),
 		"settings.get":          bind(p.settingsGet),
+		"triage.status":         bind(p.triageStatus),
 		"settings.save":         bind(p.settingsSave),
 		"sync.get":              bind(p.syncGet),
 		"sync.set":              bind(p.syncSet),
@@ -572,10 +574,48 @@ func (p *Pool) decider() decision.Provider {
 	p.mu.Lock()
 	td := p.testDecider
 	p.mu.Unlock()
-	if td != nil {
-		return td
+	prov := td
+	if prov == nil {
+		prov = decision.FromConfig(p.st.Config().Decision, p.logf)
 	}
-	return decision.FromConfig(p.st.Config().Decision, p.logf)
+	if prov == nil {
+		return nil
+	}
+	return watched{prov, p}
+}
+
+// watched records whether the triage model answered its last call: the app's "set up a triage
+// model" prompt shows while it is missing or unreachable (triageStatus).
+type watched struct {
+	decision.Provider
+	p *Pool
+}
+
+func (w watched) Decide(ctx context.Context, req decision.Request) (decision.Response, error) {
+	res, err := w.Provider.Decide(ctx, req)
+	if ctx.Err() == nil { // a call cut short by its caller says nothing about the model
+		w.p.mu.Lock()
+		w.p.triageErr = ""
+		if err != nil {
+			w.p.triageErr = err.Error()
+		}
+		w.p.mu.Unlock()
+	}
+	return res, err
+}
+
+// triageStatus is "missing" (no triage model set), "unreachable" (its last call failed) or "ok".
+func (p *Pool) triageStatus(_ context.Context, _ struct{}) (any, error) {
+	if p.decider() == nil {
+		return map[string]string{"status": "missing"}, nil
+	}
+	p.mu.Lock()
+	e := p.triageErr
+	p.mu.Unlock()
+	if e != "" {
+		return map[string]string{"status": "unreachable", "error": e}, nil
+	}
+	return map[string]string{"status": "ok"}, nil
 }
 
 func errorf(format string, a ...any) error { return fmt.Errorf(format, a...) }
