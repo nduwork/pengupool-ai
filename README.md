@@ -253,6 +253,12 @@ its condition. The owner keeps one, and the lines that contradict it directly ar
 evidence; a line that only contradicted another stays for the next review, and the kept line is
 unchanged. A line edited since the review is refused ("refresh"). Without a decision model there are
 no conflict items, and a review asks the model again only when a shown line changes.
+v0.9.41: An ask the owner answers through the lead reaches the member as the owner's own prompt. When
+the member is no longer waiting in `pengupool ask`, the owner's whole words are typed in as its next
+prompt ("Answer to your ask ID: …"), credited to the owner, so the member's harness sees the owner's
+prompt and not a teammate's relay; a waiting member still gets the answer from its wait, and a busy one
+gets the words typed at its next stop, once. `pengupool ask "QUESTION" --option A --option B` keeps its options: flags after the question
+were read as words of it.
 
 ## Credits
 

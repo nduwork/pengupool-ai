@@ -110,6 +110,7 @@ func (p *Pool) askWait(ctx context.Context, in askWaitIn) (any, error) {
 		}
 		switch a.State {
 		case "answered":
+			p.dropAnswersLater(a.SessionID, a.ID) // it has the answer now: the words do not come twice
 			return map[string]string{"id": a.ID, "answer": a.Answer, "by": a.AnsweredBy}, nil
 		case "expired":
 			if s, ok := p.session(a.SessionID); ok && s.State == "running" && olderThan(a.CreatedAt, time.Now(), askExpiry) {
@@ -159,11 +160,14 @@ func (p *Pool) askAnswer(_ context.Context, c gateway.Caller, raw json.RawMessag
 // answerAsk records the answer once: a second answer, or one to an ask that went, is a conflict.
 // The session gets it from its wait, or as a notice when nothing waits.
 func (p *Pool) answerAsk(id, answer, by string) (any, error) {
-	return p.answerAskWith(id, answer, by, "")
+	return p.answerAskWith(id, answer, by, "", "")
 }
 
 // answerAskWith is answerAsk recording the owner's words that carried the answer (askAnswerFor).
-func (p *Pool) answerAskWith(id, answer, by, words string) (any, error) {
+// prompt is those words whole: a member no longer waiting gets them typed in as its next prompt,
+// credited to the owner, so its harness sees the owner's own prompt; a waiting member gets the answer
+// from its wait.
+func (p *Pool) answerAskWith(id, answer, by, words, prompt string) (any, error) {
 	answer = strings.TrimSpace(answer)
 	if answer == "" {
 		return nil, invalid("no answer")
@@ -204,14 +208,104 @@ func (p *Pool) answerAskWith(id, answer, by, words string) (any, error) {
 	waiting := time.Since(p.askWaitedAt[a.ID]) < askWaitGrace
 	delete(p.askWaitedAt, a.ID)
 	p.mu.Unlock()
-	if !waiting {
-		p.notice(a.TeamID, a.SessionID, "The owner answered your ask "+a.ID+" (\""+clipRunes(oneLine(a.Detail), 120)+"\"): "+a.Answer)
+	if waiting {
+		return map[string]string{"id": a.ID, "answer": a.Answer}, nil
 	}
-	return map[string]string{"id": a.ID, "answer": a.Answer}, nil
+	note := "The owner answered your ask " + a.ID + " (\"" + clipRunes(oneLine(a.Detail), 120) + "\"): " + a.Answer
+	s, _ := p.session(a.SessionID)
+	if _, agent := harness.Find(s.Harness); prompt == "" || !agent {
+		p.notice(a.TeamID, a.SessionID, note) // an answer in the app, or a member that cannot be typed into
+		return map[string]string{"id": a.ID, "answer": a.Answer}, nil
+	}
+	later := laterAnswer{ask: a.ID, teamID: a.TeamID, text: "Answer to your ask " + a.ID + ": " + prompt, note: note, at: time.Now()}
+	if s.Status != "idle" {
+		// A notice would reach the member through its inbox, which its harness does not read as the
+		// owner's prompt: the owner's words wait for its next Stop instead (typeAnswersLater).
+		p.mu.Lock()
+		if p.answersLater == nil {
+			p.answersLater = map[string][]laterAnswer{}
+		}
+		p.answersLater[a.SessionID] = append(p.answersLater[a.SessionID], later)
+		p.mu.Unlock()
+		return map[string]string{"id": a.ID, "answer": a.Answer, "typed": "at its next stop"}, nil
+	}
+	if !p.typeAnswer(a.SessionID, later) {
+		return map[string]string{"id": a.ID, "answer": a.Answer}, nil
+	}
+	return map[string]string{"id": a.ID, "answer": a.Answer, "typed": "true"}, nil
+}
+
+// laterAnswer is an owner's answer, given through an ancestor, waiting to be typed into a member.
+type laterAnswer struct {
+	ask, teamID, text, note string
+	at                      time.Time // when it was queued
+}
+
+// typeAnswer types the owner's words into the member as a delivered ask answer; a failed typing
+// leaves the notice instead.
+func (p *Pool) typeAnswer(id string, x laterAnswer) bool {
+	if err := p.typeOwnerPrompt(id, x.text, "ask"); err != nil {
+		p.notice(x.teamID, id, x.note)
+		return false
+	}
+	return true
+}
+
+// typeAnswersLater types the answers that waited for the member to go idle (its Stop), each once.
+// ponytail: in memory: a host restart drops a waiting answer; the ask's record keeps it, and the
+// member gets it from `pengupool ask --wait ID`.
+func (p *Pool) typeAnswersLater(id string) {
+	p.mu.Lock()
+	q := p.answersLater[id]
+	delete(p.answersLater, id)
+	p.mu.Unlock()
+	for _, x := range q {
+		// Only for this session's answered ask: a session ended and resumed meanwhile has had its asks
+		// expired (expireAsks drops what waited). Long after (busy past askExpiry), the owner's words
+		// are no longer typed as a fresh prompt; the member still hears the answer, as a notice.
+		a, ok := p.approval(x.ask)
+		if !ok || a.State != "answered" || a.SessionID != id {
+			continue
+		}
+		if time.Since(x.at) >= askExpiry {
+			p.notice(x.teamID, id, x.note)
+			continue
+		}
+		p.typeAnswer(id, x)
+	}
+}
+
+// dropAnswersLater drops what waits to be typed: one session's (a "" ask: all of it), or one ask's.
+func (p *Pool) dropAnswersLater(sessionID, ask string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if ask == "" {
+		delete(p.answersLater, sessionID)
+		return
+	}
+	q := p.answersLater[sessionID]
+	q = slices.DeleteFunc(q, func(x laterAnswer) bool { return x.ask == ask })
+	if len(q) == 0 {
+		delete(p.answersLater, sessionID)
+	} else {
+		p.answersLater[sessionID] = q
+	}
 }
 
 // expireAsks ends the pending asks of one session, or ("") of every session that is not running.
 func (p *Pool) expireAsks(sessionID string) {
+	// What waited to be typed into the session goes too: it ended, and a resumed one starts afresh.
+	if sessionID != "" {
+		p.dropAnswersLater(sessionID, "")
+	} else {
+		p.mu.Lock()
+		for id := range p.answersLater {
+			if s, ok := p.session(id); !ok || s.State != "running" {
+				delete(p.answersLater, id)
+			}
+		}
+		p.mu.Unlock()
+	}
 	_ = p.update(func(st *store.State) error {
 		for i := range st.Domain.Approvals {
 			x := &st.Domain.Approvals[i]

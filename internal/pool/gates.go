@@ -1528,18 +1528,27 @@ func (p *Pool) checkinAnswer(_ context.Context, in answerIn) (any, error) {
 	if !p.claimAnswer(in.GateID) {
 		return nil, conflict("check-in %d is already being answered", in.GateID)
 	}
-	// One line: a newline typed into the terminal would send the prompt early.
-	line := strings.Join(strings.Fields(text), " ")
-	// The owner's own call (the app, by the gate), so it is the owner typing: the prompt typed below
-	// is credited to them like keystrokes on the app's connection, else it would arrive unverified and
-	// teach the Compass nothing (ownerinput.go).
-	p.OwnerInput(s.ID, line)
-	if err := p.typeInto(s.ID, line+"\r"); err != nil {
+	// The owner's own call (the app, by the gate), so it is the owner typing.
+	if err := p.typeOwnerPrompt(s.ID, text, "checkin"); err != nil {
 		p.releaseAnswer(in.GateID)
-		p.withdrawOwnerInput(s.ID, line) // nothing was typed: the credit must not wait for an agent to post that text
 		return nil, protocol.Errorf(protocol.CodeUnavailable, "%v", err)
 	}
 	return nil, nil
+}
+
+// typeOwnerPrompt types the owner's words into session id as its next prompt, on one line (a newline
+// typed into the terminal would send the prompt early), credited to the owner like keystrokes on the
+// app's connection: else it would arrive unverified, teach the Compass nothing (ownerinput.go), and
+// the member's harness would not see the owner's prompt. The credit is a delivered one: the turn it
+// opens cannot carry the words on as an answer to another question.
+func (p *Pool) typeOwnerPrompt(id, text, kind string) error {
+	line := strings.Join(strings.Fields(text), " ")
+	p.ownerInputAs(id, line, kind)
+	if err := p.typeInto(id, line+"\r"); err != nil {
+		p.withdrawOwnerInput(id, line) // nothing was typed: the credit must not wait for an agent to post that text
+		return err
+	}
+	return nil
 }
 
 // claimAnswer marks a check-in as being answered, once: false when it already is.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"net"
 	"os"
 	"os/exec"
@@ -161,5 +162,16 @@ func TestPhoneHosts(t *testing.T) {
 	}
 	if got := phoneHosts("", "muse-1.tail1.ts.net"); !slices.Equal(got, []string{"", "muse-1.tail1.ts.net"}) {
 		t.Errorf("phoneHosts without Serve = %v", got)
+	}
+}
+
+// `ask "Q" --option A --option B`: options after the question are options, not words of it.
+func TestParseInterspersed(t *testing.T) {
+	fs := flag.NewFlagSet("ask", flag.ContinueOnError)
+	var opts []string
+	fs.Func("option", "", func(v string) error { opts = append(opts, v); return nil })
+	words, err := parseInterspersed(fs, []string{"Force-push", "#65?", "--option", "Yes, force-push #65", "--option=Hold"})
+	if err != nil || !slices.Equal(words, []string{"Force-push", "#65?"}) || !slices.Equal(opts, []string{"Yes, force-push #65", "Hold"}) {
+		t.Fatalf("words %q, options %q, %v", words, opts, err)
 	}
 }

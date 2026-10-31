@@ -51,6 +51,9 @@ func (p *Pool) askAnswerFor(_ context.Context, in askAnswerForIn) (any, error) {
 	}
 	prev, prevAt := p.prevReply[in.SessionID], p.prevReplyAt[in.SessionID]
 	p.mu.Unlock()
+	if open && cur.Delivered != "" {
+		return nil, protocol.Errorf(protocol.CodeForbidden, "this prompt carries the owner's answer to another question; it answers nothing else")
+	}
 	if !open || !cur.fromOwner() {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "only the owner's own prompt in this session can answer an ask; a teammate's message, triage or a notice cannot")
 	}
@@ -59,6 +62,12 @@ func (p *Pool) askAnswerFor(_ context.Context, in askAnswerForIn) (any, error) {
 		return nil, notFound("no ask %s", in.ID)
 	}
 	d := p.st.State().Domain
+	// Words that name another ask are about that one (or carry its answer), never this one's.
+	for _, x := range d.Approvals {
+		if x.Kind == "ask" && x.ID != a.ID && namesAsk(cur.Prompt, x.ID) {
+			return nil, protocol.Errorf(protocol.CodeForbidden, "the owner's prompt names ask %s, not %s; it answers no other", x.ID, in.ID)
+		}
+	}
 	if t := teamOf(&d, a.SessionID); t == nil || treeParent(t, a.SessionID) != in.SessionID {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "ask %s is not a direct child's", in.ID)
 	}
@@ -87,11 +96,12 @@ func (p *Pool) askAnswerFor(_ context.Context, in askAnswerForIn) (any, error) {
 		return nil, invalid("ask %s has %d options", in.ID, len(a.Options))
 	}
 	answer := redact(strings.TrimSpace(cur.Prompt)) // the owner's whole prompt, for the child to read
+	whole := answer
 	if in.Option > 0 && isOption(cur.Prompt, a.Options[in.Option-1], in.Option) {
 		answer = a.Options[in.Option-1]
 	}
 	by := "owner via " + in.SessionID
-	res, err := p.answerAskWith(a.ID, answer, by, clipRunes(redact(oneLine(cur.Prompt)), 500))
+	res, err := p.answerAskWith(a.ID, answer, by, clipRunes(redact(oneLine(cur.Prompt)), 500), whole)
 	if err != nil {
 		return nil, err
 	}

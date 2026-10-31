@@ -209,21 +209,27 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		if from := p.outsideSender(t.Prompt); from != "" {
 			p.nativeArrived(s.ID, from, entered)
 		}
-		if t.fromOwner() && !p.ownerSent(s.ID, t.Prompt) {
-			t.Unverified = true // looks like the owner's, but the owner sent nothing: not the owner's
-			p.logLine(s.ID, "prompt: a user turn the owner did not send; treated as a teammate's words ("+p.ownerInputSeen(s.ID)+")")
+		if t.fromOwner() {
+			if ok, delivered := p.ownerSentAs(s.ID, t.Prompt); !ok {
+				t.Unverified = true // looks like the owner's, but the owner sent nothing: not the owner's
+				p.logLine(s.ID, "prompt: a user turn the owner did not send; treated as a teammate's words ("+p.ownerInputSeen(s.ID)+")")
+			} else {
+				t.Delivered = delivered
+			}
 		}
 		owner := t.fromOwner()
 		wait := p.promptArrived(s, owner)
-		if owner {
-			p.ownerMentions(s, t.Prompt)
+		if owner && t.Delivered == "" {
+			p.ownerMentions(s, t.Prompt) // the owner's @mentions in words given elsewhere open nothing here
+		}
+		if owner && t.Delivered != "ask" { // an ask's answer, typed in, is no answer to the member's check-in
 			go p.ownerReplied(s, t.Prompt, wait) // the owner may be answering a gate: off the hook, it becomes a signal
 		}
 		p.setStatus(s.ID, "working")
 		if t.Prompt == "" { // an extension's status-only or prompt-less signal: a delivered message's turn keeps its prompt
 			p.turnOpen(s.ID, "")
 		} else {
-			p.turnStartAs(s.ID, t.Prompt, t.Unverified)
+			p.turnStartAs(s.ID, t.Prompt, t.Unverified, t.Delivered)
 		}
 		if s.JobStart.IsZero() { // the first prompt since its last log entry starts a job
 			p.setSession(s.ID, func(x *store.Session) { x.JobStart = time.Now().UTC() })
@@ -376,8 +382,9 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			}
 		}
 		p.setStatus(s.ID, "idle")
-		p.journalTurnEnd(s.ID) // before the queue: a delivered message starts the next turn
-		p.flushQueue(s.ID)     // after the turn's end: a message it delivers starts the next turn
+		p.journalTurnEnd(s.ID)   // before the queue: a delivered message starts the next turn
+		p.typeAnswersLater(s.ID) // the owner's answers first, typed as the member's next prompt
+		p.flushQueue(s.ID)       // after the turn's end: a message it delivers starts the next turn
 		return out, nil
 	case "Status":
 	case "Delivered":
@@ -392,6 +399,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		p.markDelivered(ids)
 	case "SessionEnd":
 		p.wordingEnded(s.ID)
+		p.dropAnswersLater(s.ID, "") // its answers stay on the asks' record; no later session gets them typed
 		p.setStatus(s.ID, "ended")
 		p.logLine(s.ID, "session: harness session ended ("+firstNonEmpty(str("reason"), "exit")+")")
 	}

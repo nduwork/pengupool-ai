@@ -3,12 +3,14 @@ package pool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/nduwork/pengupool-ai/internal/agentdb"
 	"github.com/nduwork/pengupool-ai/internal/gateway"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
@@ -325,5 +327,371 @@ func TestAskAnswerForOwnerRace(t *testing.T) {
 		if want := map[bool]string{true: "Yes", false: "No"}[errs[0] == nil]; a.Answer != want {
 			t.Fatalf("answer %q, want %q", a.Answer, want)
 		}
+	}
+}
+
+// An answer the owner gives through the lead reaches a member no longer waiting in `pengupool ask` as
+// the owner's own prompt, typed and credited, so the member's harness sees the owner's words; a
+// waiting member gets it from its wait, and a busy one as a notice.
+func TestAskAnswerTypedWhenNotWaiting(t *testing.T) {
+	p, _ := twoTeams(t)
+	p.requireOwnerInput = true
+	ctx := context.Background()
+	const lead, web = "leadaaaaaaaa", "webaaaaaaaaa"
+	_ = p.st.Update(func(s *store.State) error {
+		for i := range s.Sessions {
+			s.Sessions[i].Harness = "claude"
+		}
+		for i, m := range s.Domain.Teams[0].Members {
+			if m.SessionID == web {
+				s.Domain.Teams[0].Members[i].Parent = lead
+			}
+		}
+		return nil
+	})
+	var typed []string
+	var fromOwner bool
+	p.testKeys = func(sid, text string) error {
+		if sid != web {
+			t.Fatalf("typed into %s", sid)
+		}
+		typed = append(typed, text)
+		fromOwner = prompt(t, p, sid, strings.TrimSuffix(text, "\r")).fromOwner()
+		return nil
+	}
+	answered := func() (string, string) {
+		t.Helper()
+		res, err := p.agentAsk(ctx, agentAskIn{SessionID: web, Question: "Force-push #65?", Options: []string{"Yes", "Hold"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := res.(map[string]string)["id"]
+		_ = p.st.Update(func(s *store.State) error {
+			for i := range s.Domain.Approvals {
+				if s.Domain.Approvals[i].ID == id {
+					s.Domain.Approvals[i].CreatedAt = store.RFC3339(time.Now().Add(-time.Minute))
+				}
+			}
+			return nil
+		})
+		p.mu.Lock()
+		if p.prevReply == nil {
+			p.prevReply, p.prevReplyAt = map[string]string{}, map[string]time.Time{}
+		}
+		p.prevReply[lead], p.prevReplyAt[lead] = "web waits on the owner: ask "+id+" (force-push #65?)", time.Now()
+		p.mu.Unlock()
+		return id, "Yes, force-push it\nand tell me after"
+	}
+	notices := func() string { return p.takeNotices(web) }
+
+	// Not waiting, idle: typed whole on one line, naming the ask, and credited to the owner.
+	p.setStatus(web, "idle")
+	id, words := answered()
+	p.OwnerInput(lead, words)
+	prompt(t, p, lead, words)
+	if _, err := p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: id}); err != nil {
+		t.Fatal(err)
+	}
+	want := "Answer to your ask " + id + ": Yes, force-push it and tell me after\r"
+	if len(typed) != 1 || typed[0] != want || !fromOwner {
+		t.Fatalf("typed %q (want %q), from the owner %v", typed, want, fromOwner)
+	}
+	if a, _ := p.approval(id); a.State != "answered" || a.Answer != words {
+		t.Fatalf("ask = %+v", a)
+	}
+	if n := notices(); strings.Contains(n, id) {
+		t.Fatalf("a typed answer also came as a notice:\n%s", n)
+	}
+
+	// Waiting: the answer comes from the wait, nothing is typed.
+	typed = nil
+	id, words = answered()
+	p.askWaited(id)
+	p.OwnerInput(lead, words)
+	prompt(t, p, lead, words)
+	if _, err := p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: id}); err != nil {
+		t.Fatal(err)
+	}
+	if res, _ := p.askWait(ctx, askWaitIn{SessionID: web, ID: id}); len(typed) != 0 || res.(map[string]string)["by"] != "owner via "+lead {
+		t.Fatalf("waiting member: typed %q, wait %v", typed, res)
+	}
+
+	// Busy: answered on the record now, nothing typed and no notice; typed at its next Stop, once.
+	p.setStatus(web, "working")
+	id, words = answered()
+	p.OwnerInput(lead, words)
+	prompt(t, p, lead, words)
+	if _, err := p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: id}); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := p.approval(id); a.State != "answered" || len(typed) != 0 || strings.Contains(notices(), id) {
+		t.Fatalf("busy member: ask %s, typed %q", a.State, typed)
+	}
+	stop := func() {
+		t.Helper()
+		b, _ := json.Marshal(map[string]any{"stop_hook_active": false, "last_assistant_message": "Done for now."})
+		if _, err := p.hookEvent(ctx, hookIn{SessionID: web, Harness: "claude", Event: "Stop", Payload: b}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stop()
+	want = "Answer to your ask " + id + ": Yes, force-push it and tell me after\r"
+	if len(typed) != 1 || typed[0] != want || !fromOwner {
+		t.Fatalf("at Stop: typed %q (want %q), from the owner %v", typed, want, fromOwner)
+	}
+	stop()
+	if len(typed) != 1 || strings.Contains(notices(), id) {
+		t.Fatalf("typed again at the next Stop: %q", typed)
+	}
+	typed = nil
+
+	// A typing that fails: a notice, and the owner's credit taken back.
+	p.setStatus(web, "idle")
+	p.testKeys = func(string, string) error { return errors.New("hub gone") }
+	id, words = answered()
+	p.OwnerInput(lead, words)
+	prompt(t, p, lead, words)
+	if _, err := p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: id}); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	credits := len(p.ownerEnter[web])
+	p.mu.Unlock()
+	if n := notices(); credits != 0 || !strings.Contains(n, "The owner answered your ask "+id) {
+		t.Fatalf("failed typing: %d credits left, notices:\n%s", credits, n)
+	}
+
+	// An answer in the app carries no words to type: a notice.
+	p.testKeys = func(_, text string) error { typed = append(typed, text); return nil }
+	id, _ = answered()
+	if _, err := p.answerAsk(id, "Yes", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if n := notices(); len(typed) != 0 || !strings.Contains(n, "The owner answered your ask "+id) {
+		t.Fatalf("app answer: typed %q, notices:\n%s", typed, n)
+	}
+}
+
+// The owner's answer to web's ask X, typed into web, is the owner's prompt for web, but it cannot
+// be carried on to web's own child's ask Y (review repro); nor can owner words that name another ask.
+func TestTypedAnswerNotCarriedOn(t *testing.T) {
+	p, _ := twoTeams(t)
+	p.requireOwnerInput = true
+	ctx := context.Background()
+	const lead, web, plan = "leadaaaaaaaa", "webaaaaaaaaa", "planaaaaaaaa"
+	_ = p.st.Update(func(s *store.State) error {
+		for i := range s.Sessions {
+			s.Sessions[i].Harness = "claude"
+		}
+		for i, m := range s.Domain.Teams[0].Members {
+			switch m.SessionID {
+			case web:
+				s.Domain.Teams[0].Members[i].Parent = lead
+			case plan:
+				s.Domain.Teams[0].Members[i].Parent = web
+			}
+		}
+		return nil
+	})
+	ask := func(sid, q string) string {
+		res, err := p.agentAsk(ctx, agentAskIn{SessionID: sid, Question: q, Options: []string{"Yes", "No"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := res.(map[string]string)["id"]
+		_ = p.st.Update(func(s *store.State) error {
+			for i := range s.Domain.Approvals {
+				if s.Domain.Approvals[i].ID == id {
+					s.Domain.Approvals[i].CreatedAt = store.RFC3339(time.Now().Add(-time.Minute))
+				}
+			}
+			return nil
+		})
+		return id
+	}
+	y := ask(plan, "Delete the prod bucket?")
+	x := ask(web, "Rename the README heading?")
+	p.mu.Lock()
+	if p.prevReply == nil {
+		p.prevReply, p.prevReplyAt = map[string]string{}, map[string]time.Time{}
+	}
+	p.prevReply[lead], p.prevReplyAt[lead] = "web waits on the owner: ask "+x, time.Now()
+	p.prevReply[web], p.prevReplyAt[web] = "I asked the owner "+x+"; plan waits on ask "+y, time.Now()
+	p.mu.Unlock()
+	var fromOwner bool
+	p.testKeys = func(sid, text string) error {
+		fromOwner = prompt(t, p, sid, strings.TrimSuffix(text, "\r")).fromOwner()
+		return nil
+	}
+	p.setStatus(web, "idle")
+	p.OwnerInput(lead, "Yes")
+	prompt(t, p, lead, "Yes")
+	if _, err := p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: x, Option: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if !fromOwner {
+		t.Fatal("the typed answer is not the owner's prompt for web")
+	}
+	_, err := p.askAnswerFor(ctx, askAnswerForIn{SessionID: web, ID: y})
+	if a, _ := p.approval(y); protocol.CodeOf(err) != protocol.CodeForbidden || a.State != "pending" {
+		t.Fatalf("the owner's answer to %s was carried to %s: %v, %s by %q", x, y, err, a.State, a.AnsweredBy)
+	}
+
+	// Delivered words that name no ask (a check-in answer typed in) are no answer for y either.
+	if err := p.typeOwnerPrompt(web, "Yes, go ahead", "checkin"); err != nil || !fromOwner {
+		t.Fatalf("typed: %v, from the owner %v", err, fromOwner)
+	}
+	_, err = p.askAnswerFor(ctx, askAnswerForIn{SessionID: web, ID: y})
+	if a, _ := p.approval(y); protocol.CodeOf(err) != protocol.CodeForbidden || a.State != "pending" {
+		t.Fatalf("delivered words answered %s: %v", y, err)
+	}
+
+	// The owner's own prompt in web, naming another ask, answers no other: not even the one shown.
+	z := ask(web, "Bump the version?")
+	p.mu.Lock()
+	p.prevReply[lead], p.prevReplyAt[lead] = "web waits on the owner: ask "+z, time.Now()
+	p.mu.Unlock()
+	words := "yes, the same as " + x
+	p.OwnerInput(lead, words)
+	prompt(t, p, lead, words)
+	_, err = p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: z})
+	if a, _ := p.approval(z); protocol.CodeOf(err) != protocol.CodeForbidden || a.State != "pending" {
+		t.Fatalf("words naming %s answered %s: %v", x, z, err)
+	}
+}
+
+// Delivered owner words act only where they were given: an @mention in them opens no channel for
+// the member (S2), and an ask's answer, typed in, does not claim the member's open check-in (S3); a
+// check-in's own answer still does.
+func TestDeliveredWordsActOnlyWhereGiven(t *testing.T) {
+	p, _ := twoTeams(t)
+	p.requireOwnerInput = true
+	const web, other = "webaaaaaaaaa", "otheraaaaaaa"
+	p.setStatus(web, "idle")
+	p.testKeys = func(string, string) error { return nil }
+	say := func(text, kind string) turn {
+		t.Helper()
+		if err := p.typeOwnerPrompt(web, text, kind); err != nil {
+			t.Fatal(err)
+		}
+		return prompt(t, p, web, text)
+	}
+	if tr := say("Answer to your ask X: yes, and loop in @othe", "ask"); tr.Delivered != "ask" || !tr.fromOwner() || p.crossTeamOpen(web, other) {
+		t.Fatalf("delivered %q, from the owner %v, channel open %v", tr.Delivered, tr.fromOwner(), p.crossTeamOpen(web, other))
+	}
+	gid, err := p.db.AddGate(agentdb.Gate{TeamID: "team1", SessionID: web, Agent: "web", Kind: "checkin", Question: "Shall I go on with the refactor?", CreatedAt: now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	say("Answer to your ask Y: yes", "ask")
+	time.Sleep(300 * time.Millisecond) // ownerReplied runs off the hook
+	if g, _ := p.db.Gate(gid); g.Outcome != "pending" || g.OwnerAnswer != "" {
+		t.Fatalf("an ask's answer claimed the check-in: %+v", g)
+	}
+	say("Go on with the refactor", "checkin")
+	waitGate(t, p, web, func(g agentdb.Gate) bool { return g.ID == gid && g.OwnerAnswer == "Go on with the refactor" })
+}
+
+// An answer waiting for a busy member's Stop is typed only into that session while it lives: one
+// that ended without a SessionEnd and was resumed under the same id gets nothing (review probe), and
+// one that got the answer from its wait gets the words only once.
+func TestLaterAnswerOnlyOnce(t *testing.T) {
+	p, _ := twoTeams(t)
+	p.requireOwnerInput = true
+	ctx := context.Background()
+	const lead, web = "leadaaaaaaaa", "webaaaaaaaaa"
+	_ = p.st.Update(func(s *store.State) error {
+		for i := range s.Sessions {
+			s.Sessions[i].Harness = "claude"
+		}
+		for i, m := range s.Domain.Teams[0].Members {
+			if m.SessionID == web {
+				s.Domain.Teams[0].Members[i].Parent = lead
+			}
+		}
+		return nil
+	})
+	var typed []string
+	p.testKeys = func(sid, text string) error { typed = append(typed, text); return nil }
+	queued := func() string { // web busy; the owner answers its ask through the lead
+		t.Helper()
+		p.expireAsks(web)
+		res, err := p.agentAsk(ctx, agentAskIn{SessionID: web, Question: "Force-push #65?", Options: []string{"Yes", "Hold"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := res.(map[string]string)["id"]
+		_ = p.st.Update(func(s *store.State) error {
+			for i := range s.Domain.Approvals {
+				if s.Domain.Approvals[i].ID == id {
+					s.Domain.Approvals[i].CreatedAt = store.RFC3339(time.Now().Add(-time.Minute))
+				}
+			}
+			return nil
+		})
+		p.mu.Lock()
+		if p.prevReply == nil {
+			p.prevReply, p.prevReplyAt = map[string]string{}, map[string]time.Time{}
+		}
+		p.prevReply[lead], p.prevReplyAt[lead] = "web waits on ask "+id, time.Now()
+		p.mu.Unlock()
+		p.setStatus(web, "working")
+		p.OwnerInput(lead, "Yes")
+		prompt(t, p, lead, "Yes")
+		if _, err := p.askAnswerFor(ctx, askAnswerForIn{SessionID: lead, ID: id, Option: 1}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	stop := func() {
+		t.Helper()
+		b, _ := json.Marshal(map[string]any{"last_assistant_message": "done"})
+		if _, err := p.hookEvent(ctx, hookIn{SessionID: web, Harness: "claude", Event: "Stop", Payload: b}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setState := func(st string) {
+		_ = p.st.Update(func(s *store.State) error {
+			for i := range s.Sessions {
+				if s.Sessions[i].ID == web {
+					s.Sessions[i].State = st
+				}
+			}
+			return nil
+		})
+	}
+
+	// Ended without SessionEnd, then resumed (resume expires its asks): nothing typed at its Stop.
+	queued()
+	setState("exited")
+	p.expireAsks(web) // what resume does
+	setState("running")
+	p.setStatus(web, "working")
+	stop()
+	if len(typed) != 0 {
+		t.Fatalf("typed into the resumed session: %q", typed)
+	}
+
+	// The member went back to its wait and got the answer there: nothing typed at its Stop.
+	id := queued()
+	if res, _ := p.askWait(ctx, askWaitIn{SessionID: web, ID: id}); res.(map[string]string)["answer"] == "" {
+		t.Fatalf("wait = %v", res)
+	}
+	stop()
+	if len(typed) != 0 {
+		t.Fatalf("typed after the wait gave the answer: %q", typed)
+	}
+
+	// Busy past askExpiry: not typed, but the member still hears it, as a notice.
+	p.takeNotices(web)
+	id = queued()
+	p.mu.Lock()
+	for i := range p.answersLater[web] {
+		p.answersLater[web][i].at = time.Now().Add(-askExpiry - time.Minute)
+	}
+	p.mu.Unlock()
+	stop()
+	if n := p.takeNotices(web); len(typed) != 0 || !strings.Contains(n, "The owner answered your ask "+id) {
+		t.Fatalf("an old answer: typed %q, notices:\n%s", typed, n)
 	}
 }

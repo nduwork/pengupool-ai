@@ -29,6 +29,12 @@ const (
 type credit struct {
 	at   time.Time
 	text string
+	// delivered: the host typed it for the owner (typeOwnerPrompt), carrying the owner's words given
+	// elsewhere: "ask" (an answer to the member's ask, given through an ancestor) or "checkin" (the
+	// owner's answer to its check-in), "" for words the owner typed in this session. The turn it opens
+	// is the owner's, but its words already answered what they were given for, so they answer nothing
+	// else and open no channel (hooks.go).
+	delivered string
 }
 
 // squash makes two spellings of a prompt comparable: lower case, no whitespace.
@@ -48,7 +54,9 @@ func squash(s string) string {
 // hooks tell the two apart only at PostToolUse), so what the owner types there is credited: an
 // interrupt and a new prompt must still read as the owner's. A dialog answer typed as text ("y") is
 // credited too: only a later turn with that same text would match it.
-func (p *Pool) OwnerInput(sessionID, text string) {
+func (p *Pool) OwnerInput(sessionID, text string) { p.ownerInputAs(sessionID, text, "") }
+
+func (p *Pool) ownerInputAs(sessionID, text, delivered string) {
 	s, ok := p.session(sessionID)
 	if ok && s.Waiting == "" && squash(text) != "" {
 		p.promptTyped(s) // counted while starting too: an agent with no hooks never leaves it
@@ -71,7 +79,7 @@ func (p *Pool) OwnerInput(sessionID, text string) {
 	if p.ownerEnter == nil {
 		p.ownerEnter = map[string][]credit{}
 	}
-	q := append(p.ownerEnter[sessionID], credit{time.Now(), text})
+	q := append(p.ownerEnter[sessionID], credit{time.Now(), text, delivered})
 	if len(q) > maxCredits {
 		q = q[len(q)-maxCredits:]
 	}
@@ -83,8 +91,15 @@ func (p *Pool) OwnerInput(sessionID, text string) {
 // own session) matches none, whatever else the owner typed. Where the daemon has no gateway to say
 // (tests, the offline evaluation), every prompt is believed.
 func (p *Pool) ownerSent(sessionID, prompt string) bool {
+	ok, _ := p.ownerSentAs(sessionID, prompt)
+	return ok
+}
+
+// ownerSentAs is ownerSent, also saying how the credits it consumed were delivered: "ask" if any was
+// an ask answer (the stricter kind), else "checkin" if any was, else "".
+func (p *Pool) ownerSentAs(sessionID, prompt string) (ok bool, delivered string) {
 	if !p.requireOwnerInput {
-		return true
+		return true, ""
 	}
 	want := squash(prompt)
 	p.mu.Lock()
@@ -98,8 +113,13 @@ func (p *Pool) ownerSent(sessionID, prompt string) bool {
 	for i := range q {
 		for j, acc := i, ""; j < len(q); j++ {
 			if acc += q[j].text; acc == want {
+				for _, c := range q[i : j+1] {
+					if c.delivered == "ask" || delivered == "" {
+						delivered = c.delivered
+					}
+				}
 				p.ownerEnter[sessionID] = append(q[:i:i], q[j+1:]...)
-				return true
+				return true, delivered
 			}
 			if len(acc) >= len(want) {
 				break
@@ -111,7 +131,7 @@ func (p *Pool) ownerSent(sessionID, prompt string) bool {
 	} else {
 		p.ownerEnter[sessionID] = q
 	}
-	return false
+	return false, ""
 }
 
 // ownerInputSeen says what the gateway saw of the owner in a session when a prompt that looked like the

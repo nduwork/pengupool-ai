@@ -373,7 +373,8 @@ func cmdAsk(args []string) error {
 	waitID := fs.String("wait", "", "go on waiting for the answer to this ask")
 	var opts []string
 	fs.Func("option", "a choice to offer; repeatable", func(v string) error { opts = append(opts, v); return nil })
-	if err := fs.Parse(args); err != nil {
+	words, err := parseInterspersed(fs, args)
+	if err != nil {
 		return err
 	}
 	session := os.Getenv("PENGUPOOL_SESSION_ID")
@@ -382,7 +383,7 @@ func cmdAsk(args []string) error {
 	}
 	id := *waitID
 	if id == "" {
-		q := strings.TrimSpace(strings.Join(fs.Args(), " "))
+		q := strings.TrimSpace(strings.Join(words, " "))
 		if q == "" {
 			return errors.New(`usage: pengupool ask [--option O]... QUESTION | pengupool ask --wait ID`)
 		}
@@ -440,6 +441,22 @@ func cmdAskAnswer(args []string) error {
 	}
 	fmt.Println(string(res))
 	return nil
+}
+
+// parseInterspersed parses fs's flags wherever they stand among args (`ask "Q" --option A`: the flag
+// package alone stops at "Q" and folds the options into the question), returning the other args.
+// ponytail: an arg after "--" that looks like a flag is still parsed as one.
+func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
+	var rest []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		if args = fs.Args(); len(args) == 0 {
+			return rest, nil
+		}
+		rest, args = append(rest, args[0]), args[1:]
+	}
 }
 
 // cmdCompass: `compass word …`, the answer to a [PenguPool compass] note.
