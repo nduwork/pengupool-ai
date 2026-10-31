@@ -300,6 +300,11 @@ until they replace or delete it: it no longer fades with time, and evidence agai
 (inferred lines still do both). A helper's done report waiting for its compaction is kept as its
 journal entry when the host shuts down, and an entry with a summary keeps the report under it. A
 Compass signal and its effects are written together, so none is left without the effects it had.
+v0.10.5: Memory reads honestly. Experience search ranks by relevance first; the same team only
+breaks ties, then the newest. A helper's past-work list leaves common words out of its query, and with
+no match it says "Recent work (no matching entries)" instead of offering the newest as a best match; it
+shows whole rows only, within 2 KiB and at most 10. A Compass line is shown whole or not at all (no
+clipping that loses its condition), and a condition worded "when …" no longer reads "when when".
 
 ## Credits
 

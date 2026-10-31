@@ -208,6 +208,21 @@ func TestJournalIndexInContext(t *testing.T) {
 	if p.journalForPrompt(store.Session{ID: plan}, "just do it") != "" {
 		t.Fatal("the owner's prompt got an index")
 	}
+	// No match is no match: the newest are listed under a heading that says so, never as a best match.
+	// Common words in the task are not searched for ("the", "with" would match every entry).
+	_, _ = p.db.AddExperience(agentdb.Entry{Helper: planKey, At: "2026-10-20T10:00:00Z", Title: "notes with the links", Body: "n"})
+	if out := p.journalLines(planKey, "", "the deploy with terraform"); !strings.Contains(out, "## Recent work (no matching entries") || strings.Contains(out, "best match") {
+		t.Fatalf("no-match index:\n%s", out)
+	}
+	// Whole rows only, within journalIndexBytes: long titles end the list early, and the rest are counted.
+	for i := 0; i < 10; i++ {
+		_, _ = p.db.AddExperience(agentdb.Entry{Helper: planKey, At: fmt.Sprintf("2026-11-%02dT10:00:00Z", i+1), Title: fmt.Sprintf("long %d ", i) + strings.Repeat("queue ", 33), Body: fmt.Sprint("q", i)})
+	}
+	out = p.journalLines(planKey, "", "queue")
+	rows := strings.Count(out, "\n- [")
+	if rows == 0 || rows >= 10 || len(out) > journalIndexBytes+80 || !strings.Contains(out, fmt.Sprintf("%d more:", 10-rows)) {
+		t.Fatalf("capped index (%d rows, %d bytes):\n%s", rows, len(out), out)
+	}
 	if !strings.Contains(p.renderContext(plan), "start your report to your parent with `Done:`") {
 		t.Fatal("the helper is not told to start its report with Done:")
 	}
@@ -230,7 +245,7 @@ func TestAgentExperienceRPCs(t *testing.T) {
 	if res, err = call(t, p, false, "experience.show", map[string]any{"session_id": plan, "id": id}); err != nil || res.(agentdb.Entry).Body != "invalidate on write" {
 		t.Fatalf("show = %+v %v", res, err)
 	}
-	other, _, _ := p.db.SearchExperience("someone-else", "", "", 1)
+	other, _, _, _ := p.db.SearchExperience("someone-else", "", "", 1)
 	if _, err := call(t, p, false, "experience.show", map[string]any{"session_id": plan, "id": other[0].ID}); err == nil {
 		t.Fatal("read another helper's entry")
 	}
