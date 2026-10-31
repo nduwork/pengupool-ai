@@ -1025,6 +1025,10 @@ interface SyncView {
   github: boolean;
   interval_min: number;
   repo?: string;
+  /** Sync is on but no repository is picked: nothing syncs, and nothing is created, until the owner picks one. */
+  needs_repo?: boolean;
+  /** A name to suggest (a new repository in the account); used only when the owner saves it. */
+  suggested_repo?: string;
   local_dir: string;
   status: { last_snapshot?: string; last_push?: string; last_checked?: string; last_error?: string; running: boolean; compact_suggested?: boolean; compact_reason?: string };
 }
@@ -1081,15 +1085,17 @@ function Sync(): ReactElement {
   return (
     <div>
       <p className="mb-2 text-label text-muted-foreground">
-        The Compass and helpers&apos; experience: with sync on, PenguPool syncs the record through a private repository your account can push to, created on the first sync when it is new.
+        The Compass and helpers&apos; experience: with sync on, PenguPool syncs the record through a private repository you pick, one your account can push to or a new name it creates on the first sync. Nothing syncs until you pick one.
       </p>
       <Card className="px-4">
         <Row
           title="Sync with GitHub"
           hint={
-            b.repo !== undefined
+            b.repo !== undefined && b.repo !== ""
               ? `To github.com/${b.repo} (private), only when something changed.`
-              : "Needs the GitHub account above. Creates the private repository below when it is new."
+              : b.needs_repo === true
+                ? "Choose a repository below to start: nothing syncs, and no repository is created, until you save one."
+                : "Needs the GitHub account above, and a repository you choose below."
           }
         >
           <Switch
@@ -1107,6 +1113,20 @@ function Sync(): ReactElement {
             <>
               Any private repository your GitHub account can push to, or a new name to create one. Every machine and account that syncs with the same repository shares one
               file, pengupool-agents.db (SQLite, merged row by row): the Compass, experience and team records written on one reach the others. PenguPool writes nothing else there but a README in a repository it creates.
+              {b.needs_repo === true ? (
+                <span className="block font-semibold text-foreground">
+                  Choose a repository to start.
+                  {b.suggested_repo !== undefined && repo.trim() === "" ? (
+                    <>
+                      {" "}
+                      <button type="button" className="underline" onClick={() => setRepo(b.suggested_repo ?? "")}>
+                        Use {b.suggested_repo}
+                      </button>{" "}
+                      (a new private repository, created when you save it).
+                    </>
+                  ) : null}
+                </span>
+              ) : null}
               {repoError !== "" ? <span className="block text-danger">{repoError}</span> : null}
             </>
           }
@@ -1140,7 +1160,7 @@ function Sync(): ReactElement {
                   );
               }}
               onChange={(e) => setRepo(e.target.value)}
-              placeholder="pengupool-memory"
+              placeholder={b.suggested_repo ?? "owner/name"}
               aria-label="Sync repository"
             />
             <datalist id="sync-repos">
@@ -1173,7 +1193,9 @@ function Sync(): ReactElement {
         <Row
           title="Last sync"
           hint={
-            st.last_error !== undefined ? (
+            b.needs_repo === true ? (
+              "Choose a repository to start."
+            ) : st.last_error !== undefined ? (
               <span className="text-danger">Failed: {st.last_error}</span>
             ) : st.last_push !== undefined ? (
               `Pushed ${shortTime(st.last_push)}; last checked ${shortTime(st.last_checked)}.`

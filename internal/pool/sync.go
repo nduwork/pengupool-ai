@@ -24,9 +24,9 @@ import (
 //   - backup, on this machine: a snapshot a day in <store>/backups: agents-<day>.db (SQLite's own copy of
 //     agents.db, its WAL included) and state-<day>.json (the teams, tasks and messages), the last
 //     14 days kept;
-//   - sync, with GitHub on: a private repository (default <login>/pengupool-memory; the owner can pick
-//     any private repository the account can push to, or name a new one), created on the first
-//     push. Every machine and account shares its one file, pengupool-agents.db: the Compass and its
+//   - sync, with GitHub on: a private repository the owner picks (any private repository the account
+//     can push to, or a new name, created on the first push; Settings suggests pengupool-memory).
+//     Nothing syncs, and no repository is created, until the owner has picked one. Every machine and account shares its one file, pengupool-agents.db: the Compass and its
 //     signals, helper experience (its journal entries; no team has a record), and the tombstones
 //     of those rows, as SQLite. Each round fetches it, merges it row by row into agents.db and
 //     back (agentdb.Merge), commits and pushes, so what is learned anywhere reaches everywhere. The
@@ -62,6 +62,7 @@ func (p *Pool) syncView() map[string]any {
 	p.mu.Unlock()
 	cfg := p.st.Config().Sync
 	return map[string]any{"github": cfg.GitHub, "interval_min": syncInterval(cfg) / time.Minute, "repo": cfg.Repo,
+		"needs_repo": cfg.GitHub && cfg.Repo == "", "suggested_repo": syncRepoName,
 		"local_dir": filepath.Join(p.st.Dir(), store.BackupsDir), "status": st}
 }
 
@@ -93,7 +94,8 @@ func (p *Pool) syncLoop(ctx context.Context) {
 	}
 }
 
-// syncOnce takes today's snapshot if it is missing and, with GitHub on, pushes the record.
+// syncOnce takes today's snapshot if it is missing and, with GitHub on and a repository picked,
+// pushes the record. With none picked yet it only waits: Settings says to choose one.
 func (p *Pool) syncOnce(ctx context.Context) error {
 	if !p.roundMu.TryLock() {
 		return conflict("a sync is already running")
@@ -101,7 +103,7 @@ func (p *Pool) syncOnce(ctx context.Context) error {
 	defer p.roundMu.Unlock()
 	p.setSync(func(s *syncStatus) { s.Running = true })
 	err := p.snapshotDaily()
-	if err == nil && p.st.Config().Sync.GitHub {
+	if cfg := p.st.Config().Sync; err == nil && cfg.GitHub && cfg.Repo != "" {
 		err = p.pushSync(ctx)
 	}
 	p.setSync(func(s *syncStatus) {
@@ -374,8 +376,18 @@ func (p *Pool) syncCompact(ctx context.Context, _ struct{}) (any, error) {
 	}
 	defer p.roundMu.Unlock()
 	repoDir := filepath.Join(p.st.Dir(), "sync", "repo")
+	want, err := p.syncRepoSlug(ctx) // none picked: "choose a repository to start"
+	if err != nil {
+		return nil, err
+	}
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil {
 		return nil, invalid("nothing to compact: nothing has been synced yet")
+	}
+	// The clone must be of the picked repository (pushSync moves another aside on its next round):
+	// compacting rewrites history, so never on a repository the owner moved away from.
+	origin, _ := p.gitIn(ctx, repoDir, "config", "--get", "remote.origin.url")
+	if slug, _ := githubSlug(origin); !strings.EqualFold(slug, want) {
+		return nil, invalid("the local clone is of %s, not %s; sync once first", firstNonEmpty(slug, origin), want)
 	}
 	branch, err := p.fetchReset(ctx, repoDir)
 	if err != nil {
@@ -433,9 +445,14 @@ func (p *Pool) syncCompact(ctx context.Context, _ struct{}) (any, error) {
 }
 
 // syncRepoSlug is the configured sync repository as owner/name: the owner's choice ("name" in
-// the signed-in account, or "owner/name"), else <login>/pengupool-memory.
+// the signed-in account, or "owner/name"). There is no default: a repository is only ever made
+// where the owner said.
 func (p *Pool) syncRepoSlug(ctx context.Context) (string, error) {
-	return p.repoInAccount(ctx, firstNonEmpty(p.st.Config().Sync.Repo, syncRepoName))
+	repo := p.st.Config().Sync.Repo
+	if repo == "" {
+		return "", invalid("choose a repository to start")
+	}
+	return p.repoInAccount(ctx, repo)
 }
 
 // repoInAccount names repo as owner/name, a bare name being in the signed-in account.
@@ -516,14 +533,16 @@ func (p *Pool) createSyncRepo(ctx context.Context, dir, repo string) error {
 type syncSetIn struct {
 	GitHub      *bool   `json:"github,omitempty"`
 	IntervalMin *int    `json:"interval_min,omitempty"`
-	Repo        *string `json:"repo,omitempty"` // "name" or "owner/name"; "" for the default
+	Repo        *string `json:"repo,omitempty"` // "name" or "owner/name"; "" for none (nothing syncs)
 }
 
 var syncRepoRe = regexp.MustCompile(`^([A-Za-z0-9-]+/)?[A-Za-z0-9._-]+$`)
 
 func (p *Pool) syncGet(_ context.Context, _ struct{}) (any, error) { return p.syncView(), nil }
 
-// syncSet turns the GitHub sync on or off and sets its interval; turning it on pushes at once.
+// syncSet turns the GitHub sync on or off, picks its repository and sets its interval. A round
+// starts at once only when sync is on and a repository is picked: turning it on with none waits for
+// the owner's pick.
 func (p *Pool) syncSet(ctx context.Context, in syncSetIn) (any, error) {
 	cfg := p.st.Config()
 	if in.GitHub != nil {
@@ -563,7 +582,7 @@ func (p *Pool) syncSet(ctx context.Context, in syncSetIn) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if (in.GitHub != nil && *in.GitHub) || (moved && cfg.Sync.GitHub) {
+	if cfg.Sync.GitHub && cfg.Sync.Repo != "" && ((in.GitHub != nil && *in.GitHub) || moved) {
 		go func() { _ = p.syncOnce(context.Background()) }()
 	}
 	return p.syncView(), nil
@@ -600,10 +619,14 @@ func (p *Pool) syncRepos(ctx context.Context, in refreshIn) (any, error) {
 	return out, nil
 }
 
-// syncNow runs a sync round and answers when it is done.
+// syncNow runs a sync round and answers when it is done. With sync on and no repository picked it
+// says so (the startup and periodic rounds skip quietly).
 func (p *Pool) syncNow(ctx context.Context, _ struct{}) (any, error) {
 	if err := p.syncOnce(ctx); err != nil {
 		return nil, err
+	}
+	if cfg := p.st.Config().Sync; cfg.GitHub && cfg.Repo == "" {
+		return nil, invalid("choose a repository to start")
 	}
 	return p.syncView(), nil
 }
