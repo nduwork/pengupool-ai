@@ -179,34 +179,13 @@ func parseMuseTime(s string) time.Time {
 	return time.Now().UTC()
 }
 
-// museVisible reports whether the device may see the session: only teams
-// with iOS access (the owner's existing switch), or sessions on no team.
-// Membership is judged the way museSessions attributes a session to a
-// team — an active member of an active team — and ANY such membership on
-// a team with iOS access makes the session visible. The first record
-// that mentions the session must not decide: a stale membership, or an
-// earlier team without iOS access, would otherwise hide a session the
-// owner can already see at work on a visible team (and make it
-// unaddressable — say, action and answer all gate on this check), and a
-// membership the session has left must not leak visibility either.
+// museVisible reports whether the device may see the session: one on a team with iOS access (the owner's
+// existing switch), or on no team. Its team is teamOf's, its active membership on an active team, as
+// museSessions attributes it; a closed team or membership neither hides nor shows it.
 func (p *Pool) museVisible(sessionID string) bool {
 	st := p.st.State()
-	onTeam := false
-	for _, t := range st.Domain.Teams {
-		if t.State != "active" {
-			continue
-		}
-		for _, m := range t.Members {
-			if m.SessionID != sessionID || m.State != "active" {
-				continue
-			}
-			onTeam = true
-			if t.IOSAccess {
-				return true
-			}
-		}
-	}
-	return !onTeam
+	t := teamOf(&st.Domain, sessionID)
+	return t == nil || t.IOSAccess
 }
 
 // museTeamVisible reports whether a device may act on an ask of this team: only a team with iOS
@@ -574,8 +553,8 @@ func (p *Pool) museSessions(_ context.Context, c gateway.Caller, _ json.RawMessa
 		for i := range st.Domain.Teams {
 			t := &st.Domain.Teams[i]
 			for _, m := range t.Members {
-				if m.SessionID == s.ID && t.Name != "" {
-					v.Title += " · " + t.Name // as before: every team it was on
+				if m.SessionID == s.ID && t.Name != "" && t.IOSAccess {
+					v.Title += " · " + t.Name // every team it was on that the device may see
 				}
 				if m.SessionID == s.ID && m.State == "active" && t.State == "active" {
 					v.Team, v.TeamID, v.Role, v.Parent, v.Assignment = t.Name, t.ID, teamLabel(&st, t, m), m.Parent, m.Assignment
