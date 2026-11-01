@@ -99,6 +99,9 @@ func (p *Pool) buildContextCap(id string, compassCap int) string {
 	}
 	if me.SessionID == lead {
 		fmt.Fprintf(&b, "\nYou are this team's **LEAD**: the top of the team's tree, not its boss. Members talk only to their parent and children, so you hear from your children. Split the task into assignments, compose the members' results into one, and report back to the owner. Your teammates' assignments are the owner's split of the work: work one covers is that teammate's, and giving it to them counts as the owner asking. Before your next step, a [PenguPool triage] note from the owner's decision model may name who fits. A confident note binds: PenguPool holds your working tools until you send that member the work. Otherwise you decide, and ask the owner if you cannot. You cannot approve, merge or change the direction. To change who is on the team, ask the owner: `%[1]s team request add --skill <name>|--repo <name> --assignment \"…\"`, `%[1]s team request remove <member> --reason \"…\"`.\n", p.exe)
+		if p.specialistLead(t, id) != nil {
+			b.WriteString("\n" + leadGuide + "\n")
+		}
 	} else if lead != "" {
 		b.WriteString("\nThe LEAD combines the team's results; report your finished work to the LEAD. Only the owner merges changes.\n")
 	}
@@ -120,29 +123,29 @@ func (p *Pool) buildContextCap(id string, compassCap int) string {
 	return b.String()
 }
 
-// labelPhrase names a member's place for its own context: "the LEAD", "an SME", "a HELPER", "a member".
+// labelPhrase names a member's place for its own context: "the LEAD", "an SME", "a SPECIALIST", "a member".
 func labelPhrase(st *store.State, t *protocol.Team, m protocol.Member) string {
 	switch teamLabel(st, t, m) {
 	case "LEAD":
 		return "the LEAD"
 	case "SME":
 		return "an SME"
-	case "HELPER":
-		return "a HELPER"
+	case "SPECIALIST":
+		return "a SPECIALIST"
 	}
 	return "a member"
 }
 
 func (p *Pool) renderSkill(b *strings.Builder, sk *protocol.Skill) {
 	// Skills are never installed into a harness: a helper gets them here, for this session only.
-	fmt.Fprintf(b, "\n## Your skills as the %s helper\nThey are active for this team session only and are not installed in your agent. Before using one, read its SKILL.md under %s.\n", sk.Name, sk.Path)
+	fmt.Fprintf(b, "\n## Your skills as the %s specialist\nThey are active for this team session only and are not installed in your agent. Before using one, read its SKILL.md under %s.\n", sk.Name, sk.Path)
 	if sk.Source == "git" && within(sk.Path, filepath.Join(p.st.Dir(), "skills")) {
 		fmt.Fprintf(b, "Your installed skill files in %s are read-only: never edit them. Temp files and folders of your own there are fine.\n", sk.Path)
 	}
 	// Codex reads AGENTS.md on its own, other agents do not: every agent is told to.
 	agents := filepath.Join(sk.Path, "AGENTS.md")
 	if _, err := os.Stat(agents); err == nil {
-		fmt.Fprintf(b, "First read %s: who you are as this helper and how to use its skills.\n", agents)
+		fmt.Fprintf(b, "First read %s: who you are as this specialist and how to use its skills.\n", agents)
 	}
 	if sk.Method != "" {
 		fmt.Fprintf(b, "Method: %s\n", sk.Method)

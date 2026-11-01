@@ -513,7 +513,7 @@ export function ProposalSheet({ taskId }: { taskId: string }): ReactElement {
                 </Select>
                 {m.role === "helper" ? (
                   <Button size="sm" variant="ghost" onClick={() => setMembers(members.filter((_, k) => k !== i))}>
-                    Remove helper
+                    Remove specialist
                   </Button>
                 ) : null}
               </div>
@@ -521,7 +521,7 @@ export function ProposalSheet({ taskId }: { taskId: string }): ReactElement {
           ))}
           <Select
             value=""
-            aria-label="Add helper"
+            aria-label="Add specialist"
             onChange={(e) => {
               const sk = app.domain.skills.find((s) => s.id === e.target.value);
               if (sk !== undefined)
@@ -537,7 +537,7 @@ export function ProposalSheet({ taskId }: { taskId: string }): ReactElement {
                 ]);
             }}
           >
-            <option value="">Add a helper agent…</option>
+            <option value="">Add a specialist…</option>
             {app.domain.skills
               .filter((s) => !members.some((m) => m.skill_id === s.id))
               .map((s) => (
@@ -639,7 +639,7 @@ export function CloseHelperSheet({ team, member }: { team: Team; member: Member 
             </p>
             {p.worktree_removable === false ? (
               <label className="mt-2 flex items-center gap-2">
-                <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep the worktree on disk and close the helper anyway
+                <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep the worktree on disk and close the specialist anyway
               </label>
             ) : null}
           </div>

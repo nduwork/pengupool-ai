@@ -57,7 +57,7 @@ func (p *Pool) skillAdd(ctx context.Context, in skillAddIn) (_ any, err error) {
 		path = filepath.Join(home, path[2:])
 	}
 	if !filepath.IsAbs(path) {
-		return nil, invalid("a helper agent needs an absolute path")
+		return nil, invalid("a specialist needs an absolute path")
 	}
 	path = filepath.Clean(path)
 	source, commit := "local", ""
@@ -124,20 +124,20 @@ func (p *Pool) skillAdd(ctx context.Context, in skillAddIn) (_ any, err error) {
 		}
 	}
 	err = p.update(func(st *store.State) error {
-		// PenguPool's own clones are registered by the Helper agent hub; a folder of
+		// PenguPool's own clones are registered by the Specialist hub; a folder of
 		// them added by hand may be one a delete is removing.
 		if in.URL == "" && !in.Create && within(path, filepath.Join(p.st.Dir(), "skills")) {
-			return invalid("%s is one of PenguPool's own clones and no helper's; install the helper from the Helper agent hub instead", path)
+			return invalid("%s is one of PenguPool's own clones and no specialist's; install the specialist from the Specialist hub instead", path)
 		}
 		for _, o := range st.Domain.Skills {
 			if o.Key != "" && o.Key == sk.Key {
-				return conflict("%s is already the helper agent %s (one agent per repository)", sk.Key, o.Name)
+				return conflict("%s is already the specialist %s (one agent per repository)", sk.Key, o.Name)
 			}
 			if o.Path == path {
-				return conflict("%s is already the helper agent %s", path, o.Name)
+				return conflict("%s is already the specialist %s", path, o.Name)
 			}
 			if strings.EqualFold(o.Name, sk.Name) {
-				return conflict("there is already a helper agent named %s", sk.Name)
+				return conflict("there is already a specialist named %s", sk.Name)
 			}
 		}
 		st.Domain.Skills = append(st.Domain.Skills, sk)
@@ -292,7 +292,7 @@ type skillDeleteIn struct {
 func (p *Pool) skillDelete(ctx context.Context, in skillDeleteIn) (any, error) {
 	if !in.DryRun {
 		if !p.syncMu.TryLock() { // the sync moves, updates and removes clones
-			return nil, conflict("a library sync is running; delete the helper when it ends")
+			return nil, conflict("a library sync is running; delete the specialist when it ends")
 		}
 		defer p.syncMu.Unlock()
 	}
@@ -317,7 +317,7 @@ func (p *Pool) deleteHelper(ctx context.Context, in skillDeleteIn) (any, error) 
 			kept = "its folder was already gone"
 		}
 	} else if o := slices.IndexFunc(st.Domain.Skills, func(o protocol.Skill) bool { return o.ID != sk.ID && within(o.Path, root) }); o >= 0 {
-		kept = "its clone stays: the helper " + st.Domain.Skills[o].Name + " uses it too"
+		kept = "its clone stays: the specialist " + st.Domain.Skills[o].Name + " uses it too"
 	} else {
 		folder = root
 	}
@@ -376,7 +376,7 @@ func (p *Pool) deleteHelper(ctx context.Context, in skillDeleteIn) (any, error) 
 			}
 		}
 	}
-	p.logf("pool: deleted the helper %s (%s): %v journal entries; folder removed: %v", name, in.ID, out["entries"], out["folder_removed"])
+	p.logf("pool: deleted the specialist %s (%s): %v journal entries; folder removed: %v", name, in.ID, out["entries"], out["folder_removed"])
 	return out, nil
 }
 
@@ -651,7 +651,7 @@ var harnessFiles = map[string]bool{".claude": true, ".codex": true, ".gemini": t
 func checkSkillRepo(dir string) []string {
 	var out []string
 	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); err != nil {
-		out = append(out, "AGENTS.md is missing at the repository root (the helper's persona and how to use its skills)")
+		out = append(out, "AGENTS.md is missing at the repository root (the specialist's persona and how to use its skills)")
 	}
 	entries, _ := os.ReadDir(filepath.Join(dir, "skills"))
 	n := 0
@@ -695,7 +695,7 @@ func checkSkillRepo(dir string) []string {
 			if e.IsDir() {
 				rel += "/"
 			}
-			out = append(out, rel+" is specific to one agent; helpers are harness-agnostic")
+			out = append(out, rel+" is specific to one agent; specialists are harness-agnostic")
 			if e.IsDir() {
 				return filepath.SkipDir
 			}

@@ -133,9 +133,9 @@ func (p *Pool) newFormation(teamID string, c protocol.FormationChange, state str
 		case c.SkillID != "" && c.RepoID == "":
 			sk := findSkill(&d, c.SkillID)
 			if sk == nil {
-				return protocol.Approval{}, notFound("no active helper agent %s", c.SkillID)
+				return protocol.Approval{}, notFound("no active specialist %s", c.SkillID)
 			}
-			detail = "add " + sk.Name + " (helper agent)"
+			detail = "add " + sk.Name + " (specialist)"
 		case c.RepoID != "" && c.SkillID == "":
 			r := findRepo(&d, c.RepoID)
 			if r == nil {
@@ -143,7 +143,7 @@ func (p *Pool) newFormation(teamID string, c protocol.FormationChange, state str
 			}
 			detail = "add an SME for " + r.Name
 		default:
-			return protocol.Approval{}, invalid("add names a helper agent or a repository (an SME)")
+			return protocol.Approval{}, invalid("add names a specialist or a repository (an SME)")
 		}
 	case "remove":
 		m, err := findMember(t, c.SessionID)
@@ -281,7 +281,7 @@ func leadOf(t *protocol.Team) string {
 }
 
 // teamLabel is a member's label, derived, never stored: LEAD for the root of the team's tree (with
-// a repository or without), HELPER for an agent taken from the helper pool, SME for a member the
+// a repository or without), SPECIALIST for an agent taken from the specialist pool, SME for a member the
 // owner added that has a repository behind it (its worktree, or a session working in a known
 // repository), "" for any other member. web/src/views/Formation.tsx mirrors it.
 func teamLabel(st *store.State, t *protocol.Team, m protocol.Member) string {
@@ -289,7 +289,7 @@ func teamLabel(st *store.State, t *protocol.Team, m protocol.Member) string {
 	case m.SessionID == leadOf(t):
 		return "LEAD"
 	case m.SkillID != "":
-		return "HELPER"
+		return "SPECIALIST"
 	case m.RepoID != "" || m.Worktree != "":
 		return "SME"
 	}
