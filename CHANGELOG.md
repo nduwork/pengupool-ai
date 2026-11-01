@@ -4,6 +4,8 @@ Every PenguPool AI release, newest first. Each entry describes that release as i
 
 ## Unreleased
 
+The map's Compact context and Clear actions work on Muse sessions (Muse /compact and /new).
+
 The Muse companion reaches the device API through Tailscale Serve: HTTPS by
 default, plain HTTP where the tailnet has no HTTPS certificates. The
 workstation is set with `PENGUPOOL_HOST` (name or IP, required) and

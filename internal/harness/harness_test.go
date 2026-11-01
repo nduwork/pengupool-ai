@@ -213,6 +213,24 @@ func TestShiftEnterPerHarness(t *testing.T) {
 	}
 }
 
+// Every offered harness answers the map's Compact and Clear actions: a harness added to Agents
+// without slash commands fails here until its commands are set (or it is hidden and keeps them).
+func TestOfferedHarnessesHaveCompactAndClear(t *testing.T) {
+	for _, a := range Agents {
+		if a.Hidden {
+			continue
+		}
+		if a.Compact == "" || a.Clear == "" {
+			t.Errorf("harness %q has no compact/clear commands: Compact=%q Clear=%q", a.ID, a.Compact, a.Clear)
+		}
+	}
+	// The owner's live check: both work in Muse.
+	m, ok := Find(Muse)
+	if !ok || m.Compact != "/compact" || m.Clear != "/new" {
+		t.Errorf("muse wants /compact and /new, got %+v", m)
+	}
+}
+
 // Codex and OMP report a prompt waiting on the owner through their own events, and its end: Codex's
 // PermissionRequest and Interrupt hooks, OMP's approval events and its ask tool's result.
 func TestNeedsInputEventsAreWired(t *testing.T) {
