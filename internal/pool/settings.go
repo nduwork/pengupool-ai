@@ -67,8 +67,16 @@ func (p *Pool) providers(_ context.Context, _ struct{}) (any, error) {
 		"ollama": {Type: "ollama", Format: "ollama-systemone", Address: "http://127.0.0.1:11434", Model: "tev1:0.8b"},
 		"jev":    {Type: "jev", Format: "systemone", Address: "https://api.typesafe.ai/v1/systemone", Model: "jev-latest"},
 	}
+	checked := []string{}
+	p.mu.Lock()
+	for t, pc := range c.Providers {
+		if p.passed[t] == pc {
+			checked = append(checked, t)
+		}
+	}
+	p.mu.Unlock()
 	return map[string]any{
-		"active": c.Active, "providers": c.Providers,
+		"active": c.Active, "providers": c.Providers, "checked": checked,
 		"formats": decision.Formats, "thresholds": decision.Thresholds,
 		"defaults": defaults,
 	}, nil
@@ -102,6 +110,9 @@ func (p *Pool) providerSave(ctx context.Context, in providerSaveIn) (any, error)
 	if err := p.st.SaveConfig(cfg); err != nil {
 		return nil, err
 	}
+	p.mu.Lock()
+	delete(p.passed, pc.Type) // saved again: its check must pass again before it can be made active
+	p.mu.Unlock()
 	if cfg.Decision.Active == pc.Type { // the active model changed: check it again before trusting it
 		p.mu.Lock()
 		p.triageErr = triageUnchecked
@@ -123,6 +134,17 @@ func (p *Pool) providerCheck(ctx context.Context, in providerTypeIn) (any, error
 		return nil, notFound("save the %s provider first", in.Type)
 	}
 	res, items, err := decision.Check(ctx, pc)
+	pass := err == nil && !slices.ContainsFunc(items, func(c decision.CheckItem) bool { return !c.OK })
+	p.mu.Lock()
+	if pass {
+		if p.passed == nil {
+			p.passed = map[string]store.ProviderConfig{}
+		}
+		p.passed[in.Type] = pc
+	} else {
+		delete(p.passed, in.Type)
+	}
+	p.mu.Unlock()
 	if err != nil {
 		hint := ""
 		if errors.Is(err, decision.ErrRefused) {
@@ -132,7 +154,6 @@ func (p *Pool) providerCheck(ctx context.Context, in providerTypeIn) (any, error
 		}
 		return map[string]any{"ok": false, "error": err.Error(), "hint": hint}, nil
 	}
-	pass := !slices.ContainsFunc(items, func(c decision.CheckItem) bool { return !c.OK })
 	out := map[string]any{"ok": pass, "model": res.Model, "latency_ms": res.Latency.Milliseconds(), "calibrated": res.Calibrated, "checks": items}
 	if !pass {
 		out["error"] = "The model answered in the decision format but got plain questions wrong; it is not fit to decide."
@@ -141,21 +162,22 @@ func (p *Pool) providerCheck(ctx context.Context, in providerTypeIn) (any, error
 }
 
 // providerActivate makes a saved model the triage model. PenguPool needs one: it cannot be set to
-// none, and a model is made active only once its connection check passes.
-func (p *Pool) providerActivate(ctx context.Context, in providerTypeIn) (any, error) {
+// none, and a model is made active only once the host's last connection check of exactly its saved
+// settings passed.
+func (p *Pool) providerActivate(_ context.Context, in providerTypeIn) (any, error) {
 	if in.Type == "" {
 		return nil, invalid("a triage model is required: PenguPool's memory and check-ins need one; pick a local (Ollama) or remote model")
 	}
 	cfg := p.st.Config()
-	if _, ok := cfg.Decision.Providers[in.Type]; !ok {
+	pc, ok := cfg.Decision.Providers[in.Type]
+	if !ok {
 		return nil, notFound("save the %s provider first", in.Type)
 	}
-	res, err := p.providerCheck(ctx, in)
-	if err != nil {
-		return nil, err
-	}
-	if out, _ := res.(map[string]any); out["ok"] != true {
-		return nil, protocol.Errorf(protocol.CodeUnavailable, "the %s model did not pass its check: %v", in.Type, out["error"])
+	p.mu.Lock()
+	checked := p.passed[in.Type] == pc
+	p.mu.Unlock()
+	if !checked {
+		return nil, invalid("Run Check connection first: the %s model's saved settings have not passed their check", in.Type)
 	}
 	cfg.Decision.Active = in.Type
 	if err := p.st.SaveConfig(cfg); err != nil {

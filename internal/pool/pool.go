@@ -104,7 +104,8 @@ type Pool struct {
 	clock func() time.Time
 	// testDecider stands in for the configured decision provider in tests.
 	testDecider decision.Provider
-	triageErr   string // the triage model's last call failed with this; "" after one that answered; triageUnchecked at start (guarded by mu)
+	triageErr   string                          // the triage model's last call failed with this; "" after one that answered; triageUnchecked at start (guarded by mu)
+	passed      map[string]store.ProviderConfig // provider type → the saved settings whose last connection check passed (guarded by mu)
 	// testSpawn stands in for starting a worker in tests.
 	testSpawn func(spawnReq) (store.Session, error)
 	// testScreen stands in for the hub's followed screens in tests.

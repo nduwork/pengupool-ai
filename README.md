@@ -373,6 +373,12 @@ the panel is a little wider and never taller than the window (the list scrolls, 
 a go-ahead to check has Right and Wrong in words. A check-in now carries the last 1200 characters of the
 agent's reply, up from 300.
 
+v0.10.17: A model is used for triage only after its connection check passes. Settings keeps Use for
+triage off, with a line saying why, until Check connection passes for the provider's saved settings; the
+host holds that pass and refuses to make a model active without it ("Run Check connection first"), and
+saving the provider again clears it. A model already active stays active: its check at start still
+decides whether the app shows it as answering.
+
 ## Credits
 
 - **PAHF** — *Learning Personalized Agents from Human Feedback*, Kaiqu Liang, Julia Kruk,
