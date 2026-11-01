@@ -14,6 +14,7 @@ import { GitHubAccount } from "./GitHub";
 import { UpdateSheet } from "./Update";
 import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
+import type { RemovedModel } from "./triage";
 
 // Settings, one subpanel per topic: General (the host, updates, terminal history, the daily backup),
 // Agents (which are installed, Claude Code on Ollama), Decision model, GitHub (the account and sync),
@@ -94,6 +95,8 @@ interface ProvidersResp {
   providers: Record<string, ProviderCfg> | null;
   /** The provider types whose saved settings passed the host's last connection check. */
   checked?: string[];
+  /** Saved models the host removed because triage no longer speaks their format. */
+  removed?: RemovedModel[] | null;
   defaults: Record<string, ProviderCfg>;
 }
 
@@ -253,11 +256,48 @@ function Providers(): ReactElement {
   const unchanged = saved !== undefined && JSON.stringify(draft) === JSON.stringify(saved);
   const passed = unchanged && (data.checked ?? []).includes(type);
   const set = (k: keyof ProviderCfg, v: string): void => setDrafts({ ...drafts, [type]: { ...draft, [k]: v } });
+  // Where the saved settings stand; the first match wins. It picks the status line and the one default button.
+  const state =
+    saved === undefined
+      ? "unsaved"
+      : !unchanged
+        ? "dirty"
+        : check === "running"
+          ? "checking"
+          : check !== null && !check.ok
+            ? "failed"
+            : data.active === type
+              ? "inuse"
+              : passed
+                ? "passed"
+                : "unchecked";
+  const next = state === "unsaved" || state === "dirty" ? "save" : state === "failed" || state === "unchecked" ? "check" : state === "passed" ? "use" : "";
+  const status: Record<typeof state, ReactNode> = {
+    unsaved: "Save these settings, then check the connection.",
+    dirty: "Unsaved changes. Save them and check again, or Discard changes to go back to the saved settings.",
+    checking: "Checking the saved settings: a yes/no, a pick-one and a score question…",
+    failed: "The check failed, so Use for triage stays off. Fix the settings, save, and check again.",
+    unchecked: "Not checked since the last save. Use for triage turns on once Check connection passes.",
+    passed: (
+      <>
+        <Check className="mr-1 inline size-3.5 align-[-2px]" />
+        Check passed for the saved settings.
+      </>
+    ),
+    inuse: "In use for triage.",
+  };
   return (
     <div>
       <H title="Decision model (triage)">
         Answers PenguPool&apos;s yes/no and pick-one questions: where an owner&apos;s rule belongs and whether a check-in may go on. It never writes text. With an online decision model, each owner prompt (redacted) and choice is sent to it to learn your preferences; classification never delays an agent.
       </H>
+      {(data.removed ?? []).map((m) => (
+        <p key={m.type} className="mb-4 rounded-md bg-warning/10 p-3 text-caption text-warning">
+          <strong>{TYPES.find((t) => t.id === m.type)?.label ?? m.type} model removed.</strong> {m.model ? `"${m.model}" used` : "It used"} the{" "}
+          {m.format === "openai-chat" ? "Ollama chat" : m.format} format, which triage no longer supports.{" "}
+          {m.type === "ollama" ? "Pull a System One decision model in Ollama, pick it below, save, check, and use it for triage." : "Set up a System One model below, save, check, and use it for triage."}
+        </p>
+      ))}
       <Card className="mb-4 flex items-center gap-3 p-3 text-label">
         <Bot className="size-4 text-primary" />
         Active: <strong>{data.active === "" ? "None yet (required)" : TYPES.find((t) => t.id === data.active)?.label}</strong>
@@ -285,20 +325,7 @@ function Providers(): ReactElement {
         ))}
       </div>
       <div className="grid grid-cols-1 gap-4">
-        <Label>
-          API format
-          <Select value={draft.format} onChange={(e) => set("format", e.target.value)} disabled={type === "jev"}>
-            {type === "ollama" ? (
-              <>
-                <option value="ollama-systemone">Ollama System One (/v1/systemone, decision models)</option>
-                <option value="openai-chat">Ollama chat (/v1/chat/completions, general models)</option>
-              </>
-            ) : (
-              <option value="systemone">System One</option>
-            )}
-          </Select>
-        </Label>
-        <Label hint={type === "ollama" ? "The service address." : "The full endpoint URL."}>
+        <Label hint={type === "ollama" ? "The Ollama address. PenguPool calls its System One endpoint, /v1/systemone." : "The full endpoint URL."}>
           Address
           <Input value={draft.address} onChange={(e) => set("address", e.target.value)} className="font-mono" />
         </Label>
@@ -327,9 +354,9 @@ function Providers(): ReactElement {
             address={draft.address}
             value={draft.model ?? ""}
             onChange={(m) => set("model", m)}
-            {...(draft.format === "ollama-systemone"
-              ? { capability: "decision", noun: "decision models", hint: "Ollama lists no model that declares the decision capability. Pull a System One decision model, or pick the chat format to use a general model." }
-              : { capability: "completion", noun: "chat models", hint: "Ollama lists no chat model it can load." })}
+            capability="decision"
+            noun="decision models"
+            hint="Ollama lists no model that declares the decision capability. Pull a System One decision model, then reload."
           />
         ) : (
           <Label hint="Any model string.">
@@ -339,7 +366,7 @@ function Providers(): ReactElement {
         )}
         <div className="flex flex-wrap gap-2">
           <Button
-            variant="default"
+            variant={next === "save" ? "default" : "secondary"}
             onClick={async () => {
               const r = await app.call("provider.save", {
                 provider: { ...draft, type },
@@ -359,7 +386,8 @@ function Providers(): ReactElement {
             Discard changes
           </Button>
           <Button
-            disabled={!unchanged}
+            variant={next === "check" ? "default" : "secondary"}
+            disabled={!unchanged || state === "checking"}
             title="Asks the saved model a yes/no, a pick-one and a score question with plain answers, and grades its replies"
             onClick={async () => {
               setCheck("running");
@@ -367,9 +395,17 @@ function Providers(): ReactElement {
               setN(n + 1); // the host now holds whether these settings passed
             }}
           >
-            Check connection
+            {state === "checking" ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                Checking…
+              </>
+            ) : (
+              "Check connection"
+            )}
           </Button>
           <Button
+            variant={next === "use" ? "default" : "secondary"}
             disabled={!passed || data.active === type}
             onClick={async () => {
               await app.call("provider.activate", { type });
@@ -380,12 +416,12 @@ function Providers(): ReactElement {
           </Button>
           {/* No "stop using a model": PenguPool needs one; switch to another instead. */}
         </div>
-        {saved !== undefined && data.active !== type && !passed ? (
-          <p className="text-caption text-muted-foreground">Run Check connection first: a model is used for triage only after its check of the saved settings passes.</p>
-        ) : null}
+        <p role="status" className={cn("text-caption", state === "failed" ? "text-danger" : state === "passed" ? "text-success" : "text-muted-foreground")}>
+          {status[state]}
+        </p>
         <CheckResult
-          r={unchanged ? check : null}
-          ok={check !== null && check !== "running" ? `Fit to decide · ${check.model ?? ""} · ${check.latency_ms ?? 0} ms${check.calibrated === true ? " · calibrated" : " · no calibrated confidence"}` : ""}
+          r={unchanged && check !== "running" ? check : null}
+          ok={check !== null && check !== "running" ? `Fit to decide · ${check.model ?? ""} · ${check.latency_ms ?? 0} ms` : ""}
         />
         <p className="text-caption text-faint">PenguPool never installs Ollama or pulls weights. Thresholds are calibration candidates, not validated values.</p>
       </div>

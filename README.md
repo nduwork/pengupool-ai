@@ -387,6 +387,14 @@ host holds that pass and refuses to make a model active without it ("Run Check c
 saving the provider again clears it. A model already active stays active: its check at start still
 decides whether the app shows it as answering.
 
+v0.10.18: Triage uses System One decision models only. The "Ollama chat" format (a general model
+over /v1/chat/completions) is removed: it gave no calibrated confidence, yet several checks took its
+yes as sure. A saved chat-format model is removed at start, and the app says so: a notice in Settings
+until that model is saved again, and the triage banner when it was the active one. The Decision model
+panel drops the API format menu, always lists Ollama's decision models, and shows one status line for
+where the saved settings stand (not saved, unsaved changes, not checked, checking, failed, passed, in
+use); the filled button follows the next step: Save, then Check connection, then Use for triage.
+
 ## Credits
 
 - **PAHF** — *Learning Personalized Agents from Human Feedback*, Kaiqu Liang, Julia Kruk,

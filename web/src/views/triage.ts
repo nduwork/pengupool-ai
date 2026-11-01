@@ -2,11 +2,31 @@
 export interface TriageStatus {
   status: "missing" | "unchecked" | "unreachable" | "ok";
   error?: string;
+  /** With missing: the active model PenguPool removed because triage no longer speaks its format. */
+  removed?: RemovedModel;
+}
+
+/** A saved triage model the host removed (decision.removed). */
+export interface RemovedModel {
+  type: string;
+  format: string;
+  model?: string;
+  active?: boolean;
+}
+
+/** "local triage model (llama3.1:8b, Ollama chat format)": how the app names a removed model. */
+export function removedName(r: RemovedModel): string {
+  const fmt = r.format === "openai-chat" ? "Ollama chat format" : `${r.format} format`;
+  return `${r.type === "ollama" ? "local" : "online"} triage model (${r.model ? `${r.model}, ` : ""}${fmt})`;
 }
 
 /** What the app says while the triage model is missing or not answering; null when it works. */
 export function triagePrompt(t: TriageStatus | null): string | null {
   if (t === null || t.status === "ok" || t.status === "unchecked") return null; // unchecked: its check is running
+  if (t.status === "missing" && t.removed !== undefined) {
+    const n = removedName(t.removed);
+    return `The ${n} was removed: PenguPool's triage now uses System One decision models only. Set one up in Settings.`;
+  }
   return t.status === "missing"
     ? "Set up a triage model: PenguPool's memory, check-ins and team proposals need one. Pick a local (Ollama) or remote model in Settings."
     : `The triage model is not answering${t.error ? ` (${t.error})` : ""}: PenguPool's memory and check-ins wait until it does. Check it in Settings.`;
