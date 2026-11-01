@@ -320,6 +320,7 @@ export function App(): ReactElement {
       <TerminalPane
         key={selectedView.id}
         sessionId={selectedView.id}
+        harness={selectedView.harness}
         instance={instanceOf(storeRef.current.currentEpoch, selectedView)}
         channel={channelFor(selectedView.id)}
         connection={connection}

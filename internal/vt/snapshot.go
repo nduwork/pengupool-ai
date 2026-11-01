@@ -45,7 +45,7 @@ func (s *screen) snapshot(history bool) []byte {
 	if s.emu.IsAltScreen() {
 		b.WriteString("\x1b[?1049h")
 	}
-	appendModes(&b, s.mode)
+	appendModes(&b, s.mode, s.kbd)
 	appendScrollRegion(&b, s.mode)
 	// Start from a known pen: some of the sequences above reach an SGR handler on terminals that
 	// do not know them, and this snapshot must not depend on what the client had set.
@@ -177,7 +177,7 @@ func lastPaintedCell(at func(x int) *uv.Cell, cols int) int {
 // appendModes writes every tracked mode, set and reset alike, so the client ends up with this
 // terminal's input semantics no matter what it had before. The two keyboard sequences are distinct
 // and are emitted as such: XTMODKEYS is CSI > Pp ; Pv m, the kitty flags are CSI > flags u.
-func appendModes(b *bytes.Buffer, m Modes) {
+func appendModes(b *bytes.Buffer, m Modes, kbd []uint16) {
 	privateMode(b, 1, m.ApplicationCursor) // DECCKM
 	privateMode(b, 1000, m.MouseX10)
 	privateMode(b, 1002, m.MouseButton)
@@ -187,10 +187,16 @@ func appendModes(b *bytes.Buffer, m Modes) {
 	privateMode(b, 1004, m.FocusEvents)
 	privateMode(b, 2004, m.BracketedPaste)
 	privateMode(b, 2026, m.SyncOutput)
-	if m.KeyboardFlags != 0 {
-		// Kitty keyboard protocol: push the flags so a client that has none set ends up with them.
+	// Kitty keyboard protocol: push every saved level and then the current flags, so a client that
+	// has none set ends up with the same stack and a later pop restores what it would here. A
+	// bottom level of 0 is what the client already has.
+	levels := append(append([]uint16(nil), kbd...), m.KeyboardFlags)
+	if levels[0] == 0 {
+		levels = levels[1:]
+	}
+	for _, f := range levels {
 		b.WriteString("\x1b[>")
-		b.WriteString(strconv.FormatUint(uint64(m.KeyboardFlags), 10))
+		b.WriteString(strconv.FormatUint(uint64(f), 10))
 		b.WriteByte('u')
 	}
 	if m.ModifyOtherKeys != 0 {

@@ -358,6 +358,13 @@ v0.10.13: Codex and OMP sessions raise the same needs-input alerts as Claude. A 
 (its PermissionRequest hook) and an OMP approval dialog or ask-tool question put the session in the one
 list and notify; the alert goes once it is approved, denied, interrupted (Codex Interrupt) or the turn
 ends. pi has no approval dialog or ask tool, so it raises none; its check-ins still come, as for every agent.
+v0.10.14: A terminal restored from a snapshot (a reattach, a second viewer) keeps the agent's whole
+stack of kitty keyboard modes, not only the top one, so when the agent pops a mode its keys read as
+they do on the original terminal; popping past the bottom of the stack clears the modes, as the kitty
+spec says. In the web terminal Shift+Enter now types a new line in pi (Ctrl+J; ESC CR submitted
+there) and stays ESC CR elsewhere. Checked live: pi; established: Claude Code; the other harnesses
+are not checked live. A test lists every harness against what Shift+Enter sends, so a new harness
+cannot be added without that being checked.
 
 ## Credits
 

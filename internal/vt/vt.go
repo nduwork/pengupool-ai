@@ -187,6 +187,9 @@ func (s *screen) registerTrackingHandlers() {
 			s.mode.KeyboardFlags = s.kbd[len(s.kbd)-1]
 			s.kbd = s.kbd[:len(s.kbd)-1]
 		}
+		if n > 0 {
+			s.mode.KeyboardFlags = 0 // popped past the bottom: the kitty spec resets every flag
+		}
 		return true
 	})
 	// RIS (ESC c) resets the terminal, and x/vt's full reset covers its own mode map only: the

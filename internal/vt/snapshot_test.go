@@ -140,6 +140,21 @@ func TestSnapshotEmitsScrollRegionAndKeyboard(t *testing.T) {
 	}
 }
 
+// TestSnapshotKeepsKeyboardStack checks that the kitty flag stack, not only its top, survives a
+// snapshot: after pushes of 1 and 3, a pop on the restored screen must give 1 as it does on the
+// original.
+func TestSnapshotKeepsKeyboardStack(t *testing.T) {
+	src := New(20, 4)
+	src.Write([]byte("\x1b[>1u\x1b[>3u"))
+	dst := New(20, 4)
+	dst.Write(src.Snapshot())
+	src.Write([]byte("\x1b[<u"))
+	dst.Write([]byte("\x1b[<u"))
+	if want, got := src.Modes().KeyboardFlags, dst.Modes().KeyboardFlags; want != 1 || got != want {
+		t.Fatalf("after a pop the restored screen has flags %d, the original %d (want 1)", got, want)
+	}
+}
+
 // text renders the printable content of a grid row.
 func text(row []uv.Cell) string {
 	var b strings.Builder
