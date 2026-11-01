@@ -103,9 +103,9 @@ Step by step: [docs/getting-started.md](docs/getting-started.md).
 
 Two short loops of the app, made from real app captures with demo data:
 
-<p align="center"><img src="assets/media/readme-a-specialist.gif" width="800" alt="Start a team from the Welcome screen: pick research-agent and pr-review-agent, choose Muse Code as the agent, and the team appears on the map with its lead, all running Muse Code."></p>
+<p align="center"><img src="assets/media/readme-a-specialist.gif" width="800" alt="Starting a team from the Welcome screen: research-agent and pr-review-agent are ticked, the agent is set to Muse Code, and the team appears on the map with the lead and both members running Muse Code."></p>
 
-<p align="center"><img src="assets/media/readme-b-compass.gif" width="800" alt="A member's ask reaches the lead, PenguPool answers it from the owner's confident Compass line, and an ask with no clear line goes to the owner."></p>
+<p align="center"><img src="assets/media/readme-b-compass.gif" width="800" alt="research-agent asks the lead a question, PenguPool answers it from the owner's confident Compass line, and when security-agent asks acme-api-muse a question no line covers, it goes to the owner's Waiting on you.\"></p>
 
 What the demo shows, against the [hackathon's](https://dev.meta.ai/events/global-hackathon) framing:
 
