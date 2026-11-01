@@ -603,8 +603,10 @@ func (w watched) Decide(ctx context.Context, req decision.Request) (decision.Res
 	start := time.Now()
 	res, err := w.Provider.Decide(ctx, req)
 	// A call its caller cancelled or cut short (a hook's budget) says nothing about the model; one that
-	// ran the client's whole wait does, even when the caller's own deadline ended it first.
-	if ctx.Err() == nil || time.Since(start) >= clientWait {
+	// ran the client's whole wait does, even when the caller's own deadline ended it first. The bar is
+	// a second short of the wait (1/30 of it), so a caller whose deadline equals the wait clears it
+	// with a real margin rather than by timer lag.
+	if ctx.Err() == nil || time.Since(start) >= clientWait-clientWait/30 {
 		w.p.setTriage(err)
 	}
 	return res, err

@@ -116,7 +116,7 @@ func TestHungModelMarkedAfterTheClientsWait(t *testing.T) {
 	if s := status(); s != "unchecked" {
 		t.Fatalf("a hook's budget marked the model: %s", s)
 	}
-	ask(300 * time.Millisecond) // a background caller's deadline, as long as the client's wait
+	ask(clientWait) // a background caller's deadline, exactly the client's wait (30 s)
 	if s := status(); s != "unreachable" {
 		t.Fatalf("a model that never answered within the client's wait: %s", s)
 	}
