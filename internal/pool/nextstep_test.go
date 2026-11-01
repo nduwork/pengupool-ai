@@ -247,6 +247,7 @@ func TestRouteDuplicateSkillPrefersIdle(t *testing.T) {
 		{"working", "idle", "plan-2"},
 		{"idle", "working", "plan"},
 		{"idle", "idle", "plan"},
+		{"working", "working", "plan"}, // both busy: one option, marked busy; a message queues either way
 	} {
 		p.setSession("planaaaaaaaa", func(x *store.Session) { x.Status = c.plan })
 		p.setSession("plan2aaaaaaa", func(x *store.Session) { x.Status = c.plan2 })
@@ -254,5 +255,44 @@ func TestRouteDuplicateSkillPrefersIdle(t *testing.T) {
 		if n, name := offered(); n != 1 || name != c.want {
 			t.Fatalf("plan %s, plan-2 %s: offered %v, want only %s", c.plan, c.plan2, seen, c.want)
 		}
+		if busy := strings.Contains(seen[c.want], "busy"); busy != (c.plan == "working" && c.plan2 == "working") {
+			t.Fatalf("plan %s, plan-2 %s: option %q", c.plan, c.plan2, seen[c.want])
+		}
+	}
+}
+
+// The owner may name any copy, and a hand-over to any copy of the routed skill releases the hold.
+func TestRouteDuplicateSkillOwnerAndRelease(t *testing.T) {
+	p := routedTeam(t)
+	_ = p.st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions, store.Session{ID: "plan2aaaaaaa", Name: "plan-2", Harness: "claude", State: "running", Status: "idle", SkillID: "sk-plan"})
+		s.Domain.Teams[0].Members = append(s.Domain.Teams[0].Members,
+			protocol.Member{SessionID: "plan2aaaaaaa", Name: "plan-2", Role: "helper", SkillID: "sk-plan", State: "active", Parent: "leadaaaaaaaa", Copy: 2})
+		return nil
+	})
+	p.setSession("planaaaaaaaa", func(x *store.Session) { x.Status = "idle" })
+	lead, _ := p.session("leadaaaaaaaa")
+	dec := &routeDecider{choice: "plan", pr: 0.91, calibrated: true}
+	p.testDecider = dec
+	// The owner names the second copy: their words decide, triage is not asked.
+	p.nextStepNote(lead, "plan-2 please "+routePrompt)
+	if dec.asked != 0 {
+		t.Fatal("triage was asked although the owner named plan-2")
+	}
+	call := func(tool string, in map[string]any) bool {
+		_, deny := p.guardRoute(lead, map[string]any{"tool_name": tool, "tool_input": in})
+		return deny
+	}
+	// Triage routes to plan; the LEAD hands the work to plan-2 instead: the hold is released.
+	p.nextStepNote(lead, routePrompt)
+	if !call("Edit", nil) {
+		t.Fatal("no hold after a firm route")
+	}
+	if call("SendMessage", map[string]any{"to": "plan2aaaaaaa", "message": "do it"}) || call("Edit", nil) {
+		t.Fatal("a message to another copy of the routed skill must release the hold")
+	}
+	p.nextStepNote(lead, routePrompt)
+	if call("Bash", map[string]any{"command": "pengupool send --to plan-2 'do it'"}) || call("Write", nil) {
+		t.Fatal("pengupool send to another copy must release the hold")
 	}
 }

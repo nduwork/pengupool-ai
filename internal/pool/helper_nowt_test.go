@@ -118,9 +118,10 @@ func TestSMEKeepsWorktree(t *testing.T) {
 	}
 }
 
-// A skill may assist a team twice: the second copy gets its own name, folder and session, and a
-// message reaches each copy by its session id.
-func TestDuplicateSpecialist(t *testing.T) {
+// dupPool is a team with a lead and two installable skills (a git helper and a team hub), for the
+// duplicate-specialist tests. spawns records each spawn's working directory by session name.
+func dupPool(t *testing.T) (p *Pool, st *store.Store, clone, work string, spawns map[string]string) {
+	t.Helper()
 	agentOnPath(t)
 	st, err := store.Open(t.TempDir())
 	if err != nil {
@@ -130,45 +131,72 @@ func TestDuplicateSpecialist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := New(Options{Store: st, Hub: h, Exe: "pengupool"})
+	p = New(Options{Store: st, Hub: h, Exe: "pengupool"})
+	spawns = map[string]string{}
 	p.testSpawn = func(r spawnReq) (store.Session, error) {
+		spawns[r.Name] = r.Cwd
 		s := store.Session{ID: r.ID, Name: r.Name, Harness: r.Harness, Cwd: r.Cwd, State: "running", Status: "idle", RunLog: filepath.Join(t.TempDir(), "run.log")}
 		if r.Decorate != nil {
 			r.Decorate(&s)
 		}
-		return s, st.Update(func(x *store.State) error { x.Sessions = append(x.Sessions, s); return nil })
+		return s, st.Update(func(x *store.State) error {
+			if i := sessionIndex(x, s.ID); i >= 0 {
+				x.Sessions[i] = s
+				return nil
+			}
+			x.Sessions = append(x.Sessions, s)
+			return nil
+		})
 	}
-	ctx := context.Background()
-	installed := filepath.Join(st.Dir(), "skills", "review")
-	_ = os.MkdirAll(installed, 0o755)
+	clone = filepath.Join(st.Dir(), "skills", "review")
+	_ = os.MkdirAll(clone, 0o755)
 	_ = st.Update(func(s *store.State) error {
 		s.Sessions = append(s.Sessions, store.Session{ID: "leadaaaaaaaa", Name: "lead", Harness: "claude", State: "running", Status: "working"})
 		s.Domain.Repos = []protocol.Repo{{ID: "r1", Name: "app", Path: t.TempDir()}}
 		s.Domain.Skills = []protocol.Skill{
-			{ID: "sk-rev", Name: "pr-review-agent", Path: installed, Source: "git"},
+			{ID: "sk-rev", Name: "pr-review-agent", Path: clone, Source: "git"},
 			{ID: "sk-hub", Name: "hub-agent", Path: t.TempDir(), Source: "local", Capabilities: []string{"team-hub"}},
+			{ID: "sk-long", Name: "a-very-long-specialist-name-that-fills-forty", Path: t.TempDir(), Source: "local"},
 		}
 		s.Domain.Teams = []protocol.Team{{ID: "team1111", Name: "app", RepoID: "r1", Harness: "claude", State: "active",
 			Members: []protocol.Member{{SessionID: "leadaaaaaaaa", Name: "lead", Role: "main", State: "active"}}}}
 		return nil
 	})
-	work := filepath.Join(st.Dir(), "work", "team1111")
+	return p, st, clone, filepath.Join(st.Dir(), "work", "team1111"), spawns
+}
+
+func place(t *testing.T, p *Pool, skill string) protocol.Member {
+	t.Helper()
+	res, err := p.placeHelper(context.Background(), placeIn{TeamID: "team1111", SkillID: skill})
+	if err != nil {
+		t.Fatalf("place %s: %v", skill, err)
+	}
+	return res.(protocol.Member)
+}
+
+func cwdOf(t *testing.T, p *Pool, id string) string {
+	t.Helper()
+	s, _ := p.session(id)
+	return s.Cwd
+}
+
+// A skill may assist a team twice: the second copy gets its own name, folder and session, and a
+// message reaches each copy by its session id.
+func TestDuplicateSpecialist(t *testing.T) {
+	p, st, installed, work, _ := dupPool(t)
+	ctx := context.Background()
 	for _, c := range []struct{ skill, name, cwd string }{
 		{"sk-rev", "pr-review-agent", installed},
 		{"sk-rev", "pr-review-agent-2", filepath.Join(work, "pr-review-agent-2")},
 		{"sk-hub", "hub-agent", filepath.Join(work, "hub-agent")},
 		{"sk-hub", "hub-agent-2", filepath.Join(work, "hub-agent-2")},
 	} {
-		res, err := p.placeHelper(ctx, placeIn{TeamID: "team1111", SkillID: c.skill})
-		if err != nil {
-			t.Fatalf("%s: %v", c.name, err)
-		}
-		m := res.(protocol.Member)
+		m := place(t, p, c.skill)
 		if m.Name != c.name {
 			t.Fatalf("name %q, want %q", m.Name, c.name)
 		}
-		if s, _ := p.session(m.SessionID); s.Cwd != c.cwd {
-			t.Fatalf("%s runs in %q, want %q", c.name, s.Cwd, c.cwd)
+		if got := cwdOf(t, p, m.SessionID); got != c.cwd {
+			t.Fatalf("%s runs in %q, want %q", c.name, got, c.cwd)
 		}
 		if _, err := p.messageSend(ctx, sendIn{From: "leadaaaaaaaa", To: m.SessionID, Text: "hello " + c.name}); err != nil {
 			t.Fatalf("message to %s: %v", c.name, err)
@@ -186,5 +214,98 @@ func TestDuplicateSpecialist(t *testing.T) {
 		if got[m.SessionID] != "hello "+m.Name {
 			t.Fatalf("%s got %q", m.Name, got[m.SessionID])
 		}
+	}
+}
+
+// A rename never lets a later copy share a folder or the skill clone: folders follow the copy
+// number fixed at add time, not the name.
+func TestDuplicateSpecialistRename(t *testing.T) {
+	p, _, clone, work, _ := dupPool(t)
+	ctx := context.Background()
+	a := place(t, p, "sk-rev")
+	b := place(t, p, "sk-rev")
+	if _, err := p.sessionRename(ctx, renameIn{SessionID: b.SessionID, Name: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.sessionRename(ctx, renameIn{SessionID: a.SessionID, Name: "y"}); err != nil {
+		t.Fatal(err)
+	}
+	c := place(t, p, "sk-rev")
+	if c.Copy != 3 || c.Name != "pr-review-agent-3" {
+		t.Fatalf("third copy %+v", c)
+	}
+	seen := map[string]string{}
+	for _, m := range []protocol.Member{a, b, c} {
+		cwd := cwdOf(t, p, m.SessionID)
+		if other, dup := seen[cwd]; dup {
+			t.Fatalf("%s shares %s with %s", m.Name, cwd, other)
+		}
+		seen[cwd] = m.Name
+	}
+	if cwdOf(t, p, c.SessionID) == clone || cwdOf(t, p, c.SessionID) != filepath.Join(work, "pr-review-agent-3") {
+		t.Fatalf("third copy runs in %q", cwdOf(t, p, c.SessionID))
+	}
+	// A hub renamed to its next copy's name: the next copy still gets a folder of its own.
+	h1 := place(t, p, "sk-hub")
+	if _, err := p.sessionRename(ctx, renameIn{SessionID: h1.SessionID, Name: "hub-agent-2"}); err != nil {
+		t.Fatal(err)
+	}
+	h2 := place(t, p, "sk-hub")
+	if h2.Name == "hub-agent-2" || cwdOf(t, p, h2.SessionID) == cwdOf(t, p, h1.SessionID) {
+		t.Fatalf("hub copy %q in %q shares with the renamed first in %q", h2.Name, cwdOf(t, p, h2.SessionID), cwdOf(t, p, h1.SessionID))
+	}
+}
+
+// Copies of a skill whose name fills slug's 40 characters keep their suffix, so their folders differ.
+func TestDuplicateSpecialistLongName(t *testing.T) {
+	p, _, _, _, _ := dupPool(t)
+	seen := map[string]bool{}
+	for i := 0; i < 3; i++ {
+		m := place(t, p, "sk-long")
+		cwd := cwdOf(t, p, m.SessionID)
+		if seen[cwd] || seen[m.Name] {
+			t.Fatalf("copy %d (%s) reuses %q", i+1, m.Name, cwd)
+		}
+		seen[cwd], seen[m.Name] = true, true
+		if i > 0 && !strings.HasSuffix(m.Name, "-"+itoa(i+1)) {
+			t.Fatalf("copy %d name %q lost its suffix", i+1, m.Name)
+		}
+	}
+}
+
+// Closing one copy leaves the other running in its folder; a restore resumes each copy where it ran.
+func TestDuplicateSpecialistCloseAndRestore(t *testing.T) {
+	p, st, _, _, spawns := dupPool(t)
+	ctx := context.Background()
+	a := place(t, p, "sk-rev")
+	b := place(t, p, "sk-rev")
+	bCwd := cwdOf(t, p, b.SessionID)
+	if _, err := p.sessionClose(ctx, sessionIn{SessionID: a.SessionID}); err != nil {
+		t.Fatal(err)
+	}
+	d := st.State().Domain
+	for _, m := range findTeam(&d, "team1111").Members {
+		switch m.SessionID {
+		case a.SessionID:
+			if m.State != "closed" {
+				t.Fatalf("closed copy is %s", m.State)
+			}
+		case b.SessionID:
+			if m.State != "active" {
+				t.Fatalf("other copy is %s", m.State)
+			}
+		}
+	}
+	if _, err := os.Stat(bCwd); err != nil {
+		t.Fatalf("closing a copy removed the other's folder: %v", err)
+	}
+	// A daemon restart ended b; resuming it starts it in its own folder again.
+	p.setSession(b.SessionID, func(x *store.Session) { x.State, x.Status, x.ConvID = "ended", "ended", "conv-b" })
+	delete(spawns, b.Name)
+	if _, err := p.resume(ctx, sessionIn{SessionID: b.SessionID}); err != nil {
+		t.Fatal(err)
+	}
+	if spawns[b.Name] != bCwd {
+		t.Fatalf("restored copy runs in %q, want %q", spawns[b.Name], bCwd)
 	}
 }

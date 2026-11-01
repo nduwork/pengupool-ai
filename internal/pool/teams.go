@@ -570,7 +570,7 @@ func short(s string) string {
 func (p *Pool) startMember(ctx context.Context, team *protocol.Team, repo protocol.Repo, t protocol.Task, pm protocol.ProposedMember, base string) (protocol.Member, error) {
 	id := protocol.NewID()
 	m := protocol.Member{SessionID: id, Name: pm.Name, Role: pm.Role, SkillID: pm.SkillID, Assignment: pm.Assignment,
-		Coordinator: pm.Coordinator, State: "active", BaseCommit: base}
+		Coordinator: pm.Coordinator, State: "active", BaseCommit: base, Copy: pm.Copy}
 	cwd := repo.Path
 	var readDirs []string
 	if pm.Role != "main" { // SMEs work in their own worktree, helpers in none
@@ -588,9 +588,10 @@ func (p *Pool) startMember(ctx context.Context, team *protocol.Team, repo protoc
 		cwd = p.workDir(team.ID)
 		sk := findSkill(&d, pm.SkillID)
 		switch {
-		case sk != nil && pm.Name != slug(sk.Name):
-			// A second copy of the skill: a scratch folder of its own, never the first copy's.
-			cwd = filepath.Join(cwd, slug(pm.Name))
+		case sk != nil && pm.Copy >= 2:
+			// A further copy of the skill: a scratch folder of its own (by copy number, not by the
+			// name the owner may change), never the first copy's clone.
+			cwd = filepath.Join(cwd, slugCopy(sk.Name, pm.Copy))
 		case sk != nil && sk.Path != "" && sk.Source == "git" && within(sk.Path, filepath.Join(p.st.Dir(), "skills")):
 			cwd = sk.Path
 		}
@@ -676,7 +677,8 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	}
 	// A skill may assist a team more than once, each copy in its own session: a second copy gets
 	// its own name (pr-review-agent-2), and with it its own folder and worktree.
-	pm := protocol.ProposedMember{SkillID: sk.ID, Name: teamMemberName(team, slug(sk.Name)), Role: "helper", Assignment: assignment, Harness: ag, Model: in.Model}
+	copyN := nextCopy(team, sk.ID)
+	pm := protocol.ProposedMember{SkillID: sk.ID, Name: teamMemberName(team, sk.Name, copyN), Role: "helper", Assignment: assignment, Harness: ag, Model: in.Model, Copy: copyN}
 	var m protocol.Member
 	var err error
 	if hub {
@@ -706,19 +708,31 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	return m, nil
 }
 
-// teamMemberName returns base, or base-2, base-3… when a member of the team already has it (an
-// ended member's folder may still exist, so every member counts).
-func teamMemberName(t *protocol.Team, base string) string {
+// nextCopy is the copy number a new member of skill gets on the team: 0 for the first, else one
+// past the highest so far (closed members count, so a number is never reused).
+func nextCopy(t *protocol.Team, skill string) int {
+	n := 0
+	for _, m := range t.Members {
+		if m.SkillID == skill {
+			n = max(n, m.Copy, 1)
+		}
+	}
+	if n == 0 {
+		return 0
+	}
+	return n + 1
+}
+
+// teamMemberName is copy n's name, slugCopy(skill, n), or the next free variant when a member of
+// the team already has it (a renamed member may hold it; every member counts).
+func teamMemberName(t *protocol.Team, skill string, n int) string {
 	taken := map[string]bool{}
 	for _, m := range t.Members {
 		taken[m.Name] = true
 	}
-	if !taken[base] {
-		return base
-	}
-	for i := 2; ; i++ {
-		if n := base + "-" + itoa(i); !taken[n] {
-			return n
+	for i := max(n, 1); ; i++ {
+		if name := slugCopy(skill, i); !taken[name] {
+			return name
 		}
 	}
 }
@@ -734,10 +748,13 @@ func teamHubSkill(sk protocol.Skill) bool { return slices.Contains(sk.Capabiliti
 func (p *Pool) startHub(ctx context.Context, team *protocol.Team, sk protocol.Skill, pm protocol.ProposedMember) (protocol.Member, error) {
 	id := protocol.NewID()
 	cwd := filepath.Join(p.workDir(team.ID), slug(pm.Name))
+	if pm.Copy >= 2 { // by copy number, not by the name the owner may change
+		cwd = filepath.Join(p.workDir(team.ID), slugCopy(sk.Name, pm.Copy))
+	}
 	if err := os.MkdirAll(cwd, 0o755); err != nil {
 		return protocol.Member{}, err
 	}
-	m := protocol.Member{SessionID: id, Name: pm.Name, Role: pm.Role, SkillID: pm.SkillID, Assignment: pm.Assignment, State: "active"}
+	m := protocol.Member{SessionID: id, Name: pm.Name, Role: pm.Role, SkillID: pm.SkillID, Assignment: pm.Assignment, State: "active", Copy: pm.Copy}
 	for _, x := range team.Members {
 		if x.Role == "main" && x.State == "active" {
 			m.Parent = x.SessionID
