@@ -99,6 +99,9 @@ func (p *Pool) buildContextCap(id string, compassCap int) string {
 	}
 	if me.SessionID == lead {
 		fmt.Fprintf(&b, "\nYou are this team's **LEAD**: the top of the team's tree, not its boss. Members talk only to their parent and children, so you hear from your children. Split the task into assignments, compose the members' results into one, and report back to the owner. Your teammates' assignments are the owner's split of the work: work one covers is that teammate's, and giving it to them counts as the owner asking. Before your next step, a [PenguPool triage] note from the owner's decision model may name who fits. A confident note binds: PenguPool holds your working tools until you send that member the work. Otherwise you decide, and ask the owner if you cannot. You cannot approve, merge or change the direction. To change who is on the team, ask the owner: `%[1]s team request add --skill <name>|--repo <name> --assignment \"…\"`, `%[1]s team request remove <member> --reason \"…\"`.\n", p.exe)
+		if p.specialistLead(t, id) != nil {
+			b.WriteString("\n" + leadGuide + "\n")
+		}
 	} else if lead != "" {
 		b.WriteString("\nThe LEAD combines the team's results; report your finished work to the LEAD. Only the owner merges changes.\n")
 	}

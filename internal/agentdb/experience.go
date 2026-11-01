@@ -156,6 +156,11 @@ func (d *DB) AllExperience() ([]Entry, error) {
 	return out, rows.Err()
 }
 
+// TeamExperience is a helper's entries made in one team, without bodies.
+func (d *DB) TeamExperience(helper, team string) ([]Entry, error) {
+	return d.entries(`SELECT `+entryCols+`, '' FROM experience e WHERE e.helper = ? AND e.team_id = ?`, helper, team)
+}
+
 // ListExperience is all of a helper's entries, newest first, without bodies.
 func (d *DB) ListExperience(helper string) ([]Entry, error) {
 	es, err := d.entries(`SELECT `+entryCols+`, '' FROM experience e WHERE e.helper = ? ORDER BY e.id DESC`, helper)

@@ -339,6 +339,15 @@ session's agent only words new lines.
 v0.10.10: The map's hover card shows a session's question, last message and folder whole, and a card
 taller than the room it has scrolls; the pointer can move into it to scroll, and it keeps clear of the
 screen edges. The same holds for every tip in the app.
+v0.10.11: A team whose LEAD is a SPECIALIST keeps one project entry in that specialist's journal. The
+lead's context asks it to preserve a self-contained picture of the project when its harness compacts the
+session; at the lead's next turn end PenguPool keeps that compaction summary (Claude Code, pi and OMP
+sessions; Codex encrypts its compactions, so a Codex LEAD keeps none), under the host's facts about
+the team at that moment (team, latest owner instruction, members with their labels and assignments,
+repositories, and the compaction it came from), and it replaces the team's previous project entry. Only
+compactions that happen anyway count: PenguPool types nothing. A team led by an SME or a session with no
+skill gets nothing new, and a team that closes without a compaction keeps no project entry. The entry is
+read like any other, through the specialist's own `experience search` and `show`.
 
 ## Credits
 
