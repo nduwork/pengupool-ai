@@ -23,7 +23,9 @@ chooses it.
 | **Specialist** (`SPEC`) | A skill-backed agent from the Specialist hub. It works outside the team's repositories and keeps its own journal across teams. |
 
 Build a team by starting with a specialist from Welcome, by dragging sessions onto each other on the
-map, or by dragging a specialist from the Specialist pool onto a session. Members talk with
+map, or by dragging a specialist from the Specialist pool onto a session. Specialists you add from Welcome or a
+team request join under the Lead; to build a deeper tree (an SME with its own specialists, say), drag a
+member onto another member on the map, and it moves there with everything under it. Members talk with
 `pengupool send`, only to their parent and children on the tree; every message is recorded on the
 team's message log.
 
@@ -48,7 +50,7 @@ specialist. You can list, open and delete entries on the Specialists page.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/screenshots/screen-ask-dark.webp">
-  <img alt="Waiting on you: an agent's question with its options, answered from the notification" src="../assets/screenshots/screen-ask-light.webp">
+  <img alt="Waiting on you: pr-review-agent (Muse Code) asks whether to approve PR #12, with its options, answered from the notification. The three-level team is behind it." src="../assets/screenshots/screen-ask-light.webp">
 </picture>
 
 Questions, check-ins and permission prompts collect under the bell. Each shows who asks, their team,

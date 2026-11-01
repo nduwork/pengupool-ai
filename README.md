@@ -16,20 +16,12 @@
 
 ## Muse in the loop
 
-<!-- MUSE LOOP MEDIA: a real desktop-and-phone pair from one recorded question, captioned:
-"A Muse Code session asks a project question; the owner answers in the Muse app; the session continues
-with that answer. Tool-permission prompts stay in the terminal." Until that footage exists, the
-diagram below stands in. -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/media/muse-loop-dark.png">
+  <img alt="Muse Code on your Mac sends hooks to the PenguPool hub (team, Compass, waiting question); the paired Muse app reads the question over Tailscale; your answer returns and the same session continues. Tool-permission prompts stay on the Mac." src="assets/media/muse-loop-light.png">
+</picture>
 
-```mermaid
-flowchart LR
-  C["Muse Code on Mac"] -->|"Hooks: context and session events"| P["PenguPool: team, Compass, waiting requests"]
-  P -->|"Paired API over Tailscale Serve"| M["Owner in Muse app"]
-  M -->|"Answer or instruction"| P
-  P -->|"Answer delivery / owner input"| C
-```
-
-<sub>The arrows show data flow, not server push or automatic phone notifications.</sub>
+<sub>Data flow, not push notifications: the Muse app checks PenguPool for waiting questions.</sub>
 
 **On your Mac, Muse Code works with your team's context.** PenguPool's Muse plugin connects session
 start, prompts and turn events to the team's context, your Compass and a specialist's own journal. That
@@ -66,7 +58,7 @@ Claude Code, Codex, pi and OMP join the same workspace, teams and Compass as Mus
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/screen-map-dark.webp">
-  <img alt="The team map: team-lead-agent with three specialists (pr-review-agent on Muse Code) and an SME, a lit route, and an open ask" src="assets/screenshots/screen-map-light.webp">
+  <img alt="The team map, three levels. team-lead-agent (LEAD, Muse Code) leads research-agent (Muse Code), pr-review-agent (Muse Code), dev-workflow-agent (Claude Code) and two repository SMEs. acme-api-muse (Muse Code) leads security-agent (Codex); acme-web-muse (Muse Code) leads frontend-ui-agent (Muse Code). Lit routes and an open ask from research-agent." src="assets/screenshots/screen-map-light.webp">
 </picture>
 
 <sub>Illustrative UI with synthetic project data.</sub>
@@ -111,9 +103,9 @@ Step by step: [docs/getting-started.md](docs/getting-started.md).
 
 Two short loops of the app, made from real app captures with demo data:
 
-<p align="center"><img src="assets/media/readme-a-specialist.gif" width="800" alt="Start a team from the Welcome screen: pick two specialists and the team appears on the map with its lead."></p>
+<p align="center"><img src="assets/media/readme-a-specialist.gif" width="800" alt="Starting a team from the Welcome screen: research-agent and pr-review-agent are ticked, the agent is set to Muse Code, and the team appears on the map with the lead and both members running Muse Code."></p>
 
-<p align="center"><img src="assets/media/readme-b-compass.gif" width="800" alt="A member's ask reaches the lead, PenguPool answers it from the owner's confident Compass line, and an ask with no clear line goes to the owner."></p>
+<p align="center"><img src="assets/media/readme-b-compass.gif" width="800" alt="research-agent asks the lead a question, PenguPool answers it from the owner's confident Compass line, and when security-agent asks acme-api-muse a question no line covers, it goes to the owner's Waiting on you."></p>
 
 What the demo shows, against the [hackathon's](https://dev.meta.ai/events/global-hackathon) framing:
 

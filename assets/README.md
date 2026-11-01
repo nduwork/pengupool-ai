@@ -7,3 +7,5 @@ banner (PNG) and the welcome, start, map, ask and settings screens (WebP). They 
 rendered with made-up demo data; replace them by filename.
 `media/` holds the README's two demo loops (GIF, 800×500): starting a team with specialists, and an
 ask answered from the Compass. They are animated from real app captures with demo data.
+`media/muse-loop-light.png` and `media/muse-loop-dark.png` are the README's illustrated "Muse in the loop"
+diagram (1600×700): Muse Code on the Mac, the PenguPool hub, and the paired Muse app.
