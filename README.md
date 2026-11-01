@@ -16,20 +16,12 @@
 
 ## Muse in the loop
 
-<!-- MUSE LOOP MEDIA: a real desktop-and-phone pair from one recorded question, captioned:
-"A Muse Code session asks a project question; the owner answers in the Muse app; the session continues
-with that answer. Tool-permission prompts stay in the terminal." Until that footage exists, the
-diagram below stands in. -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/media/muse-loop-dark.png">
+  <img alt="Muse Code on your Mac sends hooks to the PenguPool hub (team, Compass, waiting question); the paired Muse app reads the question over Tailscale; your answer returns and the same session continues. Tool-permission prompts stay on the Mac." src="assets/media/muse-loop-light.png">
+</picture>
 
-```mermaid
-flowchart LR
-  C["Muse Code on Mac"] -->|"Hooks: context and session events"| P["PenguPool: team, Compass, waiting requests"]
-  P -->|"Paired API over Tailscale Serve"| M["Owner in Muse app"]
-  M -->|"Answer or instruction"| P
-  P -->|"Answer delivery / owner input"| C
-```
-
-<sub>The arrows show data flow, not server push or automatic phone notifications.</sub>
+<sub>Data flow, not push notifications: the Muse app checks PenguPool for waiting questions.</sub>
 
 **On your Mac, Muse Code works with your team's context.** PenguPool's Muse plugin connects session
 start, prompts and turn events to the team's context, your Compass and a specialist's own journal. That
