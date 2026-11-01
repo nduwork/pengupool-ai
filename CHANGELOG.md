@@ -10,7 +10,7 @@ leaves Serve pointing at nothing. Both Serve modes are first-class: a stale HTTP
 re-pointed over HTTPS and a stale plain-HTTP setup over HTTP, never switched; a fresh setup gets
 HTTPS on a tailnet with HTTPS certificates and plain HTTP without them. PenguPool remembers the
 port it served and re-points only its own Serve routes, so another app published through Serve is
-left alone. The Settings checklist accepts either mode.
+left alone: the Serve button reports a route it would take over instead of replacing it. The Settings checklist accepts either mode.
 
 **Serve over HTTP.** Settings has a second Tailscale button that serves plain HTTP on :80 even on a
 tailnet with HTTPS certificates. The pairing URL a device scans keeps that scheme, and the

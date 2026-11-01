@@ -524,3 +524,31 @@ func TestMuseBaseURLScheme(t *testing.T) {
 		}
 	}
 }
+
+// The Serve button never takes over a mode another app's route already uses: it reports it.
+func TestSettingsSaveServeForeignRoute(t *testing.T) {
+	for _, c := range []struct {
+		name, status, serve, servePort, wantErr string
+	}{
+		{"foreignHTTPNoCerts", tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:2222", "probe-machine.tailnet.ts.net:80"), "", ":80 already points at 127.0.0.1:2222"},
+		{"foreignHTTPSRecorded", tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:2222"), "1111", ":443 already points at 127.0.0.1:2222"},
+		{"foreignRemoteHTTPS", tailscaleStatusRunning, tailscaleServeJSON("http://192.168.1.5:8080"), "", ":443 already points at http://192.168.1.5:8080"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ran := stubTailscale(t, c.status, c.serve)
+			p := testPool(t)
+			setServePort(t, p.st, c.servePort)
+			res, err := p.settingsSave(context.Background(), settingsIn{EnableServe: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := res.(map[string]any)
+			if e, _ := m["serve_error"].(string); !strings.Contains(e, c.wantErr) {
+				t.Fatalf("serve_error = %q, want %q", e, c.wantErr)
+			}
+			if len(*ran) != 0 {
+				t.Fatalf("took over another app's route: %v", *ran)
+			}
+		})
+	}
+}
