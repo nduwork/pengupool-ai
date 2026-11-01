@@ -1,41 +1,53 @@
 #!/usr/bin/env python3
-"""PenguPool device-API client: a paired device's calls on /api/muse/v1.
+"""PenguPool device-API client (transport + HTTP helpers).
 
-Usage:
-  pp.py sessions                      the sessions this device sees (team, role, status, waiting)
-  pp.py next                          the oldest waiting ask, as its card (nothing when none waits)
-  pp.py answer ASK_ID PAYLOAD_HASH ACTION [TEXT]
-                                      answer the card the owner saw (its ask_id and payload_hash)
-                                      with one of its action ids; TEXT for a reply. A card that
-                                      changed or was answered meanwhile is refused (409).
-  pp.py say SESSION WORDS...          type the words into a session, with Enter
-  pp.py action SESSION stop|interrupt|resume
-  pp.py compass                       the owner's Compass lines
+History: this module was the /ws owner-API client (protocol v1 frames,
+daemon bootstrap token). The gateway is local-only now — its host guard
+answers 404 to every non-loopback request except /api/healthz and
+/api/muse/v1/* — and under the owner's Option A decision this machine
+holds only the paired device token. The /ws client is retired; what
+remains is the CONNECT tunnel to the workstation plus small helpers for
+the device API (/api/muse/v1), which is the companion's only channel:
 
-The paired device token is read from ./device-token (mode 0600) or $PENGUPOOL_DEVICE_TOKEN.
-It is the only credential: the owner's app token never works on this API.
+  pp.device_get("/sessions")        -> (status, body bytes)
+  pp.device_get("/next")            -> (status, body bytes)  204 = no ask
+  pp.device_post("/sessions/<id>/say", {"words": "..."})
+  pp.healthz()                      -> (status, dict)  daemon epoch etc.
 
-PenguPool is reached only through Tailscale Serve: set PENGUPOOL_HOST to its Serve name, and calls
-go over HTTPS on port 443 (the default), end to end through any proxy. PENGUPOOL_PORT overrides the
-port (the self-test's local server).
+The device token is read from ./device-token (mode 0600). The bootstrap
+token is never read, held, or sent by this module.
+
+Transports (PENGUPOOL_TRANSPORT):
+  serve  (default) — the v0.10.20 path. The daemon binds loopback only
+    ("Local network was removed ... use Tailscale Serve"), so the device
+    API is reached through Tailscale Serve: CONNECT to the workstation's
+    tailnet address on port 443 via the runtime proxy, TLS with SNI =
+    the machine's tailnet name (Serve's certificate is publicly trusted
+    for that name), then plain HTTP/1.1 with Host = the tailnet name.
+  direct — the pre-0.10.20 path: CONNECT to the tailnet address on the
+    daemon port (7787) and speak plaintext HTTP with
+    Host = <tailnet name>:<port>. Only useful while a daemon build
+    still binds a network listener.
+PENGUPOOL_CA_FILE overrides the trust roots (tests, private CA).
 """
 import json
 import os
 import socket
 import ssl
 import sys
-import uuid
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 
-HOST = os.environ.get("PENGUPOOL_HOST", "")  # the workstation's Tailscale Serve name; set it in the environment
-PORT = int(os.environ.get("PENGUPOOL_PORT", "443"))
+HOST = os.environ.get("PENGUPOOL_HOST", "100.106.40.12")
+HOST_HEADER = os.environ.get("PENGUPOOL_HOST_HEADER",
+                             "nduworkstation.tail04aac9.ts.net")
+PORT = int(os.environ.get("PENGUPOOL_PORT", "7787"))
+TRANSPORT = os.environ.get("PENGUPOOL_TRANSPORT", "serve")
+SERVE_PORT = int(os.environ.get("PENGUPOOL_SERVE_PORT", "443"))
 HERE = os.path.dirname(os.path.abspath(__file__))
+API = "/api/muse/v1"
 
 
-def load_token():
-    tok = os.environ.get("PENGUPOOL_DEVICE_TOKEN", "").strip()
-    if tok:
-        return tok
+def load_device_token():
     with open(os.path.join(HERE, "device-token")) as f:
         return f.read().strip()
 
@@ -43,9 +55,9 @@ def load_token():
 class Sock:
     """Buffered socket reader."""
 
-    def __init__(self, s):
+    def __init__(self, s, buf=b""):
         self.s = s
-        self.buf = bytearray()
+        self.buf = bytearray(buf)
 
     def read_exact(self, n):
         while len(self.buf) < n:
@@ -72,164 +84,168 @@ class Sock:
             self.buf += chunk
 
 
-def connect():
-    """A socket to the workstation: through $HTTPS_PROXY's CONNECT tunnel when set, else direct."""
-    if not HOST:
-        raise SystemExit("PENGUPOOL_HOST is not set: the workstation's Tailscale name")
+def _connect_proxy(host, port):
+    """CONNECT through the runtime proxy to host:port.
+
+    Returns (raw_socket, reader) where reader has consumed exactly the
+    CONNECT response headers. Raises EOFError if the proxy or the target
+    closes the connection — that is the companion's "unreachable" signal.
+    """
     proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
     if not proxy:
-        sk = Sock(socket.create_connection((HOST, PORT), timeout=20))
-    else:
-        p = urlparse(proxy)
-        # The Muse runtime proxy takes CONNECT on 3130, not on the port
-        # in its own URL (that port closes CONNECT attempts): try the
-        # URL's port first, then 3130.
-        ports = [p.port or 3130]
-        if ports[0] != 3130:
-            ports.append(3130)
-        sk, errs = None, []
-        for port in ports:
-            # A refusal is the proxy's answer: same host, so no other port answers
-            # differently — fail fast. Only a failed connection tries the next port.
-            try:
-                sk = Sock(socket.create_connection((p.hostname, port), timeout=20))
-                sk.s.sendall(f"CONNECT {HOST}:{PORT} HTTP/1.1\r\nHost: {HOST}:{PORT}\r\n\r\n".encode())
-                status = sk.read_until(b"\r\n\r\n").decode("latin1").split("\r\n", 1)[0]
-            except (OSError, EOFError) as e:
-                errs.append(f"{port}: {e}")
-                if sk is not None:
-                    try:
-                        sk.s.close()
-                    except Exception:
-                        pass
-                sk = None
-                continue
-            if " 200 " not in status:
-                sk.s.close()
-                raise SystemExit(f"tunnel CONNECT failed: {status}")
-            if sk.buf:
-                sk.s.close()
-                raise SystemExit("tunnel sent data before the request")
-            break
-        if sk is None:
-            raise SystemExit(f"tunnel CONNECT failed: {'; '.join(errs)}")
-    if PORT == 443:  # Serve's HTTPS: the token is encrypted to the workstation, not just to the proxy
-        sk.s = ssl.create_default_context().wrap_socket(sk.s, server_hostname=HOST)
+        raise SystemExit("HTTPS_PROXY is not set; cannot reach the tunnel proxy")
+    p = urlparse(proxy)
+    raw = socket.create_connection((p.hostname, 3130), timeout=20)
+    req = (
+        f"CONNECT {host}:{port} HTTP/1.1\r\n"
+        f"Host: {host}:{port}\r\nProxy-Connection: keep-alive\r\n\r\n"
+    )
+    raw.sendall(req.encode())
+    sk = Sock(raw)
+    head = sk.read_until(b"\r\n\r\n").decode("latin1")
+    status = head.split("\r\n", 1)[0]
+    if " 200 " not in status:
+        raise SystemExit(f"tunnel CONNECT failed: {status}")
+    return raw, sk
+
+
+def _tls_context():
+    cafile = os.environ.get("PENGUPOOL_CA_FILE") or None
+    return ssl.create_default_context(cafile=cafile)
+
+
+def _tunnel_serve():
+    """Tailscale Serve path: CONNECT to the tailnet address on 443,
+    then TLS with SNI = the tailnet name (Serve's cert covers the name,
+    not the address). Bytes the proxy reader may have buffered past the
+    CONNECT headers would be lost by the TLS wrap; a CONNECT response
+    has no body, so a non-empty buffer means something is wrong — fail
+    loudly instead of corrupting the stream."""
+    raw, sk = _connect_proxy(HOST, SERVE_PORT)
+    if sk.buf:
+        raise SystemExit("tunnel: unexpected bytes after CONNECT response")
+    tls = _tls_context().wrap_socket(raw, server_hostname=HOST_HEADER)
+    return Sock(tls)
+
+
+def _tunnel_direct():
+    _, sk = _connect_proxy(HOST, PORT)
     return sk
 
 
-def _read_response(sk):
-    """(status, raw body) of the response waiting on sk: chunked or content-length."""
-    lines = sk.read_until(b"\r\n\r\n").decode("latin1").split("\r\n")
-    status = int(lines[0].split(" ", 2)[1])
-    headers = {k.lower(): v for k, _, v in (ln.partition(": ") for ln in lines[1:] if ": " in ln)}
-    if "chunked" in headers.get("transfer-encoding", ""):
-        raw = bytearray()
-        while True:
-            n = int(sk.read_until(b"\r\n").decode("latin1").split(";")[0], 16)
-            if n == 0:
-                break
-            raw += sk.read_exact(n)
-            sk.read_until(b"\r\n")
-    else:
-        n = int(headers.get("content-length", "0"))
-        raw = sk.read_exact(n) if n else b""
-    sk.s.close()
-    return status, raw
+def tunnel():
+    if TRANSPORT == "direct":
+        return _tunnel_direct()
+    if TRANSPORT == "serve":
+        return _tunnel_serve()
+    raise SystemExit(f"unknown PENGUPOOL_TRANSPORT: {TRANSPORT!r}")
 
 
-def api(method, path, body=None):
-    """One call on the device API. Returns (status, parsed JSON or None)."""
-    sk = connect()
-    data = json.dumps(body).encode() if body is not None else b""
-    host = HOST if PORT == 443 else f"{HOST}:{PORT}"
-    head = (f"{method} /api/muse/v1{path} HTTP/1.1\r\nHost: {host}\r\n"
-            f"Authorization: Bearer {load_token()}\r\nConnection: close\r\n")
+def _request(method, path, body=None, auth=True):
+    """One HTTP request to the daemon over the tunnel. Returns (status, body bytes)."""
+    sk = tunnel()
+    payload = b""
+    host_header = HOST_HEADER if TRANSPORT == "serve" else f"{HOST_HEADER}:{PORT}"
+    headers = [f"Host: {host_header}", "Connection: close"]
+    if auth:
+        headers.append(f"Authorization: Bearer {load_device_token()}")
     if body is not None:
-        head += f"Content-Type: application/json\r\nContent-Length: {len(data)}\r\n"
-    sk.s.sendall((head + "\r\n").encode() + data)
-    status, raw = _read_response(sk)
-    try:
-        return status, json.loads(raw) if raw else None
-    except ValueError:
-        return status, {"error": raw.decode("utf-8", "replace").strip()}
+        payload = json.dumps(body).encode()
+        headers.append("Content-Type: application/json")
+        headers.append(f"Content-Length: {len(payload)}")
+    req = f"{method} {path} HTTP/1.1\r\n" + "\r\n".join(headers) + "\r\n\r\n"
+    sk.s.sendall(req.encode() + payload)
+    head = sk.read_until(b"\r\n\r\n").decode("latin1")
+    status = int(head.split(" ", 2)[1])
+    hdrs = {}
+    for line in head.split("\r\n")[1:]:
+        if ": " in line:
+            k, v = line.split(": ", 1)
+            hdrs[k.lower()] = v
+    if "chunked" in hdrs.get("transfer-encoding", ""):
+        out = bytearray()
+        while True:
+            size_line = sk.read_until(b"\r\n").decode("latin1").strip()
+            n = int(size_line.split(";")[0], 16)
+            if n == 0:
+                sk.read_until(b"\r\n")
+                break
+            out += sk.read_exact(n)
+            sk.read_until(b"\r\n")
+        return status, bytes(out)
+    n = int(hdrs.get("content-length", "0"))
+    return status, sk.read_exact(n) if n else b""
+
+
+def device_get(path):
+    """GET /api/muse/v1<path> with the device token. Returns (status, body)."""
+    return _request("GET", API + path)
+
+
+def device_post(path, body):
+    """POST /api/muse/v1<path> with a JSON body. Returns (status, body)."""
+    return _request("POST", API + path, body=body)
 
 
 def healthz():
-    """GET /api/healthz — no token; the gateway answers it on the network.
+    """GET /api/healthz (no token; the gateway answers it on the network).
 
-    Returns (status, parsed JSON or None). The response's epoch changes
-    at every daemon start: it is the detector's restart signal now that
-    settings.get (which carried the version) is local-only.
+    Returns (status, dict) — the dict carries the daemon epoch, which
+    changes at every daemon start and is how the companion notices a
+    restart now that settings.get is local-only.
     """
-    sk = connect()
-    host = HOST if PORT == 443 else f"{HOST}:{PORT}"
-    sk.s.sendall((f"GET /api/healthz HTTP/1.1\r\nHost: {host}\r\n"
-                  "Connection: close\r\n\r\n").encode())
-    status, raw = _read_response(sk)
+    status, body = _request("GET", "/api/healthz", auth=False)
     try:
-        return status, json.loads(raw) if raw else None
-    except ValueError:
-        return status, None
+        return status, json.loads(body)
+    except Exception:
+        return status, {}
 
 
-def ok(status, res, what):
-    if status >= 400:
-        msg = (res or {}).get("error") or (res or {}).get("message") or res
-        raise SystemExit(f"{what} failed ({status}): {msg}")
-    return res
+def sessions():
+    """The device-visible sessions, as a list of dicts ( [] on failure )."""
+    code, body = device_get("/sessions")
+    if code != 200:
+        return []
+    try:
+        return json.loads(body)
+    except Exception:
+        return []
 
 
-def cmd_sessions(_args):
-    for s in ok(*api("GET", "/sessions"), "sessions") or []:
-        print(json.dumps(s, ensure_ascii=False))
-
-
-def cmd_next(_args):
-    res = ok(*api("GET", "/next"), "next")
-    if res:
-        print(json.dumps(res, indent=2, ensure_ascii=False))
-
-
-def cmd_answer(args):
-    if len(args) < 3:
-        raise SystemExit("usage: pp.py answer ASK_ID PAYLOAD_HASH ACTION [TEXT]")
-    ask_id, payload_hash, action = args[:3]
-    body = {"action": action, "payload_hash": payload_hash, "idempotency_key": str(uuid.uuid4())}
-    if len(args) > 3:
-        body["text"] = " ".join(args[3:])
-    ok(*api("POST", f"/asks/{quote(ask_id, safe=':')}/answer", body), "answer")
-    print(f"answered {ask_id}: {action}")
-
-
-def cmd_say(args):
-    if len(args) < 2:
-        raise SystemExit("usage: pp.py say SESSION WORDS...")
-    ok(*api("POST", f"/sessions/{quote(args[0], safe='')}/say", {"words": " ".join(args[1:])}), "say")
-    print(f"sent to {args[0]}")
-
-
-def cmd_action(args):
-    if len(args) != 2:
-        raise SystemExit("usage: pp.py action SESSION stop|interrupt|resume")
-    res = ok(*api("POST", f"/sessions/{quote(args[0], safe='')}/action", {"action": args[1]}), "action")
-    print(json.dumps(res, ensure_ascii=False))
-
-
-def cmd_compass(_args):
-    print(json.dumps(ok(*api("GET", "/compass"), "compass"), indent=2, ensure_ascii=False))
+def next_card():
+    """The pending ask card dict, or None when nothing waits (204)."""
+    code, body = device_get("/next")
+    if code != 200:
+        return None
+    try:
+        return json.loads(body)
+    except Exception:
+        return None
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in CMDS:
+    if len(sys.argv) < 2:
         print(__doc__)
         return 2
-    CMDS[sys.argv[1]](sys.argv[2:])
+    cmd, args = sys.argv[1], sys.argv[2:]
+    if cmd == "sessions":
+        for s in sessions():
+            print(json.dumps(s, ensure_ascii=False))
+    elif cmd == "next":
+        card = next_card()
+        print(json.dumps(card, indent=2, ensure_ascii=False) if card else "no ask waiting")
+    elif cmd == "healthz":
+        code, info = healthz()
+        print(code, json.dumps(info, ensure_ascii=False))
+    elif cmd == "say":
+        code, body = device_post(f"/sessions/{args[0]}/say",
+                                 {"words": " ".join(args[1:])})
+        print(code, body.decode("utf-8", "replace")[:200])
+    else:
+        print(f"unknown command: {cmd}\n{__doc__}")
+        return 2
     return 0
 
-
-CMDS = {"sessions": cmd_sessions, "next": cmd_next, "answer": cmd_answer, "say": cmd_say,
-        "action": cmd_action, "compass": cmd_compass}
 
 if __name__ == "__main__":
     sys.exit(main())
