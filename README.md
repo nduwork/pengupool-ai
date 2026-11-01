@@ -83,9 +83,12 @@ Step by step: [docs/getting-started.md](docs/getting-started.md).
 ## Demo
 
 <!-- DEMO VIDEO: link once the video exists. -->
-<!-- DEMO GIFS: two short loops from motion-video-agent, under assets/media/. -->
 The demo video is coming. It walks through a Muse Code session at work, answering its question from
-the Muse app, and a specialist reusing its journal on the next job.
+the Muse app, and a specialist reusing its journal on the next job. Meanwhile, two short loops:
+
+<p align="center"><img src="assets/media/readme-a-specialist.gif" width="800" alt="Start a team from the Welcome screen: pick two specialists and the team appears on the map with its lead."></p>
+
+<p align="center"><img src="assets/media/readme-b-compass.gif" width="800" alt="A member's ask reaches the lead, PenguPool answers it from the owner's confident Compass line, and an ask with no clear line goes to the owner."></p>
 
 ## Help
 

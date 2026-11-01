@@ -5,3 +5,5 @@
 `screenshots/` holds the README and help-page images, each in a `-light` and a `-dark` version: the
 banner (PNG) and the welcome, start, map, ask and settings screens (WebP). They are real app components
 rendered with made-up demo data; replace them by filename.
+`media/` holds the README's two demo loops (GIF, 800×500): starting a team with specialists, and an
+ask answered from the Compass. They are animated from real app captures with demo data.
