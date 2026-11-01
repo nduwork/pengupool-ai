@@ -14,7 +14,7 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
-// End to end against the real, private Helper agent hub through the machine's gh sign-in. It needs the
+// End to end against the real, private Specialist hub through the machine's gh sign-in. It needs the
 // network, so it runs only with PENGUPOOL_E2E_HUB=1:
 //
 //	PENGUPOOL_E2E_HUB=1 go test ./internal/pool -run TestE2EHub -v -count=1

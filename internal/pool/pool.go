@@ -176,7 +176,7 @@ func New(o Options) *Pool {
 		if dropped, err := db.Upgrade(p.owner()); err != nil {
 			logf("agent db: upgrade: %v", err)
 		} else if dropped != nil {
-			logf("agent db: upgraded; rows no longer kept (a helper's notes start empty): %v; the file before the upgrade is %s",
+			logf("agent db: upgraded; rows no longer kept (a specialist's notes start empty): %v; the file before the upgrade is %s",
 				dropped, agentdb.PreUpgradePath(filepath.Join(o.Store.Dir(), "agents.db")))
 		}
 		ls, _ := db.Lines(p.owner(), "", "", 0)

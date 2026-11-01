@@ -73,7 +73,7 @@ type Skill struct {
 	Profiles     []string    `json:"profiles,omitempty"` // agents/*.md seeds
 	Group        string      `json:"group,omitempty"`    // the library's section: the catalog's category, or the owner's own
 	Category     string      `json:"category,omitempty"` // the catalog's category it last had: a Group equal to it came from the catalog
-	OnMap        bool        `json:"on_map,omitempty"`   // listed in the map's Helper agent pool
+	OnMap        bool        `json:"on_map,omitempty"`   // listed in the map's Specialist pool
 	// Key is the agent's identity beyond this machine: the normalised Git remote of its repository,
 	// or its folder name. One agent per key per environment.
 	Key       string `json:"key,omitempty"`

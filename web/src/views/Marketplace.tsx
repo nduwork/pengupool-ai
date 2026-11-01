@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button";
 import { Empty, Input } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
 
-// The Helper agent hub: a catalog of skill repositories pinned to a commit (the hub's
+// The Specialist hub: a catalog of skill repositories pinned to a commit (the hub's
 // .pengupool/catalog.json). Install clones the helper at its pin into the Skill library.
 
 interface Entry {
@@ -58,7 +58,7 @@ export function MarketplaceSheet(): ReactElement {
     setRev((n) => n + 1);
   };
   return (
-    <Sheet title="Helper agent hub" description="Helper agents from the hub's catalog, each pinned to a commit. Install one, then put it on a team." onClose={close} wide>
+    <Sheet title="Specialist hub" description="Specialists from the hub's catalog, each pinned to a commit. Install one, then put it on a team." onClose={close} wide>
       <div className="grid grid-cols-1 gap-3">
         {m === null ? <p className="text-label text-faint">Loading…</p> : null}
         {m !== null ? (
@@ -77,8 +77,8 @@ export function MarketplaceSheet(): ReactElement {
               </p>
             ) : null}
             {m.error === undefined && m.skills.length === 0 ? (
-              <Empty icon={<Store />} title="No helpers yet">
-                The Helper agent hub lists none yet.
+              <Empty icon={<Store />} title="No specialists yet">
+                The Specialist hub lists none yet.
               </Empty>
             ) : (
               <div className="divide-y divide-border rounded-lg border border-border bg-raised">

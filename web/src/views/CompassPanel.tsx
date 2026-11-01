@@ -12,7 +12,7 @@ import { Mascot } from "./Mascot";
 
 // The owner's Compass (preference lines kept by the host in agents.db, not in any repository; each
 // line's belief comes from the owner's own words and choices), as a panel beside the map. A helper's
-// experience is on its page in Helper agents.
+// experience is on its page in Specialists.
 
 const KINDS = ["preference", "restriction"] as const;
 const STATE_STYLE: Record<Line["state"], string> = {

@@ -52,7 +52,7 @@ func TestMuseSessionsTeam(t *testing.T) {
 	if v := got["webaaaaaaaaa"]; v.Parent != "leadaaaaaaaa" || v.Assignment != "the login page" {
 		t.Errorf("web = %+v", v)
 	}
-	if v := got["planaaaaaaaa"]; v.Role != "HELPER" {
+	if v := got["planaaaaaaaa"]; v.Role != "SPECIALIST" {
 		t.Errorf("plan = %+v", v)
 	}
 }
