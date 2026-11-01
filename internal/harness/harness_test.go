@@ -184,7 +184,7 @@ func TestNeedsInputEventsAreWired(t *testing.T) {
 	}
 	src := string(ompExtension)
 	for _, want := range []string{`pi.on("tool_approval_requested"`, `hook("PermissionRequest"`, `pi.on("tool_approval_resolved"`,
-		`hook("ToolFailed"`, `pi.on("tool_result"`, `e.toolName === "ask"`} {
+		`hook("ToolFailed", { tool_name: String(e.toolName), tool_use_id: e.toolCallId })`, `pi.on("tool_result"`, `e.toolName === "ask"`} {
 		if !strings.Contains(src, want) {
 			t.Errorf("omp extension: no %s", want)
 		}

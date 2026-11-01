@@ -97,7 +97,8 @@ export default function (pi: ExtensionAPI) {
   })
   // OMP's approval dialog (pi has none): PermissionRequest while it waits on the owner. Approved, the
   // call goes on (PostToolUse settles it as a Claude PostToolUse does); denied, the turn goes on
-  // without it (ToolFailed). Its ask tool waits on the owner like Claude's AskUserQuestion.
+  // without it (ToolFailed, naming the call: settled as refused). Its ask tool waits on the owner like
+  // Claude's AskUserQuestion.
   pi.on("tool_approval_requested", async (e: any, ctx) => {
     if (pooled(ctx as Ctx)) await hook("PermissionRequest", { tool_name: String(e.toolName), tool_input: inputs.get(e.toolCallId), tool_use_id: e.toolCallId })
   })
@@ -106,7 +107,7 @@ export default function (pi: ExtensionAPI) {
     inputs.delete(e.toolCallId)
     if (!pooled(ctx as Ctx)) return
     if (e.approved) await hook("PostToolUse", { tool_name: String(e.toolName), tool_input: input, tool_use_id: e.toolCallId })
-    else await hook("ToolFailed", { tool_name: String(e.toolName) })
+    else await hook("ToolFailed", { tool_name: String(e.toolName), tool_use_id: e.toolCallId })
   })
   pi.on("tool_result", async (e: any, ctx) => {
     inputs.delete(e.toolCallId)

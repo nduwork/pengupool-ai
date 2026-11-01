@@ -304,8 +304,9 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			}
 		}
 	case "ToolFailed": // Muse, and an OMP approval denied: a tool failed or was denied; the turn goes on.
-		// Which way is unknown, so a permission prompt it answered stays open until the turn ends and
-		// expires it.
+		// OMP names the denied call, whose prompt is settled as refused. Muse names none, so which way is
+		// unknown: a permission prompt it answered stays open until the turn ends and expires it.
+		p.permissionDenied(s, str("tool_use_id"))
 		p.setStatus(s.ID, "working")
 		p.asking(s.ID, str("tool_name"), false)
 		p.turnTool(s.ID)

@@ -92,18 +92,31 @@ func TestCodexAndOMPRaiseNeedsInput(t *testing.T) {
 		if kind == harness.Codex {
 			hook("Interrupted", map[string]any{}) // Esc: the turn is aborted, with no Stop
 		} else {
-			hook("ToolFailed", map[string]any{"tool_name": "Bash"}) // denied: the turn goes on without it
+			hook("ToolFailed", map[string]any{"tool_name": "Bash", "tool_use_id": "call-1"}) // denied: the turn goes on without it
 		}
-		if s, _ := p.session(id); s.Status == "approval" || s.Question != "" {
-			t.Fatalf("%s refused: still waiting: status=%s question=%q", kind, s.Status, s.Question)
+		waiting(false, "refused") // the marker and the gate: the panel item goes at once
+		if g, _ := p.db.LastGate(id, "permission"); kind == harness.OMP && (g.Outcome != "owner" || g.OwnerProceed == nil || *g.OwnerProceed) {
+			t.Fatalf("omp denial not settled as refused: %+v", g)
 		}
 		hook("Stop", map[string]any{"last_assistant_message": "done"})
-		waiting(false, "turn over")
+	}
+	// A ToolFailed naming no call (Muse's): which way it went is unknown, so its prompt stays open until
+	// the turn ends. (A Muse hook resolves its session by process, so the shape is sent as OMP's.)
+	b, _ := json.Marshal(map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": "make deploy"}})
+	for _, ev := range []string{"UserPromptSubmit", "PermissionRequest", "ToolFailed"} {
+		pl := b
+		if ev == "UserPromptSubmit" {
+			pl, _ = json.Marshal(map[string]any{"prompt": "[PenguPool team message from web (helper)] deploy"})
+		}
+		_, _ = p.hookEvent(context.Background(), hookIn{SessionID: id, Harness: harness.OMP, Event: ev, Payload: pl})
+	}
+	if g, _ := p.db.LastGate(id, "permission"); g.Outcome != "pending" {
+		t.Fatalf("a ToolFailed naming no call settled the prompt: %+v", g)
 	}
 	// OMP's ask tool waits on the owner from its tool call until its result.
 	ask := map[string]any{"tool_name": "ask", "tool_use_id": "ask-1", "tool_input": map[string]any{"questions": []any{
 		map[string]any{"id": "db", "question": "Which database?", "options": []any{map[string]any{"label": "pg"}, map[string]any{"label": "sqlite"}}}}}}
-	b, _ := json.Marshal(ask)
+	b, _ = json.Marshal(ask)
 	_, _ = p.hookEvent(context.Background(), hookIn{SessionID: id, Harness: harness.OMP, Event: "PreToolUse", Payload: b})
 	if s, _ := p.session(id); s.Status != "approval" || s.Question != "Which database? (pg / sqlite)" {
 		t.Fatalf("omp ask: status=%s question=%q", s.Status, s.Question)
