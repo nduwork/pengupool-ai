@@ -402,6 +402,10 @@ its lines rewritten at start. Agents are now told to run the CLI with its path s
 spelling the rules match. Theme font sizes no longer drop when a colour class follows them, so
 default buttons keep their 13px label size.
 
+v0.10.19: A status report no longer reads as waiting on the owner. The turn-end question "does the
+reply end by asking the owner to confirm, approve or choose" now says that a report is not waiting,
+even when it says the agent will bring something to the owner later or is waiting on a teammate.
+
 ## Credits
 
 - **PAHF** — *Learning Personalized Agents from Human Feedback*, Kaiqu Liang, Julia Kruk,
