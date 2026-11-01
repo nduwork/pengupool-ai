@@ -2,3 +2,6 @@
 `app-icon.svg` is the full-bleed 1024 px app icon; `scripts/make-icon.sh` renders it into `desktop/build/icon.icns`.
 `logo-mono.svg` is the one-colour mark (`currentColor`) for menu-bar or print use; nothing loads it yet.
 `mascot.svg` is the full-body penguin for empty states and onboarding; it is never used as the mark.
+`screenshots/` holds the README and help-page images, each in a `-light` and a `-dark` version: the
+banner (PNG) and the welcome, start, map, ask and settings screens (WebP). They are real app components
+rendered with made-up demo data; replace them by filename.

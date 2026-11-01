@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in PenguPool AI doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please leave out API keys, tokens, customer data and private paths. Trim logs to the lines that matter.
+  - type: input
+    id: version
+    attributes:
+      label: PenguPool AI version
+      description: Settings → General, or `pengupool version`
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: Agent and its version
+      description: For example Claude Code 2.1.316, Muse Code, Codex 0.166.0, or "none"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Error text, a screenshot, or log lines from ~/.pengupool-ai/v2/logs
+    validations:
+      required: true
