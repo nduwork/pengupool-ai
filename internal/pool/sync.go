@@ -34,7 +34,7 @@ import (
 //     a repository PenguPool created. Run when PenguPool starts and every few minutes.
 
 // syncReadme is the README of a sync repository PenguPool created.
-const syncReadme = "# PenguPool record\n\nShared by every machine and account that syncs here; written by PenguPool, do not edit. `pengupool-agents.db` is one SQLite file (open it read-only with any SQLite tool) of the owner's Compass (`compass`) with the signals behind it (`signals`, `signal_effects`), each helper's journal, one entry per finished job (`experience`), and the tombstones of deleted rows (`tombstones`). Gates stay on the machine that recorded them.\n"
+const syncReadme = "# PenguPool record\n\nShared by every machine and account that syncs here; written by PenguPool, do not edit. `pengupool-agents.db` is one SQLite file (open it read-only with any SQLite tool) of the owner's Compass (`compass`) with the signals behind it (`signals`, `signal_effects`), each specialist's journal, one entry per finished job (`experience`), and the tombstones of deleted rows (`tombstones`). Gates stay on the machine that recorded them.\n"
 
 const (
 	backupKeep   = 14
@@ -511,7 +511,7 @@ func (p *Pool) createSyncRepo(ctx context.Context, dir, repo string) error {
 		return err
 	}
 	if !exists {
-		if _, err := p.ghRun(ctx, "", "repo", "create", repo, "--private", "--description", "PenguPool sync: the Compass and helper experience"); err != nil {
+		if _, err := p.ghRun(ctx, "", "repo", "create", repo, "--private", "--description", "PenguPool sync: the Compass and specialist experience"); err != nil {
 			return fmt.Errorf("create %s: %w", repo, err)
 		}
 	}

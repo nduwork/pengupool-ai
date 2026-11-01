@@ -400,7 +400,7 @@ export function TeamMap(): ReactElement {
               {empty ? (
                 <div className="h-full">
                   <Empty icon={<Users />} title="No agent sessions yet">
-                    Start one with <strong>New session</strong> (⌘N), drag a helper agent from the Helper agent pool here, or right-click for more.
+                    Start one with <strong>New session</strong> (⌘N), drag a specialist from the Specialist pool here, or right-click for more.
                   </Empty>
                 </div>
               ) : (
@@ -544,7 +544,7 @@ export function TeamMap(): ReactElement {
               {anyUnfolded ? "Fold all groups" : "Unfold all groups"}
             </Item>
             <Item icon={<BookOpen />} onSelect={() => setDrawer(!drawer)}>
-              {drawer ? "Hide Helper agent pool" : "Show Helper agent pool"}
+              {drawer ? "Hide Specialist pool" : "Show Specialist pool"}
             </Item>
             {domain.teams.some((t) => t.state !== "active") ? (
               <Item icon={<Archive />} onSelect={() => app.showDialog(<ClosedTeamsSheet />)}>
@@ -570,7 +570,7 @@ export function TeamMap(): ReactElement {
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2.5 w-4 rounded-sm border border-dashed border-faint" /> ungrouped
         </span>
-        <span className="ml-auto min-w-0 truncate text-faint">Drag a card onto another to move it with its helpers · onto the canvas to make it a team · right-click for actions</span>
+        <span className="ml-auto min-w-0 truncate text-faint">Drag a card onto another to move it with its members · onto the canvas to make it a team · right-click for actions</span>
       </div>
     </div>
   );

@@ -18,7 +18,7 @@ import { Handle } from "./Page";
 
 const NAV: Array<{ id: Nav; label: string; icon: ReactElement }> = [
   { id: "workspace", label: "Workspace", icon: <SquareTerminal /> },
-  { id: "skills", label: "Helper agents", icon: <BookOpen /> },
+  { id: "skills", label: "Specialists", icon: <BookOpen /> },
   { id: "settings", label: "Settings", icon: <SettingsIcon /> },
 ];
 

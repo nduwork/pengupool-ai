@@ -1,11 +1,11 @@
 # PenguPool AI
 
 PenguPool AI is the PenguPool agent-pool app — a Go host daemon with PTY worker
-sessions, a browser/desktop terminal UI, helper teams and an owner Compass —
+sessions, a browser/desktop terminal UI, teams of specialists and an owner Compass —
 running Claude Code (account or Ollama), Muse Code, Codex, pi and OMP
 side by side, with the Muse app as the owner's remote.
 
-Say a preference once; every agent starts with it, helpers remember their
+Say a preference once; every agent starts with it, specialists remember their
 finished work, and you answer waiting sessions from your phone.
 
 ## Install
@@ -41,7 +41,7 @@ browser UI talk to the daemon over its gateway. Data: `~/.pengupool-ai/v2`
   (or the Muse app) and edited in the Compass panel; every session gets them
   through its harness hooks. Lines from the old `compass.jsonl` are imported
   once on first start.
-- **Journal.** A helper's `Done:` report becomes an entry (its compacted
+- **Journal.** A specialist's `Done:` report becomes an entry (its compacted
   context); its next session starts with the index and the matches.
 - **Harnesses.** Claude Code, Muse Code (the app installs its PenguPool
   plugin), Codex (the app writes a rule so only the PenguPool CLI leaves the
@@ -348,6 +348,12 @@ repositories, and the compaction it came from), and it replaces the team's previ
 compactions that happen anyway count: PenguPool types nothing. A team led by an SME or a session with no
 skill gets nothing new, and a team that closes without a compaction keeps no project entry. The entry is
 read like any other, through the specialist's own `experience search` and `show`.
+
+v0.10.12: The helper role is now SPECIALIST, beside LEAD and SME: a skill-backed member that carries its
+own journal across teams. The app says Specialists (the page, the hub, the map's pool), a member card
+reads SPEC with the tooltip Specialist, and the team member list and guidance agents read name the
+role SPECIALIST; so do the CLI help, errors and run log lines. Stored data and the protocol keep the
+value "helper".
 
 ## Credits
 

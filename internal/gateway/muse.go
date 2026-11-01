@@ -412,12 +412,12 @@ const museOpenAPI = `{
     },
     "/teams/{id}/members": {
       "post": {
-        "summary": "Ask for a change to who is on a team, as a LEAD does with team request: add a helper agent (skill) or an SME for a repository (repo), or remove a member. It waits on /next as a formation card for the owner's allow; nothing launches before that. Returns its ask_id.",
+        "summary": "Ask for a change to who is on a team, as a LEAD does with team request: add a specialist (skill) or an SME for a repository (repo), or remove a member. It waits on /next as a formation card for the owner's allow; nothing launches before that. Returns its ask_id.",
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"op": {"type": "string", "enum": ["add", "remove"], "default": "add"}, "skill": {"type": "string"}, "repo": {"type": "string"}, "member": {"type": "string", "description": "remove: a member by name or session id"}, "assignment": {"type": "string"}, "reason": {"type": "string"}}}}}}
       }
     },
     "/sessions": {
-      "get": {"summary": "Overview of the sessions this device can see: session, title, state, name, status (what a running agent is doing: starting, working, idle or approval), waiting (an ask waits on the owner), and question (what the agent asks in its terminal now, if anything; answered there), and for a team member: team, team_id, role (LEAD, SME or HELPER), parent (the member it hangs under) and assignment."}
+      "get": {"summary": "Overview of the sessions this device can see: session, title, state, name, status (what a running agent is doing: starting, working, idle or approval), waiting (an ask waits on the owner), and question (what the agent asks in its terminal now, if anything; answered there), and for a team member: team, team_id, role (LEAD, SME or SPECIALIST), parent (the member it hangs under) and assignment."}
     },
     "/compass": {
       "get": {"summary": "Read the owner's shown Compass lines."}

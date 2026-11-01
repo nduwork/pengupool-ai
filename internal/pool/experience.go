@@ -159,7 +159,7 @@ func (p *Pool) helperKey(sessionID string) (string, error) {
 	}
 	sk := p.helperOf(sessionID)
 	if sk == nil {
-		return "", invalid("only a helper has a journal")
+		return "", invalid("only a specialist has a journal")
 	}
 	return agentOf(*sk), nil
 }
@@ -312,7 +312,7 @@ func (p *Pool) experienceImport(_ context.Context, in importIn) (any, error) {
 		key, ok := keyOf(x.Helper)
 		switch {
 		case !ok:
-			return nil, notFound("entry %d: no helper named %q; helpers: %s", i+1, x.Helper, strings.Join(names, ", "))
+			return nil, notFound("entry %d: no specialist named %q; specialists: %s", i+1, x.Helper, strings.Join(names, ", "))
 		case strings.TrimSpace(x.Title) == "" || strings.TrimSpace(x.Body) == "":
 			return nil, invalid("entry %d: a title and a body are required", i+1)
 		}
