@@ -99,7 +99,8 @@ source instead, see [CONTRIBUTING.md](CONTRIBUTING.md).
    Code. Ask it to inspect the project and propose one small improvement, with a clear question for you
    before changing it. (For a team, *Start with a specialist* and select Muse Code in the agent picker.)
 5. **Try the phone loop.** Follow [Muse setup](docs/phone.md), open the team's supported pending
-   question in Muse, reply, and confirm that the same session receives your answer. You can keep using
+   question in Muse, and reply. The session gets your answer from its waiting ask, or as a notice if it
+   had stopped waiting ([details](docs/phone.md#try-it)). You can keep using
    PenguPool from the Mac without pairing a phone; what needs you also appears in *Waiting on you* (the
    bell) and as a notification.
 
