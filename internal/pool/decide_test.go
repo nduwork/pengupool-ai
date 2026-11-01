@@ -174,7 +174,7 @@ func TestDecideFailureLogsClassOnly(t *testing.T) {
 
 func TestDecideInHelperContextOnly(t *testing.T) {
 	p, _ := helperPool(t) // plan is the sk-plan helper's session
-	if c := p.renderContext("planaaaaaaaa"); !strings.Contains(c, "`pengupool decide` asks the owner's decision model") {
+	if c := p.renderContext("planaaaaaaaa"); !strings.Contains(c, "`'pengupool' decide` asks the owner's decision model") {
 		t.Fatalf("helper context:\n%s", c)
 	}
 	if c := p.renderContext("leadaaaaaaaa"); strings.Contains(c, "decide`") {

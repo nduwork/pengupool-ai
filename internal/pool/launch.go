@@ -441,6 +441,15 @@ func (p *Pool) openTerminal(_ context.Context, in sessionIn) (any, error) {
 	return map[string]string{"command": strings.TrimSpace(body[strings.Index(body, "exec ")+5:])}, nil
 }
 
+// cli is this executable as agents are told to run it: shell-quoted, the same spelling the
+// per-launch permission rules match (harness.ClaudeSettings).
+func (p *Pool) cli() string {
+	if p.exe == "" {
+		return "pengupool"
+	}
+	return shq(p.exe)
+}
+
 func shq(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 func isGit(dir string) bool {

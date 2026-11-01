@@ -195,3 +195,15 @@ func TestSaveDuringCheckVoidsItsPass(t *testing.T) {
 		t.Fatalf("a check that started before a save made the model active: %v", err)
 	}
 }
+
+// Agents are told to run the CLI shell-quoted: the spelling the permission rules match.
+func TestContextQuotesTheCLI(t *testing.T) {
+	p, _ := twoTeams(t)
+	p.exe = "/Applications/PenguPool AI.app/Contents/Resources/bin/pengupool"
+	if c := p.renderContext("webaaaaaaaaa"); !strings.Contains(c, "`'"+p.exe+"' send --to ") {
+		t.Fatalf("context does not quote the CLI:\n%s", c)
+	}
+	if !p.sentTo("'"+p.exe+"' send --to webaaaaaaaaa hi", "leadaaaaaaaa", "webaaaaaaaaa") {
+		t.Fatal("a send in the quoted spelling is not seen as a hand-over")
+	}
+}

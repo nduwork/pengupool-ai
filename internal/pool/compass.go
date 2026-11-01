@@ -621,7 +621,7 @@ func (p *Pool) wordingOffer(id, where string) string {
 	w.offers++
 	p.mu.Unlock()
 	p.logLine(id, "compass: wording "+w.id+" offered "+where)
-	exe := firstNonEmpty(p.exe, "pengupool")
+	exe := p.cli()
 	if w.gate != 0 {
 		q := ""
 		if g, err := p.db.Gate(w.gate); err == nil {

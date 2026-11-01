@@ -93,7 +93,7 @@ func TestAgentCompassFlow(t *testing.T) {
 	})
 	_, _ = p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Keep replies short", Condition: "chat", Source: "owner"})
 	putNotes(t, p, "github.com/o/ci", "xcodebuild fails: flaky test; rerun once before digging")
-	if ctx := p.renderContext("s1aaaaaaaa"); !strings.Contains(ctx, "- Keep replies short (when chat)") || !strings.Contains(ctx, "`pengupool search") || strings.Contains(ctx, "memory propose") {
+	if ctx := p.renderContext("s1aaaaaaaa"); !strings.Contains(ctx, "- Keep replies short (when chat)") || !strings.Contains(ctx, "`'pengupool' search") || strings.Contains(ctx, "memory propose") {
 		t.Fatalf("context:\n%s", ctx)
 	}
 	_, _ = p.db.PutLine(agentdb.Line{Owner: p.owner(), Body: "Runner 3 has 16 GB", Source: "owner"})

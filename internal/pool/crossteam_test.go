@@ -157,10 +157,10 @@ func TestTreeTalk(t *testing.T) {
 		t.Fatalf("the SendMessage on the record: %+v", onRecord)
 	}
 	// Each member's context lists only its neighbours, with the way to reach each.
-	if c := p.renderContext(id["db"]); !strings.Contains(c, "- gcp (your parent): `pengupool send --to \""+id["gcp"]+"\"") || strings.Contains(c, "- api (your") || strings.Contains(c, "- lead (your") {
+	if c := p.renderContext(id["db"]); !strings.Contains(c, "- gcp (your parent): `'pengupool' send --to \""+id["gcp"]+"\"") || strings.Contains(c, "- api (your") || strings.Contains(c, "- lead (your") {
 		t.Fatalf("db's contacts:\n%s", c)
 	}
-	if c := p.renderContext(id["lead"]); !strings.Contains(c, "- web (your child): `pengupool send --to \""+id["web"]+"\"") || !strings.Contains(c, "- gcp (your child): `pengupool send") || strings.Contains(c, "- db (your") {
+	if c := p.renderContext(id["lead"]); !strings.Contains(c, "- web (your child): `'pengupool' send --to \""+id["web"]+"\"") || !strings.Contains(c, "- gcp (your child): `'pengupool' send") || strings.Contains(c, "- db (your") {
 		t.Fatalf("lead's contacts:\n%s", c)
 	}
 	// A rename keeps the session id: a teammate that kept it still reaches gcp, and the roster maps it to the new name.
