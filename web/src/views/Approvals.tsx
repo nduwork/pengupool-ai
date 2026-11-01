@@ -39,7 +39,18 @@ export function ApprovalsBell(): ReactElement {
         </Button>
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content align="end" sideOffset={6} collisionPadding={8} className={PANEL}>
+        <Popover.Content
+          align="end"
+          sideOffset={6}
+          collisionPadding={8}
+          tabIndex={-1}
+          className={PANEL}
+          // Focus the panel, not its first button: Enter right after opening must not answer an agent.
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            (e.currentTarget as HTMLElement).focus();
+          }}
+        >
           <p className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2 text-label font-semibold">
             Waiting on you <span className="tabular-nums text-muted-foreground">{items.length}</span>
           </p>
@@ -58,9 +69,30 @@ export function WaitingList(): ReactElement {
   const app = useApp();
   const { approvals, needs } = waitingOnOwner(app.domain.approvals, app.sessions, app.domain.messages, app.gates, app.spots);
   const { spots, verdict } = useSpotChecks();
+  const list = useRef<HTMLDivElement>(null);
+  const focusedRow = useRef<number | null>(null); // the row holding focus (or last clicked), kept when its row leaves: in-panel answer or answered elsewhere
+  const keys = [...approvals.map((a) => a.id), ...needs.map((n) => n.key ?? n.session), ...spots.map((g) => g.id)].join(" ");
+  useLayoutEffect(() => {
+    const from = focusedRow.current;
+    if (from === null || (document.activeElement !== null && document.activeElement !== document.body)) return;
+    focusedRow.current = null;
+    const rows = list.current?.querySelectorAll<HTMLElement>(":scope > [role=listitem]") ?? [];
+    const i = refocusRow(from, rows.length);
+    (rows[i]?.querySelector("button") ?? list.current?.closest<HTMLElement>("[role=dialog]"))?.focus();
+  }, [keys]);
   if (approvals.length + needs.length + spots.length === 0) return <p className="px-2 py-3 text-label text-muted-foreground">Nothing is waiting for you.</p>;
   return (
-    <div role="list" className="grid grid-cols-1 gap-1">
+    <div
+      role="list"
+      ref={list}
+      className="grid grid-cols-1 gap-1"
+      // A click records the row too: a button that answers its row may leave before it holds focus.
+      onFocus={(e) => (focusedRow.current = [...(list.current?.children ?? [])].findIndex((r) => r.contains(e.target)))}
+      onPointerDown={(e) => (focusedRow.current = [...(list.current?.children ?? [])].findIndex((r) => r.contains(e.target as Node)))}
+      onBlur={(e) => {
+        if (e.relatedTarget !== null) focusedRow.current = null;
+      }}
+    >
       {approvals.map((a) => (a.kind === "ask" ? <AgentAskRow key={a.id} a={a} /> : a.kind === "formation" ? <FormationRow key={a.id} a={a} /> : <LaunchRow key={a.id} a={a} />))}
       {needs.map((n) => (n.kind === "ask" ? <AskRow key={n.key} n={n} /> : <NeedRow key={n.session} n={n} />))}
       {spots.map((g) => (
@@ -80,6 +112,9 @@ export function WaitingList(): ReactElement {
   );
 }
 
+/** The row to move focus to when the focused row left the list: the one now at its index, else the last; -1 is none (focus the panel). */
+export const refocusRow = (index: number, rows: number): number => (rows === 0 ? -1 : Math.min(index, rows - 1));
+
 const teamName = (app: AppCtx, teamId: string | undefined, session?: string): string | undefined =>
   app.domain.teams.find((t) => t.id === teamId)?.name ?? (session !== undefined ? teamOf(app.domain, session)?.name : undefined);
 
@@ -87,9 +122,9 @@ const teamName = (app: AppCtx, teamId: string | undefined, session?: string): st
 function WaitRow({ icon, label, who, meta, at, after, children }: { icon: ReactElement; label: string; who?: ReactNode; meta?: string; at?: string; after?: string; children: ReactNode }): ReactElement {
   return (
     <div role="listitem" aria-label={label} className="grid min-w-0 grid-cols-1 gap-1.5 rounded-md p-2 text-label hover:bg-hover">
-      <div className="flex min-w-0 items-center gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         {icon}
-        {who !== undefined ? <span className="flex shrink-0 items-center gap-1.5">{who}</span> : null}
+        {who !== undefined ? <span className="flex min-w-0 flex-wrap items-center gap-1.5 [overflow-wrap:anywhere]">{who}</span> : null}
         {meta !== undefined && meta !== "" ? <span className="min-w-0 truncate text-caption text-muted-foreground">{who !== undefined ? "· " : ""}{meta}</span> : null}
         <span className="ml-auto shrink-0 pl-2 text-caption tabular-nums text-muted-foreground">
           {at !== undefined && at !== "" ? age(at, Date.now()) : ""}
@@ -280,8 +315,6 @@ function AskRow({ n }: { n: Need }): ReactElement | null {
 function NeedRow({ n }: { n: Need }): ReactElement {
   const app = useApp();
   const [reply, setReply] = useState(false);
-  // ponytail: "short" is a line and length count, not measured; a short call shows without a click.
-  const [showCall, setShowCall] = useState(n.detail !== undefined && n.detail.split("\n").length <= 3 && n.detail.length <= 180);
   const [text, setText] = useState("");
   const [confirming, setConfirming] = useState(false);
   const answer = async (t: string): Promise<void> => {
@@ -309,7 +342,7 @@ function NeedRow({ n }: { n: Need }): ReactElement {
       ) : (
         <Clamp lines={4}>{n.text}</Clamp>
       )}
-      {showCall && n.detail !== undefined ? (
+      {n.detail !== undefined ? (
         <Clamp lines={3} mono>
           {n.detail}
         </Clamp>
@@ -348,11 +381,6 @@ function NeedRow({ n }: { n: Need }): ReactElement {
         <Button size="sm" variant={checkin ? "ghost" : "default"} title={checkin ? undefined : "The dialog is in the agent's terminal"} onClick={() => app.select(n.session)}>
           Open terminal
         </Button>
-        {n.detail !== undefined ? (
-          <Button size="sm" variant="ghost" aria-expanded={showCall} onClick={() => setShowCall(!showCall)}>
-            {showCall ? "Hide command" : "Show command"}
-          </Button>
-        ) : null}
       </Actions>
       {reply ? (
         <form
@@ -427,8 +455,8 @@ function AgentAskRow({ a }: { a: Approval }): ReactElement {
       <Clamp lines={4}>{a.detail}</Clamp>
       {options.length > 0 ? (
         <div className={stack ? "grid grid-cols-1 gap-1.5" : "flex flex-wrap justify-end gap-1.5"}>
-          {options.map((o, i) => (
-            <Button key={o} size="sm" variant={i === 0 ? "default" : "secondary"} className={cn(OPTION, stack && "justify-start")} onClick={() => answer(o)}>
+          {options.map((o) => (
+            <Button key={o} size="sm" variant="secondary" className={cn(OPTION, stack && "justify-start")} onClick={() => answer(o)}>
               {o}
             </Button>
           ))}
@@ -455,7 +483,7 @@ function LaunchRow({ a }: { a: Approval }): ReactElement {
   const task = app.domain.tasks.find((t) => t.id === a.task_id);
   const repo = app.domain.repos.find((r) => r.id === task?.repo_id);
   return (
-    <WaitRow icon={<Rocket className="size-4 shrink-0 text-primary" />} label={`${task?.title ?? "Team"}: team launch`} meta={[task?.title, repo?.name].filter((x) => x !== undefined).join(" · ")} at={a.created_at}>
+    <WaitRow icon={<Rocket className="size-4 shrink-0 text-primary" />} label={`${task?.title ?? "Team"}: team launch`} who={<strong className="font-semibold">{task?.title ?? "Team launch"}</strong>} meta={repo?.name} at={a.created_at}>
       <Clamp lines={4}>{a.detail}</Clamp>
       <Actions>
         <Button size="sm" variant="default" onClick={() => app.showDialog(<ProposalSheet taskId={a.task_id ?? ""} />)}>
