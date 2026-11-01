@@ -14,7 +14,9 @@ import { TERMINAL_QUERY_CSI, TERMINAL_QUERY_OSC } from "../protocol/queries";
 import { TermCache, scrollbackSetting } from "./termCache";
 import { PATH_MIME, UNSAFE_NOTICE, onTypePath, safePath, takePaths, typePath } from "../views/explorerPaths";
 
-/** What Shift+Enter types: ESC CR, as Option+Enter does; Claude Code reads it as a new line, where a bare CR sends. */
+/** What Shift+Enter types, for every harness: ESC CR, as Option+Enter does. Claude Code reads it as a new line,
+ * where a bare CR sends; for the other harnesses nothing in this repo says otherwise, and that is all that was
+ * checked. TestShiftEnterPerHarness (internal/harness) lists every harness against this value. */
 export const SHIFT_ENTER = "\x1b\r";
 
 export function isShiftEnter(e: Pick<KeyboardEvent, "key" | "shiftKey" | "ctrlKey" | "altKey" | "metaKey">): boolean {

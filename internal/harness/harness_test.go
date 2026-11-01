@@ -163,3 +163,39 @@ func TestSubagentLists(t *testing.T) {
 		t.Fatalf("pi has no subagents: %v %v %v", k, m, e)
 	}
 }
+
+// TestShiftEnterPerHarness pins what the web terminal's Shift+Enter sends for every harness. The web
+// sends one sequence, ESC CR, to every session whatever its harness; a harness added to Agents fails
+// here until someone has checked what its input reads Shift+Enter as and added it below.
+func TestShiftEnterPerHarness(t *testing.T) {
+	src, err := os.ReadFile("../../web/src/components/TerminalPane.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const decl = `export const SHIFT_ENTER = "\x1b\r";`
+	if !strings.Contains(string(src), decl) {
+		t.Fatalf("TerminalPane.tsx no longer declares %s: update the table below", decl)
+	}
+	// What Shift+Enter must send per harness. ESC CR is what Option+Enter types. Only Claude Code's
+	// reading of it as a new line is established (the reason TerminalPane gives); for the others
+	// nothing in this repo says otherwise, and they are not checked against the live CLI.
+	want := map[string]string{
+		Claude: "\x1b\r", Muse: "\x1b\r", Codex: "\x1b\r", Pi: "\x1b\r", OMP: "\x1b\r",
+		Copilot: "\x1b\r", Gemini: "\x1b\r", Shell: "\x1b\r", Custom: "\x1b\r",
+	}
+	kinds := []string{Shell, Custom}
+	for _, a := range Agents {
+		kinds = append(kinds, a.ID)
+	}
+	for _, k := range kinds {
+		w, ok := want[k]
+		if !ok {
+			t.Errorf("harness %q has no Shift+Enter entry: check what its input reads Shift+Enter as", k)
+		} else if w != "\x1b\r" {
+			t.Errorf("harness %q needs Shift+Enter %q, but the web terminal sends ESC CR to every harness", k, w)
+		}
+	}
+	if len(want) != len(kinds) {
+		t.Errorf("the table lists %d harnesses, the host runs %d: drop the ones no longer run", len(want), len(kinds))
+	}
+}

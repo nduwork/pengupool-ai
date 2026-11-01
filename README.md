@@ -339,6 +339,10 @@ session's agent only words new lines.
 v0.10.10: The map's hover card shows a session's question, last message and folder whole, and a card
 taller than the room it has scrolls; the pointer can move into it to scroll, and it keeps clear of the
 screen edges. The same holds for every tip in the app.
+v0.10.14: A terminal restored from a snapshot (a reattach, a second viewer) keeps the agent's whole
+stack of kitty keyboard modes, not only the top one, so when the agent pops a mode its keys read as
+they do on the original terminal. A test now lists every harness against what the web terminal's
+Shift+Enter sends (ESC CR), so a new harness cannot be added without that being checked.
 
 ## Credits
 
