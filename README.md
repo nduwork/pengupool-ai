@@ -103,7 +103,7 @@ Step by step: [docs/getting-started.md](docs/getting-started.md).
 
 Two short loops of the app, made from real app captures with demo data:
 
-<p align="center"><img src="assets/media/readme-a-specialist.gif" width="800" alt="Start a team from the Welcome screen: pick two specialists and the team appears on the map with its lead."></p>
+<p align="center"><img src="assets/media/readme-a-specialist.gif" width="800" alt="Start a team from the Welcome screen: pick research-agent and pr-review-agent, choose Muse Code as the agent, and the team appears on the map with its lead, all running Muse Code."></p>
 
 <p align="center"><img src="assets/media/readme-b-compass.gif" width="800" alt="A member's ask reaches the lead, PenguPool answers it from the owner's confident Compass line, and an ask with no clear line goes to the owner."></p>
 
