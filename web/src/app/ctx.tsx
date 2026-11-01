@@ -39,6 +39,8 @@ export interface AppCtx {
   call: <R = unknown>(type: string, params?: unknown) => Promise<R | undefined>;
   openTab: (t: EditorTab) => void;
   showDialog: (d: ReactNode) => void;
+  /** Welcome: whether it shows when the Workspace is empty (per viewer), and opening it explicitly. */
+  welcome: { show: boolean; setShow: (v: boolean) => void; open: () => void };
 }
 
 export const Ctx = createContext<AppCtx | null>(null);

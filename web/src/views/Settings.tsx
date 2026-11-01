@@ -462,6 +462,23 @@ function Row({ title, hint, children }: { title: ReactNode; hint?: ReactNode; ch
 
 const SCROLLBACK_CHOICES = [5000, 10000, 20000, 50000];
 
+/** Welcome: whether it shows when the Workspace is empty (this window only), and opening it now. */
+function WelcomeSettings(): ReactElement {
+  const app = useApp();
+  return (
+    <Card className="mb-4 px-4">
+      <Row title="Show Welcome when Workspace is empty" hint="Saved in this window, not on the host.">
+        <Switch checked={app.welcome.show} onCheckedChange={app.welcome.setShow} label="Show Welcome when Workspace is empty" />
+      </Row>
+      <Row title="Welcome" hint="Start a team or a session, and see what setup is left.">
+        <Button size="sm" onClick={app.welcome.open}>
+          Open Welcome
+        </Button>
+      </Row>
+    </Card>
+  );
+}
+
 /** How far back a terminal scrolls. Per viewer: it lives in this browser or app window, not in the host. */
 function TerminalHistory(): ReactElement {
   const [lines, setLines] = usePersisted<number>("terminal.scrollback", SCROLLBACK_DEFAULT);
@@ -911,6 +928,7 @@ function General(): ReactElement {
           <About version={s.version} />
         </Card>
       ) : null}
+      <WelcomeSettings />
       <TerminalHistory />
       <DailyBackup />
     </div>
