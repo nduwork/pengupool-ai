@@ -239,7 +239,7 @@ func (p *Pool) gateState(s store.Session, team *protocol.Team, reply string) map
 
 // gateTurn reads triage's answers about a finished turn (decideGate) and records the gate.
 func (p *Pool) gateTurn(s store.Session, team *protocol.Team, reply string, seq uint64, res decision.Response, deliver func(text string) error) bool {
-	g, ok, sent, _ := p.decideGate(s, team, reply, seq, res, deliver)
+	g, ok, sent, _ := p.decideGate(context.Background(), s, team, reply, seq, res, deliver)
 	if ok {
 		p.recordGate(s, g)
 	}
@@ -250,14 +250,14 @@ func (p *Pool) gateTurn(s store.Session, team *protocol.Team, reply string, seq 
 // it is a gate (ok). One that names the floor waits for the owner; otherwise triage
 // answers for the owner, through deliver, when it is sure the owner would let the agent proceed
 // and nothing has moved since. A nil deliver records only. It writes nothing: the caller records g.
-func (p *Pool) decideGate(s store.Session, team *protocol.Team, reply string, seq uint64, res decision.Response, deliver func(text string) error) (g agentdb.Gate, ok, sent bool, text string) {
+func (p *Pool) decideGate(ctx context.Context, s store.Session, team *protocol.Team, reply string, seq uint64, res decision.Response, deliver func(text string) error) (g agentdb.Gate, ok, sent bool, text string) {
 	if w, ok := res.Answers["waiting"]; !ok || w.Yes < 0.5 || res.Calibrated && w.Confidence < 0.6 {
 		return g, false, false, ""
 	}
 	g = agentdb.Gate{TeamID: team.ID, SessionID: s.ID, Agent: s.Name, Harness: s.Harness, Kind: "checkin", Question: tailRunes(redact(reply), 1500)}
 	hit, waiver := floorHit(reply), ""
 	if hit != "" && deliver != nil {
-		waiver = p.floorWaiver(reply, hit)
+		waiver = p.floorWaiver(ctx, reply, hit)
 	}
 	if hit != "" && waiver == "" {
 		g.Floor, g.FloorHit, g.Predicted = true, hit, "ask_owner"
@@ -320,7 +320,7 @@ func (p *Pool) decideGate(s store.Session, team *protocol.Team, reply string, se
 // no decider, a failure or an uncalibrated model waives nothing. A permission's own line (the owner
 // allowed one command once) is no standing waiver.
 // ponytail: the first line over the bar wins; two lines that disagree are not weighed.
-func (p *Pool) floorWaiver(text, hit string) string {
+func (p *Pool) floorWaiver(ctx context.Context, text, hit string) string {
 	prov := p.decider()
 	if prov == nil || p.db == nil {
 		return ""
@@ -344,7 +344,7 @@ func (p *Pool) floorWaiver(text, hit string) string {
 	for i, v := range cands {
 		lines[i] = fmt.Sprintf("floor_%d: %s", i, v.text())
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), StopBudget)
+	ctx, cancel := context.WithTimeout(ctx, StopBudget)
 	defer cancel()
 	res, err := prov.Decide(ctx, decision.Request{State: map[string]any{"floor_action": hit, "agent_text": tailRunes(redact(text), 1500), "owner_lines": lines}, Questions: qs})
 	if err != nil || !res.Calibrated {
@@ -388,6 +388,10 @@ func (p *Pool) recordGate(s store.Session, g agentdb.Gate) {
 // gives up answering and the session goes idle as usual; the CLI waits 12 s for a Stop
 // (cmd/pengupool/pool.go). Tests change it.
 var StopDeadline = 10 * time.Second
+
+// permissionWaiverBudget caps the floor waiver asked inside a PermissionRequest hook, which the CLI
+// waits 3 s for: the harness's permission dialog should not wait on it.
+const permissionWaiverBudget = 2 * time.Second
 
 var errLate = errors.New("the Stop hook's deadline passed")
 
@@ -457,7 +461,7 @@ func (p *Pool) stopGate(s store.Session, t turn, reply, transcript string, stopA
 		p.logf("pool: check-in triage of %s's turn in its Stop hook: %v (recorded after the turn)", s.Name, err)
 		return HookOut{}, false
 	}
-	g, ok, sent, text := p.decideGate(s, team, reply, t.Seq, res, beforeDeadline(deadline))
+	g, ok, sent, text := p.decideGate(ctx, s, team, reply, t.Seq, res, beforeDeadline(deadline)) // the waiver within the Stop's deadline too
 	if ok {
 		go p.recordGate(s, g)
 	}
@@ -704,7 +708,10 @@ func (p *Pool) permissionAsked(s store.Session, tool string, input any, useID st
 		g.Floor, g.FloorHit = true, hit
 		// A confirmed line of the owner's can lift the floor here; the prompt is still answered only as
 		// autoAnswer allows (the owner's earlier answer to this command), else by the owner.
-		if uid := p.floorWaiver(summary, hit); uid != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), permissionWaiverBudget)
+		uid := p.floorWaiver(ctx, summary, hit)
+		cancel()
+		if uid != "" {
 			g.Floor, g.Lines = false, []string{uid}
 			p.logWaiver(s, g)
 		}

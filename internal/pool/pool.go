@@ -595,9 +595,16 @@ type watched struct {
 	p *Pool
 }
 
+// clientWait is how long the provider's own client waits for the model (decision.New's 30 s): a
+// call that ran that long says the model is not answering, whoever's deadline ended it. Tests change it.
+var clientWait = 30 * time.Second
+
 func (w watched) Decide(ctx context.Context, req decision.Request) (decision.Response, error) {
+	start := time.Now()
 	res, err := w.Provider.Decide(ctx, req)
-	if ctx.Err() == nil { // a call its caller cancelled or let run out says nothing about the model
+	// A call its caller cancelled or cut short (a hook's budget) says nothing about the model; one that
+	// ran the client's whole wait does, even when the caller's own deadline ended it first.
+	if ctx.Err() == nil || time.Since(start) >= clientWait {
 		w.p.setTriage(err)
 	}
 	return res, err
