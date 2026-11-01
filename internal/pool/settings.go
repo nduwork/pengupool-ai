@@ -271,7 +271,7 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 			// their mode; a fresh setup gets HTTPS with certs, else plain HTTP.
 			var outs, errs []string
 			approve := ""
-			for _, mode := range servePlan(ctx, port) {
+			for _, mode := range servePlan(ctx, port, p.st.Config().Network.ServePort) {
 				out, url, err := serveOnce(ctx, mode, port)
 				switch {
 				case url != "":
@@ -281,6 +281,7 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 					outs = append(outs, out)
 				default:
 					outs = append(outs, out)
+					p.recordServePort(port)
 				}
 			}
 			if approve != "" {
@@ -450,16 +451,40 @@ func currentServeTargets(ctx context.Context, bin string) (httpsTarget, httpTarg
 	return httpsTarget, httpTarget, true
 }
 
-// servePlan is the Serve modes settingsSave (re-)points at port: every configured mode whose
-// target is stale, in its own mode; when nothing is configured, the tailnet's default mode. It
+// ownServeTargets keeps only PenguPool's own Serve targets: those at port (this daemon) or at
+// servePort (the port it last served). With no port recorded (a setup older than the record),
+// :443 counts as PenguPool's, as it always did.
+func ownServeTargets(httpsTarget, httpTarget, servePort, port string) (string, string) {
+	mine := func(t string) bool {
+		return t == "127.0.0.1:"+port || (servePort != "" && t == "127.0.0.1:"+servePort)
+	}
+	if !mine(httpsTarget) && servePort != "" {
+		httpsTarget = ""
+	}
+	if !mine(httpTarget) {
+		httpTarget = ""
+	}
+	return httpsTarget, httpTarget
+}
+
+// recordServePort remembers the port PenguPool just pointed Serve at.
+func (p *Pool) recordServePort(port string) {
+	if err := p.st.UpdateConfig(func(c *store.Config) error { c.Network.ServePort = port; return nil }); err != nil {
+		p.logf("pool: record serve port: %v", err)
+	}
+}
+
+// servePlan is the Serve modes settingsSave (re-)points at port: every mode PenguPool configured
+// whose target is stale, in its own mode; when it configured none, the tailnet's default mode. It
 // never switches a mode and never adds HTTPS where the tailnet has no certificates.
-func servePlan(ctx context.Context, port string) []serveMode {
+func servePlan(ctx context.Context, port, servePort string) []serveMode {
 	bin := tailscaleBin()
 	want := "127.0.0.1:" + port
 	if bin == "" {
 		return []serveMode{serveHTTPS} // serveOnce reports that Tailscale is missing
 	}
 	if httpsTarget, httpTarget, ok := currentServeTargets(ctx, bin); ok {
+		httpsTarget, httpTarget = ownServeTargets(httpsTarget, httpTarget, servePort, port)
 		if httpsTarget != "" || httpTarget != "" {
 			var plan []serveMode
 			if httpsTarget != "" && httpsTarget != want {
@@ -609,9 +634,10 @@ func serveOnce(ctx context.Context, mode serveMode, port string) (out, approveUR
 	return out, "", err
 }
 
-// HealTailscaleServe re-runs Serve when a configured Serve target is not this
-// daemon's bound port (e.g. after a restart onto a new port). Each mode keeps
-// its mode; when nothing is configured there is nothing to heal. Only for the
+// HealTailscaleServe re-runs Serve when a Serve target PenguPool configured is
+// not this daemon's bound port (e.g. after a restart onto a new port). Each mode
+// keeps its mode; another app's route is never touched; when nothing is
+// configured there is nothing to heal. Only for the
 // owner's real home; never for throwaway stores.
 func (p *Pool) HealTailscaleServe() {
 	cfg := p.st.Config()
@@ -639,6 +665,7 @@ func (p *Pool) HealTailscaleServe() {
 		return
 	}
 	httpsTarget, httpTarget, ok := currentServeTargets(context.Background(), bin)
+	httpsTarget, httpTarget = ownServeTargets(httpsTarget, httpTarget, cfg.Network.ServePort, port)
 	if !ok || (httpsTarget == "" && httpTarget == "") {
 		return
 	}
@@ -656,6 +683,7 @@ func (p *Pool) HealTailscaleServe() {
 		} else if approve != "" {
 			p.logf("pool: tailscale serve needs approval in the admin console")
 		} else {
+			p.recordServePort(port)
 			p.logf("pool: tailscale serve re-pointed at 127.0.0.1:%s", port)
 		}
 	}

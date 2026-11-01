@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nduwork/pengupool-ai/internal/store"
@@ -221,6 +222,14 @@ func healHomeStore(t *testing.T) *store.Store {
 	return st
 }
 
+// setServePort records port as the one PenguPool last served, as a successful serve does.
+func setServePort(t *testing.T, st *store.Store, port string) {
+	t.Helper()
+	if err := st.UpdateConfig(func(c *store.Config) error { c.Network.ServePort = port; return nil }); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Self-heal re-serves a stale target once, and only for the owner's home.
 func TestHealTailscaleServe(t *testing.T) {
 	withHome := func(t *testing.T, home string) {
@@ -313,18 +322,26 @@ func TestHealTailscaleServe(t *testing.T) {
 		st := healHomeStore(t)
 		ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:1111"))
 		HTTPAddr = func() string { return "" }
+		var mu sync.Mutex
 		var logs []string
-		p := New(Options{Store: st, Exe: "pengupool", Logf: func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }})
+		p := New(Options{Store: st, Exe: "pengupool", Logf: func(f string, a ...any) {
+			mu.Lock()
+			defer mu.Unlock()
+			logs = append(logs, fmt.Sprintf(f, a...))
+		}})
 		p.HealTailscaleServe()
 		if len(*ran) != 0 {
 			t.Fatalf("unbound heal served: %v", *ran)
 		}
+		mu.Lock()
+		defer mu.Unlock()
 		if joined := strings.Join(logs, "\n"); !strings.Contains(joined, "not bound") {
 			t.Fatalf("no skip logged: %q", joined)
 		}
 	})
 	t.Run("httpStale", func(t *testing.T) {
 		st := healHomeStore(t)
+		setServePort(t, st, "1111")
 		ran := stubTailscale(t, tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:1111", "probe-machine.tailnet.ts.net:80"))
 		var logs []string
 		p := New(Options{Store: st, Exe: "pengupool", Logf: func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }})
@@ -337,6 +354,30 @@ func TestHealTailscaleServe(t *testing.T) {
 		}
 		if joined := strings.Join(logs, "\n"); strings.Contains(joined, "re-point failed") {
 			t.Fatalf("failed re-point logged: %q", joined)
+		}
+		if got := st.Config().Network.ServePort; got != "7787" {
+			t.Fatalf("serve port after heal = %q, want 7787", got)
+		}
+	})
+	t.Run("foreignRoute", func(t *testing.T) {
+		// Another app's :80 route is not PenguPool's: heal leaves it alone.
+		st := healHomeStore(t)
+		setServePort(t, st, "1111")
+		ran := stubTailscale(t, tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:2222", "probe-machine.tailnet.ts.net:80"))
+		p := New(Options{Store: st, Exe: "pengupool"})
+		p.HealTailscaleServe()
+		if len(*ran) != 0 {
+			t.Fatalf("heal overwrote another app's route: %v", *ran)
+		}
+	})
+	t.Run("legacyHTTPUnrecorded", func(t *testing.T) {
+		// With no recorded port, only :443 is PenguPool's (as before); :80 is left alone.
+		st := healHomeStore(t)
+		ran := stubTailscale(t, tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:1111", "probe-machine.tailnet.ts.net:80"))
+		p := New(Options{Store: st, Exe: "pengupool"})
+		p.HealTailscaleServe()
+		if len(*ran) != 0 {
+			t.Fatalf("heal touched an unrecorded :80 route: %v", *ran)
 		}
 	})
 	t.Run("httpHealthy", func(t *testing.T) {
@@ -382,19 +423,20 @@ func TestSettingsSaveServeUnbound(t *testing.T) {
 // Fresh setups get HTTPS with certs, else plain HTTP; stale modes keep their mode.
 func TestSettingsSaveServeModes(t *testing.T) {
 	for _, c := range []struct {
-		name, status, serve, wantFlag string
-		wantRuns                      int
+		name, status, serve, wantFlag, servePort string
+		wantRuns                                 int
 	}{
-		{"freshHTTPS", tailscaleStatusRunning, tailscaleServeJSON(""), "--https=443", 1},
-		{"freshHTTP", tailscaleStatusNoCerts, tailscaleServeJSON(""), "--http=80", 1},
-		{"staleHTTPS", tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:1111"), "--https=443", 1},
-		{"staleHTTP", tailscaleStatusRunning, tailscaleServeJSONFor("http://127.0.0.1:1111", "probe-machine.tailnet.ts.net:80"), "--http=80", 1},
-		{"healthyHTTPS", tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:7787"), "", 0},
-		{"healthyHTTP", tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"), "", 0},
+		{"freshHTTPS", tailscaleStatusRunning, tailscaleServeJSON(""), "--https=443", "", 1},
+		{"freshHTTP", tailscaleStatusNoCerts, tailscaleServeJSON(""), "--http=80", "", 1},
+		{"staleHTTPS", tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:1111"), "--https=443", "", 1},
+		{"staleHTTP", tailscaleStatusRunning, tailscaleServeJSONFor("http://127.0.0.1:1111", "probe-machine.tailnet.ts.net:80"), "--http=80", "1111", 1},
+		{"healthyHTTPS", tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:7787"), "", "", 0},
+		{"healthyHTTP", tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"), "", "", 0},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			ran := stubTailscale(t, c.status, c.serve)
 			p := testPool(t)
+			setServePort(t, p.st, c.servePort)
 			res, err := p.settingsSave(context.Background(), settingsIn{EnableServe: true})
 			if err != nil {
 				t.Fatal(err)

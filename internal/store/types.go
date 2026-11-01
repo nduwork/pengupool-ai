@@ -203,6 +203,9 @@ type RemovedProvider struct {
 // Network holds the phone connection endpoints the owner saved.
 type Network struct {
 	Tailscale string `json:"tailscale,omitempty"`
+	// ServePort is the daemon port PenguPool last pointed Tailscale Serve at. Only a Serve route
+	// to this port is PenguPool's to re-point; another app's route is left alone.
+	ServePort string `json:"serve_port,omitempty"`
 }
 
 // Clone returns a deep copy, so callers can never mutate store state by holding a pointer.
