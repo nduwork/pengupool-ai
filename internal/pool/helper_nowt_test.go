@@ -309,3 +309,34 @@ func TestDuplicateSpecialistCloseAndRestore(t *testing.T) {
 		t.Fatalf("restored copy runs in %q, want %q", spawns[b.Name], bCwd)
 	}
 }
+
+// A copy that leaves the team keeps running in its folder: the next copy never reuses its number,
+// name or folder, nor the first copy's clone when the first one left.
+func TestDuplicateSpecialistLeaveThenAdd(t *testing.T) {
+	p, st, clone, _, _ := dupPool(t)
+	leave := func(id string) {
+		t.Helper()
+		if err := st.Update(func(s *store.State) error {
+			leaveAlone(s, findTeam(&s.Domain, "team1111"), id)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := place(t, p, "sk-rev")
+	b := place(t, p, "sk-rev")
+	h := place(t, p, "sk-hub") // keeps the team above one member as copies leave
+	_ = h
+	leave(b.SessionID)
+	c := place(t, p, "sk-rev")
+	if c.Copy == b.Copy || c.Name == b.Name || cwdOf(t, p, c.SessionID) == cwdOf(t, p, b.SessionID) {
+		t.Fatalf("after b left, c reuses it: b %+v in %q, c %+v in %q", b, cwdOf(t, p, b.SessionID), c, cwdOf(t, p, c.SessionID))
+	}
+	// The first copy leaves while running in the clone: a new copy must not start there.
+	leave(a.SessionID)
+	leave(c.SessionID)
+	d := place(t, p, "sk-rev")
+	if cwdOf(t, p, d.SessionID) == clone || d.Copy < 2 {
+		t.Fatalf("after the first copy left, d %+v runs in %q (the clone %q)", d, cwdOf(t, p, d.SessionID), clone)
+	}
+}

@@ -677,7 +677,7 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	}
 	// A skill may assist a team more than once, each copy in its own session: a second copy gets
 	// its own name (pr-review-agent-2), and with it its own folder and worktree.
-	copyN := nextCopy(team, sk.ID)
+	copyN := p.nextCopy(team, *sk)
 	pm := protocol.ProposedMember{SkillID: sk.ID, Name: teamMemberName(team, sk.Name, copyN), Role: "helper", Assignment: assignment, Harness: ag, Model: in.Model, Copy: copyN}
 	var m protocol.Member
 	var err error
@@ -708,19 +708,34 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	return m, nil
 }
 
-// nextCopy is the copy number a new member of skill gets on the team: 0 for the first, else one
-// past the highest so far (closed members count, so a number is never reused).
-func nextCopy(t *protocol.Team, skill string) int {
+// nextCopy is the copy number a new member of sk gets on the team: 0 for the first, else one past
+// the highest so far (closed members count, so a number is never reused). A copy that left the
+// team keeps running in its folder, so a running session of the skill there counts as a copy too,
+// and a number whose folder already exists is skipped: a new copy never shares a folder.
+func (p *Pool) nextCopy(t *protocol.Team, sk protocol.Skill) int {
 	n := 0
 	for _, m := range t.Members {
-		if m.SkillID == skill {
+		if m.SkillID == sk.ID {
 			n = max(n, m.Copy, 1)
+		}
+	}
+	work := p.workDir(t.ID)
+	for _, s := range p.st.State().Sessions {
+		if s.State == "running" && s.SkillID == sk.ID && s.TeamID != t.ID && s.Cwd != "" &&
+			(within(s.Cwd, work) || (sk.Path != "" && within(s.Cwd, sk.Path))) {
+			n = max(n, 1)
 		}
 	}
 	if n == 0 {
 		return 0
 	}
-	return n + 1
+	n++
+	for {
+		if _, err := os.Stat(filepath.Join(work, slugCopy(sk.Name, n))); err != nil {
+			return n
+		}
+		n++
+	}
 }
 
 // teamMemberName is copy n's name, slugCopy(skill, n), or the next free variant when a member of
