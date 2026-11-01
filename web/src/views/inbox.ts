@@ -17,6 +17,8 @@ export interface OpenGate {
   /** A check-in's answer from the Compass, with what it rests on; the owner confirms it by sending it. */
   suggestion?: string;
   evidence?: string;
+  created_at?: string;
+  team_id?: string;
 }
 
 /** One live ask of the owner: shown in the panel while it lasts, gone once answered. */

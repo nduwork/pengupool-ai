@@ -1439,7 +1439,7 @@ func (p *Pool) gatesOpen(context.Context, struct{}) (any, error) {
 	for _, g := range gs {
 		// A check-in keeps the reply's end, where the question is: its tail, not its start.
 		if s, ok := p.session(g.SessionID); ok && s.State == "running" {
-			out = append(out, openGate{g.ID, g.TeamID, g.SessionID, g.Agent, g.Kind, tailRunes(g.Question, 300), descs[g.ID], g.Floor, g.FloorHit, g.CreatedAt, g.Suggestion, g.Evidence})
+			out = append(out, openGate{g.ID, g.TeamID, g.SessionID, g.Agent, g.Kind, tailRunes(g.Question, 1200), descs[g.ID], g.Floor, g.FloorHit, g.CreatedAt, g.Suggestion, g.Evidence})
 		}
 	}
 	return out, nil

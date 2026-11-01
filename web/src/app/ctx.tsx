@@ -263,4 +263,6 @@ export interface SpotCheck {
   id: number;
   agent: string;
   question: string;
+  created_at?: string;
+  team_id?: string;
 }
