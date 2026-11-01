@@ -6,6 +6,11 @@ Every PenguPool AI release, newest first. Each entry describes that release as i
 
 The map's Compact context and Clear actions work on Muse sessions (Muse /compact and /new).
 
+Muse sessions idle reliably at turn end. A tool hook processed after its turn's Stop no longer
+flips the session back to working (it arrived before the Stop, so it is ignored as stale), so
+queued team messages deliver at turn end instead of waiting for hours. Status changes to working
+are logged like idle ones.
+
 ## 0.10.20
 
 An optional Welcome with two ways to start. **Start with a specialist** starts a new team led by

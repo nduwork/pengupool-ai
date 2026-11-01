@@ -120,6 +120,10 @@ func (p *Pool) hookEvent(ctx context.Context, in hookIn) (any, error) {
 // hookEventFrom is hook.event, with the calling process that resolves a Muse hook's session.
 func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (any, error) {
 	entered := time.Now() // a Stop's whole answer is due by entered + StopDeadline
+	p.mu.Lock()
+	p.hookSeq++
+	seq := p.hookSeq
+	p.mu.Unlock()
 	var pl map[string]any
 	_ = json.Unmarshal(in.Payload, &pl)
 	if in.Harness == harness.Muse {
@@ -134,6 +138,10 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	s, ok := p.session(in.SessionID)
 	if !ok {
 		return HookOut{}, nil // not a pool session: say nothing
+	}
+	if p.staleTurnHook(s.ID, in.Event, seq) {
+		p.logLine(s.ID, "hook: stale "+in.Event+" ignored after turn end")
+		return HookOut{}, nil
 	}
 	p.hookArrived(s, in.Event)
 	if pl != nil {
@@ -180,6 +188,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	}
 	switch in.Event {
 	case "SessionStart":
+		p.noteTurnEnd(s.ID, seq) // a fresh start supersedes hooks of whatever ran before it
 		conv, transcript := firstNonEmpty(str("session_id"), str("sessionId")), firstNonEmpty(str("transcript_path"), str("transcriptPath"))
 		a, _ := harness.Find(s.Harness)
 		if sock := in.Env["CLAUDE_CODE_MESSAGING_SOCKET"]; sock != "" {
@@ -324,6 +333,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			delete(p.routed, s.ID)
 			p.mu.Unlock()
 		}
+		p.noteTurnEnd(s.ID, seq)
 		p.setStatus(s.ID, "idle")
 		p.turnBroke(s)
 		if in.Event == "TurnFailed" {
@@ -363,6 +373,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 				p.setQuestion(s.ID, clipRunes(redact(oneLine(str("message"))), 300), "")
 			}
 		case "idle_prompt":
+			p.noteTurnEnd(s.ID, seq)
 			p.setStatus(s.ID, "idle")
 			p.setQuestion(s.ID, "", "") // idle: nothing it asked waits any more (a question escaped with Esc)
 		}
@@ -386,6 +397,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 				return continueTurn(s.Harness, note), nil
 			}
 		}
+		p.noteTurnEnd(s.ID, seq)
 		p.setStatus(s.ID, "idle")
 		go p.leadCompaction(s.ID) // a SPECIALIST LEAD's compaction since, as its team's project entry
 		p.typeAnswersLater(s.ID)  // the owner's answers first, typed as the member's next prompt
@@ -405,10 +417,41 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	case "SessionEnd":
 		p.wordingEnded(s.ID)
 		p.dropAnswersLater(s.ID, "") // its answers stay on the asks' record; no later session gets them typed
+		p.noteTurnEnd(s.ID, seq)
 		p.setStatus(s.ID, "ended")
 		p.logLine(s.ID, "session: harness session ended ("+firstNonEmpty(str("reason"), "exit")+")")
 	}
 	return HookOut{}, nil
+}
+
+// staleTurnHook reports whether the event arrived before the session's latest processed turn or
+// session end: hook RPCs run concurrently, so a tool hook can be overtaken in processing by its
+// turn's Stop. Such a hook must not reopen the turn or flip the session back to working: its turn
+// is over, and no later Stop will end the phantom one. A hook is stale by arrival order only; a
+// genuinely newer turn always arrives after the Stop and processes normally.
+func (p *Pool) staleTurnHook(id, event string, seq uint64) bool {
+	switch event {
+	case "UserPromptSubmit", "PreToolUse", "PostToolUse", "ToolFailed", "PermissionRequest", "Notification", "SessionStart":
+	default:
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return seq < p.lastEnd[id]
+}
+
+// noteTurnEnd records a processed turn or session end's arrival, so older hooks processed late are
+// dropped instead of resurrecting its turn. Only the newest end counts: a late duplicate never
+// moves the watermark back.
+func (p *Pool) noteTurnEnd(id string, seq uint64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.lastEnd == nil {
+		p.lastEnd = map[string]uint64{}
+	}
+	if seq > p.lastEnd[id] {
+		p.lastEnd[id] = seq
+	}
 }
 
 func (p *Pool) setSession(id string, fn func(*store.Session)) {
@@ -496,7 +539,7 @@ func (p *Pool) setStatus(id, status string) {
 		return
 	}
 	p.setSession(id, func(x *store.Session) { x.Status = status })
-	if status == "idle" || status == "approval" {
+	if status == "idle" || status == "approval" || status == "working" {
 		p.logLine(id, "status: "+status)
 	}
 	if status == "idle" {
