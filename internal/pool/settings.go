@@ -240,6 +240,9 @@ type settingsIn struct {
 	// own config: from the app only (agents' CLI calls never reach settings.save).
 	AgentPermissions string `json:"agent_permissions,omitempty"`
 	EnableServe      bool   `json:"enable_serve,omitempty"`
+	// EnableServeHTTP serves plain HTTP on :80, whatever the tailnet's certificates (the Settings
+	// "Serve over HTTP" button). Its results come back under the serve_http keys.
+	EnableServeHTTP bool `json:"enable_serve_http,omitempty"`
 }
 
 func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
@@ -260,21 +263,53 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 		}
 		res["agent_permissions"] = p.setAgentPermissions(in.AgentPermissions)
 	}
-	if in.EnableServe {
+	// runServe points Tailscale Serve (tailnet only; never Funnel) at the bound port in each mode
+	// the plan names and reports under key. Never guess a port: Serve at a port nothing listens on
+	// fails silently for every remote client.
+	runServe := func(key string, plan func(port string) ([]serveMode, error)) {
 		port := boundPort()
 		if port == "" {
-			port = "7787"
+			res[key+"_error"] = "daemon HTTP port is not bound yet; try again in a moment"
+			return
 		}
-		// Tailscale Serve on the tailnet only; never Funnel.
-		out, approve, err := serveOnce(ctx, port)
-		if approve != "" {
-			res["serve_approve_url"] = approve
-		} else {
-			res["serve"] = out
-			if err != nil {
-				res["serve_error"] = err.Error()
+		var outs, errs []string
+		approve := ""
+		modes, perr := plan(port)
+		if perr != nil {
+			errs = append(errs, perr.Error())
+		}
+		for _, mode := range modes {
+			out, url, err := serveOnce(ctx, mode, port)
+			switch {
+			case url != "":
+				approve = url
+			case err != nil:
+				errs = append(errs, string(mode)+": "+err.Error())
+				outs = append(outs, out)
+			default:
+				outs = append(outs, out)
+				p.recordServePort(port)
 			}
 		}
+		if approve != "" {
+			res["serve_approve_url"] = approve
+			return
+		}
+		res[key] = strings.Join(outs, "\n")
+		if len(errs) > 0 {
+			res[key+"_error"] = strings.Join(errs, "; ")
+		}
+	}
+	if in.EnableServe {
+		// Stale modes keep their mode; a fresh setup gets HTTPS, or an error without certificates.
+		runServe("serve", func(port string) ([]serveMode, error) {
+			return servePlan(ctx, port, p.st.Config().Network.ServePort)
+		})
+	}
+	if in.EnableServeHTTP {
+		runServe("serve_http", func(port string) ([]serveMode, error) {
+			return serveHTTPPlan(ctx, port, p.st.Config().Network.ServePort)
+		})
 	}
 	return res, nil
 }
@@ -371,20 +406,152 @@ type tailscaleServeStatus struct {
 	} `json:"Web"`
 }
 
-// serveProxyTarget returns what the :443 serve entry proxies to
-// ("127.0.0.1:port"), or "" when Serve does not point at the app.
-func serveProxyTarget(s tailscaleServeStatus) string {
+// serveMode is how Tailscale Serve publishes the app: HTTPS on :443 or plain HTTP on :80.
+// The companion reaches either (PENGUPOOL_TRANSPORT serve or serve-http); the default is HTTPS
+// on a tailnet with HTTPS certificates, else plain HTTP.
+type serveMode string
+
+const (
+	serveHTTPS serveMode = "https"
+	serveHTTP  serveMode = "http"
+)
+
+// flag is the tailscale serve flag enabling this mode.
+func (m serveMode) flag() string {
+	if m == serveHTTP {
+		return "--http=80"
+	}
+	return "--https=443"
+}
+
+// serveTargets returns what each Serve mode proxies to ("127.0.0.1:port" for a local app), or ""
+// when that mode is not configured. A route to anything else is returned as its proxy (or
+// "another handler"), so it is never mistaken for a free mode. A tailnet may serve both modes.
+func serveTargets(s tailscaleServeStatus) (httpsTarget, httpTarget string) {
 	for name, web := range s.Web {
-		if !strings.HasSuffix(name, ":443") {
+		var dst *string
+		switch {
+		case strings.HasSuffix(name, ":443"):
+			dst = &httpsTarget
+		case strings.HasSuffix(name, ":80"):
+			dst = &httpTarget
+		default:
 			continue
 		}
 		for _, h := range web.Handlers {
-			if strings.HasPrefix(h.Proxy, "http://127.0.0.1:") {
-				return strings.TrimPrefix(h.Proxy, "http://")
+			switch {
+			case strings.HasPrefix(h.Proxy, "http://127.0.0.1:"):
+				*dst = strings.TrimPrefix(h.Proxy, "http://")
+			case *dst == "" && h.Proxy != "":
+				*dst = h.Proxy
+			case *dst == "":
+				*dst = "another handler"
 			}
 		}
 	}
-	return ""
+	return httpsTarget, httpTarget
+}
+
+// serveCerts reports whether the tailnet has HTTPS certificates: Serve --https needs them.
+func serveCerts(st tailscaleStatus) bool {
+	return len(st.Self.CertDomains) > 0 || len(st.CertDomains) > 0
+}
+
+// currentServeTargets asks Tailscale what Serve points at the app per mode. ok is false when the
+// status could not be read.
+func currentServeTargets(ctx context.Context, bin string) (httpsTarget, httpTarget string, ok bool) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	raw, err := tailscaleCmd(ctx, bin, "serve", "status", "--json")
+	if err != nil {
+		return "", "", false
+	}
+	var ss tailscaleServeStatus
+	if json.Unmarshal(raw, &ss) != nil {
+		return "", "", false
+	}
+	httpsTarget, httpTarget = serveTargets(ss)
+	return httpsTarget, httpTarget, true
+}
+
+// ownServeTargets keeps only PenguPool's own Serve targets: those at port (this daemon) or at
+// servePort (the port it last served). With no port recorded (a setup older than the record),
+// a local :443 route counts as PenguPool's, as it always did.
+func ownServeTargets(httpsTarget, httpTarget, servePort, port string) (string, string) {
+	mine := func(t string) bool {
+		return t == "127.0.0.1:"+port || (servePort != "" && t == "127.0.0.1:"+servePort)
+	}
+	if !mine(httpsTarget) && (servePort != "" || !strings.HasPrefix(httpsTarget, "127.0.0.1:")) {
+		httpsTarget = ""
+	}
+	if !mine(httpTarget) {
+		httpTarget = ""
+	}
+	return httpsTarget, httpTarget
+}
+
+// recordServePort remembers the port PenguPool just pointed Serve at.
+func (p *Pool) recordServePort(port string) {
+	if err := p.st.UpdateConfig(func(c *store.Config) error { c.Network.ServePort = port; return nil }); err != nil {
+		p.logf("pool: record serve port: %v", err)
+	}
+}
+
+// servePlan is the Serve modes settingsSave (re-)points at port: every mode PenguPool configured
+// whose target is stale, in its own mode; when it configured none, HTTPS. It never switches a
+// mode and never falls back to plain HTTP (that is the explicit, warned HTTP action): a tailnet
+// without certificates, or another app's route on :443, is an error instead.
+func servePlan(ctx context.Context, port, servePort string) ([]serveMode, error) {
+	bin := tailscaleBin()
+	want := "127.0.0.1:" + port
+	if bin == "" {
+		return []serveMode{serveHTTPS}, nil // serveOnce reports that Tailscale is missing
+	}
+	rawHTTPS, rawHTTP, ok := currentServeTargets(ctx, bin)
+	if ok {
+		httpsTarget, httpTarget := ownServeTargets(rawHTTPS, rawHTTP, servePort, port)
+		if httpsTarget != "" || httpTarget != "" {
+			var plan []serveMode
+			if httpsTarget != "" && httpsTarget != want {
+				plan = append(plan, serveHTTPS)
+			}
+			if httpTarget != "" && httpTarget != want {
+				plan = append(plan, serveHTTP)
+			}
+			return plan, nil // possibly empty: everything already points here
+		}
+	}
+	if st, err := runTailscaleStatus(ctx, bin); err == nil && !serveCerts(st) {
+		return nil, errors.New("HTTPS certificates are not enabled on this tailnet; enable HTTPS in Tailscale, or use Serve over HTTP")
+	}
+	if rawHTTPS != "" {
+		return nil, errors.New("Serve on :443 already points at " + rawHTTPS + " (another app); PenguPool leaves it alone")
+	}
+	return []serveMode{serveHTTPS}, nil
+}
+
+// serveHTTPPlan is the explicit HTTP mode's plan: :80, plus PenguPool's own :443 route (at the
+// recorded port) when it is stale, so recording the new port never strands it. Another app's :80 route is refused.
+func serveHTTPPlan(ctx context.Context, port, servePort string) ([]serveMode, error) {
+	bin := tailscaleBin()
+	if bin == "" {
+		return []serveMode{serveHTTP}, nil // serveOnce reports that Tailscale is missing
+	}
+	rawHTTPS, rawHTTP, ok := currentServeTargets(ctx, bin)
+	if !ok {
+		return []serveMode{serveHTTP}, nil
+	}
+	httpsTarget, httpTarget := ownServeTargets(rawHTTPS, rawHTTP, servePort, port)
+	if rawHTTP != "" && httpTarget == "" {
+		return nil, errors.New("Serve on :80 already points at " + rawHTTP + " (another app); PenguPool leaves it alone")
+	}
+	plan := []serveMode{serveHTTP}
+	// :443 only when it is provably PenguPool's (at the recorded port): with no record, a local
+	// :443 route may be another app's.
+	if servePort != "" && httpsTarget != "" && httpsTarget != "127.0.0.1:"+port {
+		plan = append(plan, serveHTTPS)
+	}
+	return plan, nil
 }
 
 func boundPort() string {
@@ -454,22 +621,24 @@ func (p *Pool) tailscaleChecks() []tailscaleCheck {
 		})
 	}
 	port := boundPort()
-	var target string
-	if out, err := func() ([]byte, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		return tailscaleCmd(ctx, bin, "serve", "status", "--json")
-	}(); err == nil {
-		var ss tailscaleServeStatus
-		if json.Unmarshal(out, &ss) == nil {
-			target = serveProxyTarget(ss)
+	httpsTarget, httpTarget, _ := currentServeTargets(ctx, bin)
+	want := "127.0.0.1:" + port
+	serving := ""
+	if port != "" {
+		switch {
+		case httpsTarget == want && httpTarget == want:
+			serving = "https://" + name + " and http://" + name + " serve this app"
+		case httpsTarget == want:
+			serving = "https://" + name + " serves this app"
+		case httpTarget == want:
+			serving = "http://" + name + " serves this app"
 		}
 	}
-	want := "127.0.0.1:" + port
 	switch {
-	case port != "" && target == want:
-		checks = append(checks, tailscaleCheck{ID: "serve", Label: "Serve points at this app", OK: true, Detail: "https://" + name + " serves this app"})
-	case target != "":
+	case serving != "":
+		checks = append(checks, tailscaleCheck{ID: "serve", Label: "Serve points at this app", OK: true, Detail: serving})
+	case httpsTarget != "" || httpTarget != "":
+		target := firstNonEmpty(httpsTarget, httpTarget)
 		checks = append(checks, tailscaleCheck{
 			ID: "serve", Label: "Serve points at this app", Detail: "Serve points at " + target + ", not this app.",
 			Fix: &tailscaleFix{Kind: "button", Label: "Serve", Action: "serve"},
@@ -487,7 +656,7 @@ func (p *Pool) tailscaleChecks() []tailscaleCheck {
 		})
 	}
 	client := http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get("https://" + name + "/")
+	resp, err := client.Get(reachableURL(name, want, httpsTarget, httpTarget))
 	if err == nil {
 		resp.Body.Close()
 		checks = append(checks, tailscaleCheck{ID: "reachable", Label: "Reachable", OK: true, Detail: "HTTP " + resp.Status})
@@ -500,18 +669,27 @@ func (p *Pool) tailscaleChecks() []tailscaleCheck {
 	return checks
 }
 
+// reachableURL is the tailnet URL the Reachable check probes: HTTPS, unless only plain HTTP
+// serves this app (want).
+func reachableURL(name, want, httpsTarget, httpTarget string) string {
+	if httpsTarget != want && httpTarget == want {
+		return "http://" + name + "/"
+	}
+	return "https://" + name + "/"
+}
+
 var tailscaleApproveRe = regexp.MustCompile(`https://login\.tailscale\.com/[^\s"']*`)
 
-// serveOnce runs Tailscale Serve at this daemon's bound port (20 s). A
+// serveOnce runs Tailscale Serve at this daemon's bound port in the given mode (20 s). A
 // login.tailscale.com approval URL in the output is returned, not an error.
-func serveOnce(ctx context.Context, port string) (out, approveURL string, err error) {
+func serveOnce(ctx context.Context, mode serveMode, port string) (out, approveURL string, err error) {
 	bin := tailscaleBin()
 	if bin == "" {
 		return "", "", errors.New("tailscale is not installed")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	raw, err := tailscaleCmd(ctx, bin, "serve", "--bg", "--https=443", "http://127.0.0.1:"+port)
+	raw, err := tailscaleCmd(ctx, bin, "serve", "--bg", mode.flag(), "http://127.0.0.1:"+port)
 	out = strings.TrimSpace(string(raw))
 	if approveURL = tailscaleApproveRe.FindString(out); approveURL != "" {
 		return out, approveURL, nil
@@ -519,43 +697,59 @@ func serveOnce(ctx context.Context, port string) (out, approveURL string, err er
 	return out, "", err
 }
 
-// HealTailscaleServe re-runs Serve when the saved Serve target is not this
-// daemon's bound port (e.g. after a restart onto a new port). Only for the
+// HealTailscaleServe re-runs Serve when a Serve target PenguPool configured is
+// not this daemon's bound port (e.g. after a restart onto a new port). Each mode
+// keeps its mode; another app's route is never touched; when nothing is
+// configured there is nothing to heal. Only for the
 // owner's real home; never for throwaway stores.
 func (p *Pool) HealTailscaleServe() {
 	cfg := p.st.Config()
 	if cfg.Network.Tailscale == "" || !store.IsHomeDefault(p.st.Dir()) {
 		return
 	}
-	port := boundPort()
+	// cmdDaemon launches this before the gateway listener exists, and
+	// boundPort() stays "" until it binds. Wait for the bound address
+	// the way the hub.addr writer in cmdDaemon does; Heal runs in its
+	// own goroutine, so the bounded wait blocks nothing. If the
+	// listener never reports an address, there is nothing to heal.
+	port := ""
+	for range 200 {
+		if port = boundPort(); port != "" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if port == "" {
+		p.logf("pool: tailscale serve heal skipped: daemon HTTP port not bound")
 		return
 	}
 	bin := tailscaleBin()
 	if bin == "" {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	raw, err := tailscaleCmd(ctx, bin, "serve", "status", "--json")
-	if err != nil {
+	httpsTarget, httpTarget, ok := currentServeTargets(context.Background(), bin)
+	httpsTarget, httpTarget = ownServeTargets(httpsTarget, httpTarget, cfg.Network.ServePort, port)
+	if !ok || (httpsTarget == "" && httpTarget == "") {
 		return
 	}
-	var ss tailscaleServeStatus
-	if json.Unmarshal(raw, &ss) != nil {
-		return
+	want := "127.0.0.1:" + port
+	for _, mode := range []serveMode{serveHTTPS, serveHTTP} {
+		target := httpsTarget
+		if mode == serveHTTP {
+			target = httpTarget
+		}
+		if target == "" || target == want {
+			continue
+		}
+		if out, approve, err := serveOnce(context.Background(), mode, port); err != nil && approve == "" {
+			p.logf("pool: tailscale serve re-point failed: %v (%s)", err, out)
+		} else if approve != "" {
+			p.logf("pool: tailscale serve needs approval in the admin console")
+		} else {
+			p.recordServePort(port)
+			p.logf("pool: tailscale serve re-pointed at 127.0.0.1:%s", port)
+		}
 	}
-	if serveProxyTarget(ss) == "127.0.0.1:"+port {
-		return
-	}
-	if out, approve, err := serveOnce(context.Background(), port); err != nil && approve == "" {
-		p.logf("pool: tailscale serve re-point failed: %v (%s)", err, out)
-		return
-	} else if approve != "" {
-		p.logf("pool: tailscale serve needs approval in the admin console")
-		return
-	}
-	p.logf("pool: tailscale serve re-pointed at 127.0.0.1:%s", port)
 }
 
 // Node handlers delegate to the SSH layer.

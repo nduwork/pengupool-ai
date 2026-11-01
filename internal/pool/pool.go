@@ -81,6 +81,8 @@ type Pool struct {
 	deciding          map[string]bool              // items a Compass decision is being made on (percompass.go, under mu)
 	hookAt            map[string]time.Time         // session id → its newest hook event (under mu; hookless.go)
 	promptAt          map[string]time.Time         // session id → the owner's first prompt in its launch (under mu)
+	hookSeq           uint64                       // arrival order of hook events, taken at hookEventFrom entry (under mu)
+	lastEnd           map[string]uint64            // session id → arrival seqno of its latest processed turn/session end (under mu; hooks.go)
 	routed            map[string]string            // LEAD session id → the teammate triage named for this turn (under mu)
 	answering         map[int64]time.Time          // check-ins being answered by the owner, so a double click types once (under mu)
 	requireOwnerInput bool
