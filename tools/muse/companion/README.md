@@ -27,7 +27,7 @@ prove the install works.
 
 | File | Role |
 | --- | --- |
-| `src/pp.py` | Device-API client: the Tailscale tunnel plus helpers for `/api/muse/v1` (sessions, next, say, answers, healthz). Device token from `./device-token` (0600); host from `$PENGUPOOL_HOST` (default `100.106.40.12`), port `$PENGUPOOL_PORT`. The retired `/ws` client used to live here. |
+| `src/pp.py` | Device-API client: the Tailscale tunnel plus helpers for `/api/muse/v1` (sessions, next, say, answers, healthz). Device token from `$PENGUPOOL_DEVICE_TOKEN` or `./device-token` (0600); host from required `$PENGUPOOL_HOST` (name or IP), `$PENGUPOOL_HOST_HEADER` defaulting from it, `$PENGUPOOL_TRANSPORT` serve/serve-http/direct. The retired `/ws` client used to live here. |
 | `src/detect.py` | The change detector. One poll prints one JSON line: `{"decision": "silent"|"wake", ...}`. Wakes only on material change: a session appearing/disappearing, a status change, a device-visible ask (`/next`), a daemon restart (the `/api/healthz` epoch changes), reachability flips. |
 | `src/companion.py` | The CLI (below). Owns the monitor config. |
 | `src/gadget.py` | Renders the team status card (chat-widget HTML) from live API data. |
@@ -142,14 +142,15 @@ No triage: needs-input is relayed, never judged. The answering flow
 ## The mobile mini site
 
 `src/serve.mjs` is a zero-dependency Node server that runs **on the
-PenguPool machine** and serves a phone-first live status page: the same
-tree and indicators as the status card, a red banner when an agent
-needs input, auto-refresh every 10 seconds. It binds only to the
-machine's Tailscale address, and reads the owner API locally with the
-current bootstrap token (read fresh from `hub.token` on every poll, so
-daemon restarts need no attention). Install it on the PenguPool machine
-with `./install-host.sh` (launchd; survives reboots), then open
-`http://<machine>.<tailnet>.ts.net:7790` on the phone.
+PenguPool machine** and serves a phone-first live status page: the team
+tree and indicators, a red banner when an agent needs input, auto-refresh
+every 10 seconds. It binds only to the machine's Tailscale address, and
+reads the paired-device API through this machine's Tailscale Serve name
+with its own device token (`~/.muse-companion/device-token`, paired once
+under Settings › Muse app). Every page request must carry the site key
+(`?key=...`, made by the installer). Install it on the PenguPool machine
+with `./install-host.sh` (Node 22+, launchd; survives reboots), then open
+the `http://<tailnet-ip>:7790/?key=...` URL it prints on the phone.
 
 ## Install
 
@@ -174,8 +175,9 @@ Then, once:
    this package** — they live beside the installed code only, and
    `.gitignore` guards them here. The device token does not rotate on
    daemon restarts.
-2. If the workstation's Tailscale IP differs from the default, export
-   `PENGUPOOL_HOST` where the hook runs.
+2. Export `PENGUPOOL_HOST=<workstation tailnet name or IP>` where the
+   hook runs (required: calls fail fast without it). When it is an IP,
+   also export `PENGUPOOL_HOST_HEADER=<workstation tailnet name>`.
 3. Register/enable the `pengupool-status` hook (60-second poll) pointing
    at `~/hooks/scripts/pengupool-status.sh` — in Muse this is a hook
    definition, so ask Muse to set it up.
@@ -185,5 +187,6 @@ Then, once:
 
 Python 3 (standard library only), `jq` for the hook wrapper, and
 Tailscale reachability from Muse's VM to the workstation's
-Tailscale Serve endpoint (HTTPS, port 443) — via the runtime tunnel
-proxy, which `pp.py` handles.
+Tailscale Serve endpoint (HTTPS port 443, or plain HTTP port 80 where
+the tailnet has no certificates) — via the runtime tunnel proxy, which
+`pp.py` handles.

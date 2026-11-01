@@ -123,6 +123,50 @@ class HttpLayerTests(unittest.TestCase):
         self.assertEqual(status, 401)
 
 
+class ApiCompatTests(unittest.TestCase):
+    """pp.api: the pre-0.10.20 call shape on the new transport."""
+
+    def setUp(self):
+        pp.load_device_token = lambda: TOKEN
+        self._transport = pp.TRANSPORT
+
+    def tearDown(self):
+        pp.TRANSPORT = self._transport
+
+    def test_api_parses_json(self):
+        pp.TRANSPORT = "serve"
+        captured = {}
+        body = b'[{"session": "s1"}]'
+        resp = b"HTTP/1.1 200 OK\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
+        pp.tunnel = socketpair_tunnel(resp, captured)
+        status, out = pp.api("GET", "/sessions")
+        self.assertEqual(status, 200)
+        self.assertEqual(out, [{"session": "s1"}])
+        self.assertIn("GET /api/muse/v1/sessions HTTP/1.1", captured["request"])
+
+    def test_api_empty_is_none(self):
+        pp.TRANSPORT = "serve"
+        captured = {}
+        pp.tunnel = socketpair_tunnel(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n", captured)
+        self.assertEqual(pp.api("GET", "/next"), (204, None))
+
+    def test_api_unparsed_is_error_dict(self):
+        pp.TRANSPORT = "serve"
+        captured = {}
+        pp.tunnel = socketpair_tunnel(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nboom", captured)
+        self.assertEqual(pp.api("GET", "/sessions"), (200, {"error": "boom"}))
+
+    def test_api_post_sends_json(self):
+        pp.TRANSPORT = "serve"
+        captured = {}
+        body = b'{"ok": true}'
+        resp = b"HTTP/1.1 200 OK\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
+        pp.tunnel = socketpair_tunnel(resp, captured)
+        status, out = pp.api("POST", "/asks/a1/answer", {"action": "allow"})
+        self.assertEqual((status, out), (200, {"ok": True}))
+        self.assertEqual(json.loads(captured["body"])["action"], "allow")
+
+
 class ServeTlsTests(unittest.TestCase):
     """The real _tunnel_serve, with only the proxy CONNECT hop stubbed."""
 

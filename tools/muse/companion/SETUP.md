@@ -100,9 +100,9 @@ The full pairing walkthrough also lives in the repo's
    only credential on the companion machine.
 2. **Bootstrap token**: never copied anywhere. It stays in
    `~/.pengupool-ai/v2/run/hub.token` on the workstation, where local
-   clients (the app, the optional mini site in §7) read it. The
-   device API rejects it by design, and `/ws` does not answer
-   off-machine.
+   clients (the app) read it. The
+   device API rejects it by design (the mini site in §7 uses its own
+   device token instead), and `/ws` does not answer off-machine.
 
 ## 4. Install the package (agent)
 
@@ -115,11 +115,13 @@ tools/muse/companion/install.sh
 This installs `pp.py`/`detect.py`/`gadget.py` to
 `~/workspace/pengupool-agent/`, the CLI to `~/workspace/companion/`,
 seeds `config.json` (enabled, every 1m), and installs the hook
-wrapper. If the workstation's Tailscale IP is not the default
-`100.106.40.12`, export `PENGUPOOL_HOST=<workstation tailnet IP>` for
-the hook's environment. (From a Muse VM, HTTP to the workstation
-goes through the runtime's CONNECT tunnel proxy — `pp.py` already
-handles this.)
+wrapper. Export `PENGUPOOL_HOST=<workstation tailnet name or IP>` for
+the hook's environment (required: calls fail fast without it). When it
+is an IP, also export `PENGUPOOL_HOST_HEADER=<workstation tailnet
+name>` — the header defaults from the host and drives the TLS SNI and
+certificate check. (From a Muse VM, HTTP to the workstation goes
+through the runtime's CONNECT tunnel proxy — `pp.py` already handles
+this.)
 
 Then register and enable the **pengupool-status** hook (agent, with
 owner approval — step 0.4): a 60-second poll running
@@ -173,14 +175,16 @@ The chat status card is a snapshot. For an always-live view on the
 owner's phone, install the mini site on the PenguPool machine itself:
 
 ```
-cd tools/muse-companion && ./install-host.sh   # PORT=7791 changes the port
+cd tools/muse/companion && ./install-host.sh   # PORT=7791 changes the port
 ```
 
-It needs Node 21+ on that machine and nothing else: launchd keeps it
-running, it binds to the machine's Tailscale address only, and it reads
-the owner API over loopback with the bootstrap token from
-`~/.pengupool-ai/v2/run/hub.token` — read fresh on every poll, so the
-token's rotation at daemon restarts is a non-event. Verify:
-`curl http://<machine>.<tailnet>.ts.net:7790/health` answers
-`{"ok":true}` from another tailnet device, and the page shows the live
-team. The site is read-only: names and statuses, nothing else.
+It needs Node 22+ on that machine and nothing else: launchd keeps it
+running and it binds to the machine's Tailscale address only. Pair it
+once under Settings › Muse app and save its device token at
+`~/.muse-companion/device-token`; the site reads the paired-device API
+through this machine's Tailscale Serve name (`MC_API=https://<name>`
+overrides it). Every page request must carry the site key the installer
+made (`?key=...`); without it the site answers 404. Verify:
+`curl http://<tailnet-ip>:7790/health` answers `{"ok":true}` from
+another tailnet device without any key, and the printed page URL shows
+the live team. The site is read-only: names and statuses, nothing else.

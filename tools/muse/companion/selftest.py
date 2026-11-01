@@ -40,9 +40,9 @@ class H(BaseHTTPRequestHandler):
         self._send(204)
 srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
-env = dict(os.environ, PENGUPOOL_HOST="127.0.0.1", PENGUPOOL_PORT=str(srv.server_address[1]), PENGUPOOL_DEVICE_TOKEN="tok123")
+env = dict(os.environ, PENGUPOOL_HOST="127.0.0.1", PENGUPOOL_PORT=str(srv.server_address[1]), PENGUPOOL_DEVICE_TOKEN="tok123", PENGUPOOL_TRANSPORT="direct")
 env.pop("HTTPS_PROXY", None); env.pop("https_proxy", None)
-os.environ.update(PENGUPOOL_HOST="127.0.0.1", PENGUPOOL_PORT=str(srv.server_address[1]))
+os.environ.update(PENGUPOOL_HOST="127.0.0.1", PENGUPOOL_PORT=str(srv.server_address[1]), PENGUPOOL_TRANSPORT="direct")
 os.environ.pop("HTTPS_PROXY", None); os.environ.pop("https_proxy", None)
 sys.path.insert(0, os.environ["SRC"])
 import pp

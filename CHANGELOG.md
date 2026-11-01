@@ -2,6 +2,14 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
+## 0.10.22
+
+The Muse companion reaches the device API through Tailscale Serve: HTTPS by
+default, plain HTTP where the tailnet has no HTTPS certificates. The
+workstation is set with `PENGUPOOL_HOST` (name or IP, required) and
+`PENGUPOOL_HOST_HEADER` (the tailnet name, defaulting from the host); the
+device token still lives beside the installed code only.
+
 ## 0.10.20
 
 An optional Welcome with two ways to start. **Start with a specialist** starts a new team led by

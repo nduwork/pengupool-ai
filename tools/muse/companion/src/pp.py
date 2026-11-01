@@ -14,8 +14,15 @@ the device API (/api/muse/v1), which is the companion's only channel:
   pp.device_post("/sessions/<id>/say", {"words": "..."})
   pp.healthz()                      -> (status, dict)  daemon epoch etc.
 
-The device token is read from ./device-token (mode 0600). The bootstrap
-token is never read, held, or sent by this module.
+The device token is read from $PENGUPOOL_DEVICE_TOKEN or ./device-token
+(mode 0600). The bootstrap token is never read, held, or sent by this
+module.
+
+PENGUPOOL_HOST is required: the workstation's tailnet name or IP. Calls
+fail fast when it is unset, so a missing config can never send the
+device token to a baked-in address. PENGUPOOL_HOST_HEADER defaults from
+PENGUPOOL_HOST; set it to the tailnet name when the host is an IP, since
+it drives the TLS SNI, the Host header, and the certificate check.
 
 Transports (PENGUPOOL_TRANSPORT):
   serve  (default) — the v0.10.20 path. The daemon binds loopback only
@@ -32,7 +39,8 @@ Transports (PENGUPOOL_TRANSPORT):
   direct — the pre-0.10.20 path: CONNECT to the tailnet address on the
     daemon port (7787) and speak plaintext HTTP with
     Host = <tailnet name>:<port>. Only useful while a daemon build
-    still binds a network listener.
+    still binds a network listener (and for the self-test's local
+    server).
 PENGUPOOL_CA_FILE overrides the trust roots (tests, private CA).
 """
 import json
@@ -40,11 +48,11 @@ import os
 import socket
 import ssl
 import sys
-from urllib.parse import urlparse
+import uuid
+from urllib.parse import quote, urlparse
 
-HOST = os.environ.get("PENGUPOOL_HOST", "100.106.40.12")
-HOST_HEADER = os.environ.get("PENGUPOOL_HOST_HEADER",
-                             "nduworkstation.tail04aac9.ts.net")
+HOST = os.environ.get("PENGUPOOL_HOST", "")
+HOST_HEADER = os.environ.get("PENGUPOOL_HOST_HEADER", "") or HOST
 PORT = int(os.environ.get("PENGUPOOL_PORT", "7787"))
 TRANSPORT = os.environ.get("PENGUPOOL_TRANSPORT", "serve")
 SERVE_PORT = int(os.environ.get("PENGUPOOL_SERVE_PORT", "443"))
@@ -53,9 +61,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 API = "/api/muse/v1"
 
 
-def load_device_token():
+def load_token():
+    tok = os.environ.get("PENGUPOOL_DEVICE_TOKEN", "").strip()
+    if tok:
+        return tok
     with open(os.path.join(HERE, "device-token")) as f:
         return f.read().strip()
+
+
+load_device_token = load_token  # the v0.10.20 name
 
 
 class Sock:
@@ -91,28 +105,48 @@ class Sock:
 
 
 def _connect_proxy(host, port):
-    """CONNECT through the runtime proxy to host:port.
+    """CONNECT through the runtime proxy to host:port, else direct.
 
     Returns (raw_socket, reader) where reader has consumed exactly the
-    CONNECT response headers. Raises EOFError if the proxy or the target
-    closes the connection — that is the companion's "unreachable" signal.
+    CONNECT response headers (direct: a fresh reader on the socket).
+    Raises EOFError if the proxy or the target closes the connection —
+    that is the companion's "unreachable" signal.
     """
     proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
     if not proxy:
-        raise SystemExit("HTTPS_PROXY is not set; cannot reach the tunnel proxy")
+        raw = socket.create_connection((host, port), timeout=20)
+        return raw, Sock(raw)
     p = urlparse(proxy)
-    raw = socket.create_connection((p.hostname, 3130), timeout=20)
-    req = (
-        f"CONNECT {host}:{port} HTTP/1.1\r\n"
-        f"Host: {host}:{port}\r\nProxy-Connection: keep-alive\r\n\r\n"
-    )
-    raw.sendall(req.encode())
-    sk = Sock(raw)
-    head = sk.read_until(b"\r\n\r\n").decode("latin1")
-    status = head.split("\r\n", 1)[0]
-    if " 200 " not in status:
-        raise SystemExit(f"tunnel CONNECT failed: {status}")
-    return raw, sk
+    # The Muse runtime proxy takes CONNECT on 3130, not on the port
+    # in its own URL (that port closes CONNECT attempts): try the
+    # URL's port first, then 3130.
+    ports = [p.port or 3130]
+    if ports[0] != 3130:
+        ports.append(3130)
+    sk, errs = None, []
+    for cport in ports:
+        # A refusal is the proxy's answer: same host, so no other port answers
+        # differently — fail fast. Only a failed connection tries the next port.
+        try:
+            raw = socket.create_connection((p.hostname, cport), timeout=20)
+            sk = Sock(raw)
+            sk.s.sendall((f"CONNECT {host}:{port} HTTP/1.1\r\n"
+                          f"Host: {host}:{port}\r\nProxy-Connection: keep-alive\r\n\r\n").encode())
+            status = sk.read_until(b"\r\n\r\n").decode("latin1").split("\r\n", 1)[0]
+        except (OSError, EOFError) as e:
+            errs.append(f"{cport}: {e}")
+            if sk is not None:
+                try:
+                    sk.s.close()
+                except Exception:
+                    pass
+            sk = None
+            continue
+        if " 200 " not in status:
+            sk.s.close()
+            raise SystemExit(f"tunnel CONNECT failed: {status}")
+        return sk.s, sk
+    raise SystemExit(f"tunnel CONNECT failed: {'; '.join(errs)}")
 
 
 def _tls_context():
@@ -147,6 +181,8 @@ def _tunnel_direct():
 
 
 def tunnel():
+    if not HOST:
+        raise SystemExit("PENGUPOOL_HOST is not set: the workstation's Tailscale name or IP")
     if TRANSPORT == "direct":
         return _tunnel_direct()
     if TRANSPORT == "serve-http":
@@ -154,6 +190,11 @@ def tunnel():
     if TRANSPORT == "serve":
         return _tunnel_serve()
     raise SystemExit(f"unknown PENGUPOOL_TRANSPORT: {TRANSPORT!r}")
+
+
+def connect():
+    """A socket to the workstation: the pre-0.10.20 name for tunnel()."""
+    return tunnel()
 
 
 def _request(method, path, body=None, auth=True):
@@ -216,6 +257,15 @@ def healthz():
         return status, {}
 
 
+def api(method, path, body=None):
+    """One call on the device API. Returns (status, parsed JSON or None)."""
+    status, raw = _request(method, API + path, body=body)
+    try:
+        return status, json.loads(raw) if raw else None
+    except ValueError:
+        return status, {"error": raw.decode("utf-8", "replace").strip()}
+
+
 def sessions():
     """The device-visible sessions, as a list of dicts ( [] on failure )."""
     code, body = device_get("/sessions")
@@ -238,6 +288,42 @@ def next_card():
         return None
 
 
+def ok(status, res, what):
+    if status >= 400:
+        msg = (res or {}).get("error") or (res or {}).get("message") or res
+        raise SystemExit(f"{what} failed ({status}): {msg}")
+    return res
+
+
+def cmd_answer(args):
+    if len(args) < 3:
+        raise SystemExit("usage: pp.py answer ASK_ID PAYLOAD_HASH ACTION [TEXT]")
+    ask_id, payload_hash, action = args[:3]
+    body = {"action": action, "payload_hash": payload_hash, "idempotency_key": str(uuid.uuid4())}
+    if len(args) > 3:
+        body["text"] = " ".join(args[3:])
+    ok(*api("POST", f"/asks/{quote(ask_id, safe=':')}/answer", body), "answer")
+    print(f"answered {ask_id}: {action}")
+
+
+def cmd_say(args):
+    if len(args) < 2:
+        raise SystemExit("usage: pp.py say SESSION WORDS...")
+    ok(*api("POST", f"/sessions/{quote(args[0], safe='')}/say", {"words": " ".join(args[1:])}), "say")
+    print(f"sent to {args[0]}")
+
+
+def cmd_action(args):
+    if len(args) != 2:
+        raise SystemExit("usage: pp.py action SESSION stop|interrupt|resume")
+    res = ok(*api("POST", f"/sessions/{quote(args[0], safe='')}/action", {"action": args[1]}), "action")
+    print(json.dumps(res, ensure_ascii=False))
+
+
+def cmd_compass(_args):
+    print(json.dumps(ok(*api("GET", "/compass"), "compass"), indent=2, ensure_ascii=False))
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -253,9 +339,13 @@ def main():
         code, info = healthz()
         print(code, json.dumps(info, ensure_ascii=False))
     elif cmd == "say":
-        code, body = device_post(f"/sessions/{args[0]}/say",
-                                 {"words": " ".join(args[1:])})
-        print(code, body.decode("utf-8", "replace")[:200])
+        cmd_say(args)
+    elif cmd == "answer":
+        cmd_answer(args)
+    elif cmd == "action":
+        cmd_action(args)
+    elif cmd == "compass":
+        cmd_compass(args)
     else:
         print(f"unknown command: {cmd}\n{__doc__}")
         return 2
