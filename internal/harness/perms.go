@@ -357,8 +357,11 @@ func writeClaude(file string, old []byte, top []kv) error {
 	mode := os.FileMode(0o600)
 	if st, err := os.Stat(file); err == nil {
 		mode = st.Mode().Perm()
-		if err := writeAtomic(file+".pengupool-backup", old, mode); err != nil {
-			return err
+		// The first backup is kept: it stays the user's file as it was before PenguPool wrote to it.
+		if _, err := os.Stat(file + ".pengupool-backup"); errors.Is(err, os.ErrNotExist) {
+			if err := writeAtomic(file+".pengupool-backup", old, mode); err != nil {
+				return err
+			}
 		}
 	} else if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return err
