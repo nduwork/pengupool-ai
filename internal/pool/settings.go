@@ -496,7 +496,7 @@ func (p *Pool) tailscaleChecks() []tailscaleCheck {
 			verb = " serve this app"
 		}
 		checks = append(checks, tailscaleCheck{ID: "serve", Label: "Serve points at this app", OK: true, Detail: strings.Join(modes, " and ") + verb})
-		 targetHTTPS != "" || targetHTTP != "":
+		 case targetHTTPS != "" || targetHTTP != "":
 		checks = append(checks, tailscaleCheck{
 			ID: "serve", Label: "Serve points at this app", Detail: "Serve points at " + firstNonEmpty(targetHTTPS, targetHTTP) + ", not this app.",
 			Fix: &tailscaleFix{Kind: "button", Label: "Serve", Action: "serve"},
