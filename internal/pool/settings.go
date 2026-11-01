@@ -610,7 +610,6 @@ func (p *Pool) HealTailscaleServe() {
 			p.logf("pool: tailscale serve re-point failed: %v (%s)", err, out)
 		} else if approve != "" {
 				p.logf("pool: tailscale serve needs approval in the admin console")
-	}
 		} else {
 			p.logf("pool: tailscale serve re-pointed at 127.0.0.1:%s", port)
 		}
