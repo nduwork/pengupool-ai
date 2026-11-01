@@ -31,10 +31,12 @@ It can't change settings, teams or the Compass, and the app's own token doesn't 
 ## Try it
 
 1. Start a **Muse Code** session in a small demo repository (Start in a folder, then pick Muse Code).
-2. Ask it to inspect the project and propose one small improvement, with a clear question for you
-   before changing it.
-3. When the question is waiting, open the Muse app: it shows the waiting item as a card with the
-   question and the agent's context. Reply or pick an option.
+2. Ask it to inspect the project and propose one small improvement, and to ask you before changing
+   anything with PenguPool's ask command, for example
+   `pengupool ask --owner-only --option "Go ahead" --option "Not now" "May I make this change?"`
+   (agents are told the command's full path).
+3. When the question is waiting, open the Muse app: it shows it as a card with the options to tap.
+   Pick one, or reply in your own words.
 4. Back on the Mac, the same session receives your answer and goes on.
 
 If the agent ends its turn with a plain paragraph instead of a question, nothing waits on you, and
