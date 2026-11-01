@@ -8,7 +8,14 @@ code change), and a status card rendered for chat with PenguPool's own
 tree and status indicators.
 
 This is the reference implementation behind the repo's
-[`tools/muse/muse-app-management.md`](../muse-app-management.md) tutorial.
+`tools/muse/muse-app-management.md` tutorial.
+
+**Access model (v3):** the companion talks to PenguPool through the
+paired device API (`/api/muse/v1`) only. The gateway's `/ws` owner
+surface is local-only — the host guard answers 404 to non-loopback
+requests for everything except `/api/healthz` and the device API — and
+the companion machine holds only its paired device token. The daemon
+bootstrap token never leaves the workstation.
 
 **Installing with an agent:** point a Muse at this repo and ask it to
 set up the companion — [`SETUP.md`](SETUP.md) is the step-by-step it
@@ -20,8 +27,8 @@ prove the install works.
 
 | File | Role |
 | --- | --- |
-| `src/pp.py` | Paired-device API client (`/api/muse/v1`): sessions, next, answer, say, action, compass. Token from `./device-token` (0600) or `$PENGUPOOL_DEVICE_TOKEN`, the only credential; host from `$PENGUPOOL_HOST` (required, the workstation's Tailscale Serve name), over HTTPS on port 443 (`$PENGUPOOL_PORT` overrides it). Goes through `$HTTPS_PROXY`'s CONNECT tunnel when set. |
-| `src/detect.py` | The change detector. One poll prints one JSON line: `{"decision": "silent"|"wake", ...}`. Wakes only on material change: a session appearing/disappearing, a status change, an ask waiting on the owner (`/next`), a daemon restart (the `/api/healthz` epoch changes), reachability flips. |
+| `src/pp.py` | Device-API client: the Tailscale tunnel plus helpers for `/api/muse/v1` (sessions, next, say, answers, healthz). Device token from `$PENGUPOOL_DEVICE_TOKEN` or `./device-token` (0600); host from required `$PENGUPOOL_HOST` (name or IP), `$PENGUPOOL_HOST_HEADER` defaulting from it, `$PENGUPOOL_TRANSPORT` serve/serve-http/direct. The retired `/ws` client used to live here. |
+| `src/detect.py` | The change detector. One poll prints one JSON line: `{"decision": "silent"|"wake", ...}`. Wakes only on material change: a session appearing/disappearing, a status change, a device-visible ask (`/next`), a daemon restart (the `/api/healthz` epoch changes), reachability flips. |
 | `src/companion.py` | The CLI (below). Owns the monitor config. |
 | `src/gadget.py` | Renders the team status card (chat-widget HTML) from live API data. |
 | `src/tracker.py` | Per-agent workflow chains (A → B → C with a status symbol per step) rendered under each agent's name in the status card, from Muse's own `tracker.json` (tracking lives outside PenguPool by the owner's rule). |
@@ -31,7 +38,6 @@ prove the install works.
 | `tracker.example.json` | Seed for the work tracker, copied on first install. |
 | `hook/pengupool-status.sh` | The every-minute hook wrapper: runs the detector and forwards its decision. |
 | `install.sh` | Installs the layout below; idempotent. |
-| `selftest.py` | `python3 -I selftest.py`: checks `pp.py`, the detector and the status card against a stand-in API. |
 | `config.example.json` | Default monitor config, seeded on first install. |
 | `SETUP.md` | The full setup guide — Tailscale, pairing, tokens, verification — written for an agent to execute semi-automatically. |
 
@@ -64,24 +70,27 @@ companion ask SPEC [--answer T]   render a question's context card (HTML)
 
 ## The status card
 
-`gadget.py` rebuilds, from `/sessions`, the card Muse shows in chat:
-the team as a tap-to-fold tree (each session's team, role and parent;
-folding any parent row hides its branch), each agent's workflow chain
-under its name, and PenguPool's **own** status indicators — labels
-and colours mirror `web/src/app/ctx.tsx` (`STATUS`) and the design
-tokens in `web/src/index.css`:
+`gadget.py` rebuilds, from live data, the card Muse shows in chat:
+the team as a tap-to-fold tree (the real parent links from the team's
+member list; folding any parent row hides its branch), each agent's
+workflow chain under its name, and PenguPool's **own** status
+indicators — labels
+and colours mirror `web/src/app/ctx.tsx` (`STATUS`, `shownStatus`) and
+the design tokens in `web/src/index.css`:
 
 | Status | Label | Colour |
 | --- | --- | --- |
 | working | Active | green, pulsing (`#15803d` / `#4ade80`) |
 | idle | Waiting | amber (`#b45309` / `#fbbf24`) |
 | approval | ? Need input | red (`#c0262d` / `#f87171`) |
-| ended | Ended | grey (`#8a91a0` / `#6b7280`) |
+| stale, ended, exited | Stale / Ended / Exited | grey (`#8a91a0` / `#6b7280`) |
 | lost, unreachable | Lost / Unreachable | red |
 
-A running session with an ask waiting on the owner shows as
-*? Need input*. The device API carries no version, context % or
-last-active time, so the card shows none.
+Rules that matter: a session the host marks as waiting (or that owns
+the pending `/next` ask) shows as *? Need input*. Status is the host's
+own (`status` from `/sessions`: starting / working / idle / approval) —
+the card no longer infers Stale from activity times or shows context %,
+because the device API does not carry them.
 
 ## The workflow tracker
 
@@ -133,14 +142,15 @@ No triage: needs-input is relayed, never judged. The answering flow
 ## The mobile mini site
 
 `src/serve.mjs` is a zero-dependency Node server that runs **on the
-PenguPool machine** and serves a phone-first live status page: the same
-tree and indicators as the status card, a red banner when an agent
-needs input, auto-refresh every 10 seconds. It binds only to the
-machine's Tailscale address and reads the paired-device API with its
-own device token (pair it as a device; it never holds the owner's app
-token). Every page request needs the site key that `install-host.sh`
-makes, so the URL it prints, `http://<machine>.<tailnet>.ts.net:7790/?key=…`,
-is the one to open on the phone; keep it to your own devices.
+PenguPool machine** and serves a phone-first live status page: the team
+tree and indicators, a red banner when an agent needs input, auto-refresh
+every 10 seconds. It binds only to the machine's Tailscale address, and
+reads the paired-device API through this machine's Tailscale Serve name
+with its own device token (`~/.muse-companion/device-token`, paired once
+under Settings › Muse app). Every page request must carry the site key
+(`?key=...`, made by the installer). Install it on the PenguPool machine
+with `./install-host.sh` (Node 22+, launchd; survives reboots), then open
+the `http://<tailnet-ip>:7790/?key=...` URL it prints on the phone.
 
 ## Install
 
@@ -151,7 +161,7 @@ is the one to open on the phone; keep it to your own devices.
 Installs into the layout the code's paths assume:
 
 ```
-~/workspace/pengupool-agent/   pp.py detect.py gadget.py tracker.py askcard.py (+ device token, below)
+~/workspace/pengupool-agent/   pp.py detect.py gadget.py tracker.py askcard.py (+ tokens, below)
 ~/workspace/companion/         companion.py, companion symlink, config.json
 ~/hooks/scripts/               pengupool-status.sh
 ```
@@ -159,13 +169,15 @@ Installs into the layout the code's paths assume:
 Then, once:
 
 1. Place the paired device token at `~/workspace/pengupool-agent/device-token`
-   (mode 0600). It is the only credential, and it does not rotate.
-   **Tokens are never part of this package**: they live beside the
-   installed code only, and `.gitignore` guards them here.
-2. Export `PENGUPOOL_HOST=<the workstation's Tailscale Serve name>` and
-   `PENGUPOOL_PORT=443` where the hook runs: PenguPool is reached only
-   through Tailscale Serve, so `pp.py` speaks HTTPS end to end and a proxy
-   on the way never sees the device token.
+   (mode 0600). It is the only credential the companion holds: the
+   daemon bootstrap token never leaves the workstation, and `/ws`
+   would not answer off-machine anyway. **Tokens are never part of
+   this package** — they live beside the installed code only, and
+   `.gitignore` guards them here. The device token does not rotate on
+   daemon restarts.
+2. Export `PENGUPOOL_HOST=<workstation tailnet name or IP>` where the
+   hook runs (required: calls fail fast without it). When it is an IP,
+   also export `PENGUPOOL_HOST_HEADER=<workstation tailnet name>`.
 3. Register/enable the `pengupool-status` hook (60-second poll) pointing
    at `~/hooks/scripts/pengupool-status.sh` — in Muse this is a hook
    definition, so ask Muse to set it up.
@@ -174,5 +186,7 @@ Then, once:
 ## Requirements
 
 Python 3 (standard library only), `jq` for the hook wrapper, and
-Tailscale reachability from Muse's VM to the workstation's Tailscale Serve
-name (HTTPS, port 443) — via the runtime tunnel proxy, which `pp.py` handles.
+Tailscale reachability from Muse's VM to the workstation's
+Tailscale Serve endpoint (HTTPS port 443, or plain HTTP port 80 where
+the tailnet has no certificates) — via the runtime tunnel proxy, which
+`pp.py` handles.

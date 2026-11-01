@@ -17,6 +17,36 @@ flips the session back to working (it arrived before the Stop, so it is ignored 
 queued team messages deliver at turn end instead of waiting for hours. Status changes to working
 are logged like idle ones.
 
+Tailscale Serve follows the daemon instead of guessing it. Enabling Serve and the start-up heal
+wait for the daemon's bound port rather than assuming 7787, so a restart onto a new port no longer
+leaves Serve pointing at nothing. Both Serve modes are first-class: a stale HTTPS setup is
+re-pointed over HTTPS and a stale plain-HTTP setup over HTTP, never switched; a fresh setup gets
+HTTPS, and on a tailnet without HTTPS certificates Serve reports that instead of silently
+falling back to plain HTTP. PenguPool remembers the
+port it served and re-points only its own Serve routes, so another app published through Serve is
+left alone: the Serve button reports a route it would take over instead of replacing it. The Settings checklist accepts either mode.
+
+**Serve over HTTP.** Settings has a second Tailscale button that serves plain HTTP on :80 even on a
+tailnet with HTTPS certificates; it is allowed, never gated, and Settings shows a warning that
+plain HTTP is WireGuard-encrypted but not TLS. The pairing URL a device scans keeps that scheme, and the
+checklist's Reachable row probes http:// when only HTTP serves the app.
+
+The Muse companion reaches the device API through Tailscale Serve: HTTPS by
+default, plain HTTP where the tailnet has no HTTPS certificates. The
+workstation is set with `PENGUPOOL_HOST` (name or IP, required) and
+`PENGUPOOL_HOST_HEADER` (the tailnet name, defaulting from the host); the
+device token still lives beside the installed code only. `PENGUPOOL_HOST` may
+also be the pairing URL the app shows: its scheme picks HTTPS or HTTP and an explicit port in it
+is kept. Plain HTTP stays allowed for tailnets without HTTPS certificates and prints one warning
+that it is WireGuard-encrypted but not TLS.
+
+Removed: the companion setup's **Local network** path (turn Local network on,
+no Serve needed) is gone from SETUP.md and README.md, since the daemon no
+longer listens on the network; the plaintext daemon-port transport is no
+longer the default and stays only as `PENGUPOOL_TRANSPORT=direct` for older
+builds. install.sh no longer asks to place the daemon bootstrap token on the
+Muse machine; it holds the paired device token only.
+
 ## 0.10.20
 
 An optional Welcome with two ways to start. **Start with a specialist** starts a new team led by
