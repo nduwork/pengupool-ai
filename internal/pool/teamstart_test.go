@@ -84,6 +84,10 @@ func TestTeamStart(t *testing.T) {
 
 // Everything is checked before anything starts; an agent cannot start a team.
 func TestTeamStartRefusals(t *testing.T) {
+	// Only the fake claude is installed: an agent on this machine's real PATH or in
+	// ~/.local/bin (where harness.Lookup also looks) must not turn a refusal into a start.
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 	p, st := startPool(t, nil)
 	teams := func() int { return len(st.State().Domain.Teams) }
 	for _, c := range []struct {
