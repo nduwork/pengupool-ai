@@ -18,7 +18,7 @@ func TestTriageModelRequired(t *testing.T) {
 	p, st := twoTeams(t)
 	status := func() string {
 		r, _ := call(t, p, true, "triage.status", map[string]any{})
-		return r.(map[string]string)["status"]
+		return r.(map[string]any)["status"].(string)
 	}
 	if s := status(); s != "missing" {
 		t.Fatalf("no model: %s", s)
@@ -100,12 +100,12 @@ func TestHungModelMarkedAfterTheClientsWait(t *testing.T) {
 	clientWait = 200 * time.Millisecond // stands for the client's 30 s
 	p, st := twoTeams(t)
 	cfg := st.Config()
-	cfg.Decision.Providers = map[string]store.ProviderConfig{"ollama": {Type: "ollama", Format: "openai-chat", Address: srv.URL, Model: "m"}}
+	cfg.Decision.Providers = map[string]store.ProviderConfig{"ollama": {Type: "ollama", Format: "ollama-systemone", Address: srv.URL, Model: "m"}}
 	cfg.Decision.Active = "ollama"
 	_ = st.SaveConfig(cfg)
 	status := func() string {
 		r, _ := call(t, p, true, "triage.status", map[string]any{})
-		return r.(map[string]string)["status"]
+		return r.(map[string]any)["status"].(string)
 	}
 	ask := func(d time.Duration) {
 		ctx, cancel := context.WithTimeout(context.Background(), d)

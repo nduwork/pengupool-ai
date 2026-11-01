@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/cgi"
 	"net/http/httptest"
@@ -441,17 +442,16 @@ func TestProposalAssignsHelperAgent(t *testing.T) {
 	for _, a := range []string{"claude", "pi"} {
 		os.WriteFile(filepath.Join(bin, a), []byte("#!/bin/sh\n"), 0o755)
 	}
-	answer := `{"team_size":"3","helps_0":true,"agent_0":"claude","helps_1":true,"agent_1":"pi"}`
+	answer := `{"model":"m","answers":{"team_size":{"choice":"3","probabilities":{"3":0.9}},"helps_0":{"noul":1},"agent_0":{"choice":"claude","confidence":0.9},"helps_1":{"noul":1},"agent_1":{"choice":"pi","confidence":0.9}}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct{ Messages []struct{ Content string } }
-		json.NewDecoder(r.Body).Decode(&req)
-		if !strings.Contains(req.Messages[1].Content, "preferred_agent") {
+		body, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(body), "preferred_agent") {
 			t.Error("the decider was not told the skills' preferred agents")
 		}
-		if r.URL.Path != "/v1/chat/completions" {
+		if r.URL.Path != "/v1/systemone" {
 			t.Errorf("path %s", r.URL.Path)
 		}
-		json.NewEncoder(w).Encode(map[string]any{"model": "m", "choices": []any{map[string]any{"message": map[string]string{"content": answer}}}})
+		io.WriteString(w, answer)
 	}))
 	defer srv.Close()
 	st, err := store.Open(t.TempDir())
@@ -459,7 +459,7 @@ func TestProposalAssignsHelperAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := st.Config()
-	cfg.Decision = store.DecisionConfig{Active: "t", Providers: map[string]store.ProviderConfig{"t": {Type: "ollama", Format: "openai-chat", Address: srv.URL, Model: "m"}}}
+	cfg.Decision = store.DecisionConfig{Active: "t", Providers: map[string]store.ProviderConfig{"t": {Type: "ollama", Format: "ollama-systemone", Address: srv.URL, Model: "m"}}}
 	st.SaveConfig(cfg)
 	p := New(Options{Store: st, Exe: "pengupool", Env: []string{"PATH=" + bin}})
 	repo, sk1, sk2 := t.TempDir(), t.TempDir(), t.TempDir()

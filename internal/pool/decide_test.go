@@ -16,7 +16,7 @@ import (
 // typedDecider answers each question by its type: yes, the first option in name order, level 1.
 type typedDecider struct{ got decision.Request }
 
-func (d *typedDecider) Name() string { return "fake/openai-chat" }
+func (d *typedDecider) Name() string { return "fake/systemone" }
 func (d *typedDecider) Decide(_ context.Context, req decision.Request) (decision.Response, error) {
 	d.got = req
 	a := map[string]decision.Answer{}

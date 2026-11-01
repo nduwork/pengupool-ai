@@ -643,18 +643,24 @@ func (p *Pool) checkTriage(ctx context.Context) {
 // started), "unreachable" (its last call or check failed) or "ok".
 func (p *Pool) triageStatus(_ context.Context, _ struct{}) (any, error) {
 	if p.decider() == nil {
-		return map[string]string{"status": "missing"}, nil
+		out := map[string]any{"status": "missing"}
+		for _, r := range p.st.Config().Decision.Removed {
+			if r.Active { // the active model was removed: the app says why triage has none
+				out["removed"] = r
+			}
+		}
+		return out, nil
 	}
 	p.mu.Lock()
 	e := p.triageErr
 	p.mu.Unlock()
 	if e == triageUnchecked {
-		return map[string]string{"status": "unchecked"}, nil
+		return map[string]any{"status": "unchecked"}, nil
 	}
 	if e != "" {
-		return map[string]string{"status": "unreachable", "error": e}, nil
+		return map[string]any{"status": "unreachable", "error": e}, nil
 	}
-	return map[string]string{"status": "ok"}, nil
+	return map[string]any{"status": "ok"}, nil
 }
 
 func errorf(format string, a ...any) error { return fmt.Errorf(format, a...) }

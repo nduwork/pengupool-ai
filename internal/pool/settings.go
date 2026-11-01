@@ -46,6 +46,8 @@ func (p *Pool) dropRetiredProviders() {
 		if !providerTypes[pc.Type] || decision.Validate(pc) != nil {
 			gone = append(gone, k)
 			delete(cfg.Decision.Providers, k)
+			cfg.Decision.Removed = slices.DeleteFunc(cfg.Decision.Removed, func(r store.RemovedProvider) bool { return r.Type == pc.Type })
+			cfg.Decision.Removed = append(cfg.Decision.Removed, store.RemovedProvider{Type: pc.Type, Format: pc.Format, Model: pc.Model, Active: k == cfg.Decision.Active})
 		}
 	}
 	if len(gone) == 0 {
@@ -68,7 +70,7 @@ func (p *Pool) providers(_ context.Context, _ struct{}) (any, error) {
 		"jev":    {Type: "jev", Format: "systemone", Address: "https://api.typesafe.ai/v1/systemone", Model: "jev-latest"},
 	}
 	return map[string]any{
-		"active": c.Active, "providers": c.Providers,
+		"active": c.Active, "providers": c.Providers, "removed": c.Removed,
 		"formats": decision.Formats, "thresholds": decision.Thresholds,
 		"defaults": defaults,
 	}, nil
@@ -99,6 +101,7 @@ func (p *Pool) providerSave(ctx context.Context, in providerSaveIn) (any, error)
 		cfg.Decision.Providers = map[string]store.ProviderConfig{}
 	}
 	cfg.Decision.Providers[pc.Type] = pc
+	cfg.Decision.Removed = slices.DeleteFunc(cfg.Decision.Removed, func(r store.RemovedProvider) bool { return r.Type == pc.Type })
 	if err := p.st.SaveConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -126,7 +129,7 @@ func (p *Pool) providerCheck(ctx context.Context, in providerTypeIn) (any, error
 	if err != nil {
 		hint := ""
 		if errors.Is(err, decision.ErrRefused) {
-			hint = "The model answered, but not in the decision format: pick a model built for decisions, or the chat format for a general model."
+			hint = "The model answered, but not in the decision format: pick a System One decision model."
 		} else if pc.Type == "ollama" {
 			hint = "Is Ollama running (`ollama serve`) and is the model pulled (`ollama pull " + pc.Model + "`)? System One needs Ollama 0.35 or later. PenguPool never installs Ollama or pulls weights."
 		}

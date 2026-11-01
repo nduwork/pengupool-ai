@@ -79,13 +79,9 @@ func (v lineView) shown() bool {
 }
 
 // thresholds are when a line guides or is shown: the defaults moved by the owner's reviewed
-// go-aheads (agentdb.LearnThresholds), replayed on every read, which is cheap at owner scale. A
-// decision model that is not calibrated counts hard, so its base SigmaMax is tighter.
+// go-aheads (agentdb.LearnThresholds), replayed on every read, which is cheap at owner scale.
 func (p *Pool) thresholds() agentdb.Thresholds {
 	base := agentdb.DefaultThresholds
-	if c := p.st.Config().Decision; c.Providers[c.Active].Format == "openai-chat" {
-		base.SigmaMax = agentdb.HardCountSigmaMax
-	}
 	outcomes, _ := p.db.Outcomes(p.owner())
 	return agentdb.LearnThresholds(outcomes, base)
 }

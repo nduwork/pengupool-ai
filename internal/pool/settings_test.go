@@ -31,6 +31,45 @@ func TestRetiredProvidersDropAtStart(t *testing.T) {
 	}
 }
 
+// A saved chat-format triage model is removed at start, and the note says so until that type is saved again.
+func TestChatTriageModelRemovedWithANote(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := st.Config()
+	cfg.Decision.Active = "ollama"
+	cfg.Decision.Providers = map[string]store.ProviderConfig{"ollama": {Type: "ollama", Format: "openai-chat", Address: "http://127.0.0.1:11434", Model: "llama3.1:8b"}}
+	_ = st.SaveConfig(cfg)
+	p := New(Options{Store: st, Exe: "pengupool"})
+	d := st.Config().Decision
+	want := store.RemovedProvider{Type: "ollama", Format: "openai-chat", Model: "llama3.1:8b", Active: true}
+	if d.Active != "" || len(d.Providers) != 0 || len(d.Removed) != 1 || d.Removed[0] != want {
+		t.Fatalf("decision = %+v", d)
+	}
+	r, _ := call(t, p, true, "triage.status", map[string]any{})
+	if m := r.(map[string]any); m["status"] != "missing" || m["removed"] != want {
+		t.Fatalf("triage.status = %+v", m)
+	}
+	r, _ = call(t, p, true, "decision.providers", map[string]any{})
+	if rm := r.(map[string]any)["removed"].([]store.RemovedProvider); len(rm) != 1 {
+		t.Fatalf("decision.providers removed = %+v", rm)
+	}
+	if _, err := p.providerSave(context.Background(), providerSaveIn{Provider: store.ProviderConfig{Type: "ollama", Format: "openai-chat", Address: "http://127.0.0.1:11434", Model: "m"}}); err == nil {
+		t.Fatal("a chat-format triage model was saved")
+	}
+	if _, err := p.providerSave(context.Background(), providerSaveIn{Provider: store.ProviderConfig{Type: "ollama", Format: "ollama-systemone", Address: "http://127.0.0.1:11434", Model: "m"}}); err != nil {
+		t.Fatal(err)
+	}
+	if rm := st.Config().Decision.Removed; len(rm) != 0 {
+		t.Fatalf("the note outlived a save of its type: %+v", rm)
+	}
+	r, _ = call(t, p, true, "triage.status", map[string]any{})
+	if _, ok := r.(map[string]any)["removed"]; ok {
+		t.Fatal("triage.status still reports the removed model")
+	}
+}
+
 // The saved key goes only to the saved address: listing models at any other address sends a typed key or none.
 func TestProviderModelsKeepsTheKeyToItsAddress(t *testing.T) {
 	var auths []string
