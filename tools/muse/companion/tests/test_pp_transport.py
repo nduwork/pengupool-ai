@@ -25,6 +25,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 import pp  # noqa: E402
 
+REAL_TUNNEL = pp.tunnel  # tests below swap pp.tunnel out
+
 TOKEN = "test-token-0123456789"
 
 
@@ -318,15 +320,39 @@ class SmokeTests(unittest.TestCase):
 
 class ResolveHostTests(unittest.TestCase):
     def test_pairing_url_scheme_picks_transport(self):
-        self.assertEqual(pp.resolve_host("https://m.ts.net/api/muse/v1", ""), ("m.ts.net", "serve"))
-        self.assertEqual(pp.resolve_host("http://m.ts.net/api/muse/v1", ""), ("m.ts.net", "serve-http"))
+        self.assertEqual(pp.resolve_host("https://m.ts.net/api/muse/v1", ""), ("m.ts.net", "serve", None))
+        self.assertEqual(pp.resolve_host("http://m.ts.net/api/muse/v1", ""), ("m.ts.net", "serve-http", None))
 
     def test_env_transport_overrides_scheme(self):
-        self.assertEqual(pp.resolve_host("http://m.ts.net/api/muse/v1", "serve"), ("m.ts.net", "serve"))
+        self.assertEqual(pp.resolve_host("http://m.ts.net/api/muse/v1", "serve"), ("m.ts.net", "serve", None))
+        self.assertEqual(pp.resolve_host("https://m.ts.net/", "serve-http"), ("m.ts.net", "serve-http", None))
 
     def test_bare_host_defaults_to_serve(self):
-        self.assertEqual(pp.resolve_host("m.ts.net", ""), ("m.ts.net", "serve"))
-        self.assertEqual(pp.resolve_host("100.64.0.1", "direct"), ("100.64.0.1", "direct"))
+        self.assertEqual(pp.resolve_host("m.ts.net", ""), ("m.ts.net", "serve", None))
+        self.assertEqual(pp.resolve_host("100.64.0.1", "direct"), ("100.64.0.1", "direct", None))
+
+    def test_explicit_port_and_ipv6(self):
+        self.assertEqual(pp.resolve_host("https://m.ts.net:8443/api/muse/v1", ""), ("m.ts.net", "serve", 8443))
+        self.assertEqual(pp.resolve_host("http://[fd7a::1]:8080/", ""), ("fd7a::1", "serve-http", 8080))
+        self.assertEqual(pp._bracket("fd7a::1"), "[fd7a::1]")
+        self.assertEqual(pp._bracket("m.ts.net"), "m.ts.net")
+
+    def test_other_schemes_rejected(self):
+        with self.assertRaises(ValueError):
+            pp.resolve_host("ftp://m.ts.net/", "")
+
+
+class HTTPWarningTests(unittest.TestCase):
+    def test_serve_http_warns_once_on_stderr(self):
+        import io
+        from unittest import mock
+        err = io.StringIO()
+        with mock.patch.object(pp, "HOST", "m.ts.net"), mock.patch.object(pp, "TRANSPORT", "serve-http"), \
+                mock.patch.object(pp, "_warned_http", False), \
+                mock.patch.object(pp, "_tunnel_serve_http", lambda: None), mock.patch("sys.stderr", err):
+            REAL_TUNNEL()
+            REAL_TUNNEL()
+        self.assertEqual(err.getvalue().count("plain HTTP over the tailnet"), 1)
 
 
 if __name__ == "__main__":

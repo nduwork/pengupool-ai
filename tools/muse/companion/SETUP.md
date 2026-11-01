@@ -68,8 +68,10 @@ Steps:
    mode) to every user, with or without any subscription; the two
    can run at the same time. Simplest: set `PENGUPOOL_HOST` to the
    pairing URL the app shows (`https://…` or `http://…`); its scheme
-   picks `serve` or `serve-http`. `PENGUPOOL_TRANSPORT` still
-   overrides it. The tailnet
+   picks `serve` or `serve-http`, and an explicit port in it is kept.
+   `PENGUPOOL_TRANSPORT` still overrides it. Plain HTTP prints one
+   warning on stderr: traffic is WireGuard-encrypted but not TLS, so
+   use HTTPS if your tailnet has certificates. The tailnet
    itself is WireGuard-encrypted and the device token remains the
    credential; the device API's host check is unchanged.
 

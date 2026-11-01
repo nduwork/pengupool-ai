@@ -37,7 +37,8 @@ Transports (PENGUPOOL_TRANSPORT):
     tailnets where HTTPS certificates are not enabled. CONNECT to the
     tailnet address on port 80 and speak plaintext HTTP with
     Host = the tailnet name. The tailnet itself is WireGuard-encrypted,
-    and the device token remains the credential.
+    and the device token remains the credential. Allowed, never gated:
+    the first connection prints one warning on stderr (plain HTTP, not TLS).
   direct — the pre-0.10.20 path: CONNECT to the tailnet address on the
     daemon port (7787) and speak plaintext HTTP with
     Host = <tailnet name>:<port>. Only useful while a daemon build
@@ -56,24 +57,40 @@ from urllib.parse import quote, urlparse
 
 
 def resolve_host(host, transport):
-    """Host and transport from PENGUPOOL_HOST and PENGUPOOL_TRANSPORT.
+    """(host, transport, port) from PENGUPOOL_HOST and PENGUPOOL_TRANSPORT.
 
     PENGUPOOL_HOST may be the pairing URL the app shows
-    (scheme://<name>/api/muse/v1): its scheme picks the transport
-    (https -> serve, http -> serve-http) unless PENGUPOOL_TRANSPORT is set.
+    (scheme://<name>[:port]/api/muse/v1): its scheme picks the transport
+    (https -> serve, http -> serve-http) unless PENGUPOOL_TRANSPORT is set,
+    and an explicit port in it is kept (else port is None). Other schemes
+    raise ValueError. The host comes back bare (no IPv6 brackets).
     """
+    port = None
     if "://" in host:
         u = urlparse(host)
-        host = u.hostname or ""
+        if u.scheme not in ("http", "https"):
+            raise ValueError(f"PENGUPOOL_HOST scheme must be http or https, not {u.scheme!r}")
+        host, port = u.hostname or "", u.port
         transport = transport or ("serve-http" if u.scheme == "http" else "serve")
-    return host, transport or "serve"
+    return host, transport or "serve", port
 
 
-HOST, TRANSPORT = resolve_host(os.environ.get("PENGUPOOL_HOST", ""), os.environ.get("PENGUPOOL_TRANSPORT", ""))
+def _bracket(host):
+    """host as it goes before :port in a CONNECT line or Host header (IPv6 in brackets)."""
+    return f"[{host}]" if ":" in host and not host.startswith("[") else host
+
+
+HTTP_WARNING = ("plain HTTP over the tailnet: traffic is WireGuard-encrypted but not TLS; "
+                "use HTTPS if your tailnet has certificates")
+try:
+    HOST, TRANSPORT, _URL_PORT = resolve_host(os.environ.get("PENGUPOOL_HOST", ""), os.environ.get("PENGUPOOL_TRANSPORT", ""))
+    HOST_ERROR = ""
+except ValueError as e:
+    HOST, TRANSPORT, _URL_PORT, HOST_ERROR = "", "serve", None, str(e)
 HOST_HEADER = os.environ.get("PENGUPOOL_HOST_HEADER", "") or HOST
 PORT = int(os.environ.get("PENGUPOOL_PORT", "7787"))
-SERVE_PORT = int(os.environ.get("PENGUPOOL_SERVE_PORT", "443"))
-SERVE_HTTP_PORT = int(os.environ.get("PENGUPOOL_SERVE_HTTP_PORT", "80"))
+SERVE_PORT = int(os.environ.get("PENGUPOOL_SERVE_PORT", "") or (_URL_PORT if TRANSPORT == "serve" and _URL_PORT else 443))
+SERVE_HTTP_PORT = int(os.environ.get("PENGUPOOL_SERVE_HTTP_PORT", "") or (_URL_PORT if TRANSPORT == "serve-http" and _URL_PORT else 80))
 HERE = os.path.dirname(os.path.abspath(__file__))
 API = "/api/muse/v1"
 
@@ -147,8 +164,9 @@ def _connect_proxy(host, port):
         try:
             raw = socket.create_connection((p.hostname, cport), timeout=20)
             sk = Sock(raw)
-            sk.s.sendall((f"CONNECT {host}:{port} HTTP/1.1\r\n"
-                          f"Host: {host}:{port}\r\nProxy-Connection: keep-alive\r\n\r\n").encode())
+            hp = f"{_bracket(host)}:{port}"
+            sk.s.sendall((f"CONNECT {hp} HTTP/1.1\r\n"
+                          f"Host: {hp}\r\nProxy-Connection: keep-alive\r\n\r\n").encode())
             status = sk.read_until(b"\r\n\r\n").decode("latin1").split("\r\n", 1)[0]
         except (OSError, EOFError) as e:
             errs.append(f"{cport}: {e}")
@@ -197,12 +215,21 @@ def _tunnel_direct():
     return sk
 
 
+_warned_http = False
+
+
 def tunnel():
+    global _warned_http
+    if HOST_ERROR:
+        raise SystemExit(HOST_ERROR)
     if not HOST:
         raise SystemExit("PENGUPOOL_HOST is not set: the workstation's Tailscale name or IP")
     if TRANSPORT == "direct":
         return _tunnel_direct()
     if TRANSPORT == "serve-http":
+        if not _warned_http:
+            _warned_http = True
+            print(f"pp: warning: {HTTP_WARNING}", file=sys.stderr)
         return _tunnel_serve_http()
     if TRANSPORT == "serve":
         return _tunnel_serve()
@@ -218,7 +245,7 @@ def _request(method, path, body=None, auth=True):
     """One HTTP request to the daemon over the tunnel. Returns (status, body bytes)."""
     sk = tunnel()
     payload = b""
-    host_header = HOST_HEADER if TRANSPORT in ("serve", "serve-http") else f"{HOST_HEADER}:{PORT}"
+    host_header = _bracket(HOST_HEADER) if TRANSPORT in ("serve", "serve-http") else f"{_bracket(HOST_HEADER)}:{PORT}"
     headers = [f"Host: {host_header}", "Connection: close"]
     if auth:
         headers.append(f"Authorization: Bearer {load_device_token()}")

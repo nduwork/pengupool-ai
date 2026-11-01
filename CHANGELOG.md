@@ -9,7 +9,9 @@ default, plain HTTP where the tailnet has no HTTPS certificates. The
 workstation is set with `PENGUPOOL_HOST` (name or IP, required) and
 `PENGUPOOL_HOST_HEADER` (the tailnet name, defaulting from the host); the
 device token still lives beside the installed code only. `PENGUPOOL_HOST` may
-also be the pairing URL the app shows, and its scheme picks HTTPS or HTTP.
+also be the pairing URL the app shows: its scheme picks HTTPS or HTTP and an explicit port in it
+is kept. Plain HTTP stays allowed for tailnets without HTTPS certificates and prints one warning
+that it is WireGuard-encrypted but not TLS.
 
 Removed: the companion setup's **Local network** path (turn Local network on,
 no Serve needed) is gone from SETUP.md and README.md, since the daemon no
