@@ -239,10 +239,10 @@ type settingsIn struct {
 	// AgentPermissions is the owner's consent, "allowed" or "off", to PenguPool's rules in each agent's
 	// own config: from the app only (agents' CLI calls never reach settings.save).
 	AgentPermissions string `json:"agent_permissions,omitempty"`
-	EnableServe      bool   `json:"enable_serve,omitempty"
+	EnableServe      bool   `json:"enable_serve,omitempty"`
 	// EnableServeHTTP serves plain HTTP on :80 instead of HTTPS on
 	// :443. The modes are peers and can both be on; neither is gated.
-	EnableServeHTTP bool `json:"enable_serve_http,omitempty"``
+	EnableServeHTTP bool `json:"enable_serve_http,omitempty"`
 }
 
 func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
