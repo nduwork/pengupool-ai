@@ -402,6 +402,16 @@ its lines rewritten at start. Agents are now told to run the CLI with its path s
 spelling the rules match. Theme font sizes no longer drop when a colour class follows them, so
 default buttons keep their 13px label size.
 
+v0.10.20: An optional Welcome with two ways to start. **Start with a specialist** starts a new team led by
+team-lead-agent, with the specialists you tick as members: seven commonly useful ones are suggested
+(research, PR review, dev workflow, security, API design, CI and data analysis), and a search reaches
+every installed specialist. A folder is asked for whenever a specialist is picked, since they work in a
+repository; the lead alone needs none. If the lead does not start, no team is created; a specialist that
+does not start is reported, with Retry, and the team keeps its lead. **Start in a folder** opens New
+session. A three-row Setup card (agent, decision model, agent permissions) links to each setting.
+"Show Welcome when Workspace is empty" turns it off, per window; Settings → General and the empty
+map reopen it. The triage banner's Open Settings goes straight to the Decision model.
+
 ## Credits
 
 - **PAHF** — *Learning Personalized Agents from Human Feedback*, Kaiqu Liang, Julia Kruk,

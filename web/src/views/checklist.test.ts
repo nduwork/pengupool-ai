@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 import { stepsOf } from "./checklist";
 
 describe("stepsOf", () => {
-  it("detects each step from the setup", () => {
-    const done = (s: Parameters<typeof stepsOf>[0]): boolean[] => stepsOf(s).map((x) => x.done);
-    expect(done({ agent: false, teams: 0, decision: false, permissions: false })).toEqual([false, false, false, false]);
-    expect(done({ agent: true, teams: 2, decision: false, permissions: true })).toEqual([true, true, false, true]);
+  it("detects each step from the setup, with its value or why it matters", () => {
+    const none = stepsOf({ agent: "", decision: "", permissions: "" });
+    expect(none.map((x) => x.done)).toEqual([false, false, false]);
+    expect(none.map((x) => x.detail)).toEqual(["No agent installed", "Required for memory and triage", "Not decided"]);
+    const set = stepsOf({ agent: "Codex 0.166.0", decision: "Local hosted · tev1:0.8b", permissions: "off" });
+    expect(set.map((x) => x.done)).toEqual([true, true, true]);
+    expect(set.map((x) => x.detail)).toEqual(["Codex 0.166.0", "Local hosted · tev1:0.8b", "Asking each time"]);
   });
 });

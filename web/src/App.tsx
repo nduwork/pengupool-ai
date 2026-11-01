@@ -81,6 +81,9 @@ export function App(): ReactElement {
   const panels = usePanelRefs();
   const [compassOpen, setCompassOpen] = usePersisted("compass.open", false);
   const [messagesOpen, setMessagesOpen] = usePersisted("messages.open", true);
+  const [welcomeShow, setWelcomeShow] = usePersisted("welcome.show", true);
+  const [welcomeOpen, setWelcomeOpen] = useState(false); // opened explicitly, over the Workspace; not kept
+  const [, setSettingsSection] = usePersisted("settings.section", "general");
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -278,8 +281,16 @@ export function App(): ReactElement {
       call,
       openTab,
       showDialog: setDialog,
+      welcome: {
+        show: welcomeShow,
+        setShow: setWelcomeShow,
+        open: () => {
+          setWelcomeOpen(true);
+          setNav("workspace");
+        },
+      },
     }),
-    [connection, info.status, view, selected, unread, gates, spots, select, nav, call, openTab],
+    [connection, info.status, view, selected, unread, gates, spots, select, nav, call, openTab, welcomeShow],
   );
 
   const onAttach = useCallback((attach: AttachSession | null) => {
@@ -396,7 +407,14 @@ export function App(): ReactElement {
               {triagePrompt(triage) !== null ? (
                 <div role="alert" className="flex items-center gap-2 border-b border-warning/30 bg-warning/15 px-3 py-1.5 text-label">
                   <span className="min-w-0 flex-1">{triagePrompt(triage)}</span>
-                  <Button size="sm" variant="default" onClick={() => setNav("settings")}>
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => {
+                      setSettingsSection("models");
+                      setNav("settings");
+                    }}
+                  >
                     Open Settings
                   </Button>
                 </div>
@@ -404,7 +422,8 @@ export function App(): ReactElement {
               <main className="relative min-h-0 flex-1">
                 {/* The workbench stays mounted on other pages, so terminals keep their attachment. */}
                 <div className={cn("absolute inset-0", nav !== "workspace" && "invisible")}>
-                  {view.sessions.length === 0 ? (
+                  {/* Nothing until the first snapshot: an owner with sessions, or with Welcome hidden, sees no flash of it. */}
+                  {view.sessions.length === 0 && view.epoch === "" ? null : view.sessions.length === 0 && welcomeShow ? (
                     <Welcome />
                   ) : (
                     <Workbench
@@ -421,6 +440,7 @@ export function App(): ReactElement {
                       messagesOpen={messagesOpen}
                     />
                   )}
+                  {welcomeOpen && !(view.sessions.length === 0 && welcomeShow) ? <Welcome onBack={() => setWelcomeOpen(false)} /> : null}
                 </div>
                 {nav !== "workspace" ? (
                   <div className="absolute inset-0 bg-background">{nav === "skills" ? <SkillLibrary /> : <Settings />}</div>

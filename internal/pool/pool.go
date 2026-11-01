@@ -397,6 +397,7 @@ func (p *Pool) handlers() map[string]handler {
 		"ask.answer":            p.askAnswer,
 		"team.place_helper":     bind(p.placeHelperRPC),
 		"team.formation":        bind(p.teamFormation),
+		"team.start":            bind(p.teamStart), // Welcome's Start with a specialist
 		"team.request":          bind(p.teamRequest),
 		"team.close_preview":    bind(p.closePreview),
 		"team.close_helper":     bind(p.closeHelperRPC),
