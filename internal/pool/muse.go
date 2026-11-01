@@ -181,16 +181,32 @@ func parseMuseTime(s string) time.Time {
 
 // museVisible reports whether the device may see the session: only teams
 // with iOS access (the owner's existing switch), or sessions on no team.
+// Membership is judged the way museSessions attributes a session to a
+// team — an active member of an active team — and ANY such membership on
+// a team with iOS access makes the session visible. The first record
+// that mentions the session must not decide: a stale membership, or an
+// earlier team without iOS access, would otherwise hide a session the
+// owner can already see at work on a visible team (and make it
+// unaddressable — say, action and answer all gate on this check), and a
+// membership the session has left must not leak visibility either.
 func (p *Pool) museVisible(sessionID string) bool {
 	st := p.st.State()
+	onTeam := false
 	for _, t := range st.Domain.Teams {
+		if t.State != "active" {
+			continue
+		}
 		for _, m := range t.Members {
-			if m.SessionID == sessionID {
-				return t.IOSAccess
+			if m.SessionID != sessionID || m.State != "active" {
+				continue
+			}
+			onTeam = true
+			if t.IOSAccess {
+				return true
 			}
 		}
 	}
-	return true
+	return !onTeam
 }
 
 // museTeamVisible reports whether a device may act on an ask of this team: only a team with iOS
