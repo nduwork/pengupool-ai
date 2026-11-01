@@ -8,7 +8,7 @@ code change), and a status card rendered for chat with PenguPool's own
 tree and status indicators.
 
 This is the reference implementation behind the repo's
-`docs/muse-app-management.md` tutorial.
+[`tools/muse/muse-app-management.md`](../muse-app-management.md) tutorial.
 
 **Installing with an agent:** point a Muse at this repo and ask it to
 set up the companion — [`SETUP.md`](SETUP.md) is the step-by-step it
