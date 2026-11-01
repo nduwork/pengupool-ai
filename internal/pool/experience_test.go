@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -327,16 +328,21 @@ func TestLeadProjectEntry(t *testing.T) {
 	if !strings.Contains(p.renderContext("leadaaaaaaaa"), leadGuide) || strings.Contains(p.renderContext("planaaaaaaaa"), leadGuide) {
 		t.Fatal("the paragraph is not the SPECIALIST LEAD's alone")
 	}
+	// A report the agent titled like a project entry is its own, never replaced.
+	if _, err := p.db.AddExperience(agentdb.Entry{Helper: planKey, At: "2026-10-30T09:00:00Z", TeamID: "team1", Title: "Project: app", Body: "an agent's own report"}); err != nil {
+		t.Fatal(err)
+	}
 	compact("leadaaaaaaaa", "2026-10-31T10:00:00Z", "Summary: first picture")
 	p.leadCompaction("leadaaaaaaaa")
 	compact("otheraaaaaaa", "2026-10-31T10:30:00Z", "Summary: ops picture")
 	p.leadCompaction("otheraaaaaaa")
 	compact("leadaaaaaaaa", "2026-10-31T11:00:00Z", "Summary: second picture")
 	p.leadCompaction("leadaaaaaaaa")
-	kept := project("team1")
+	own := func(e agentdb.Entry) bool { return e.At == "2026-10-30T09:00:00Z" }
+	kept := slices.DeleteFunc(project("team1"), own)
 	p.leadCompaction("leadaaaaaaaa") // the same compaction again: nothing changes, not even its uid (sync)
-	es := project("team1")
-	if len(es) != 1 || es[0].Title != "Project: app" || es[0].At != "2026-10-31T11:00:00Z" || len(kept) != 1 || kept[0].UID != es[0].UID {
+	es := slices.DeleteFunc(project("team1"), own)
+	if len(project("team1")) != 2 || len(es) != 1 || es[0].Title != "Project: app" || es[0].At != "2026-10-31T11:00:00Z" || len(kept) != 1 || kept[0].UID != es[0].UID {
 		t.Fatalf("team1 entries %+v, before %+v", es, kept)
 	}
 	e, _ := p.db.ExperienceEntry(es[0].ID)
@@ -365,7 +371,29 @@ func TestLeadProjectEntry(t *testing.T) {
 	// A specialist that is not the LEAD keeps no project entry from its compactions.
 	compact("planaaaaaaaa", "2026-10-31T12:30:00Z", "Summary: a helper's own")
 	p.leadCompaction("planaaaaaaaa")
-	if es := project("team1"); len(es) != 1 || es[0].At != "2026-10-31T11:00:00Z" {
+	if es := project("team1"); len(es) != 2 || es[0].At != "2026-10-31T11:00:00Z" && es[1].At != "2026-10-31T11:00:00Z" {
 		t.Fatalf("a non-lead specialist made a project entry: %+v", es)
+	}
+}
+
+// pi and OMP write a "compaction" record with its summary; the newest one counts. Codex's compaction
+// is encrypted and gives none.
+func TestLastCompaction(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	os.WriteFile(path, []byte(`{"type":"message","timestamp":"2026-10-31T09:00:00Z"}
+{"type":"compaction","timestamp":"2026-10-31T10:00:00.5Z","summary":"older"}
+{"type":"compaction","timestamp":"2026-10-31T11:00:00Z","summary":"  the newest picture  "}
+{"type":"compacted","timestamp":"2026-10-31T12:00:00Z","payload":{"message":""}}
+`), 0o644)
+	for _, h := range []string{harness.Pi, harness.OMP} {
+		if at, s := lastCompaction(h, path); s != "the newest picture" || !at.Equal(time.Date(2026, 10, 31, 11, 0, 0, 0, time.UTC)) {
+			t.Fatalf("%s: %v %q", h, at, s)
+		}
+	}
+	if _, s := lastCompaction(harness.Codex, path); s != "" {
+		t.Fatalf("codex: %q", s)
+	}
+	if _, s := lastCompaction(harness.Claude, path); s != "" {
+		t.Fatalf("claude read a pi record: %q", s)
 	}
 }

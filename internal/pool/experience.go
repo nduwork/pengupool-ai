@@ -356,7 +356,8 @@ func (p *Pool) experienceImport(_ context.Context, in importIn) (any, error) {
 
 // A team led by a SPECIALIST keeps one project entry in that specialist's journal: the lead's latest
 // compaction summary under the host's facts about the team at capture. Only compactions that happen
-// anyway count (the owner's compact command or the harness's own); PenguPool types nothing. Each
+// anyway count (the owner's compact command or the harness's own) and only Claude Code's, pi's and
+// OMP's, whose transcripts hold the summary; PenguPool types nothing. Each
 // capture replaces the team's previous entry: no history, nothing fed back.
 
 const (
@@ -401,20 +402,26 @@ func (p *Pool) leadCompaction(id string) {
 	}
 	var drop []int64
 	for _, e := range old {
-		if strings.HasPrefix(e.Title, projectTitle) {
+		if e.UID == projectUID(key, e.At, t.ID) { // the host's own project entry, never a titled report
 			if e.At == stamp { // this compaction is already kept
 				return
 			}
 			drop = append(drop, e.ID)
 		}
 	}
-	e := agentdb.Entry{Helper: key, At: stamp, TeamID: t.ID, Title: clipRunes(oneLine(redactSecrets(projectTitle+t.Name)), journalTitle),
+	e := agentdb.Entry{UID: projectUID(key, stamp, t.ID), Helper: key, At: stamp, TeamID: t.ID, Title: clipRunes(oneLine(redactSecrets(projectTitle+t.Name)), journalTitle),
 		Body: clipBytes(redactSecrets(teamFacts(&st, t, s.ID, stamp)+"\n## The lead's summary\n\n"+summary), journalBodyMax)}
 	if _, _, err := p.db.RebuildExperience(drop, []agentdb.Entry{e}); err != nil {
 		p.logf("pool: project entry of %s: %v", t.Name, err)
 		return
 	}
 	p.logLine(id, "journal: kept its compaction as the project entry of "+t.Name)
+}
+
+// projectUID is a team's project entry's uid: set by the host, so no entry an agent titled the same
+// way is taken for it, and new with each compaction, so the replaced one's tombstone never blocks it.
+func projectUID(helper, at, team string) string {
+	return agentdb.EntryUID(helper, at, "project entry\x00"+team)
 }
 
 // teamFacts is what the host holds about the team at capture, apart from the lead's narrative.
@@ -450,7 +457,7 @@ func teamFacts(st *store.State, t *protocol.Team, lead, stamp string) string {
 
 // lastCompaction is the newest compaction summary in the end of the harness's transcript and when it
 // was written; "" when there is none. Claude Code writes a user record with isCompactSummary; pi and
-// OMP a "compaction" record with its summary; Codex a "compacted" record with payload.message.
+// OMP a "compaction" record with its summary. Codex's compaction is encrypted, so it gives none.
 func lastCompaction(h, path string) (at time.Time, summary string) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -469,9 +476,6 @@ func lastCompaction(h, path string) (at time.Time, summary string) {
 			Compact   bool            `json:"isCompactSummary"`
 			Summary   string          `json:"summary"`
 			Message   json.RawMessage `json:"message"`
-			Payload   struct {
-				Message string `json:"message"`
-			} `json:"payload"`
 		}
 		if json.Unmarshal(line, &l) == nil {
 			body := ""
@@ -480,8 +484,6 @@ func lastCompaction(h, path string) (at time.Time, summary string) {
 				body = claudeSummary(messageText(l.Message))
 			case (h == harness.Pi || h == harness.OMP) && l.Type == "compaction":
 				body = l.Summary
-			case h == harness.Codex && l.Type == "compacted":
-				body = l.Payload.Message
 			}
 			if t, e := time.Parse(time.RFC3339Nano, l.Timestamp); e == nil && strings.TrimSpace(body) != "" {
 				at, summary = t, strings.TrimSpace(body)
