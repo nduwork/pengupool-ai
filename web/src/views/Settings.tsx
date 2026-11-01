@@ -523,8 +523,21 @@ function Tailscale(): ReactElement {
               setN(n + 1);
             }}
           >
-            {s.network.tailscale !== undefined && s.network.tailscale !== "" ? "Serving" : "Serve over HTTPS"}
+            {s.network.tailscale !== undefined && s.network.tailscale !== "" && !s.network.tailscale.startsWith("http://") ? "Serving" : "Serve over HTTPS"}
           </Button>
+    <Button
+      disabled={s.tailscale_name === undefined}
+      onClick={async () => {
+        const r = await app.call<Record<string, string>>("settings.save", {
+          tailscale: `http://${s.tailscale_name}`,
+          enable_serve_http: true,
+        });
+        if (r !== undefined) toast(r.serve_http_error ?? (r.serve_http || "Tailscale Serve (HTTP) enabled"));
+        setN(n + 1);
+      }}
+    >
+      {s.network.tailscale !== undefined && s.network.tailscale.startsWith("http://") ? "Serving (HTTP)" : "Serve over HTTP"}
+    </Button>
         </Row>
       </Card>
       <TailscaleChecklist rev={n} onChanged={() => setN(n + 1)} />
