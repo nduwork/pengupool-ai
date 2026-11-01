@@ -4,6 +4,8 @@ Every PenguPool AI release, newest first. Each entry describes that release as i
 
 ## Unreleased
 
+The map's Compact context and Clear actions work on Muse sessions (Muse /compact and /new).
+
 Tailscale Serve follows the daemon instead of guessing it. Enabling Serve and the start-up heal
 wait for the daemon's bound port rather than assuming 7787, so a restart onto a new port no longer
 leaves Serve pointing at nothing. Both Serve modes are first-class: a stale HTTPS setup is
