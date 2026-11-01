@@ -1,13 +1,19 @@
 package pool
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/agentdb"
+	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
@@ -344,4 +350,184 @@ func (p *Pool) experienceImport(_ context.Context, in importIn) (any, error) {
 	}
 	out := importCount{Added: added, Skipped: skipped, Dropped: len(drop)}
 	return out, nil
+}
+
+// ---- a SPECIALIST LEAD's project entry -------------------------------------------------------------
+
+// A team led by a SPECIALIST keeps one project entry in that specialist's journal: the lead's latest
+// compaction summary under the host's facts about the team at capture. Only compactions that happen
+// anyway count (the owner's compact command or the harness's own); PenguPool types nothing. Each
+// capture replaces the team's previous entry: no history, nothing fed back.
+
+const (
+	projectTitle   = "Project: " // a project entry's title: projectTitle + the team's name
+	transcriptTail = 8 << 20     // how much of a transcript's end is read for the summary
+)
+
+// leadGuide is the paragraph a SPECIALIST LEAD's context carries.
+const leadGuide = "When your harness compacts this team's session, preserve a self-contained understanding of the project: enduring goal and constraints; repos, component relationships and responsibilities; delivered behavior with evidence and exact status; decisions, reasons and rejected alternatives; dated current state and open threads; durable locations and operational know-how. Carry still-valid earlier project learning forward and explicitly supersede changes. Distinguish facts, plans and unknowns. Do not invent missing information or include credentials. Preserve enough explanation that a later teammate can act without this conversation."
+
+// specialistLead is the skill of id when it is its team's LEAD and a SPECIALIST (a session with a
+// journal, helperOf); nil otherwise.
+func (p *Pool) specialistLead(t *protocol.Team, id string) *protocol.Skill {
+	if t == nil || leadOf(t) != id {
+		return nil
+	}
+	return p.helperOf(id)
+}
+
+// leadCompaction runs at a session's turn end: when it is a SPECIALIST LEAD whose transcript holds a
+// compaction newer than its team's project entry, that entry is replaced, in one transaction.
+func (p *Pool) leadCompaction(id string) {
+	if p.db == nil {
+		return
+	}
+	st := p.st.State()
+	t := teamOf(&st.Domain, id)
+	sk := p.specialistLead(t, id)
+	s, ok := p.session(id)
+	if sk == nil || !ok || s.Transcript == "" {
+		return
+	}
+	at, summary := lastCompaction(s.Harness, s.Transcript)
+	if summary == "" {
+		return
+	}
+	key, stamp := agentOf(*sk), at.UTC().Format(time.RFC3339)
+	old, err := p.db.TeamExperience(key, t.ID)
+	if err != nil {
+		p.logf("pool: project entry of %s: %v", t.Name, err)
+		return
+	}
+	var drop []int64
+	for _, e := range old {
+		if strings.HasPrefix(e.Title, projectTitle) {
+			if e.At == stamp { // this compaction is already kept
+				return
+			}
+			drop = append(drop, e.ID)
+		}
+	}
+	e := agentdb.Entry{Helper: key, At: stamp, TeamID: t.ID, Title: clipRunes(oneLine(redactSecrets(projectTitle+t.Name)), journalTitle),
+		Body: clipBytes(redactSecrets(teamFacts(&st, t, s.ID, stamp)+"\n## The lead's summary\n\n"+summary), journalBodyMax)}
+	if _, _, err := p.db.RebuildExperience(drop, []agentdb.Entry{e}); err != nil {
+		p.logf("pool: project entry of %s: %v", t.Name, err)
+		return
+	}
+	p.logLine(id, "journal: kept its compaction as the project entry of "+t.Name)
+}
+
+// teamFacts is what the host holds about the team at capture, apart from the lead's narrative.
+func teamFacts(st *store.State, t *protocol.Team, lead, stamp string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "## Team facts (PenguPool, as of %s)\n\n- Team: %s (%s)\n", stamp, t.Name, t.ID)
+	if t.Goal != "" {
+		fmt.Fprintf(&b, "- Latest owner instruction: %s\n", oneLine(t.Goal))
+	}
+	b.WriteString("- Members:\n")
+	for _, m := range t.Members {
+		if m.State != "active" {
+			continue
+		}
+		fmt.Fprintf(&b, "  - %s (session %s)", m.Name, m.SessionID)
+		if l := teamLabel(st, t, m); l != "" {
+			b.WriteString(" — " + l)
+		}
+		if m.Assignment != "" {
+			b.WriteString(": " + oneLine(m.Assignment))
+		}
+		b.WriteString("\n")
+	}
+	if rs := teamRepos(&st.Domain, t); len(rs) > 0 {
+		b.WriteString("- Repositories:\n")
+		for _, r := range rs {
+			fmt.Fprintf(&b, "  - %s: %s\n", r.Name, r.Path)
+		}
+	}
+	fmt.Fprintf(&b, "- Captured from: the compaction of session %s at %s\n", lead, stamp)
+	return b.String()
+}
+
+// lastCompaction is the newest compaction summary in the end of the harness's transcript and when it
+// was written; "" when there is none. Claude Code writes a user record with isCompactSummary; pi and
+// OMP a "compaction" record with its summary; Codex a "compacted" record with payload.message.
+func lastCompaction(h, path string) (at time.Time, summary string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return at, ""
+	}
+	defer f.Close()
+	if st, err := f.Stat(); err == nil && st.Size() > transcriptTail {
+		_, _ = f.Seek(st.Size()-transcriptTail, io.SeekStart)
+	}
+	r := bufio.NewReaderSize(f, 1<<20)
+	for {
+		line, err := r.ReadBytes('\n') // a line may be as long as the summary
+		var l struct {
+			Type      string          `json:"type"`
+			Timestamp string          `json:"timestamp"`
+			Compact   bool            `json:"isCompactSummary"`
+			Summary   string          `json:"summary"`
+			Message   json.RawMessage `json:"message"`
+			Payload   struct {
+				Message string `json:"message"`
+			} `json:"payload"`
+		}
+		if json.Unmarshal(line, &l) == nil {
+			body := ""
+			switch {
+			case h == harness.Claude && l.Compact:
+				body = claudeSummary(messageText(l.Message))
+			case (h == harness.Pi || h == harness.OMP) && l.Type == "compaction":
+				body = l.Summary
+			case h == harness.Codex && l.Type == "compacted":
+				body = l.Payload.Message
+			}
+			if t, e := time.Parse(time.RFC3339Nano, l.Timestamp); e == nil && strings.TrimSpace(body) != "" {
+				at, summary = t, strings.TrimSpace(body)
+			}
+		}
+		if err != nil {
+			return at, summary
+		}
+	}
+}
+
+// claudeSummary is Claude Code's compaction text without its wrapping: the "continued from a previous
+// conversation" opening, the list of tools used and the pointer to the full transcript.
+func claudeSummary(s string) string {
+	s = claudeWrapRe.ReplaceAllString(s, "")
+	if i := strings.Index(s, "\nIf you need specific details from before compaction"); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
+}
+
+var claudeWrapRe = regexp.MustCompile(`(?s)\AThis session is being continued from a previous conversation.*?\n\n|<tools-used-before-summary>.*?</tools-used-before-summary>\s*`)
+
+// messageText is a transcript message's text: its content is a string or a list of text blocks.
+func messageText(raw json.RawMessage) string {
+	var m struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if json.Unmarshal(raw, &m) != nil {
+		return ""
+	}
+	var plain string
+	if json.Unmarshal(m.Content, &plain) == nil {
+		return plain
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	var out []string
+	if json.Unmarshal(m.Content, &blocks) == nil {
+		for _, b := range blocks {
+			if b.Type == "text" {
+				out = append(out, b.Text)
+			}
+		}
+	}
+	return strings.Join(out, "\n")
 }
