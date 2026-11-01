@@ -24,7 +24,7 @@ import (
 // and restarts (desktop/src/update.ts). Agent sessions keep running: workers outlive the host.
 
 const (
-	releaseRepo = "nduworker/pengupool-ai"
+	releaseRepo = "nduwork/pengupool-ai"
 	updatesDir  = "updates"
 )
 
