@@ -524,7 +524,7 @@ type museSessionView struct {
 	Waiting bool   `json:"waiting"`
 	// Question is what the agent asks in its terminal now, if anything (answered there, not here).
 	Question string `json:"question,omitempty"`
-	// Its place on a team, if on one: the team, LEAD | SME | HELPER, the member it hangs under, its job.
+	// Its place on a team, if on one: the team, LEAD | SME | SPECIALIST, the member it hangs under, its job.
 	Team       string `json:"team,omitempty"`
 	TeamID     string `json:"team_id,omitempty"`
 	Role       string `json:"role,omitempty"`

@@ -91,7 +91,7 @@ func TestHelperHasNoWorktree(t *testing.T) {
 		p.logStrayWrite(s, map[string]any{"tool_name": "Write", "tool_input": map[string]any{"file_path": path}})
 	}
 	log, _ := os.ReadFile(s.RunLog)
-	if !strings.Contains(string(log), "helper: wrote in a team repository: "+filepath.Join(repo2, "a.go")) || strings.Contains(string(log), "tmp.txt") {
+	if !strings.Contains(string(log), "specialist: wrote in a team repository: "+filepath.Join(repo2, "a.go")) || strings.Contains(string(log), "tmp.txt") {
 		t.Fatalf("log:\n%s", log)
 	}
 }

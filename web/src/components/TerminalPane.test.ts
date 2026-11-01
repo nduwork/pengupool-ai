@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isShiftEnter, shellQuote } from "./TerminalPane";
+import { isShiftEnter, shellQuote, shiftEnter } from "./TerminalPane";
 
 describe("shellQuote", () => {
   it("escapes what a shell would split or expand, as Terminal.app does", () => {
@@ -17,5 +17,12 @@ describe("isShiftEnter", () => {
     expect(isShiftEnter(k)).toBe(false);
     expect(isShiftEnter({ ...k, shiftKey: true, metaKey: true })).toBe(false);
     expect(isShiftEnter({ ...k, key: "a", shiftKey: true })).toBe(false);
+  });
+});
+
+describe("shiftEnter", () => {
+  it("types Ctrl+J for pi, whose input submits on ESC CR, and ESC CR for every other harness", () => {
+    expect(shiftEnter("pi")).toBe("\n");
+    for (const h of ["claude", "muse", "codex", "omp", "copilot", "gemini", "shell", "custom", undefined]) expect(shiftEnter(h)).toBe("\x1b\r");
   });
 });

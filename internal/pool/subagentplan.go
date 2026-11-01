@@ -63,7 +63,7 @@ func (p *Pool) subagentPlan(s store.Session, prompt string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), nextStepTimeout)
 	res, err := dec.Decide(ctx, decision.Request{
-		State:     map[string]any{"brief": redactSecrets(clipRunes(prompt, 1500)), "helper": redactSecrets(desc), "harness": s.Harness},
+		State:     map[string]any{"brief": redactSecrets(clipRunes(prompt, 1500)), "specialist": redactSecrets(desc), "harness": s.Harness},
 		Questions: qs,
 	})
 	cancel()

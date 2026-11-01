@@ -58,7 +58,7 @@ function channelFor(sessionId: string): number {
   return channel;
 }
 
-const NAV_TITLE: Record<Nav, string> = { workspace: "Workspace", skills: "Helper agents", settings: "Settings" };
+const NAV_TITLE: Record<Nav, string> = { workspace: "Workspace", skills: "Specialists", settings: "Settings" };
 
 export function App(): ReactElement {
   // In the desktop app the page is loaded from the app bundle, so the host's address and token
@@ -320,6 +320,7 @@ export function App(): ReactElement {
       <TerminalPane
         key={selectedView.id}
         sessionId={selectedView.id}
+        harness={selectedView.harness}
         instance={instanceOf(storeRef.current.currentEpoch, selectedView)}
         channel={channelFor(selectedView.id)}
         connection={connection}

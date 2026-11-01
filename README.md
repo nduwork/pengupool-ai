@@ -1,11 +1,11 @@
 # PenguPool AI
 
 PenguPool AI is the PenguPool agent-pool app — a Go host daemon with PTY worker
-sessions, a browser/desktop terminal UI, helper teams and an owner Compass —
+sessions, a browser/desktop terminal UI, teams of specialists and an owner Compass —
 running Claude Code (account or Ollama), Muse Code, Codex, pi and OMP
 side by side, with the Muse app as the owner's remote.
 
-Say a preference once; every agent starts with it, helpers remember their
+Say a preference once; every agent starts with it, specialists remember their
 finished work, and you answer waiting sessions from your phone.
 
 ## Install
@@ -41,7 +41,7 @@ browser UI talk to the daemon over its gateway. Data: `~/.pengupool-ai/v2`
   (or the Muse app) and edited in the Compass panel; every session gets them
   through its harness hooks. Lines from the old `compass.jsonl` are imported
   once on first start.
-- **Journal.** A helper's `Done:` report becomes an entry (its compacted
+- **Journal.** A specialist's `Done:` report becomes an entry (its compacted
   context); its next session starts with the index and the matches.
 - **Harnesses.** Claude Code, Muse Code (the app installs its PenguPool
   plugin), Codex (the app writes a rule so only the PenguPool CLI leaves the
@@ -339,6 +339,32 @@ session's agent only words new lines.
 v0.10.10: The map's hover card shows a session's question, last message and folder whole, and a card
 taller than the room it has scrolls; the pointer can move into it to scroll, and it keeps clear of the
 screen edges. The same holds for every tip in the app.
+v0.10.11: A team whose LEAD is a SPECIALIST keeps one project entry in that specialist's journal. The
+lead's context asks it to preserve a self-contained picture of the project when its harness compacts the
+session; at the lead's next turn end PenguPool keeps that compaction summary (Claude Code, pi and OMP
+sessions; Codex encrypts its compactions, so a Codex LEAD keeps none), under the host's facts about
+the team at that moment (team, latest owner instruction, members with their labels and assignments,
+repositories, and the compaction it came from), and it replaces the team's previous project entry. Only
+compactions that happen anyway count: PenguPool types nothing. A team led by an SME or a session with no
+skill gets nothing new, and a team that closes without a compaction keeps no project entry. The entry is
+read like any other, through the specialist's own `experience search` and `show`.
+
+v0.10.12: The helper role is now SPECIALIST, beside LEAD and SME: a skill-backed member that carries its
+own journal across teams. The app says Specialists (the page, the hub, the map's pool), a member card
+reads SPEC with the tooltip Specialist, and the team member list and guidance agents read name the
+role SPECIALIST; so do the CLI help, errors and run log lines. Stored data and the protocol keep the
+value "helper".
+v0.10.13: Codex and OMP sessions raise the same needs-input alerts as Claude. A Codex approval prompt
+(its PermissionRequest hook) and an OMP approval dialog or ask-tool question put the session in the one
+list and notify; the alert goes once it is approved, denied, interrupted (Codex Interrupt) or the turn
+ends. pi has no approval dialog or ask tool, so it raises none; its check-ins still come, as for every agent.
+v0.10.14: A terminal restored from a snapshot (a reattach, a second viewer) keeps the agent's whole
+stack of kitty keyboard modes, not only the top one, so when the agent pops a mode its keys read as
+they do on the original terminal; popping past the bottom of the stack clears the modes, as the kitty
+spec says. In the web terminal Shift+Enter now types a new line in pi (Ctrl+J; ESC CR submitted
+there) and stays ESC CR elsewhere. Checked live: pi; established: Claude Code; the other harnesses
+are not checked live. A test lists every harness against what Shift+Enter sends, so a new harness
+cannot be added without that being checked.
 
 ## Credits
 

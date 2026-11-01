@@ -263,9 +263,9 @@ func spec(kind string, p Params) ([]string, []string, error) {
 		// Hooks given with -c are not in Codex's persisted trust list, so they need the bypass;
 		// project hooks still load only from a trusted project layer.
 		cmd = append(cmd, "--dangerously-bypass-hook-trust")
-		for _, ev := range []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"} {
-			hook := shellQuote(p.Exe) + " hook codex " + ev
-			cmd = append(cmd, "-c", fmt.Sprintf("hooks.%s=[{hooks=[{type=\"command\",command=%s,timeout=15}]}]", ev, strconv.Quote(hook)))
+		for _, ev := range codexEvents {
+			hook := shellQuote(p.Exe) + " hook codex " + ev[1]
+			cmd = append(cmd, "-c", fmt.Sprintf("hooks.%s=[{hooks=[{type=\"command\",command=%s,timeout=15}]}]", ev[0], strconv.Quote(hook)))
 		}
 		if p.Model != "" {
 			cmd = append(cmd, "-m", p.Model)
@@ -379,6 +379,15 @@ func writeFile(path string, b []byte) (string, error) {
 		return "", err
 	}
 	return path, os.Rename(tmp, path)
+}
+
+// codexEvents maps Codex hook events to PenguPool's. PermissionRequest fires "when permission is
+// requested" (Codex's approval prompt; it names no tool call id); Interrupt "right before an
+// interrupted turn is aborted" (Esc, which also refuses a waiting approval), with no Stop.
+var codexEvents = [][2]string{
+	{"SessionStart", "SessionStart"}, {"UserPromptSubmit", "UserPromptSubmit"}, {"PreToolUse", "PreToolUse"},
+	{"PostToolUse", "PostToolUse"}, {"PermissionRequest", "PermissionRequest"}, {"Stop", "Stop"},
+	{"Interrupt", "Interrupted"},
 }
 
 // geminiEvents maps Gemini CLI hook events to PenguPool's.

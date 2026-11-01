@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/nduwork/pengupool-ai/internal/agentdb"
@@ -52,5 +53,19 @@ func putNotes(t *testing.T, p *Pool, agent, text string) {
 	t.Helper()
 	if _, err := p.db.AddExperience(agentdb.Entry{Helper: agent, Title: text, Body: text}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A skill-backed member is a SPECIALIST in its own words and in every teammate's member list.
+func TestContextNamesSpecialist(t *testing.T) {
+	p, _ := helperPool(t)
+	for _, id := range []string{"planaaaaaaaa", "leadaaaaaaaa"} {
+		c := p.renderContext(id)
+		if !strings.Contains(c, "- plan (session planaaaaaaaa) — SPECIALIST") || strings.Contains(c, "HELPER") {
+			t.Fatalf("%s context:\n%s", id, c)
+		}
+	}
+	if c := p.renderContext("planaaaaaaaa"); !strings.Contains(c, "You are **plan**, a SPECIALIST of team **app**.") {
+		t.Fatalf("plan context:\n%s", c)
 	}
 }

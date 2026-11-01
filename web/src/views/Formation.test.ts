@@ -7,7 +7,7 @@ const m = (id: string, x: Partial<Member> = {}): Member => ({ session_id: id, na
 const team = (members: Member[]): Team => ({ id: "t", name: "t", harness: "claude", members, state: "active", ios_access: false, created_at: "" });
 
 describe("team labels", () => {
-  it("derives Lead, SME and Helper from the tree", () => {
+  it("derives Lead, SME and Specialist from the tree", () => {
     const t = team([
       m("root", { role: "main", repo_id: "r1", worktree: "/w" }), // a root with a repository is the Lead, not an SME
       m("sme", { role: "sme", repo_id: "r2", worktree: "/w2", parent: "root" }),

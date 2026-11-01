@@ -1,7 +1,11 @@
 package pool
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -286,5 +290,110 @@ func TestExperienceImport(t *testing.T) {
 	}
 	if _, err := call(t, p, true, "experience.import", file("nobody")); err == nil {
 		t.Fatal("an unknown helper was accepted")
+	}
+}
+
+// A SPECIALIST LEAD's natural compaction becomes its team's one project entry, under the host's
+// facts about the team; a newer compaction replaces it, the same one is not kept twice, and another
+// team keeps its own. An SME or skill-less LEAD gets no paragraph and no entry.
+func TestLeadProjectEntry(t *testing.T) {
+	p, st := helperPool(t)
+	dir := t.TempDir()
+	tr := func(id string) string { return filepath.Join(dir, id+".jsonl") }
+	compact := func(id, at, text string) {
+		f, _ := os.OpenFile(tr(id), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		defer f.Close()
+		rec, _ := json.Marshal(map[string]any{"type": "user", "timestamp": at, "isCompactSummary": true,
+			"message": map[string]any{"role": "user", "content": "This session is being continued from a previous conversation that ran out of context.\n\n" + text + "\nIf you need specific details from before compaction, read the transcript."}})
+		fmt.Fprintf(f, "{\"type\":\"assistant\",\"timestamp\":%q}\n%s\n", at, rec)
+	}
+	_ = st.Update(func(s *store.State) error {
+		for i := range s.Sessions {
+			s.Sessions[i].Harness, s.Sessions[i].Transcript = harness.Claude, tr(s.Sessions[i].ID)
+			if s.Sessions[i].ID == "leadaaaaaaaa" || s.Sessions[i].ID == "otheraaaaaaa" {
+				s.Sessions[i].SkillID = "sk-plan" // both LEADs are SPECIALISTs of the same skill
+			}
+		}
+		s.Domain.Teams[0].Goal = "ship login"
+		s.Domain.Teams[0].Members[1].Assignment = "the web app"
+		return nil
+	})
+	project := func(team string) []agentdb.Entry {
+		es, err := p.db.TeamExperience(planKey, team)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return es
+	}
+	if !strings.Contains(p.renderContext("leadaaaaaaaa"), leadGuide) || strings.Contains(p.renderContext("planaaaaaaaa"), leadGuide) {
+		t.Fatal("the paragraph is not the SPECIALIST LEAD's alone")
+	}
+	// A report the agent titled like a project entry is its own, never replaced.
+	if _, err := p.db.AddExperience(agentdb.Entry{Helper: planKey, At: "2026-10-30T09:00:00Z", TeamID: "team1", Title: "Project: app", Body: "an agent's own report"}); err != nil {
+		t.Fatal(err)
+	}
+	compact("leadaaaaaaaa", "2026-10-31T10:00:00Z", "Summary: first picture")
+	p.leadCompaction("leadaaaaaaaa")
+	compact("otheraaaaaaa", "2026-10-31T10:30:00Z", "Summary: ops picture")
+	p.leadCompaction("otheraaaaaaa")
+	compact("leadaaaaaaaa", "2026-10-31T11:00:00Z", "Summary: second picture")
+	p.leadCompaction("leadaaaaaaaa")
+	own := func(e agentdb.Entry) bool { return e.At == "2026-10-30T09:00:00Z" }
+	kept := slices.DeleteFunc(project("team1"), own)
+	p.leadCompaction("leadaaaaaaaa") // the same compaction again: nothing changes, not even its uid (sync)
+	es := slices.DeleteFunc(project("team1"), own)
+	if len(project("team1")) != 2 || len(es) != 1 || es[0].Title != "Project: app" || es[0].At != "2026-10-31T11:00:00Z" || len(kept) != 1 || kept[0].UID != es[0].UID {
+		t.Fatalf("team1 entries %+v, before %+v", es, kept)
+	}
+	e, _ := p.db.ExperienceEntry(es[0].ID)
+	for _, want := range []string{"## Team facts (PenguPool, as of 2026-10-31T11:00:00Z)", "- Team: app (team1)", "- Latest owner instruction: ship login",
+		"web (session webaaaaaaaaa)", ": the web app", "- Captured from: the compaction of session leadaaaaaaaa", "## The lead's summary\n\nSummary: second picture"} {
+		if !strings.Contains(e.Body, want) {
+			t.Fatalf("body lacks %q:\n%s", want, e.Body)
+		}
+	}
+	if strings.Contains(e.Body, "first picture") || strings.Contains(e.Body, "continued from a previous") || strings.Contains(e.Body, "purpose") {
+		t.Fatalf("body:\n%s", e.Body)
+	}
+	if es := project("team2"); len(es) != 1 || es[0].Title != "Project: ops" {
+		t.Fatalf("team2 entries %+v", es)
+	}
+	// An SME or skill-less LEAD: no paragraph, and its compaction is no entry.
+	_ = st.Update(func(s *store.State) error {
+		s.Sessions[sessionIndex(s, "otheraaaaaaa")].SkillID = ""
+		return nil
+	})
+	compact("otheraaaaaaa", "2026-10-31T12:00:00Z", "Summary: not kept")
+	p.leadCompaction("otheraaaaaaa")
+	if es := project("team2"); len(es) != 1 || es[0].At != "2026-10-31T10:30:00Z" || strings.Contains(p.renderContext("otheraaaaaaa"), leadGuide) {
+		t.Fatalf("a skill-less LEAD: entries %+v", es)
+	}
+	// A specialist that is not the LEAD keeps no project entry from its compactions.
+	compact("planaaaaaaaa", "2026-10-31T12:30:00Z", "Summary: a helper's own")
+	p.leadCompaction("planaaaaaaaa")
+	if es := project("team1"); len(es) != 2 || es[0].At != "2026-10-31T11:00:00Z" && es[1].At != "2026-10-31T11:00:00Z" {
+		t.Fatalf("a non-lead specialist made a project entry: %+v", es)
+	}
+}
+
+// pi and OMP write a "compaction" record with its summary; the newest one counts. Codex's compaction
+// is encrypted and gives none.
+func TestLastCompaction(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	os.WriteFile(path, []byte(`{"type":"message","timestamp":"2026-10-31T09:00:00Z"}
+{"type":"compaction","timestamp":"2026-10-31T10:00:00.5Z","summary":"older"}
+{"type":"compaction","timestamp":"2026-10-31T11:00:00Z","summary":"  the newest picture  "}
+{"type":"compacted","timestamp":"2026-10-31T12:00:00Z","payload":{"message":""}}
+`), 0o644)
+	for _, h := range []string{harness.Pi, harness.OMP} {
+		if at, s := lastCompaction(h, path); s != "the newest picture" || !at.Equal(time.Date(2026, 10, 31, 11, 0, 0, 0, time.UTC)) {
+			t.Fatalf("%s: %v %q", h, at, s)
+		}
+	}
+	if _, s := lastCompaction(harness.Codex, path); s != "" {
+		t.Fatalf("codex: %q", s)
+	}
+	if _, s := lastCompaction(harness.Claude, path); s != "" {
+		t.Fatalf("claude read a pi record: %q", s)
 	}
 }
