@@ -63,6 +63,13 @@ Steps:
    publicly trusted for the name), Host = the tailnet name.
    `PENGUPOOL_TRANSPORT=direct` keeps the pre-v0.10.20 path (plain
    HTTP to a daemon that still binds `[::]:7787`) for older builds.
+5. **HTTP is a first-class alternative, not a fallback.** The app
+   offers Serve over HTTPS and Serve over plain HTTP (`--http`
+   mode) to every user, with or without any subscription; the two
+   can run at the same time. Use `PENGUPOOL_TRANSPORT=serve` for
+   the HTTPS endpoint or `serve-http` for the HTTP one. The tailnet
+   itself is WireGuard-encrypted and the device token remains the
+   credential; the device API's host check is unchanged.
 
 ## 2. Pair Muse as a device (agent does this, owner starts it)
 
