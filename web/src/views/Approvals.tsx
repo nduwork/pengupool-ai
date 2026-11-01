@@ -81,7 +81,13 @@ export function WaitingList(): ReactElement {
     // The row itself, not its first button: Enter must not answer the next agent.
     (rows[i] ?? list.current?.closest<HTMLElement>("[role=dialog]"))?.focus();
   }, [keys]);
-  if (approvals.length + needs.length + spots.length === 0) return <p className="px-2 py-3 text-label text-muted-foreground">Nothing is waiting for you.</p>;
+  // The empty state keeps the ref, so when the last row leaves, focus can still find the panel.
+  if (approvals.length + needs.length + spots.length === 0)
+    return (
+      <div ref={list}>
+        <p className="px-2 py-3 text-label text-muted-foreground">Nothing is waiting for you.</p>
+      </div>
+    );
   return (
     <div
       role="list"
