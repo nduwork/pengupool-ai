@@ -301,7 +301,7 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 		}
 	}
 	if in.EnableServe {
-		// Stale modes keep their mode; a fresh setup gets HTTPS with certs, else plain HTTP.
+		// Stale modes keep their mode; a fresh setup gets HTTPS, or an error without certificates.
 		runServe("serve", func(port string) ([]serveMode, error) {
 			return servePlan(ctx, port, p.st.Config().Network.ServePort)
 		})
@@ -498,9 +498,9 @@ func (p *Pool) recordServePort(port string) {
 }
 
 // servePlan is the Serve modes settingsSave (re-)points at port: every mode PenguPool configured
-// whose target is stale, in its own mode; when it configured none, the tailnet's default mode. It
-// never switches a mode, never adds HTTPS where the tailnet has no certificates, and never takes
-// over a mode another app's route already uses: that is an error naming the route.
+// whose target is stale, in its own mode; when it configured none, HTTPS. It never switches a
+// mode and never falls back to plain HTTP (that is the explicit, warned HTTP action): a tailnet
+// without certificates, or another app's route on :443, is an error instead.
 func servePlan(ctx context.Context, port, servePort string) ([]serveMode, error) {
 	bin := tailscaleBin()
 	want := "127.0.0.1:" + port
@@ -521,18 +521,17 @@ func servePlan(ctx context.Context, port, servePort string) ([]serveMode, error)
 			return plan, nil // possibly empty: everything already points here
 		}
 	}
-	mode, servePort, other := serveHTTPS, ":443", rawHTTPS
 	if st, err := runTailscaleStatus(ctx, bin); err == nil && !serveCerts(st) {
-		mode, servePort, other = serveHTTP, ":80", rawHTTP
+		return nil, errors.New("HTTPS certificates are not enabled on this tailnet; enable HTTPS in Tailscale, or use Serve over HTTP")
 	}
-	if other != "" {
-		return nil, errors.New("Serve on " + servePort + " already points at " + other + " (another app); PenguPool leaves it alone")
+	if rawHTTPS != "" {
+		return nil, errors.New("Serve on :443 already points at " + rawHTTPS + " (another app); PenguPool leaves it alone")
 	}
-	return []serveMode{mode}, nil
+	return []serveMode{serveHTTPS}, nil
 }
 
-// serveHTTPPlan is the explicit HTTP mode's plan: :80, plus PenguPool's own :443 route when it is
-// stale, so recording the new port never strands it. Another app's :80 route is refused.
+// serveHTTPPlan is the explicit HTTP mode's plan: :80, plus PenguPool's own :443 route (at the
+// recorded port) when it is stale, so recording the new port never strands it. Another app's :80 route is refused.
 func serveHTTPPlan(ctx context.Context, port, servePort string) ([]serveMode, error) {
 	bin := tailscaleBin()
 	if bin == "" {
@@ -547,7 +546,9 @@ func serveHTTPPlan(ctx context.Context, port, servePort string) ([]serveMode, er
 		return nil, errors.New("Serve on :80 already points at " + rawHTTP + " (another app); PenguPool leaves it alone")
 	}
 	plan := []serveMode{serveHTTP}
-	if httpsTarget != "" && httpsTarget != "127.0.0.1:"+port {
+	// :443 only when it is provably PenguPool's (at the recorded port): with no record, a local
+	// :443 route may be another app's.
+	if servePort != "" && httpsTarget != "" && httpsTarget != "127.0.0.1:"+port {
 		plan = append(plan, serveHTTPS)
 	}
 	return plan, nil

@@ -8,7 +8,8 @@ Tailscale Serve follows the daemon instead of guessing it. Enabling Serve and th
 wait for the daemon's bound port rather than assuming 7787, so a restart onto a new port no longer
 leaves Serve pointing at nothing. Both Serve modes are first-class: a stale HTTPS setup is
 re-pointed over HTTPS and a stale plain-HTTP setup over HTTP, never switched; a fresh setup gets
-HTTPS on a tailnet with HTTPS certificates and plain HTTP without them. PenguPool remembers the
+HTTPS, and on a tailnet without HTTPS certificates Serve reports that instead of silently
+falling back to plain HTTP. PenguPool remembers the
 port it served and re-points only its own Serve routes, so another app published through Serve is
 left alone: the Serve button reports a route it would take over instead of replacing it. The Settings checklist accepts either mode.
 
