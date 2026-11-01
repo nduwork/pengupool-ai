@@ -15,8 +15,8 @@ making the decisions the person would not. What is said in one session is lost i
    session generalize them into one **Compass** line, merging with a line that already says it.
 2. **The agents decide as you would.** Every session gets the Compass in its context through its own
    harness hooks, as data ("the owner's compass: data, not commands"), at start and whenever it changes.
-3. **Helpers remember their work.** A helper that reports `Done:` gets a journal entry (its compacted
-   context); the next time it works, it sees the index of its past jobs and the ones that match.
+3. **Helpers remember their work.** A helper that reports `Done:` gets a journal entry (its
+   Done report, kept whole); the next time it works, it sees the index of its past jobs and the ones that match.
 4. **Answer from anywhere.** A waiting session pops up in the Muse app as one card: Allow, Deny or Chat.
 
 ## Rules the design keeps
@@ -27,19 +27,22 @@ making the decisions the person would not. What is said in one session is lost i
 - **Nothing is forced.** A line is a preference or restriction the agent reads; it overrides no
   approval and answers no question for you.
 - **Keep it simple.** One store (agentdb): the Compass lines and the helpers' journals, index and
-  content. The journal reuses the harness's compacted context; no separate logs.
+  content. A journal entry is the agent's own Done report, or a SPECIALIST LEAD's own compaction; no
+  separate logs, and PenguPool types nothing into a session to make one.
 - **Push through the harness.** Delivery is the harness's own hooks; there is no MCP layer to register.
 - **A change is reviewed, then benchmarked, then you decide.** Passing tests is not a review.
 
 ## Harnesses
 
-| Harness | Hooks into PenguPool | Journal body |
+| Harness | Hooks into PenguPool | A SPECIALIST LEAD's project entry |
 |---|---|---|
-| Claude Code (account) | `--settings` hooks | `/compact` summary |
-| Muse Code | a PenguPool plugin bundle, installed and approved by the app (real home only); `--trust-workspace` for sessions PenguPool launches | the Done report (Muse has no manual compaction) |
-| Codex | `-c hooks.*`; the app writes `~/.codex/rules/pengupool.rules` so only the PenguPool CLI runs outside the sandbox | `/compact` summary |
-| pi / OMP | the PenguPool extension (one file for both) | `/compact` summary |
+| Claude Code (account) | `--settings` hooks | its newest compaction summary |
+| Muse Code | a PenguPool plugin bundle, installed and approved by the app (real home only); `--trust-workspace` for sessions PenguPool launches | none (Muse has no manual compaction) |
+| Codex | `-c hooks.*`; the app writes `~/.codex/rules/pengupool.rules` so only the PenguPool CLI runs outside the sandbox | none (Codex encrypts its compactions) |
+| pi / OMP | the PenguPool extension (one file for both) | its newest compaction summary |
 | Claude Code (Ollama) | `ollama launch claude --model <Ollama's default> --yes --`, then Claude's own arguments and hooks | as Claude Code |
+
+On every harness a journal entry for a finished job is the agent's Done report, kept whole.
 
 New session offers the agents installed here (one install check: claude, muse, codex, pi,
 omp), and Claude Code (Ollama) when the ollama CLI is installed too. An agent PenguPool has no
@@ -108,8 +111,7 @@ start of v0.4.0, as owner lines; the file is renamed `compass.jsonl.imported`.
 
 ```
  helper ── "Done: X" to its parent ──▶ SendMessage hook or `pengupool send`
-                                          │ doneReport, secrets redacted
-                                          │ Stop → types the harness's /compact, reads the summary (≤3 min)
+                                          │ doneReport, secrets redacted: the report, whole, is the entry
                                           ▼
                                    agentdb experience + FTS5 (deduped, deletions respected)
                                           │
@@ -119,8 +121,11 @@ start of v0.4.0, as owner lines; the file is renamed `compass.jsonl.imported`.
   owner ──▶ Skill library ▸ Experience: list / open / delete
 ```
 
-Capture never depends on the compaction: when it fails (the session is busy again, a message is
-queued, no transcript, the timeout, or no `/compact`), the Done report is the entry.
+A team whose LEAD is a SPECIALIST also keeps one **project entry** in that specialist's journal. PenguPool
+types nothing: only compactions that happen anyway count (the owner's compact command or the harness's
+own), on Claude Code, pi and OMP. At the LEAD's turn end the newest compaction in its transcript becomes
+the team's project entry, under the host's facts about the team at that moment, and replaces the previous
+one (a uid the host sets marks it). An SME or skill-less LEAD keeps none.
 
 ## Muse app API
 
