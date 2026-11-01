@@ -268,7 +268,7 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 			res["serve_error"] = "daemon HTTP port is not bound yet; try again in a moment"
 		} else {
 			// Tailscale Serve on the tailnet only; never Funnel. Stale modes keep
-			// their mode; a fresh setup gets HTTPS with certs, else plain HTTP.
+			// their mode; a fresh setup gets HTTPS, or an error without certificates.
 			var outs, errs []string
 			approve := ""
 			plan, perr := servePlan(ctx, port, p.st.Config().Network.ServePort)
@@ -485,9 +485,9 @@ func (p *Pool) recordServePort(port string) {
 }
 
 // servePlan is the Serve modes settingsSave (re-)points at port: every mode PenguPool configured
-// whose target is stale, in its own mode; when it configured none, the tailnet's default mode. It
-// never switches a mode, never adds HTTPS where the tailnet has no certificates, and never takes
-// over a mode another app's route already uses: that is an error naming the route.
+// whose target is stale, in its own mode; when it configured none, HTTPS. It never switches a
+// mode and never falls back to plain HTTP (that is the explicit, warned HTTP action): a tailnet
+// without certificates, or another app's route on :443, is an error instead.
 func servePlan(ctx context.Context, port, servePort string) ([]serveMode, error) {
 	bin := tailscaleBin()
 	want := "127.0.0.1:" + port
@@ -508,14 +508,13 @@ func servePlan(ctx context.Context, port, servePort string) ([]serveMode, error)
 			return plan, nil // possibly empty: everything already points here
 		}
 	}
-	mode, servePort, other := serveHTTPS, ":443", rawHTTPS
 	if st, err := runTailscaleStatus(ctx, bin); err == nil && !serveCerts(st) {
-		mode, servePort, other = serveHTTP, ":80", rawHTTP
+		return nil, errors.New("HTTPS certificates are not enabled on this tailnet; enable HTTPS in Tailscale, or use Serve over HTTP")
 	}
-	if other != "" {
-		return nil, errors.New("Serve on " + servePort + " already points at " + other + " (another app); PenguPool leaves it alone")
+	if rawHTTPS != "" {
+		return nil, errors.New("Serve on :443 already points at " + rawHTTPS + " (another app); PenguPool leaves it alone")
 	}
-	return []serveMode{mode}, nil
+	return []serveMode{serveHTTPS}, nil
 }
 
 func boundPort() string {

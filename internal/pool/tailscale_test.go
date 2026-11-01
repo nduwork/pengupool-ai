@@ -222,6 +222,23 @@ func healHomeStore(t *testing.T) *store.Store {
 	return st
 }
 
+// logSink is a race-safe Logf for heal tests (Heal's helpers may log from other goroutines).
+func logSink() (logf func(string, ...any), joined func() string) {
+	var mu sync.Mutex
+	var logs []string
+	logf = func(f string, a ...any) {
+		mu.Lock()
+		defer mu.Unlock()
+		logs = append(logs, fmt.Sprintf(f, a...))
+	}
+	joined = func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return strings.Join(logs, "\n")
+	}
+	return logf, joined
+}
+
 // setServePort records port as the one PenguPool last served, as a successful serve does.
 func setServePort(t *testing.T, st *store.Store, port string) {
 	t.Helper()
@@ -322,20 +339,13 @@ func TestHealTailscaleServe(t *testing.T) {
 		st := healHomeStore(t)
 		ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:1111"))
 		HTTPAddr = func() string { return "" }
-		var mu sync.Mutex
-		var logs []string
-		p := New(Options{Store: st, Exe: "pengupool", Logf: func(f string, a ...any) {
-			mu.Lock()
-			defer mu.Unlock()
-			logs = append(logs, fmt.Sprintf(f, a...))
-		}})
+		logf, logs := logSink()
+		p := New(Options{Store: st, Exe: "pengupool", Logf: logf})
 		p.HealTailscaleServe()
 		if len(*ran) != 0 {
 			t.Fatalf("unbound heal served: %v", *ran)
 		}
-		mu.Lock()
-		defer mu.Unlock()
-		if joined := strings.Join(logs, "\n"); !strings.Contains(joined, "not bound") {
+		if joined := logs(); !strings.Contains(joined, "not bound") {
 			t.Fatalf("no skip logged: %q", joined)
 		}
 	})
@@ -343,8 +353,8 @@ func TestHealTailscaleServe(t *testing.T) {
 		st := healHomeStore(t)
 		setServePort(t, st, "1111")
 		ran := stubTailscale(t, tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:1111", "probe-machine.tailnet.ts.net:80"))
-		var logs []string
-		p := New(Options{Store: st, Exe: "pengupool", Logf: func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }})
+		logf, logs := logSink()
+		p := New(Options{Store: st, Exe: "pengupool", Logf: logf})
 		p.HealTailscaleServe()
 		if len(*ran) != 1 || !strings.Contains((*ran)[0], "--http=80") || !strings.Contains((*ran)[0], "127.0.0.1:7787") {
 			t.Fatalf("serve runs: %v", *ran)
@@ -352,7 +362,7 @@ func TestHealTailscaleServe(t *testing.T) {
 		if strings.Contains((*ran)[0], "--https=") {
 			t.Fatalf("http mode switched to https: %v", *ran)
 		}
-		if joined := strings.Join(logs, "\n"); strings.Contains(joined, "re-point failed") {
+		if joined := logs(); strings.Contains(joined, "re-point failed") {
 			t.Fatalf("failed re-point logged: %q", joined)
 		}
 		if got := st.Config().Network.ServePort; got != "7787" {
@@ -427,7 +437,6 @@ func TestSettingsSaveServeModes(t *testing.T) {
 		wantRuns                                 int
 	}{
 		{"freshHTTPS", tailscaleStatusRunning, tailscaleServeJSON(""), "--https=443", "", 1},
-		{"freshHTTP", tailscaleStatusNoCerts, tailscaleServeJSON(""), "--http=80", "", 1},
 		{"staleHTTPS", tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:1111"), "--https=443", "", 1},
 		{"staleHTTP", tailscaleStatusRunning, tailscaleServeJSONFor("http://127.0.0.1:1111", "probe-machine.tailnet.ts.net:80"), "--http=80", "1111", 1},
 		{"healthyHTTPS", tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:7787"), "", "", 0},
@@ -470,12 +479,14 @@ func TestTailscaleChecklistServeHTTP(t *testing.T) {
 	}
 }
 
-// The Serve button never takes over a mode another app's route already uses: it reports it.
+// The Serve button never takes over a mode another app's route already uses, and never falls
+// back to plain HTTP on a tailnet without certificates: it reports either and runs nothing.
 func TestSettingsSaveServeForeignRoute(t *testing.T) {
 	for _, c := range []struct {
 		name, status, serve, servePort, wantErr string
 	}{
-		{"foreignHTTPNoCerts", tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:2222", "probe-machine.tailnet.ts.net:80"), "", ":80 already points at 127.0.0.1:2222"},
+		{"freshNoCerts", tailscaleStatusNoCerts, tailscaleServeJSON(""), "", "HTTPS certificates are not enabled"},
+		{"foreignHTTPNoCerts", tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:2222", "probe-machine.tailnet.ts.net:80"), "", "HTTPS certificates are not enabled"},
 		{"foreignHTTPSRecorded", tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:2222"), "1111", ":443 already points at 127.0.0.1:2222"},
 		{"foreignRemoteHTTPS", tailscaleStatusRunning, tailscaleServeJSON("http://192.168.1.5:8080"), "", ":443 already points at http://192.168.1.5:8080"},
 	} {
