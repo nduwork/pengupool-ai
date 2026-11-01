@@ -1,5 +1,9 @@
 import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
+
+// The theme's own font sizes (index.css --text-*): registered so tailwind-merge reads text-label as a
+// size, not a colour that a later text-danger would replace.
+const twMerge = extendTailwindMerge({ extend: { theme: { text: ["micro", "caption", "label", "body", "title"] } } });
 
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));

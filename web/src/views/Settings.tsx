@@ -416,7 +416,7 @@ function Providers(): ReactElement {
           </Button>
           {/* No "stop using a model": PenguPool needs one; switch to another instead. */}
         </div>
-        <p role="status" className={"text-caption " + cn(state === "failed" ? "text-danger" : state === "passed" ? "text-success" : "text-muted-foreground")}>
+        <p role="status" className={cn("text-caption", state === "failed" ? "text-danger" : state === "passed" ? "text-success" : "text-muted-foreground")}>
           {status[state]}
         </p>
         <CheckResult
