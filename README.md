@@ -58,7 +58,7 @@ Claude Code, Codex, pi and OMP join the same workspace, teams and Compass as Mus
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/screen-map-dark.webp">
-  <img alt="The team map, three levels: team-lead-agent (LEAD, Muse Code) leads research-agent (Muse Code), security-agent (Codex) and acme-api-muse (SME, Muse Code), which in turn leads pr-review-agent (Muse Code) and dev-workflow-agent (Claude Code). Lit routes and an open ask from research-agent." src="assets/screenshots/screen-map-light.webp">
+  <img alt="The team map, three levels. team-lead-agent (LEAD, Muse Code) leads research-agent (Muse Code), pr-review-agent (Muse Code, shared by the team), dev-workflow-agent (Claude Code) and two repository SMEs. acme-api-muse (Muse Code) leads security-agent (Codex); acme-web-muse (Muse Code) leads frontend-ui-agent (Muse Code). Lit routes and an open ask from research-agent." src="assets/screenshots/screen-map-light.webp">
 </picture>
 
 <sub>Illustrative UI with synthetic project data.</sub>
