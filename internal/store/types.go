@@ -136,6 +136,17 @@ type Config struct {
 	Backup *Sync `json:"backup,omitempty"`
 	// CatalogRepo is the Specialist hub's Git URL; empty means the default hub.
 	CatalogRepo string `json:"catalog_repo,omitempty"`
+	// AgentPermissions are the agents whose own global config PenguPool wrote its team-command rules
+	// into, with the owner's consent, and exactly what it wrote; an agent missing here has none.
+	AgentPermissions map[string]AgentPermission `json:"agent_permissions,omitempty"`
+}
+
+// AgentPermission is what PenguPool wrote for one agent: the file, the lines it added (a line the
+// user already had is not PenguPool's), and what it created, so removal undoes exactly that.
+type AgentPermission struct {
+	File    string   `json:"file"`
+	Lines   []string `json:"lines"`
+	Created []string `json:"created,omitempty"` // "file", "permissions", "permissions.allow"
 }
 
 // Sync: GitHub adds the sync of the record through a private repository the owner picks (Repo), or

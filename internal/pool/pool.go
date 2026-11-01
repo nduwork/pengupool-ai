@@ -170,6 +170,7 @@ func New(o Options) *Pool {
 	// Off the start path: a slow `muse plugins install` must not hold the daemon up.
 	go harness.EnsureMusePlugin(o.Store.Dir(), o.Exe, env, logf)
 	p.dropRetiredProviders()
+	p.refreshAgentPermissions()
 	if db, err := agentdb.Open(filepath.Join(o.Store.Dir(), "agents.db")); err != nil {
 		logf("agent db: %v", err)
 	} else {

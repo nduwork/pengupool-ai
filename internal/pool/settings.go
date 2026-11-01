@@ -228,14 +228,18 @@ func (p *Pool) settingsGet(_ context.Context, _ struct{}) (any, error) {
 		out["tailscale_error"] = err.Error()
 	}
 	out["github"] = p.githubStatus()
+	out["agent_permissions"] = p.agentPermissionsView()
 	out["sync"] = p.syncView()
 	out["backup"] = out["sync"] // the old name, kept one release
 	return out, nil
 }
 
 type settingsIn struct {
-	Tailscale   *string `json:"tailscale,omitempty"`
-	EnableServe bool    `json:"enable_serve,omitempty"`
+	Tailscale *string `json:"tailscale,omitempty"`
+	// AgentPermissions turns PenguPool's rules in an agent's own config on or off: the owner's consent,
+	// from the app only (agents' CLI calls never reach settings.save).
+	AgentPermissions map[string]bool `json:"agent_permissions,omitempty"`
+	EnableServe      bool            `json:"enable_serve,omitempty"`
 }
 
 func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
@@ -250,6 +254,13 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 		return nil, err
 	}
 	res := map[string]any{"saved": true}
+	if len(in.AgentPermissions) > 0 {
+		out := map[string]any{}
+		for a, on := range in.AgentPermissions {
+			out[a] = p.setAgentPermission(a, on)
+		}
+		res["agent_permissions"] = out
+	}
 	if in.EnableServe {
 		port := boundPort()
 		if port == "" {
