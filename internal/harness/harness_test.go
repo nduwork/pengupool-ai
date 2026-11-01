@@ -163,3 +163,30 @@ func TestSubagentLists(t *testing.T) {
 		t.Fatalf("pi has no subagents: %v %v %v", k, m, e)
 	}
 }
+
+// Codex and OMP report a prompt waiting on the owner through their own events, and its end: Codex's
+// PermissionRequest and Interrupt hooks, OMP's approval events and its ask tool's result.
+func TestNeedsInputEventsAreWired(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, Codex), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd, _, err := Spec(Codex, Params{SessionID: "s1", Exe: "/x/pengupool", StoreDir: dir, Env: []string{"PATH=" + dir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.Join(cmd, " ")
+	for _, want := range []string{`hooks.PermissionRequest=[{hooks=[{type="command",command="'/x/pengupool' hook codex PermissionRequest"`,
+		`hooks.Interrupt=[{hooks=[{type="command",command="'/x/pengupool' hook codex Interrupted"`} {
+		if !strings.Contains(line, want) {
+			t.Errorf("codex: want %s in %s", want, line)
+		}
+	}
+	src := string(ompExtension)
+	for _, want := range []string{`pi.on("tool_approval_requested"`, `hook("PermissionRequest"`, `pi.on("tool_approval_resolved"`,
+		`hook("ToolFailed"`, `pi.on("tool_result"`, `e.toolName === "ask"`} {
+		if !strings.Contains(src, want) {
+			t.Errorf("omp extension: no %s", want)
+		}
+	}
+}

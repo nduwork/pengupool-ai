@@ -7,6 +7,7 @@
 //  - messages: team messages arrive in $PENGUPOOL_STORE/run/inbox/<session>.jsonl; each one is handed
 //    to pi.sendUserMessage with agent attribution, which starts a turn when the session is idle
 //  - the floor: tool_call asks PenguPool (PreToolUse) and blocks the call when it answers deny or ask
+//  - needs input: OMP's approval dialog and its ask tool mark the session waiting on the owner
 //  - a subagent or a one-shot run is not the pool session and reports nothing
 //  - PenguPool failing never breaks the OMP session: every call is bounded and errors are swallowed
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent"
@@ -42,6 +43,7 @@ interface Ctx {
 export default function (pi: ExtensionAPI) {
   const pooled = (ctx: Ctx) => !!SID && ctx.agent?.kind !== "sub" && ctx.mode !== "print" && ctx.mode !== "json"
   let last: Ctx | undefined
+  const inputs = new Map<string, unknown>() // a call's input by id: tool_call fires before its approval, which carries none
   const pct = (ctx: Ctx) => {
     const p = ctx.getContextUsage?.()?.percent
     return typeof p === "number" ? p : undefined
@@ -91,6 +93,24 @@ export default function (pi: ExtensionAPI) {
       const h = JSON.parse(out)?.hookSpecificOutput
       if (h?.permissionDecision === "deny" || h?.permissionDecision === "ask") return { block: true, reason: String(h.permissionDecisionReason || "PenguPool: the owner decides this.") }
     } catch {}
+    inputs.set(e.toolCallId, e.input) // the call goes on: its approval, if any, comes next
+  })
+  // OMP's approval dialog (pi has none): PermissionRequest while it waits on the owner. Approved, the
+  // call goes on (PostToolUse settles it as a Claude PostToolUse does); denied, the turn goes on
+  // without it (ToolFailed). Its ask tool waits on the owner like Claude's AskUserQuestion.
+  pi.on("tool_approval_requested", async (e: any, ctx) => {
+    if (pooled(ctx as Ctx)) await hook("PermissionRequest", { tool_name: String(e.toolName), tool_input: inputs.get(e.toolCallId), tool_use_id: e.toolCallId })
+  })
+  pi.on("tool_approval_resolved", async (e: any, ctx) => {
+    const input = inputs.get(e.toolCallId)
+    inputs.delete(e.toolCallId)
+    if (!pooled(ctx as Ctx)) return
+    if (e.approved) await hook("PostToolUse", { tool_name: String(e.toolName), tool_input: input, tool_use_id: e.toolCallId })
+    else await hook("ToolFailed", { tool_name: String(e.toolName) })
+  })
+  pi.on("tool_result", async (e: any, ctx) => {
+    inputs.delete(e.toolCallId)
+    if (e.toolName === "ask" && pooled(ctx as Ctx)) await hook("PostToolUse", { tool_name: "ask", tool_use_id: e.toolCallId })
   })
   pi.on("session_shutdown", async (_e, ctx) => {
     if (pooled(ctx as Ctx)) await hook("SessionEnd", {})

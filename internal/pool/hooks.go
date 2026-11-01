@@ -261,7 +261,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		}
 		p.turnOpen(s.ID, "")
 		p.asking(s.ID, str("tool_name"), true)
-		if t := str("tool_name"); t == "AskUserQuestion" || t == "ExitPlanMode" {
+		if t := str("tool_name"); t == "AskUserQuestion" || t == "ExitPlanMode" || t == "ask" && s.Harness == harness.OMP {
 			p.setQuestion(s.ID, askedSummary(t, pl["tool_input"]), str("tool_use_id"))
 			p.setStatus(s.ID, "approval") // it waits on the owner's answer from now
 		}
@@ -303,18 +303,19 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 					"hookEventName": "PostToolUse", "additionalContext": note}}), nil
 			}
 		}
-	case "ToolFailed": // Muse: a tool failed or was denied; the turn goes on. Which one is unknown, so
-		// a permission prompt it answered stays open until the turn ends and expires it.
+	case "ToolFailed": // Muse, and an OMP approval denied: a tool failed or was denied; the turn goes on.
+		// Which way is unknown, so a permission prompt it answered stays open until the turn ends and
+		// expires it.
 		p.setStatus(s.ID, "working")
 		p.asking(s.ID, str("tool_name"), false)
 		p.turnTool(s.ID)
-	case "TurnFailed", "Interrupted": // Muse: the turn ended in an error or an interrupt, with no Stop
-		// Interrupt is async: one landing after the owner's next prompt must not close that new turn.
+	case "TurnFailed", "Interrupted": // Muse, Codex: the turn ended in an error or an interrupt, with no Stop
+		// Muse's Interrupt is async: one landing after the owner's next prompt must not close that new turn.
 		// ponytail: it still reads idle until that turn's next hook, and meanwhile a message may be
 		// typed into the busy session; the window is the hook's spawn delay. A turn interrupted in
-		// its first second reads working until its next hook.
+		// its first second reads working until its next hook. Codex's Interrupt runs before the abort.
 		if in.Event == "Interrupted" {
-			if p.turnSince(s.ID, entered.Add(-time.Second)) {
+			if in.Harness == harness.Muse && p.turnSince(s.ID, entered.Add(-time.Second)) {
 				break
 			}
 			p.mu.Lock()
@@ -450,7 +451,7 @@ func (p *Pool) setQuestion(id, q, use string) {
 func askedSummary(tool string, input any) string {
 	in, _ := input.(map[string]any)
 	switch tool {
-	case "AskUserQuestion":
+	case "AskUserQuestion", "ask": // OMP's ask takes the same questions and options
 		var parts []string
 		qs, _ := in["questions"].([]any)
 		for _, q := range qs {

@@ -339,6 +339,10 @@ session's agent only words new lines.
 v0.10.10: The map's hover card shows a session's question, last message and folder whole, and a card
 taller than the room it has scrolls; the pointer can move into it to scroll, and it keeps clear of the
 screen edges. The same holds for every tip in the app.
+v0.10.13: Codex and OMP sessions raise the same needs-input alerts as Claude. A Codex approval prompt
+(its PermissionRequest hook) and an OMP approval dialog or ask-tool question put the session in the one
+list and notify; the alert goes once it is approved, denied, interrupted (Codex Interrupt) or the turn
+ends. pi has no approval dialog or ask tool, so it raises none; its check-ins still come, as for every agent.
 
 ## Credits
 
