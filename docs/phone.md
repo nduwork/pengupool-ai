@@ -17,7 +17,8 @@ Tailscale Serve.
 
 ## What a paired device can do
 
-- See sessions and their waiting items, but only on teams with iOS access, and read your Compass.
+- See sessions and their waiting items (sessions on no team, or on a team with iOS access), and read
+  your Compass.
 - Answer what it supports: an agent's check-in, and pending launch and team-change approvals, exactly as
   the app's button would. An item already answered elsewhere is refused.
 - Send words to a session (Chat).

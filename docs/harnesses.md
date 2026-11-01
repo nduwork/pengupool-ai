@@ -21,7 +21,7 @@ for is not offered. GitHub Copilot and Gemini CLI are hidden: their old sessions
 | Job | Done by | Notes |
 | --- | --- | --- |
 | Coding | The agent you pick: Muse Code (Meta's coding agent), Claude Code, Codex, pi or OMP | Each agent chooses its own model; PenguPool passes a model only when you set one, and pins none |
-| Triage: where a preference belongs, whether a check-in can go on | Your System One decision model | Required. Local default: Together AI's Tev1 through Ollama (not a Meta model); or an online System One endpoint |
+| Triage: where a preference belongs, whether a check-in can go on | Your System One decision model | Required. Local default: Together AI's Tev1, a Qwen fine-tune, through Ollama (not a Meta model); or an online System One endpoint |
 | Answering from your phone | The Muse app, paired over Tailscale Serve | Supported team requests only; see [Phone access](phone.md) |
 
 ## Claude Code (Ollama)

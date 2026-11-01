@@ -1,8 +1,8 @@
 # Command line
 
 The app includes the `pengupool` command-line tool, at
-`PenguPool AI.app/Contents/Resources/bin/pengupool`; the installer links it into `~/.local/bin` as
-`pengupool-ai`. `pengupool help` lists every command. The store is `~/.pengupool-ai/v2` (override with
+`/Applications/PenguPool AI.app/Contents/Resources/bin/pengupool` when you installed from the disk
+image. Building from source with `make install` also links it into `~/.local/bin` as `pengupool-ai`. `pengupool help` lists every command. The store is `~/.pengupool-ai/v2` (override with
 `--store` or `PENGUPOOL_HOME`).
 
 ## Your own terminal
@@ -33,8 +33,8 @@ quoted.
 | `team request add --skill S \| remove MEMBER` | Ask you to change who is on the team |
 | `decide` | Ask your decision model typed questions (JSON in, JSON out) |
 
-Only the first four can be allowed without a prompt (see
-[Agent permissions](harnesses.md#agent-permissions)). Requests that change teams, approvals or the
+Only `send`, `search`, `experience search` and `experience show` can be allowed without a prompt (see
+[Agent permissions](harnesses.md#agent-permissions)); `ask` and the rest always ask. Requests that change teams, approvals or the
 Compass come from agents only as requests you answer.
 
 For the phone and agent-client APIs, see [Phone access](phone.md).

@@ -45,8 +45,8 @@ send instructions and answer supported team requests. Agents' tool-permission di
 terminal.
 
 **Triage is separate.** PenguPool requires a configured System One decision model for its memory and
-check-in judgments. Its local setup default is Together AI's Tev1 through Ollama, which is not a Meta
-model. Who does what: [model responsibilities](docs/harnesses.md#who-does-what).
+check-in judgments. Its local setup default is Together AI's Tev1 (a Qwen fine-tune) through Ollama,
+which is not a Meta model. Who does what: [model responsibilities](docs/harnesses.md#who-does-what).
 
 ## Install
 
