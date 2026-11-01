@@ -110,11 +110,11 @@ func TestProviderModelsKeepsTheKeyToItsAddress(t *testing.T) {
 // settings passed; saving it again needs a new pass.
 func TestActivateNeedsAPassingCheck(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"model":"m","choices":[{"message":{"content":"{\"build_failed\":true,\"next\":\"fix_errors\",\"errors\":2}"}}]}`))
+		_, _ = w.Write([]byte(`{"model":"m","answers":{"build_failed":{"noul":0.95},"next":{"choice":"fix_errors","probabilities":{"fix_errors":0.9,"push_now":0.05,"write_docs":0.05}},"errors":{"score":2}}}`))
 	}))
 	defer srv.Close()
 	p, st := twoTeams(t)
-	pc := map[string]any{"type": "ollama", "format": "openai-chat", "address": srv.URL, "model": "m"}
+	pc := map[string]any{"type": "ollama", "format": "ollama-systemone", "address": srv.URL, "model": "m"}
 	checked := func() []string {
 		r, _ := call(t, p, true, "decision.providers", map[string]any{})
 		return r.(map[string]any)["checked"].([]string)
@@ -153,11 +153,11 @@ func TestSaveDuringCheckVoidsItsPass(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		close(asked)
 		<-release
-		_, _ = w.Write([]byte(`{"model":"m","choices":[{"message":{"content":"{\"build_failed\":true,\"next\":\"fix_errors\",\"errors\":2}"}}]}`))
+		_, _ = w.Write([]byte(`{"model":"m","answers":{"build_failed":{"noul":0.95},"next":{"choice":"fix_errors","probabilities":{"fix_errors":0.9,"push_now":0.05,"write_docs":0.05}},"errors":{"score":2}}}`))
 	}))
 	defer srv.Close()
 	p, st := twoTeams(t)
-	pc := map[string]any{"type": "ollama", "format": "openai-chat", "address": srv.URL, "model": "m"}
+	pc := map[string]any{"type": "ollama", "format": "ollama-systemone", "address": srv.URL, "model": "m"}
 	if _, err := call(t, p, true, "provider.save", map[string]any{"provider": pc}); err != nil {
 		t.Fatal(err)
 	}
