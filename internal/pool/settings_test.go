@@ -106,3 +106,33 @@ func TestActivateNeedsAPassingCheck(t *testing.T) {
 		t.Fatalf("a checked model was not made active: %v", err)
 	}
 }
+
+// A save while a check runs (a new key under the same key reference looks the same in settings)
+// keeps that check's pass from counting.
+func TestSaveDuringCheckVoidsItsPass(t *testing.T) {
+	asked, release := make(chan struct{}), make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(asked)
+		<-release
+		_, _ = w.Write([]byte(`{"model":"m","choices":[{"message":{"content":"{\"build_failed\":true,\"next\":\"fix_errors\",\"errors\":2}"}}]}`))
+	}))
+	defer srv.Close()
+	p, st := twoTeams(t)
+	pc := map[string]any{"type": "ollama", "format": "openai-chat", "address": srv.URL, "model": "m"}
+	if _, err := call(t, p, true, "provider.save", map[string]any{"provider": pc}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan any, 1)
+	go func() { r, _ := call(t, p, true, "provider.check", map[string]any{"type": "ollama"}); done <- r }()
+	<-asked
+	if _, err := call(t, p, true, "provider.save", map[string]any{"provider": pc}); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if r := <-done; r.(map[string]any)["ok"] != false || !strings.Contains(r.(map[string]any)["error"].(string), "saved again while it was checked") {
+		t.Fatalf("a check that started before a save: %v", r)
+	}
+	if _, err := call(t, p, true, "provider.activate", map[string]any{"type": "ollama"}); err == nil || st.Config().Decision.Active != "" {
+		t.Fatalf("a check that started before a save made the model active: %v", err)
+	}
+}

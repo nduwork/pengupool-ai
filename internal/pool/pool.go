@@ -106,6 +106,7 @@ type Pool struct {
 	testDecider decision.Provider
 	triageErr   string                          // the triage model's last call failed with this; "" after one that answered; triageUnchecked at start (guarded by mu)
 	passed      map[string]store.ProviderConfig // provider type → the saved settings whose last connection check passed (guarded by mu)
+	saves       map[string]int                  // provider type → how often it was saved: a check started before a save does not count (guarded by mu)
 	// testSpawn stands in for starting a worker in tests.
 	testSpawn func(spawnReq) (store.Session, error)
 	// testScreen stands in for the hub's followed screens in tests.

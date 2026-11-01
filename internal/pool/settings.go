@@ -111,7 +111,11 @@ func (p *Pool) providerSave(ctx context.Context, in providerSaveIn) (any, error)
 		return nil, err
 	}
 	p.mu.Lock()
-	delete(p.passed, pc.Type) // saved again: its check must pass again before it can be made active
+	delete(p.passed, pc.Type) // saved again (maybe a new key under the same reference): check it again
+	if p.saves == nil {
+		p.saves = map[string]int{}
+	}
+	p.saves[pc.Type]++
 	p.mu.Unlock()
 	if cfg.Decision.Active == pc.Type { // the active model changed: check it again before trusting it
 		p.mu.Lock()
@@ -129,6 +133,9 @@ type providerTypeIn struct {
 // providerCheck is the explicit host-side connection check; a saved form is not a working
 // connection until this passes.
 func (p *Pool) providerCheck(ctx context.Context, in providerTypeIn) (any, error) {
+	p.mu.Lock()
+	saves := p.saves[in.Type]
+	p.mu.Unlock()
 	pc, ok := p.st.Config().Decision.Providers[in.Type]
 	if !ok {
 		return nil, notFound("save the %s provider first", in.Type)
@@ -136,7 +143,8 @@ func (p *Pool) providerCheck(ctx context.Context, in providerTypeIn) (any, error
 	res, items, err := decision.Check(ctx, pc)
 	pass := err == nil && !slices.ContainsFunc(items, func(c decision.CheckItem) bool { return !c.OK })
 	p.mu.Lock()
-	if pass {
+	stale := p.saves[in.Type] != saves // saved while it ran: its answer is about what was there before
+	if pass && !stale {
 		if p.passed == nil {
 			p.passed = map[string]store.ProviderConfig{}
 		}
@@ -145,6 +153,9 @@ func (p *Pool) providerCheck(ctx context.Context, in providerTypeIn) (any, error
 		delete(p.passed, in.Type)
 	}
 	p.mu.Unlock()
+	if stale {
+		return map[string]any{"ok": false, "error": "The provider was saved again while it was checked: run Check connection again."}, nil
+	}
 	if err != nil {
 		hint := ""
 		if errors.Is(err, decision.ErrRefused) {
