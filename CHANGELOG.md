@@ -2,6 +2,15 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
+## 0.10.21
+
+Tailscale Serve follows the daemon instead of guessing it. Enabling Serve and the start-up heal
+wait for the daemon's bound port rather than assuming 7787, so a restart onto a new port no longer
+leaves Serve pointing at nothing. Both Serve modes are first-class: a stale HTTPS setup is
+re-pointed over HTTPS and a stale plain-HTTP setup over HTTP, never switched; a fresh setup gets
+HTTPS on a tailnet with HTTPS certificates and plain HTTP without them. The Settings checklist
+accepts either mode.
+
 ## 0.10.20
 
 An optional Welcome with two ways to start. **Start with a specialist** starts a new team led by
