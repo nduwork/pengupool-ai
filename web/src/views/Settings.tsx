@@ -250,7 +250,8 @@ function Providers(): ReactElement {
   if (data === null) return <p className="text-label text-faint">Loading…</p>;
   const draft = drafts[type];
   const saved = data.providers?.[type];
-  const passed = saved !== undefined && JSON.stringify(draft) === JSON.stringify(saved) && (data.checked ?? []).includes(type);
+  const unchanged = saved !== undefined && JSON.stringify(draft) === JSON.stringify(saved);
+  const passed = unchanged && (data.checked ?? []).includes(type);
   const set = (k: keyof ProviderCfg, v: string): void => setDrafts({ ...drafts, [type]: { ...draft, [k]: v } });
   return (
     <div>
@@ -346,6 +347,7 @@ function Providers(): ReactElement {
               });
               if (r !== undefined) {
                 setKey("");
+                setCheck(null); // the result described the settings before this save
                 setN(n + 1);
                 toast.success("Saved. Run the connection check before relying on it.");
               }
@@ -357,7 +359,7 @@ function Providers(): ReactElement {
             Discard changes
           </Button>
           <Button
-            disabled={saved === undefined || JSON.stringify(draft) !== JSON.stringify(saved)}
+            disabled={!unchanged}
             title="Asks the saved model a yes/no, a pick-one and a score question with plain answers, and grades its replies"
             onClick={async () => {
               setCheck("running");
@@ -382,7 +384,7 @@ function Providers(): ReactElement {
           <p className="text-caption text-muted-foreground">Run Check connection first: a model is used for triage only after its check of the saved settings passes.</p>
         ) : null}
         <CheckResult
-          r={check}
+          r={unchanged ? check : null}
           ok={check !== null && check !== "running" ? `Fit to decide · ${check.model ?? ""} · ${check.latency_ms ?? 0} ms${check.calibrated === true ? " · calibrated" : " · no calibrated confidence"}` : ""}
         />
         <p className="text-caption text-faint">PenguPool never installs Ollama or pulls weights. Thresholds are calibration candidates, not validated values.</p>
