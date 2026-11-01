@@ -179,18 +179,13 @@ func parseMuseTime(s string) time.Time {
 	return time.Now().UTC()
 }
 
-// museVisible reports whether the device may see the session: only teams
-// with iOS access (the owner's existing switch), or sessions on no team.
+// museVisible reports whether the device may see the session: one on a team with iOS access (the owner's
+// existing switch), or on no team. Its team is teamOf's, its active membership on an active team, as
+// museSessions attributes it; a closed team or membership neither hides nor shows it.
 func (p *Pool) museVisible(sessionID string) bool {
 	st := p.st.State()
-	for _, t := range st.Domain.Teams {
-		for _, m := range t.Members {
-			if m.SessionID == sessionID {
-				return t.IOSAccess
-			}
-		}
-	}
-	return true
+	t := teamOf(&st.Domain, sessionID)
+	return t == nil || t.IOSAccess
 }
 
 // museTeamVisible reports whether a device may act on an ask of this team: only a team with iOS
@@ -558,8 +553,8 @@ func (p *Pool) museSessions(_ context.Context, c gateway.Caller, _ json.RawMessa
 		for i := range st.Domain.Teams {
 			t := &st.Domain.Teams[i]
 			for _, m := range t.Members {
-				if m.SessionID == s.ID && t.Name != "" {
-					v.Title += " · " + t.Name // as before: every team it was on
+				if m.SessionID == s.ID && t.Name != "" && t.IOSAccess {
+					v.Title += " · " + t.Name // every team it was on that the device may see
 				}
 				if m.SessionID == s.ID && m.State == "active" && t.State == "active" {
 					v.Team, v.TeamID, v.Role, v.Parent, v.Assignment = t.Name, t.ID, teamLabel(&st, t, m), m.Parent, m.Assignment
