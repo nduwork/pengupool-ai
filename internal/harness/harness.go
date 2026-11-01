@@ -57,7 +57,7 @@ type Agent struct {
 // team messages go through PenguPool, which delivers each in the recipient's own way.
 var Agents = []Agent{
 	{ID: Claude, Label: "Claude Code", Hint: "Anthropic's coding agent", Compact: "/compact", Clear: "/clear"},
-	{ID: Muse, Label: "Muse Code", Hint: "Meta's coding agent", Typed: true, HookOutCap: 12 << 10},
+	{ID: Muse, Label: "Muse Code", Hint: "Meta's coding agent", Compact: "/compact", Clear: "/new", Typed: true, HookOutCap: 12 << 10},
 	{ID: Codex, Label: "Codex", Hint: "OpenAI's coding agent", Compact: "/compact", Clear: "/new", Typed: true},
 	{ID: Pi, Label: "pi", Hint: "pi coding agent", Compact: "/compact", Clear: "/new"},
 	{ID: OMP, Label: "OMP", Hint: "oh-my-pi agent", Compact: "/compact", Clear: "/new"},
