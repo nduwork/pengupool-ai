@@ -19,7 +19,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/screen-map-dark.webp">
-  <img alt="The team map: team-lead-agent with three specialists and an SME, a lit route, and an open ask from pr-review-agent" src="assets/screenshots/screen-map-light.webp">
+  <img alt="The team map: team-lead-agent with three specialists (pr-review-agent on Muse Code) and an SME, a lit route, and an open ask" src="assets/screenshots/screen-map-light.webp">
 </picture>
 
 - **Run agents side by side.** Claude Code, Codex, Muse Code, pi and OMP, plus Claude Code through
