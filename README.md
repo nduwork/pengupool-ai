@@ -381,6 +381,12 @@ did). A call cut short by its caller's own time limit no longer marks the triage
 answering, unless it had already waited as long as the model's own 30-second limit: a model that
 fails, or never answers in that time, still does.
 
+v0.10.17: A model is used for triage only after its connection check passes. Settings keeps Use for
+triage off, with a line saying why, until Check connection passes for the provider's saved settings; the
+host holds that pass and refuses to make a model active without it ("Run Check connection first"), and
+saving the provider again clears it. A model already active stays active: its check at start still
+decides whether the app shows it as answering.
+
 ## Credits
 
 - **PAHF** — *Learning Personalized Agents from Human Feedback*, Kaiqu Liang, Julia Kruk,
