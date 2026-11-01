@@ -10,7 +10,7 @@
 set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-mkdir -m 0700 -p "$HOME/workspace/pengupool-agent" && mkdir -p "$HOME/workspace/companion" "$HOME/hooks/scripts"
+mkdir -m 0700 -p "$HOME/workspace/pengupool-agent" && chmod 0700 "$HOME/workspace/pengupool-agent" && mkdir -p "$HOME/workspace/companion" "$HOME/hooks/scripts"
 
 install -m 0644 "$SRC/src/pp.py"      "$HOME/workspace/pengupool-agent/pp.py"
 install -m 0644 "$SRC/src/detect.py"  "$HOME/workspace/pengupool-agent/detect.py"

@@ -18,7 +18,9 @@ The device token is read from $PENGUPOOL_DEVICE_TOKEN or ./device-token
 (mode 0600). The bootstrap token is never read, held, or sent by this
 module.
 
-PENGUPOOL_HOST is required: the workstation's tailnet name or IP. Calls
+PENGUPOOL_HOST is required: the workstation's tailnet name or IP, or the
+pairing URL the app shows (its scheme then picks serve or serve-http
+unless PENGUPOOL_TRANSPORT is set). Calls
 fail fast when it is unset, so a missing config can never send the
 device token to a baked-in address. PENGUPOOL_HOST_HEADER defaults from
 PENGUPOOL_HOST; set it to the tailnet name when the host is an IP, since
@@ -51,10 +53,25 @@ import sys
 import uuid
 from urllib.parse import quote, urlparse
 
-HOST = os.environ.get("PENGUPOOL_HOST", "")
+
+
+def resolve_host(host, transport):
+    """Host and transport from PENGUPOOL_HOST and PENGUPOOL_TRANSPORT.
+
+    PENGUPOOL_HOST may be the pairing URL the app shows
+    (scheme://<name>/api/muse/v1): its scheme picks the transport
+    (https -> serve, http -> serve-http) unless PENGUPOOL_TRANSPORT is set.
+    """
+    if "://" in host:
+        u = urlparse(host)
+        host = u.hostname or ""
+        transport = transport or ("serve-http" if u.scheme == "http" else "serve")
+    return host, transport or "serve"
+
+
+HOST, TRANSPORT = resolve_host(os.environ.get("PENGUPOOL_HOST", ""), os.environ.get("PENGUPOOL_TRANSPORT", ""))
 HOST_HEADER = os.environ.get("PENGUPOOL_HOST_HEADER", "") or HOST
 PORT = int(os.environ.get("PENGUPOOL_PORT", "7787"))
-TRANSPORT = os.environ.get("PENGUPOOL_TRANSPORT", "serve")
 SERVE_PORT = int(os.environ.get("PENGUPOOL_SERVE_PORT", "443"))
 SERVE_HTTP_PORT = int(os.environ.get("PENGUPOOL_SERVE_HTTP_PORT", "80"))
 HERE = os.path.dirname(os.path.abspath(__file__))

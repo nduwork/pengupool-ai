@@ -8,7 +8,15 @@ The Muse companion reaches the device API through Tailscale Serve: HTTPS by
 default, plain HTTP where the tailnet has no HTTPS certificates. The
 workstation is set with `PENGUPOOL_HOST` (name or IP, required) and
 `PENGUPOOL_HOST_HEADER` (the tailnet name, defaulting from the host); the
-device token still lives beside the installed code only.
+device token still lives beside the installed code only. `PENGUPOOL_HOST` may
+also be the pairing URL the app shows, and its scheme picks HTTPS or HTTP.
+
+Removed: the companion setup's **Local network** path (turn Local network on,
+no Serve needed) is gone from SETUP.md and README.md, since the daemon no
+longer listens on the network; the plaintext daemon-port transport is no
+longer the default and stays only as `PENGUPOOL_TRANSPORT=direct` for older
+builds. install.sh no longer asks to place the daemon bootstrap token on the
+Muse machine; it holds the paired device token only.
 
 ## 0.10.20
 

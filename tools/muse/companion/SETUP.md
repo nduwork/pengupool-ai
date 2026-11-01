@@ -66,8 +66,10 @@ Steps:
 5. **HTTP is a first-class alternative, not a fallback.** The app
    offers Serve over HTTPS and Serve over plain HTTP (`--http`
    mode) to every user, with or without any subscription; the two
-   can run at the same time. Use `PENGUPOOL_TRANSPORT=serve` for
-   the HTTPS endpoint or `serve-http` for the HTTP one. The tailnet
+   can run at the same time. Simplest: set `PENGUPOOL_HOST` to the
+   pairing URL the app shows (`https://…` or `http://…`); its scheme
+   picks `serve` or `serve-http`. `PENGUPOOL_TRANSPORT` still
+   overrides it. The tailnet
    itself is WireGuard-encrypted and the device token remains the
    credential; the device API's host check is unchanged.
 

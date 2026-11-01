@@ -316,6 +316,18 @@ class SmokeTests(unittest.TestCase):
         data = tracker.load(os.path.abspath(path))
         self.assertIn("agents", data)
 
+class ResolveHostTests(unittest.TestCase):
+    def test_pairing_url_scheme_picks_transport(self):
+        self.assertEqual(pp.resolve_host("https://m.ts.net/api/muse/v1", ""), ("m.ts.net", "serve"))
+        self.assertEqual(pp.resolve_host("http://m.ts.net/api/muse/v1", ""), ("m.ts.net", "serve-http"))
+
+    def test_env_transport_overrides_scheme(self):
+        self.assertEqual(pp.resolve_host("http://m.ts.net/api/muse/v1", "serve"), ("m.ts.net", "serve"))
+
+    def test_bare_host_defaults_to_serve(self):
+        self.assertEqual(pp.resolve_host("m.ts.net", ""), ("m.ts.net", "serve"))
+        self.assertEqual(pp.resolve_host("100.64.0.1", "direct"), ("100.64.0.1", "direct"))
+
 
 if __name__ == "__main__":
     unittest.main()
