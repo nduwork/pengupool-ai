@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/agentdb"
-	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
 // goAheadWithLine makes a team that goes ahead on an owner line, and returns its go-ahead's gate.
@@ -199,16 +198,6 @@ func TestLinesFollowLearnedThresholds(t *testing.T) {
 	if v := p.lines("", 0); len(v) != 1 || !v[0].guides() || v[0].State != "confident" {
 		t.Fatalf("default: %+v", v)
 	}
-	// a chat model counts hard: its base is tighter
-	cfg := p.st.Config()
-	cfg.Decision.Active = "chat"
-	cfg.Decision.Providers = map[string]store.ProviderConfig{"chat": {Format: "openai-chat"}}
-	_ = p.st.SaveConfig(cfg)
-	if got := p.thresholds().SigmaMax; got != agentdb.HardCountSigmaMax {
-		t.Fatalf("sigma_max = %v", got)
-	}
-	cfg.Decision.Active = ""
-	_ = p.st.SaveConfig(cfg)
 	// 20 reviewed go-aheads, two wrong: the bar rises past this line's 0.8
 	for i := range 20 {
 		o := agentdb.OutcomeRight

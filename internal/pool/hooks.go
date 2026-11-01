@@ -580,7 +580,7 @@ func (p *Pool) guardSendMessage(s store.Session, pl map[string]any) HookOut {
 	return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 		"hookEventName":            "PreToolUse",
 		"permissionDecision":       "deny",
-		"permissionDecisionReason": "PenguPool: agents talk only to their parent and children on their team, and that session is neither, or the name is shared by more than one session. Message your parent; it passes on what others need. To reach a teammate whatever its name, run `" + p.exe + " send --to <session id>` with the id from your Team members list. Only the owner can open a channel to another session, by typing @<session> in your prompt.",
+		"permissionDecisionReason": "PenguPool: agents talk only to their parent and children on their team, and that session is neither, or the name is shared by more than one session. Message your parent; it passes on what others need. To reach a teammate whatever its name, run `" + p.cli() + " send --to <session id>` with the id from your Team members list. Only the owner can open a channel to another session, by typing @<session> in your prompt.",
 	}})
 }
 
@@ -678,7 +678,7 @@ func (p *Pool) guardStore(payload []byte) (HookOut, bool) {
 			return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 				"hookEventName":            "PreToolUse",
 				"permissionDecision":       "deny",
-				"permissionDecisionReason": "PenguPool: the host's own files (" + f + ") change only through PenguPool. The record is PenguPool's: search it with `" + p.exe + " search`.",
+				"permissionDecisionReason": "PenguPool: the host's own files (" + f + ") change only through PenguPool. The record is PenguPool's: search it with `" + p.cli() + " search`.",
 			}}), true
 		}
 	}
@@ -716,7 +716,7 @@ func (p *Pool) guardSkill(s store.Session, pl map[string]any) (HookOut, bool) {
 		"hookEventName":      "PreToolUse",
 		"permissionDecision": "deny",
 		"permissionDecisionReason": fmt.Sprintf("PenguPool: %s's installed skill files are read-only; temp files and folders of your own are fine. The record is PenguPool's: search it with `%s search`.",
-			sk.Name, firstNonEmpty(p.exe, "pengupool")),
+			sk.Name, p.cli()),
 	}}), true
 }
 

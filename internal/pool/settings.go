@@ -46,6 +46,12 @@ func (p *Pool) dropRetiredProviders() {
 		if !providerTypes[pc.Type] || decision.Validate(pc) != nil {
 			gone = append(gone, k)
 			delete(cfg.Decision.Providers, k)
+			// The note says triage no longer speaks the format, and saving that type clears it: so only for a
+			// kind still offered (an old online kind could never be saved again to clear it).
+			if providerTypes[pc.Type] && !slices.Contains(decision.Formats, pc.Format) {
+				cfg.Decision.Removed = slices.DeleteFunc(cfg.Decision.Removed, func(r store.RemovedProvider) bool { return r.Type == pc.Type })
+				cfg.Decision.Removed = append(cfg.Decision.Removed, store.RemovedProvider{Type: pc.Type, Format: pc.Format, Model: pc.Model, Active: k == cfg.Decision.Active})
+			}
 		}
 	}
 	if len(gone) == 0 {
@@ -76,7 +82,7 @@ func (p *Pool) providers(_ context.Context, _ struct{}) (any, error) {
 	}
 	p.mu.Unlock()
 	return map[string]any{
-		"active": c.Active, "providers": c.Providers, "checked": checked,
+		"active": c.Active, "providers": c.Providers, "checked": checked, "removed": c.Removed,
 		"formats": decision.Formats, "thresholds": decision.Thresholds,
 		"defaults": defaults,
 	}, nil
@@ -107,6 +113,7 @@ func (p *Pool) providerSave(ctx context.Context, in providerSaveIn) (any, error)
 		cfg.Decision.Providers = map[string]store.ProviderConfig{}
 	}
 	cfg.Decision.Providers[pc.Type] = pc
+	cfg.Decision.Removed = slices.DeleteFunc(cfg.Decision.Removed, func(r store.RemovedProvider) bool { return r.Type == pc.Type })
 	if err := p.st.SaveConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -159,7 +166,7 @@ func (p *Pool) providerCheck(ctx context.Context, in providerTypeIn) (any, error
 	if err != nil {
 		hint := ""
 		if errors.Is(err, decision.ErrRefused) {
-			hint = "The model answered, but not in the decision format: pick a model built for decisions, or the chat format for a general model."
+			hint = "The model answered, but not in the decision format: pick a System One decision model."
 		} else if pc.Type == "ollama" {
 			hint = "Is Ollama running (`ollama serve`) and is the model pulled (`ollama pull " + pc.Model + "`)? System One needs Ollama 0.35 or later. PenguPool never installs Ollama or pulls weights."
 		}
@@ -221,14 +228,18 @@ func (p *Pool) settingsGet(_ context.Context, _ struct{}) (any, error) {
 		out["tailscale_error"] = err.Error()
 	}
 	out["github"] = p.githubStatus()
+	out["agent_permissions"] = p.agentPermissionsView()
 	out["sync"] = p.syncView()
 	out["backup"] = out["sync"] // the old name, kept one release
 	return out, nil
 }
 
 type settingsIn struct {
-	Tailscale   *string `json:"tailscale,omitempty"`
-	EnableServe bool    `json:"enable_serve,omitempty"`
+	Tailscale *string `json:"tailscale,omitempty"`
+	// AgentPermissions is the owner's consent, "allowed" or "off", to PenguPool's rules in each agent's
+	// own config: from the app only (agents' CLI calls never reach settings.save).
+	AgentPermissions string `json:"agent_permissions,omitempty"`
+	EnableServe      bool   `json:"enable_serve,omitempty"`
 }
 
 func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
@@ -243,6 +254,12 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 		return nil, err
 	}
 	res := map[string]any{"saved": true}
+	if in.AgentPermissions != "" {
+		if in.AgentPermissions != "allowed" && in.AgentPermissions != "off" {
+			return nil, invalid("agent_permissions is allowed or off")
+		}
+		res["agent_permissions"] = p.setAgentPermissions(in.AgentPermissions)
+	}
 	if in.EnableServe {
 		port := boundPort()
 		if port == "" {

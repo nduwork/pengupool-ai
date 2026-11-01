@@ -109,7 +109,7 @@ func (p *Pool) routeTurn(s store.Session, prompt string) (who, note string) {
 	}
 	if res.Calibrated && pr >= decision.Thresholds["delegate"] {
 		p.logLine(s.ID, fmt.Sprintf("triage: route=%s p=%.2f band=firm", a.Choice, pr))
-		return id, fmt.Sprintf("\n[PenguPool triage] Next step: %s's description covers this (p=%.2f, the owner's decision model). Hand the work to %s with `%s send --to %q \"...\"` (or SendMessage); PenguPool holds your working tools until you do. The owner can override in their next prompt.\n", a.Choice, pr, a.Choice, p.exe, id)
+		return id, fmt.Sprintf("\n[PenguPool triage] Next step: %s's description covers this (p=%.2f, the owner's decision model). Hand the work to %s with `%s send --to %q \"...\"` (or SendMessage); PenguPool holds your working tools until you do. The owner can override in their next prompt.\n", a.Choice, pr, a.Choice, p.cli(), id)
 	}
 	p.logLine(s.ID, fmt.Sprintf("triage: route=%s p=%.2f band=hedged", a.Choice, pr))
 	return "", fmt.Sprintf("\n[PenguPool triage] Next step: this may fit %s (unsure). You decide: hand it over if it fits, otherwise do it; ask the owner if you cannot tell.\n", a.Choice)
@@ -209,7 +209,7 @@ func readOnlyCmd(cmd string) bool {
 // sender's team as messageSend resolves it (memberHits), so a rename, a short id or a name another
 // team also uses still counts.
 func (p *Pool) sentTo(cmd, from, id string) bool {
-	if !strings.Contains(cmd, "pengupool send") && !strings.Contains(cmd, p.exe+" send") {
+	if !strings.Contains(cmd, "pengupool send") && !strings.Contains(cmd, p.exe+" send") && !strings.Contains(cmd, p.cli()+" send") {
 		return false
 	}
 	f := strings.Fields(cmd)
@@ -267,7 +267,7 @@ func (p *Pool) guardRoute(s store.Session, pl map[string]any) (HookOut, bool) {
 		"hookEventName":      "PreToolUse",
 		"permissionDecision": "deny",
 		"permissionDecisionReason": fmt.Sprintf("PenguPool triage routed this turn's work to %s. Hand it over with `%s send --to %q \"...\"` (its session id: a SendMessage by name is refused when another session shares the name); a brief file holds long context. Reading is allowed meanwhile. The owner can override in their next prompt by telling you to do it yourself.",
-			name, p.exe, who),
+			name, p.cli(), who),
 	}}), true
 }
 

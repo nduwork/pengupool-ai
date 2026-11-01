@@ -245,7 +245,7 @@ func TestEvalRemovesItsStoreOnInterrupt(t *testing.T) {
 	}))
 	defer srv.Close()
 	defer close(release)
-	pc := store.ProviderConfig{Type: "ollama", Format: "openai-chat", Address: srv.URL, Model: "m"}
+	pc := store.ProviderConfig{Type: "ollama", Format: "ollama-systemone", Address: srv.URL, Model: "m"}
 	cfg := store.Config{Decision: store.DecisionConfig{Active: "x", Providers: map[string]store.ProviderConfig{"x": pc}}}
 	exited := make(chan int, 1)
 	evalExit = func(code int) { exited <- code }

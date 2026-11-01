@@ -136,6 +136,19 @@ type Config struct {
 	Backup *Sync `json:"backup,omitempty"`
 	// CatalogRepo is the Specialist hub's Git URL; empty means the default hub.
 	CatalogRepo string `json:"catalog_repo,omitempty"`
+	// AgentPermissions are the agents whose own global config PenguPool wrote its team-command rules
+	// into, with the owner's consent, and exactly what it wrote; an agent missing here has none.
+	AgentPermissions map[string]AgentPermission `json:"agent_permissions,omitempty"`
+	// AgentPermissionsChoice is the owner's answer: "" not decided yet, "allowed" or "off".
+	AgentPermissionsChoice string `json:"agent_permissions_choice,omitempty"`
+}
+
+// AgentPermission is what PenguPool wrote for one agent: the file, the lines it added (a line the
+// user already had is not PenguPool's), and what it created, so removal undoes exactly that.
+type AgentPermission struct {
+	File    string   `json:"file"`
+	Lines   []string `json:"lines"`
+	Created []string `json:"created,omitempty"` // "file", "permissions", "permissions.allow"
 }
 
 // Sync: GitHub adds the sync of the record through a private repository the owner picks (Repo), or
@@ -158,8 +171,8 @@ type AgentModels struct {
 // ProviderConfig is one saved decision provider. KeyRef names where the key lives:
 // "keychain:<account>" or "env:<VAR>"; the key itself is never in this file.
 type ProviderConfig struct {
-	Type    string `json:"type"`   // ollama | jev (decision model); ollama | other (writer)
-	Format  string `json:"format"` // systemone | ollama-systemone | openai-chat
+	Type    string `json:"type"`   // ollama | jev
+	Format  string `json:"format"` // systemone | ollama-systemone
 	Name    string `json:"name,omitempty"`
 	Address string `json:"address"`
 	Model   string `json:"model,omitempty"`
@@ -174,6 +187,17 @@ type DecisionConfig struct {
 	// RulesFallback is removed: a config that still has it is told so once (dropRetiredProviders)
 	// and the field is cleared; nothing reads it.
 	RulesFallback bool `json:"rules_fallback,omitempty"`
+	// Removed lists saved models PenguPool removed because it no longer speaks their kind or format,
+	// so the app can say so; saving a model of that type clears its entry.
+	Removed []RemovedProvider `json:"removed,omitempty"`
+}
+
+// RemovedProvider is one saved triage model PenguPool removed, and whether it was the active one.
+type RemovedProvider struct {
+	Type   string `json:"type"`
+	Format string `json:"format"`
+	Model  string `json:"model,omitempty"`
+	Active bool   `json:"active,omitempty"`
 }
 
 // Network holds the phone connection endpoints the owner saved.

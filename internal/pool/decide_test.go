@@ -16,7 +16,7 @@ import (
 // typedDecider answers each question by its type: yes, the first option in name order, level 1.
 type typedDecider struct{ got decision.Request }
 
-func (d *typedDecider) Name() string { return "fake/openai-chat" }
+func (d *typedDecider) Name() string { return "fake/systemone" }
 func (d *typedDecider) Decide(_ context.Context, req decision.Request) (decision.Response, error) {
 	d.got = req
 	a := map[string]decision.Answer{}
@@ -174,7 +174,7 @@ func TestDecideFailureLogsClassOnly(t *testing.T) {
 
 func TestDecideInHelperContextOnly(t *testing.T) {
 	p, _ := helperPool(t) // plan is the sk-plan helper's session
-	if c := p.renderContext("planaaaaaaaa"); !strings.Contains(c, "`pengupool decide` asks the owner's decision model") {
+	if c := p.renderContext("planaaaaaaaa"); !strings.Contains(c, "`'pengupool' decide` asks the owner's decision model") {
 		t.Fatalf("helper context:\n%s", c)
 	}
 	if c := p.renderContext("leadaaaaaaaa"); strings.Contains(c, "decide`") {

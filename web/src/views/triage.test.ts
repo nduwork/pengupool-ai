@@ -8,6 +8,14 @@ describe("triagePrompt", () => {
     expect(triagePrompt({ status: "unreachable", error: "connection refused" })).toContain("not answering (connection refused)");
     expect(triagePrompt({ status: "ok" })).toBeNull();
   });
+  it("names a non-Ollama chat model's format plainly", () => {
+    expect(triagePrompt({ status: "missing", removed: { type: "openrouter", format: "openai-chat", model: "m", active: true } })).toContain("(m, chat format) was removed");
+  });
+  it("says why when the host removed the active model", () => {
+    expect(triagePrompt({ status: "missing", removed: { type: "ollama", format: "openai-chat", model: "llama3.1:8b", active: true } })).toBe(
+      "The local triage model (llama3.1:8b, Ollama chat format) was removed: PenguPool's triage now uses System One decision models only. Set one up in Settings.",
+    );
+  });
 });
 
 describe("watchTriage", () => {

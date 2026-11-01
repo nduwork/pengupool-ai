@@ -387,6 +387,21 @@ host holds that pass and refuses to make a model active without it ("Run Check c
 saving the provider again clears it. A model already active stays active: its check at start still
 decides whether the app shows it as answering.
 
+v0.10.18: Triage uses System One decision models only. The "Ollama chat" format (a general model
+over /v1/chat/completions) is removed: it gave no calibrated confidence, yet several checks took its
+yes as sure. A saved chat-format model is removed at start, and the app says so: a notice in Settings
+until that model is saved again, and the triage banner when it was the active one. The Decision model
+panel drops the API format menu, always lists Ollama's decision models, and shows one status line for
+where the saved settings stand (not saved, unsaved changes, not checked, checking, failed, passed, in
+use); the filled button follows the next step: Save, then Check connection, then Use for triage.
+Agent permissions (Settings → Agents): once the owner allows it, PenguPool writes rules into Claude
+Code's settings.json and its own file in Codex's rules folder so agents run four PenguPool commands
+(send, search, experience search, experience show) without a permission prompt, in every session of
+those agents, also outside PenguPool. Turning it off removes exactly those lines; a moved app gets
+its lines rewritten at start. Agents are now told to run the CLI with its path shell-quoted, the
+spelling the rules match. Theme font sizes no longer drop when a colour class follows them, so
+default buttons keep their 13px label size.
+
 ## Credits
 
 - **PAHF** — *Learning Personalized Agents from Human Feedback*, Kaiqu Liang, Julia Kruk,

@@ -67,17 +67,17 @@ func TestSecretShapes(t *testing.T) {
 	}
 }
 
-// TestDecideRedactsEverythingSent: the questions and the writer's system prompt leave the host too.
+// TestDecideRedactsEverythingSent: the questions leave the host redacted too.
 func TestDecideRedactsEverythingSent(t *testing.T) {
 	const sec = "sk_live_zzFAKE0123456789abcdefgh"
 	var bodies []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		bodies = append(bodies, string(b))
-		io.WriteString(w, `{"choices":[{"message":{"content":"{\"q\":\"a\"}"}}]}`)
+		io.WriteString(w, `{"answers":{"q":{"choice":"a"}}}`)
 	}))
 	defer srv.Close()
-	pc := store.ProviderConfig{Type: "other", Format: "openai-chat", Address: srv.URL, Model: "m"}
+	pc := store.ProviderConfig{Type: "ollama", Format: "ollama-systemone", Address: srv.URL, Model: "m"}
 	p := &httpProvider{cfg: pc, client: srv.Client()}
 	_, _ = p.Decide(context.Background(), Request{State: map[string]any{}, Questions: []Question{
 		{Name: "q", Type: Choice, Instructions: "line " + sec, Options: map[string]string{"a": "opt " + sec, "b": ""}}}})

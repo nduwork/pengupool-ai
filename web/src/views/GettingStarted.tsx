@@ -23,7 +23,10 @@ export function GettingStarted(): ReactElement | null {
     void Promise.all([
       read<Record<string, { error?: string }>>("harness.probe"),
       read<{ active: string }>("decision.providers"),
-    ]).then(([h, d]) => setFound({ agent: h?.claude !== undefined && h.claude.error === undefined, decision: (d?.active ?? "") !== "" }));
+      read<{ agent_permissions?: { choice: string } }>("settings.get"),
+    ]).then(([h, d, s]) =>
+      setFound({ agent: h?.claude !== undefined && h.claude.error === undefined, decision: (d?.active ?? "") !== "", permissions: (s?.agent_permissions?.choice ?? "") !== "" }),
+    );
   }, [app.nav, app.connected, dismissed]); // refreshed on coming back from the page where a step is done
   if (dismissed || found === null) return null;
   const steps = stepsOf({ ...found, teams });

@@ -14,6 +14,7 @@ import { GitHubAccount } from "./GitHub";
 import { UpdateSheet } from "./Update";
 import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
+import { formatName, type RemovedModel } from "./triage";
 
 // Settings, one subpanel per topic: General (the host, updates, terminal history, the daily backup),
 // Agents (which are installed, Claude Code on Ollama), Decision model, GitHub (the account and sync),
@@ -94,6 +95,8 @@ interface ProvidersResp {
   providers: Record<string, ProviderCfg> | null;
   /** The provider types whose saved settings passed the host's last connection check. */
   checked?: string[];
+  /** Saved models the host removed because triage no longer speaks their format. */
+  removed?: RemovedModel[] | null;
   defaults: Record<string, ProviderCfg>;
 }
 
@@ -253,11 +256,48 @@ function Providers(): ReactElement {
   const unchanged = saved !== undefined && JSON.stringify(draft) === JSON.stringify(saved);
   const passed = unchanged && (data.checked ?? []).includes(type);
   const set = (k: keyof ProviderCfg, v: string): void => setDrafts({ ...drafts, [type]: { ...draft, [k]: v } });
+  // Where the saved settings stand; the first match wins. It picks the status line and the one default button.
+  const state =
+    saved === undefined
+      ? "unsaved"
+      : !unchanged
+        ? "dirty"
+        : check === "running"
+          ? "checking"
+          : check !== null && !check.ok
+            ? "failed"
+            : data.active === type
+              ? "inuse"
+              : passed
+                ? "passed"
+                : "unchecked";
+  const next = state === "unsaved" || state === "dirty" ? "save" : state === "failed" || state === "unchecked" ? "check" : state === "passed" ? "use" : "";
+  const status: Record<typeof state, ReactNode> = {
+    unsaved: "Save these settings, then check the connection.",
+    dirty: "Unsaved changes. Save them and check again, or Discard changes to go back to the saved settings.",
+    checking: "Checking the saved settings: a yes/no, a pick-one and a score question…",
+    failed: "The check failed, so Use for triage stays off. Fix the settings, save, and check again.",
+    unchecked: "Not checked since the last save. Use for triage turns on once Check connection passes.",
+    passed: (
+      <>
+        <Check className="mr-1 inline size-3.5 align-[-2px]" />
+        Check passed for the saved settings.
+      </>
+    ),
+    inuse: "In use for triage.",
+  };
   return (
     <div>
       <H title="Decision model (triage)">
         Answers PenguPool&apos;s yes/no and pick-one questions: where an owner&apos;s rule belongs and whether a check-in may go on. It never writes text. With an online decision model, each owner prompt (redacted) and choice is sent to it to learn your preferences; classification never delays an agent.
       </H>
+      {(data.removed ?? []).map((m) => (
+        <p key={m.type} className="mb-4 rounded-md bg-warning/10 p-3 text-caption text-warning">
+          <strong>{TYPES.find((t) => t.id === m.type)?.label ?? m.type} model removed.</strong> {m.model ? `"${m.model}" used` : "It used"} the{" "}
+          {formatName(m)}, which triage no longer supports.{" "}
+          {m.type === "ollama" ? "Pull a System One decision model in Ollama, pick it below, save, check, and use it for triage." : "Set up a System One model below, save, check, and use it for triage."}
+        </p>
+      ))}
       <Card className="mb-4 flex items-center gap-3 p-3 text-label">
         <Bot className="size-4 text-primary" />
         Active: <strong>{data.active === "" ? "None yet (required)" : TYPES.find((t) => t.id === data.active)?.label}</strong>
@@ -285,20 +325,7 @@ function Providers(): ReactElement {
         ))}
       </div>
       <div className="grid grid-cols-1 gap-4">
-        <Label>
-          API format
-          <Select value={draft.format} onChange={(e) => set("format", e.target.value)} disabled={type === "jev"}>
-            {type === "ollama" ? (
-              <>
-                <option value="ollama-systemone">Ollama System One (/v1/systemone, decision models)</option>
-                <option value="openai-chat">Ollama chat (/v1/chat/completions, general models)</option>
-              </>
-            ) : (
-              <option value="systemone">System One</option>
-            )}
-          </Select>
-        </Label>
-        <Label hint={type === "ollama" ? "The service address." : "The full endpoint URL."}>
+        <Label hint={type === "ollama" ? "The Ollama address. PenguPool calls its System One endpoint, /v1/systemone." : "The full endpoint URL."}>
           Address
           <Input value={draft.address} onChange={(e) => set("address", e.target.value)} className="font-mono" />
         </Label>
@@ -327,9 +354,9 @@ function Providers(): ReactElement {
             address={draft.address}
             value={draft.model ?? ""}
             onChange={(m) => set("model", m)}
-            {...(draft.format === "ollama-systemone"
-              ? { capability: "decision", noun: "decision models", hint: "Ollama lists no model that declares the decision capability. Pull a System One decision model, or pick the chat format to use a general model." }
-              : { capability: "completion", noun: "chat models", hint: "Ollama lists no chat model it can load." })}
+            capability="decision"
+            noun="decision models"
+            hint="Ollama lists no model that declares the decision capability. Pull a System One decision model, then reload."
           />
         ) : (
           <Label hint="Any model string.">
@@ -339,7 +366,7 @@ function Providers(): ReactElement {
         )}
         <div className="flex flex-wrap gap-2">
           <Button
-            variant="default"
+            variant={next === "save" ? "default" : "secondary"}
             onClick={async () => {
               const r = await app.call("provider.save", {
                 provider: { ...draft, type },
@@ -359,7 +386,8 @@ function Providers(): ReactElement {
             Discard changes
           </Button>
           <Button
-            disabled={!unchanged}
+            variant={next === "check" ? "default" : "secondary"}
+            disabled={!unchanged || state === "checking"}
             title="Asks the saved model a yes/no, a pick-one and a score question with plain answers, and grades its replies"
             onClick={async () => {
               setCheck("running");
@@ -367,9 +395,17 @@ function Providers(): ReactElement {
               setN(n + 1); // the host now holds whether these settings passed
             }}
           >
-            Check connection
+            {state === "checking" ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                Checking…
+              </>
+            ) : (
+              "Check connection"
+            )}
           </Button>
           <Button
+            variant={next === "use" ? "default" : "secondary"}
             disabled={!passed || data.active === type}
             onClick={async () => {
               await app.call("provider.activate", { type });
@@ -380,12 +416,12 @@ function Providers(): ReactElement {
           </Button>
           {/* No "stop using a model": PenguPool needs one; switch to another instead. */}
         </div>
-        {saved !== undefined && data.active !== type && !passed ? (
-          <p className="text-caption text-muted-foreground">Run Check connection first: a model is used for triage only after its check of the saved settings passes.</p>
-        ) : null}
+        <p role="status" className={cn("text-caption", state === "failed" ? "text-danger" : state === "passed" ? "text-success" : "text-muted-foreground")}>
+          {status[state]}
+        </p>
         <CheckResult
-          r={unchanged ? check : null}
-          ok={check !== null && check !== "running" ? `Fit to decide · ${check.model ?? ""} · ${check.latency_ms ?? 0} ms${check.calibrated === true ? " · calibrated" : " · no calibrated confidence"}` : ""}
+          r={unchanged && check !== "running" ? check : null}
+          ok={check !== null && check !== "running" ? `Fit to decide · ${check.model ?? ""} · ${check.latency_ms ?? 0} ms` : ""}
         />
         <p className="text-caption text-faint">PenguPool never installs Ollama or pulls weights. Thresholds are calibration candidates, not validated values.</p>
       </div>
@@ -918,7 +954,8 @@ function Agents(): ReactElement {
   return (
     <div>
       <H title="Agents">
-        PenguPool runs the coding agents installed on this machine, each with its own settings for the session; it never changes an agent&apos;s configuration. New session offers the installed ones.
+        PenguPool runs the coding agents installed on this machine, each with its own settings for the session. It changes an agent&apos;s own configuration only to add the rules under Agent
+        permissions, when you allow them. New session offers the installed ones.
       </H>
       <Card className="mb-4 px-4">
         {failed ? <p className="border-b border-border py-3 text-caption text-danger">Couldn&apos;t check which agents are installed. Check again, or start a session: New session offers them all.</p> : null}
@@ -954,6 +991,133 @@ function Agents(): ReactElement {
           </Button>
         </div>
       </Card>
+      <AgentPermissions />
+    </div>
+  );
+}
+
+interface AgentPermsView {
+  choice: "" | "allowed" | "off";
+  agents: Record<string, { on: boolean; file: string; lines?: string[]; changed?: string[]; error?: string }>;
+  commands: string[];
+  /** The executable as the rules name it, shell-quoted. */
+  cli: string;
+}
+
+/** Agent permissions: the owner's one consent to PenguPool's team-command rules in each agent's own settings. */
+function AgentPermissions(): ReactElement | null {
+  const app = useApp();
+  const [v, setV] = useState<AgentPermsView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [show, setShow] = useState(false);
+  const load = (): void => void app.call<{ agent_permissions: AgentPermsView }>("settings.get").then((r) => r !== undefined && setV(r.agent_permissions));
+  useEffect(load, []);
+  if (v === null) return null;
+  const allowed = v.choice === "allowed";
+  const written = (id: string, label: string): ReactElement => {
+    const a = v.agents[id];
+    const n = v.commands.length;
+    if (a === undefined) return <Row title={label}>{null}</Row>;
+    const [hint, badge, tone] = !allowed
+      ? [`${n} rules in ${a.file}, once you allow them.`, "when on", "neutral" as const]
+      : a.error !== undefined
+        ? [a.error, "not written", "danger" as const]
+        : (a.changed ?? []).length > 0
+          ? [`${a.changed?.length ?? 0} of PenguPool's lines were removed from ${a.file} outside PenguPool, so those commands ask again. Turn this off and on to write them again.`, "changed", "warning" as const]
+          : [`${n} rules in ${a.file}${id === "claude" ? " (permissions.allow)" : ""}.`, "global", "success" as const];
+    return (
+      <Row title={label} hint={hint}>
+        <Badge tone={tone}>{badge}</Badge>
+      </Row>
+    );
+  };
+  const writtenFiles = Object.values(v.agents).filter((a) => a.on && (a.lines ?? []).length > 0);
+  return (
+    <div>
+      <h3 className="mb-2 text-label font-semibold">Agent permissions</h3>
+      <p className="mb-2 text-label text-muted-foreground">
+        Agents in a team message each other and look up past work with PenguPool&apos;s command-line tool. Each call can stop on the agent&apos;s own permission prompt. You can let agents run these
+        four commands without that prompt. PenguPool still checks who may message whom.
+      </p>
+      <Card className="px-4">
+        <Row
+          title="Let agents run PenguPool's team commands without asking"
+          hint={allowed ? "On. Written to each agent's settings; you won't be asked again." : v.choice === "off" ? "Off: agents ask each time." : "Not decided yet: agents ask each time."}
+        >
+          <Switch
+            checked={allowed}
+            disabled={busy}
+            label="Let agents run PenguPool's team commands without asking"
+            onCheckedChange={async (on) => {
+              setBusy(true);
+              const r = await app.call<{ agent_permissions?: Record<string, { ok: boolean; error?: string }> }>("settings.save", { agent_permissions: on ? "allowed" : "off" });
+              setBusy(false);
+              load();
+              if (r === undefined) return;
+              const failed = Object.entries(r.agent_permissions ?? {}).filter(([, x]) => !x.ok);
+              if (failed.length > 0) toast.error(failed.map(([a, x]) => `${AGENTS.find((g) => g.id === a)?.label ?? a}: ${x.error ?? "not written"}`).join(" "));
+              else toast.success(on ? "Agents may run the four PenguPool commands without asking." : "Agents will ask again.");
+            }}
+          />
+        </Row>
+        <Row
+          title="Commands"
+          hint={
+            <>
+              {v.commands.map((c) => (
+                <span key={c} className="block font-mono text-caption text-foreground [overflow-wrap:anywhere]">
+                  {c}
+                </span>
+              ))}
+              <span className="block">Only these, with any message or search text. The list is fixed.</span>
+              <span className="block [overflow-wrap:anywhere]">
+                The rules name PenguPool by its full path: <span className="font-mono">{v.cli}</span>
+              </span>
+            </>
+          }
+        >
+          {null}
+        </Row>
+        <Row title="Never included" hint="Push, merge, release, delete, and every other command still ask, as they do today. So does a command that chains one of the four with anything else.">
+          <Lock className="size-3.5 text-muted-foreground" aria-hidden />
+        </Row>
+        {written("claude", "Claude Code")}
+        {written("codex", "Codex")}
+        <Row title="OMP" hint="Only when its approval mode asks; its default (yolo) never asks. PenguPool writes no rules for it yet.">
+          <Badge tone="neutral">not yet</Badge>
+        </Row>
+        <Row title="pi" hint="Never asks, so nothing is needed.">
+          <Badge tone="neutral">not needed</Badge>
+        </Row>
+        <Row title="Muse Code" hint="Not supported yet: Muse has no documented way to add a rule. It still asks.">
+          <Badge tone="neutral">not yet</Badge>
+        </Row>
+        {writtenFiles.length > 0 ? (
+          <div className="border-t border-border py-3">
+            <button type="button" className="text-caption text-muted-foreground underline" aria-expanded={show} onClick={() => setShow(!show)}>
+              {show ? "Hide what is written" : "Show what is written"}
+            </button>
+            {show ? (
+              <div className="mt-2 space-y-2 rounded-md bg-muted p-2 font-mono text-caption">
+                {writtenFiles.map((a) => (
+                  <div key={a.file}>
+                    <span className="block font-semibold [overflow-wrap:anywhere]">{a.file}</span>
+                    {(a.lines ?? []).map((l) => (
+                      <span key={l} className="block [overflow-wrap:anywhere]">
+                        {l}
+                      </span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </Card>
+      <p className="mt-2 text-caption text-faint">
+        PenguPool adds only the lines shown above to each agent&apos;s own settings, and removes exactly those when you turn this off. They apply to every session of that agent, including ones you start
+        outside PenguPool. A session already running may need a restart to pick them up.
+      </p>
     </div>
   );
 }

@@ -66,6 +66,7 @@ type Pool struct {
 	nodes NodeManager
 
 	mu                sync.Mutex
+	permErr           map[string]string            // agent -> why its permission rules could not be written, guarded by mu
 	achvLocks         map[string]*sync.Mutex       // one achievement job per skill, under mu
 	achvAgain         map[string]bool              // a job was asked while one ran, under mu
 	msgSock           map[string]claudeInbox       // session id → Claude inbox socket
@@ -170,6 +171,7 @@ func New(o Options) *Pool {
 	// Off the start path: a slow `muse plugins install` must not hold the daemon up.
 	go harness.EnsureMusePlugin(o.Store.Dir(), o.Exe, env, logf)
 	p.dropRetiredProviders()
+	p.refreshAgentPermissions()
 	if db, err := agentdb.Open(filepath.Join(o.Store.Dir(), "agents.db")); err != nil {
 		logf("agent db: %v", err)
 	} else {
@@ -645,18 +647,24 @@ func (p *Pool) checkTriage(ctx context.Context) {
 // started), "unreachable" (its last call or check failed) or "ok".
 func (p *Pool) triageStatus(_ context.Context, _ struct{}) (any, error) {
 	if p.decider() == nil {
-		return map[string]string{"status": "missing"}, nil
+		out := map[string]any{"status": "missing"}
+		for _, r := range p.st.Config().Decision.Removed {
+			if r.Active { // the active model was removed: the app says why triage has none
+				out["removed"] = r
+			}
+		}
+		return out, nil
 	}
 	p.mu.Lock()
 	e := p.triageErr
 	p.mu.Unlock()
 	if e == triageUnchecked {
-		return map[string]string{"status": "unchecked"}, nil
+		return map[string]any{"status": "unchecked"}, nil
 	}
 	if e != "" {
-		return map[string]string{"status": "unreachable", "error": e}, nil
+		return map[string]any{"status": "unreachable", "error": e}, nil
 	}
-	return map[string]string{"status": "ok"}, nil
+	return map[string]any{"status": "ok"}, nil
 }
 
 func errorf(format string, a ...any) error { return fmt.Errorf(format, a...) }

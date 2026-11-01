@@ -56,7 +56,7 @@ type Answer struct {
 	Choice        string             `json:"choice,omitempty"`
 	Score         float64            `json:"score,omitempty"`
 	Probabilities map[string]float64 `json:"probabilities,omitempty"`
-	// Confidence is the provider's calibrated confidence; 0 when it has none (chat APIs).
+	// Confidence is the provider's calibrated confidence.
 	Confidence float64 `json:"confidence"`
 }
 
@@ -87,9 +87,9 @@ var (
 var Thresholds = map[string]float64{"route": 0.80, "model": 0.75, "skill": 0.30, "team": 0.70, "duplicate": 0.75, "agent": 0.50, "proceed": 0.80, "delegate": 0.80}
 
 // Formats PenguPool speaks.
-// Decision models: online (Jev's System One) or local Ollama (its System One and its
-// OpenAI-compatible chat). The writer speaks openai-chat, online or on Ollama.
-var Formats = []string{"systemone", "ollama-systemone", "openai-chat"}
+// Triage models speak System One only: online (Jev's) or local on Ollama. A general chat model
+// gives no calibrated confidence, so PenguPool does not use one.
+var Formats = []string{"systemone", "ollama-systemone"}
 
 // FromConfig returns the active provider, or nil when only rules are configured.
 func FromConfig(c store.DecisionConfig, logf func(string, ...any)) Provider {
@@ -160,11 +160,6 @@ func (p *httpProvider) endpoint() string {
 	switch p.cfg.Format {
 	case "ollama-systemone":
 		return a + "/v1/systemone"
-	case "openai-chat":
-		if p.cfg.Type == "ollama" { // Ollama serves the OpenAI-compatible API under /v1
-			return a + "/v1/chat/completions"
-		}
-		return a + "/chat/completions"
 	}
 	return a // systemone: a full endpoint URL
 }
@@ -197,13 +192,7 @@ func (p *httpProvider) Decide(ctx context.Context, req Request) (Response, error
 	state := Redact(req.State)
 	req.Questions = redactQuestions(req.Questions)
 	start := time.Now()
-	var res Response
-	switch p.cfg.Format {
-	case "ollama-systemone", "systemone":
-		res, err = p.systemOne(ctx, key, state, req.Questions)
-	default:
-		res, err = p.chat(ctx, key, state, req.Questions)
-	}
+	res, err := p.systemOne(ctx, key, state, req.Questions)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err) {
 			return Response{}, fmt.Errorf("%w: %v", ErrTimeout, err)
@@ -321,104 +310,6 @@ func (p *httpProvider) systemOne(ctx context.Context, key string, state any, qs 
 		res.Answers[q.Name] = ans
 	}
 	return res, nil
-}
-
-// chat asks a general chat API for a JSON object with one field per question. Text and model
-// written confidence are not calibrated, so Confidence stays 0 and callers keep coordinator review.
-func (p *httpProvider) chat(ctx context.Context, key string, state any, qs []Question) (Response, error) {
-	schemaProps := map[string]any{}
-	var req []string
-	var lines []string
-	for _, q := range qs {
-		ins, _ := json.Marshal(q.Instructions)
-		switch q.Type {
-		case Predicate:
-			schemaProps[q.Name] = map[string]any{"type": "boolean"}
-			lines = append(lines, fmt.Sprintf("- %s (true/false): %s", q.Name, ins))
-		case Choice:
-			opts := sortedKeys(q.Options)
-			schemaProps[q.Name] = map[string]any{"type": "string", "enum": opts}
-			od, _ := json.Marshal(q.Options)
-			lines = append(lines, fmt.Sprintf("- %s (one of %s): %s Options: %s", q.Name, strings.Join(opts, ", "), ins, od))
-		case Score:
-			schemaProps[q.Name] = map[string]any{"type": "integer", "minimum": 0, "maximum": len(q.Levels) - 1}
-			ld, _ := json.Marshal(q.Levels)
-			lines = append(lines, fmt.Sprintf("- %s (integer level 0..%d): %s Levels: %s", q.Name, len(q.Levels)-1, ins, ld))
-		}
-		req = append(req, q.Name)
-	}
-	schema := map[string]any{"type": "object", "properties": schemaProps, "required": req, "additionalProperties": false}
-	stateJSON, _ := json.Marshal(state)
-	system := "You answer typed questions about the given state. Reply with one JSON object only, with exactly these fields."
-	user := "State:\n" + string(stateJSON) + "\n\nQuestions:\n" + strings.Join(lines, "\n")
-	var raw []byte
-	var err error
-	var text, model string
-	raw, err = p.post(ctx, key, map[string]any{"model": p.cfg.Model,
-		"messages":        []any{map[string]string{"role": "system", "content": system}, map[string]string{"role": "user", "content": user}},
-		"response_format": map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "answers", "strict": true, "schema": schema}}}, nil)
-	if err == nil {
-		text, model, err = chatText(raw)
-	}
-	if err != nil {
-		return Response{}, err
-	}
-	var obj map[string]any
-	if err := json.Unmarshal([]byte(extractJSON(text)), &obj); err != nil {
-		return Response{}, fmt.Errorf("%w: the model did not return the structured answers", ErrRefused)
-	}
-	res := Response{Answers: map[string]Answer{}, Model: firstNonEmpty(model, p.cfg.Model)}
-	for _, q := range qs {
-		v, ok := obj[q.Name]
-		if !ok {
-			continue
-		}
-		a := Answer{Type: q.Type}
-		switch q.Type {
-		case Predicate:
-			b, ok := v.(bool)
-			if !ok {
-				a.Yes = math.NaN()
-			} else if b {
-				a.Yes = 1
-			}
-		case Choice:
-			a.Choice, _ = v.(string)
-		case Score:
-			f, ok := v.(float64)
-			if !ok {
-				f = math.NaN()
-			}
-			a.Score = f
-		}
-		res.Answers[q.Name] = a
-	}
-	return res, nil
-}
-
-// chatText reads an OpenAI-compatible chat completion: its first choice's text and the model.
-func chatText(raw []byte) (text, model string, err error) {
-	var o struct {
-		Model   string `json:"model"`
-		Choices []struct {
-			Message struct{ Content string } `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(raw, &o); err != nil {
-		return "", "", fmt.Errorf("%w: unreadable chat response: %v", ErrRefused, err)
-	}
-	if len(o.Choices) > 0 {
-		text = o.Choices[0].Message.Content
-	}
-	return text, o.Model, nil
-}
-
-func extractJSON(s string) string {
-	s = strings.TrimSpace(s)
-	if i, j := strings.Index(s, "{"), strings.LastIndex(s, "}"); i >= 0 && j > i {
-		return s[i : j+1]
-	}
-	return s
 }
 
 func mustJSON(v any) string { b, _ := json.Marshal(v); return string(b) }

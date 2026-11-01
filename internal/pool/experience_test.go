@@ -117,7 +117,7 @@ func TestJournalIndexInContext(t *testing.T) {
 	}
 	_, _ = p.db.AddExperience(agentdb.Entry{Helper: "someone-else", At: "2026-10-01T10:00:00Z", Title: "caching of another helper", Body: "b"})
 	out := p.journalForPrompt(store.Session{ID: plan}, "[PenguPool team message from lead (main)] please redo the caching\n\nTo reply, run")
-	if n := strings.Count(out, "\n- ["); n != 10 || !strings.Contains(out, "2 more: `pengupool experience search <words>`") || strings.Contains(out, "another helper") {
+	if n := strings.Count(out, "\n- ["); n != 10 || !strings.Contains(out, "2 more: `'pengupool' experience search <words>`") || strings.Contains(out, "another helper") {
 		t.Fatalf("index:\n%s", out)
 	}
 	if p.journalForPrompt(store.Session{ID: plan}, "just do it") != "" {

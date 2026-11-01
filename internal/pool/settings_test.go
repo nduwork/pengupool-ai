@@ -32,6 +32,65 @@ func TestRetiredProvidersDropAtStart(t *testing.T) {
 	}
 }
 
+// A saved chat-format triage model is removed at start, and the note says so until that type is saved again.
+func TestChatTriageModelRemovedWithANote(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := st.Config()
+	cfg.Decision.Active = "ollama"
+	cfg.Decision.Providers = map[string]store.ProviderConfig{"ollama": {Type: "ollama", Format: "openai-chat", Address: "http://127.0.0.1:11434", Model: "llama3.1:8b"}}
+	_ = st.SaveConfig(cfg)
+	p := New(Options{Store: st, Exe: "pengupool"})
+	d := st.Config().Decision
+	want := store.RemovedProvider{Type: "ollama", Format: "openai-chat", Model: "llama3.1:8b", Active: true}
+	if d.Active != "" || len(d.Providers) != 0 || len(d.Removed) != 1 || d.Removed[0] != want {
+		t.Fatalf("decision = %+v", d)
+	}
+	r, _ := call(t, p, true, "triage.status", map[string]any{})
+	if m := r.(map[string]any); m["status"] != "missing" || m["removed"] != want {
+		t.Fatalf("triage.status = %+v", m)
+	}
+	r, _ = call(t, p, true, "decision.providers", map[string]any{})
+	if rm := r.(map[string]any)["removed"].([]store.RemovedProvider); len(rm) != 1 {
+		t.Fatalf("decision.providers removed = %+v", rm)
+	}
+	if _, err := p.providerSave(context.Background(), providerSaveIn{Provider: store.ProviderConfig{Type: "ollama", Format: "openai-chat", Address: "http://127.0.0.1:11434", Model: "m"}}); err == nil {
+		t.Fatal("a chat-format triage model was saved")
+	}
+	if _, err := p.providerSave(context.Background(), providerSaveIn{Provider: store.ProviderConfig{Type: "ollama", Format: "ollama-systemone", Address: "http://127.0.0.1:11434", Model: "m"}}); err != nil {
+		t.Fatal(err)
+	}
+	if rm := st.Config().Decision.Removed; len(rm) != 0 {
+		t.Fatalf("the note outlived a save of its type: %+v", rm)
+	}
+	r, _ = call(t, p, true, "triage.status", map[string]any{})
+	if _, ok := r.(map[string]any)["removed"]; ok {
+		t.Fatal("triage.status still reports the removed model")
+	}
+}
+
+// A saved model removed for another fault (a bad address) or of a kind no longer offered leaves no note:
+// the note claims an unsupported format, and only a save of a kind still offered can clear it.
+func TestRemovedWithoutANote(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := st.Config()
+	cfg.Decision.Active = "openrouter"
+	cfg.Decision.Providers = map[string]store.ProviderConfig{
+		"ollama":     {Type: "ollama", Format: "ollama-systemone", Address: "ftp://x", Model: "m"},
+		"openrouter": {Type: "openrouter", Format: "openai-chat", Address: "https://openrouter.ai/api/v1", Model: "m", KeyRef: "env:K"},
+	}
+	_ = st.SaveConfig(cfg)
+	New(Options{Store: st, Exe: "pengupool"})
+	if d := st.Config().Decision; len(d.Providers) != 0 || len(d.Removed) != 0 {
+		t.Fatalf("decision = %+v", d)
+	}
+}
+
 // The saved key goes only to the saved address: listing models at any other address sends a typed key or none.
 func TestProviderModelsKeepsTheKeyToItsAddress(t *testing.T) {
 	var auths []string
@@ -71,11 +130,11 @@ func TestProviderModelsKeepsTheKeyToItsAddress(t *testing.T) {
 // settings passed; saving it again needs a new pass.
 func TestActivateNeedsAPassingCheck(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"model":"m","choices":[{"message":{"content":"{\"build_failed\":true,\"next\":\"fix_errors\",\"errors\":2}"}}]}`))
+		_, _ = w.Write([]byte(`{"model":"m","answers":{"build_failed":{"noul":0.95},"next":{"choice":"fix_errors","probabilities":{"fix_errors":0.9,"push_now":0.05,"write_docs":0.05}},"errors":{"score":2}}}`))
 	}))
 	defer srv.Close()
 	p, st := twoTeams(t)
-	pc := map[string]any{"type": "ollama", "format": "openai-chat", "address": srv.URL, "model": "m"}
+	pc := map[string]any{"type": "ollama", "format": "ollama-systemone", "address": srv.URL, "model": "m"}
 	checked := func() []string {
 		r, _ := call(t, p, true, "decision.providers", map[string]any{})
 		return r.(map[string]any)["checked"].([]string)
@@ -114,11 +173,11 @@ func TestSaveDuringCheckVoidsItsPass(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		close(asked)
 		<-release
-		_, _ = w.Write([]byte(`{"model":"m","choices":[{"message":{"content":"{\"build_failed\":true,\"next\":\"fix_errors\",\"errors\":2}"}}]}`))
+		_, _ = w.Write([]byte(`{"model":"m","answers":{"build_failed":{"noul":0.95},"next":{"choice":"fix_errors","probabilities":{"fix_errors":0.9,"push_now":0.05,"write_docs":0.05}},"errors":{"score":2}}}`))
 	}))
 	defer srv.Close()
 	p, st := twoTeams(t)
-	pc := map[string]any{"type": "ollama", "format": "openai-chat", "address": srv.URL, "model": "m"}
+	pc := map[string]any{"type": "ollama", "format": "ollama-systemone", "address": srv.URL, "model": "m"}
 	if _, err := call(t, p, true, "provider.save", map[string]any{"provider": pc}); err != nil {
 		t.Fatal(err)
 	}
@@ -134,5 +193,17 @@ func TestSaveDuringCheckVoidsItsPass(t *testing.T) {
 	}
 	if _, err := call(t, p, true, "provider.activate", map[string]any{"type": "ollama"}); err == nil || st.Config().Decision.Active != "" {
 		t.Fatalf("a check that started before a save made the model active: %v", err)
+	}
+}
+
+// Agents are told to run the CLI shell-quoted: the spelling the permission rules match.
+func TestContextQuotesTheCLI(t *testing.T) {
+	p, _ := twoTeams(t)
+	p.exe = "/Applications/PenguPool AI.app/Contents/Resources/bin/pengupool"
+	if c := p.renderContext("webaaaaaaaaa"); !strings.Contains(c, "`'"+p.exe+"' send --to ") {
+		t.Fatalf("context does not quote the CLI:\n%s", c)
+	}
+	if !p.sentTo("'"+p.exe+"' send --to webaaaaaaaaa hi", "leadaaaaaaaa", "webaaaaaaaaa") {
+		t.Fatal("a send in the quoted spelling is not seen as a hand-over")
 	}
 }

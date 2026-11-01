@@ -239,11 +239,6 @@ func TestLearnThresholds(t *testing.T) {
 	if a, b := LearnThresholds(old, base), LearnThresholds(old, base); a != b {
 		t.Error("not deterministic")
 	}
-	// an uncalibrated model's base is tighter, and the steps are from it
-	hard := Thresholds{Guide: 0.8, Show: 0.65, SigmaMax: HardCountSigmaMax}
-	if got := LearnThresholds(twoWrong, hard); !near(got.SigmaMax, 0.12) {
-		t.Errorf("hard base: %+v", got)
-	}
 }
 
 // syncFile merges d with the shared file the way a round does: the union replaces the file when it differs.

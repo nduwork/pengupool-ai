@@ -351,9 +351,6 @@ func LearnThresholds(outcomes []Outcome, base Thresholds) Thresholds {
 	return t
 }
 
-// HardCountSigmaMax is SigmaMax when the decision model is not calibrated (updates are hard counts).
-const HardCountSigmaMax = 0.14
-
 // Replay computes a line's belief from its prior and effects, a pure function so every machine
 // agrees. Signals of one session within an hour are one judgement, not independent evidence, so a
 // burst counts its heaviest member; a line gains at most dailyCap a day. Forgetting is applied
