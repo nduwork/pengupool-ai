@@ -240,6 +240,9 @@ type settingsIn struct {
 	// own config: from the app only (agents' CLI calls never reach settings.save).
 	AgentPermissions string `json:"agent_permissions,omitempty"`
 	EnableServe      bool   `json:"enable_serve,omitempty"`
+	// EnableServeHTTP serves plain HTTP on :80, whatever the tailnet's certificates (the Settings
+	// "Serve over HTTP" button). Its results come back under the serve_http keys.
+	EnableServeHTTP bool `json:"enable_serve_http,omitempty"`
 }
 
 func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
@@ -260,39 +263,47 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 		}
 		res["agent_permissions"] = p.setAgentPermissions(in.AgentPermissions)
 	}
-	if in.EnableServe {
+	// runServe points Tailscale Serve (tailnet only; never Funnel) at the bound port in each mode
+	// and reports under key. Never guess a port: Serve at a port nothing listens on fails
+	// silently for every remote client.
+	runServe := func(key string, plan func(port string) []serveMode) {
 		port := boundPort()
 		if port == "" {
-			// Never guess a port: Serve pointed at a port nothing
-			// listens on fails silently for every remote client.
-			res["serve_error"] = "daemon HTTP port is not bound yet; try again in a moment"
-		} else {
-			// Tailscale Serve on the tailnet only; never Funnel. Stale modes keep
-			// their mode; a fresh setup gets HTTPS with certs, else plain HTTP.
-			var outs, errs []string
-			approve := ""
-			for _, mode := range servePlan(ctx, port, p.st.Config().Network.ServePort) {
-				out, url, err := serveOnce(ctx, mode, port)
-				switch {
-				case url != "":
-					approve = url
-				case err != nil:
-					errs = append(errs, string(mode)+": "+err.Error())
-					outs = append(outs, out)
-				default:
-					outs = append(outs, out)
-					p.recordServePort(port)
-				}
-			}
-			if approve != "" {
-				res["serve_approve_url"] = approve
-			} else {
-				res["serve"] = strings.Join(outs, "\n")
-				if len(errs) > 0 {
-					res["serve_error"] = strings.Join(errs, "; ")
-				}
+			res[key+"_error"] = "daemon HTTP port is not bound yet; try again in a moment"
+			return
+		}
+		var outs, errs []string
+		approve := ""
+		for _, mode := range plan(port) {
+			out, url, err := serveOnce(ctx, mode, port)
+			switch {
+			case url != "":
+				approve = url
+			case err != nil:
+				errs = append(errs, string(mode)+": "+err.Error())
+				outs = append(outs, out)
+			default:
+				outs = append(outs, out)
+				p.recordServePort(port)
 			}
 		}
+		if approve != "" {
+			res["serve_approve_url"] = approve
+			return
+		}
+		res[key] = strings.Join(outs, "\n")
+		if len(errs) > 0 {
+			res[key+"_error"] = strings.Join(errs, "; ")
+		}
+	}
+	if in.EnableServe {
+		// Stale modes keep their mode; a fresh setup gets HTTPS with certs, else plain HTTP.
+		runServe("serve", func(port string) []serveMode {
+			return servePlan(ctx, port, p.st.Config().Network.ServePort)
+		})
+	}
+	if in.EnableServeHTTP {
+		runServe("serve_http", func(string) []serveMode { return []serveMode{serveHTTP} })
 	}
 	return res, nil
 }
@@ -602,7 +613,7 @@ func (p *Pool) tailscaleChecks() []tailscaleCheck {
 		})
 	}
 	client := http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get("https://" + name + "/")
+	resp, err := client.Get(reachableURL(name, want, httpsTarget, httpTarget))
 	if err == nil {
 		resp.Body.Close()
 		checks = append(checks, tailscaleCheck{ID: "reachable", Label: "Reachable", OK: true, Detail: "HTTP " + resp.Status})
@@ -613,6 +624,15 @@ func (p *Pool) tailscaleChecks() []tailscaleCheck {
 		})
 	}
 	return checks
+}
+
+// reachableURL is the tailnet URL the Reachable check probes: HTTPS, unless only plain HTTP
+// serves this app (want).
+func reachableURL(name, want, httpsTarget, httpTarget string) string {
+	if httpsTarget != want && httpTarget == want {
+		return "http://" + name + "/"
+	}
+	return "https://" + name + "/"
 }
 
 var tailscaleApproveRe = regexp.MustCompile(`https://login\.tailscale\.com/[^\s"']*`)

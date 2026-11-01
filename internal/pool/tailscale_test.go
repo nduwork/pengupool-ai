@@ -469,3 +469,58 @@ func TestTailscaleChecklistServeHTTP(t *testing.T) {
 		t.Fatalf("serve: %+v", cs)
 	}
 }
+
+// The explicit HTTP mode serves :80 even on a tailnet with certificates, under the serve_http keys.
+func TestSettingsSaveServeHTTPExplicit(t *testing.T) {
+	ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSON(""))
+	p := testPool(t)
+	res, err := p.settingsSave(context.Background(), settingsIn{EnableServeHTTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := res.(map[string]any)
+	if e, _ := m["serve_http_error"].(string); e != "" {
+		t.Fatalf("serve_http_error = %q", e)
+	}
+	if _, ok := m["serve_http"]; !ok {
+		t.Fatalf("no serve_http result: %+v", m)
+	}
+	if len(*ran) != 1 || !strings.Contains((*ran)[0], "--http=80") || !strings.Contains((*ran)[0], "127.0.0.1:7787") {
+		t.Fatalf("serve runs = %v", *ran)
+	}
+	if got := p.st.Config().Network.ServePort; got != "7787" {
+		t.Fatalf("serve port = %q, want 7787", got)
+	}
+}
+
+// Reachable probes plain HTTP only when HTTP alone serves this app.
+func TestReachableURL(t *testing.T) {
+	const want = "127.0.0.1:7787"
+	for _, c := range []struct{ https, http, url string }{
+		{want, "", "https://m.ts.net/"},
+		{"", want, "http://m.ts.net/"},
+		{want, want, "https://m.ts.net/"},
+		{"", "", "https://m.ts.net/"},
+	} {
+		if got := reachableURL("m.ts.net", want, c.https, c.http); got != c.url {
+			t.Errorf("reachableURL(%q, %q) = %q, want %q", c.https, c.http, got, c.url)
+		}
+	}
+}
+
+// The pairing URL keeps the scheme saved with the Serve name.
+func TestMuseBaseURLScheme(t *testing.T) {
+	p := testPool(t)
+	for _, c := range []struct{ saved, want string }{
+		{"https://m.ts.net", "https://m.ts.net"},
+		{"http://m.ts.net", "http://m.ts.net"},
+		{"", "https://<tailnet-name>"},
+	} {
+		if err := p.st.UpdateConfig(func(cfg *store.Config) error { cfg.Network.Tailscale = c.saved; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		if got := p.museBaseURL(); got != c.want {
+			t.Errorf("museBaseURL(%q) = %q, want %q", c.saved, got, c.want)
+		}
+	}
+}
