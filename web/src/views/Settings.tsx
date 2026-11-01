@@ -502,6 +502,8 @@ function TerminalHistory(): ReactElement {
 }
 
 /** Tailscale: Serve over the owner's tailnet, and the setup checklist. */
+const HTTP_WARNING = "Plain HTTP over the tailnet: traffic is WireGuard-encrypted but not TLS. Use HTTPS if your tailnet has certificates.";
+
 function Tailscale(): ReactElement {
   const app = useApp();
   const [n, setN] = useState(0);
@@ -523,9 +525,23 @@ function Tailscale(): ReactElement {
               setN(n + 1);
             }}
           >
-            {s.network.tailscale !== undefined && s.network.tailscale !== "" ? "Serving" : "Serve over HTTPS"}
+            {s.network.tailscale !== undefined && s.network.tailscale !== "" && !s.network.tailscale.startsWith("http://") ? "Serving" : "Serve over HTTPS"}
+          </Button>
+          <Button
+            disabled={s.tailscale_name === undefined}
+            onClick={async () => {
+              const r = await app.call<Record<string, string>>("settings.save", {
+                tailscale: `http://${s.tailscale_name}`,
+                enable_serve_http: true,
+              });
+              if (r !== undefined) toast(r.serve_http_error ?? `Tailscale Serve (HTTP) enabled. ${HTTP_WARNING}`);
+              setN(n + 1);
+            }}
+          >
+            {s.network.tailscale !== undefined && s.network.tailscale.startsWith("http://") ? "Serving (HTTP)" : "Serve over HTTP"}
           </Button>
         </Row>
+        {s.network.tailscale?.startsWith("http://") === true && <p className="text-label text-faint pb-3">{HTTP_WARNING}</p>}
       </Card>
       <TailscaleChecklist rev={n} onChanged={() => setN(n + 1)} />
     </div>
