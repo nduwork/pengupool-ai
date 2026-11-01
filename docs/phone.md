@@ -37,7 +37,11 @@ It can't change settings, teams or the Compass, and the app's own token doesn't 
    (agents are told the command's full path).
 3. When the question is waiting, open the Muse app: it shows it as a card with the options to tap.
    Pick one, or reply in your own words.
-4. Back on the Mac, the same session receives your answer and goes on.
+4. Back on the Mac, the same session receives your answer and goes on. The question stays open for 15
+   minutes; each `pengupool ask` call waits up to 2 minutes, then tells the agent to keep waiting with
+   `pengupool ask --wait ID`. If your answer arrives while the agent isn't waiting (say its shell tool
+   stopped sooner), PenguPool passes it to the session as a notice, and `pengupool ask --wait ID` still
+   returns it.
 
 If the agent ends its turn with a plain paragraph instead of a question, nothing waits on you, and
 there is nothing to answer from the phone. A tool-permission prompt is also not on the phone; answer it
