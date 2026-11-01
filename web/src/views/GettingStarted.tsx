@@ -86,7 +86,7 @@ export function Welcome({ onBack }: { onBack?: () => void }): ReactElement {
   useEffect(() => {
     if (onBack === undefined) return;
     const esc = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onBack();
+      if (e.key === "Escape" && !e.defaultPrevented) onBack(); // a dialog's own Escape closes only the dialog
     };
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
@@ -115,6 +115,7 @@ export function Welcome({ onBack }: { onBack?: () => void }): ReactElement {
       <label className="flex items-center gap-2 text-caption text-muted-foreground">
         <input
           type="checkbox"
+          className="accent-primary"
           checked={app.welcome.show}
           onChange={(e) => {
             const show = e.target.checked;

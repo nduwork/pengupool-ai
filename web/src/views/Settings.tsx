@@ -462,7 +462,6 @@ function Row({ title, hint, children }: { title: ReactNode; hint?: ReactNode; ch
 
 const SCROLLBACK_CHOICES = [5000, 10000, 20000, 50000];
 
-/** How far back a terminal scrolls. Per viewer: it lives in this browser or app window, not in the host. */
 /** Welcome: whether it shows when the Workspace is empty (this window only), and opening it now. */
 function WelcomeSettings(): ReactElement {
   const app = useApp();
@@ -480,6 +479,7 @@ function WelcomeSettings(): ReactElement {
   );
 }
 
+/** How far back a terminal scrolls. Per viewer: it lives in this browser or app window, not in the host. */
 function TerminalHistory(): ReactElement {
   const [lines, setLines] = usePersisted<number>("terminal.scrollback", SCROLLBACK_DEFAULT);
   const value = SCROLLBACK_CHOICES.includes(lines) ? lines : SCROLLBACK_DEFAULT;

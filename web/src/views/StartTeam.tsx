@@ -2,7 +2,7 @@ import { Check, FolderOpen, Loader2, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { toast } from "sonner";
 
-import { AGENTS, pickable, useApp, usePersisted, type Found } from "../app/ctx";
+import { AGENTS, checkFailed, pickable, useApp, usePersisted, type Found } from "../app/ctx";
 import { localDesktop } from "../app/desktop";
 import { FolderBrowser } from "../components/FolderBrowser";
 import { Button } from "../components/ui/button";
@@ -50,8 +50,9 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
   const [agent, setAgent] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<StartResult | null>(null);
+  const [retrying, setRetrying] = useState("");
   useEffect(() => {
-    void app.conn.request<Found>("harness.probe").then(setFound, () => setFound({}));
+    void app.conn.request<Found>("harness.probe").then(setFound, () => setFound(checkFailed())); // a failed check never blocks a start
   }, []);
   const options = pickable(found, AGENTS);
   const pick = agent !== "" ? agent : (options[0]?.value ?? "");
@@ -60,7 +61,7 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
   const names = picked.map((id) => all.find((s) => s.id === id)?.name ?? id);
   const toggle = (id: string): void => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]);
   const plural = new Intl.PluralRules("en").select(picked.length) === "one" ? "specialist" : "specialists";
-  const canStart = lead !== undefined && pick !== "" && !busy && (!needFolder || folder.trim() !== "");
+  const canStart = lead !== undefined && found !== null && pick !== "" && !busy && (!needFolder || folder.trim() !== "");
 
   const start = async (): Promise<void> => {
     if (!canStart) return;
@@ -79,8 +80,10 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
   };
 
   const retry = async (skillId: string): Promise<void> => {
-    if (result === null) return;
+    if (result === null || retrying !== "") return;
+    setRetrying(skillId);
     const m = await app.call<{ session_id: string }>("team.formation", { team_id: result.team_id, change: { op: "add", skill_id: skillId, harness: pick } });
+    setRetrying("");
     if (m !== undefined) setResult({ ...result, members: result.members.map((x) => (x.skill_id === skillId ? { ...x, ok: true, error: undefined, session_id: m.session_id } : x)) });
   };
 
@@ -94,6 +97,7 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
         footer={
           <Button
             variant="default"
+            autoFocus
             onClick={() => {
               app.select(result.lead);
               onClose();
@@ -112,8 +116,8 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
                 <span className="font-medium">{m.name}</span> {m.ok ? <span className="text-muted-foreground">Started</span> : <span className="text-danger [overflow-wrap:anywhere]">{m.error}</span>}
               </span>
               {m.ok ? null : (
-                <Button size="sm" variant="outline" onClick={() => void retry(m.skill_id)}>
-                  Retry
+                <Button size="sm" variant="outline" disabled={retrying !== ""} onClick={() => void retry(m.skill_id)}>
+                  {retrying === m.skill_id ? "Retrying…" : "Retry"}
                 </Button>
               )}
             </div>
@@ -205,7 +209,7 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
             <div className="grid">
               {shown.map((s) => (
                 <label key={s.id} className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-hover">
-                  <input type="checkbox" className="mt-0.5" checked={picked.includes(s.id)} onChange={() => toggle(s.id)} />
+                  <input type="checkbox" className="mt-0.5 accent-primary" checked={picked.includes(s.id)} onChange={() => toggle(s.id)} />
                   <span className="min-w-0 flex-1">
                     <span className="block font-medium">{s.name}</span>
                     <span className="block truncate text-caption text-muted-foreground" title={s.description ?? s.method ?? ""}>
@@ -258,9 +262,9 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
             ) : null}
           </Label>
         ) : null}
-        <Label hint={options.length === 0 ? "None of the agents can run here." : "The lead and each specialist run on it."}>
+        <Label hint={found === null ? "Checking…" : options.length === 0 ? "None of the agents can run here." : "The lead and each specialist run on it."}>
           Agent
-          <Select value={pick} onChange={(e) => setAgent(e.target.value)} disabled={options.length === 0}>
+          <Select value={pick} onChange={(e) => setAgent(e.target.value)} disabled={found === null || options.length === 0}>
             {options.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}

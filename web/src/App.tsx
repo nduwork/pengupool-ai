@@ -83,6 +83,7 @@ export function App(): ReactElement {
   const [messagesOpen, setMessagesOpen] = usePersisted("messages.open", true);
   const [welcomeShow, setWelcomeShow] = usePersisted("welcome.show", true);
   const [welcomeOpen, setWelcomeOpen] = useState(false); // opened explicitly, over the Workspace; not kept
+  const sessionCount = useRef(0);
   const [, setSettingsSection] = usePersisted("settings.section", "general");
 
   useEffect(() => {
@@ -263,6 +264,12 @@ export function App(): ReactElement {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [sidebarRef, panels, messagesOpen, setMessagesOpen]);
+
+  // A session started from anywhere (Start in a folder, ⌘N) closes a Welcome opened over the Workspace.
+  useEffect(() => {
+    if (view.sessions.length > sessionCount.current) setWelcomeOpen(false);
+    sessionCount.current = view.sessions.length;
+  }, [view.sessions.length]);
 
   const ctx: AppCtx = useMemo(
     () => ({

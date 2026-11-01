@@ -400,7 +400,7 @@ export function TeamMap(): ReactElement {
               {empty ? (
                 <div className="h-full">
                   <Empty icon={<Users />} title="No agent sessions yet">
-                    Start one with <strong>New session</strong> (⌘N), drag a specialist from the Specialist pool here, or right-click for more, or{" "}
+                    Start one with <strong>New session</strong> (⌘N), drag a specialist from the Specialist pool here, or right-click for more. Or{" "}
                     <button type="button" className="underline" onClick={app.welcome.open}>
                       show Welcome
                     </button>
