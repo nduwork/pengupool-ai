@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"context"
 	"os"
 	"slices"
 	"strings"
@@ -298,7 +299,7 @@ func TestSessionWordedLineWaivesNothingUntilSaved(t *testing.T) {
 	if v := p.lines(text, 50); !slices.ContainsFunc(v, func(v lineView) bool { return v.UID == uid && v.State == "confident" && v.guides() }) {
 		t.Fatalf("the line did not become confident: %+v", v)
 	}
-	if w := p.floorWaiver(text, "git merge"); w != "" {
+	if w := p.floorWaiver(context.Background(), text, "git merge"); w != "" {
 		t.Fatalf("a session-worded line waived the floor: %s", w)
 	}
 	if _, uids := p.ownerRules(text); slices.Contains(uids, uid) {
@@ -307,7 +308,7 @@ func TestSessionWordedLineWaivesNothingUntilSaved(t *testing.T) {
 	if _, err := p.compassSave(nil, compassSaveIn{UID: uid, Body: "The owner lets agents git merge into main without asking."}); err != nil {
 		t.Fatal(err)
 	}
-	if w := p.floorWaiver(text, "git merge"); w != uid {
+	if w := p.floorWaiver(context.Background(), text, "git merge"); w != uid {
 		t.Fatalf("a saved line waived %q, want %q", w, uid)
 	}
 	if _, uids := p.ownerRules(text); !slices.Contains(uids, uid) {

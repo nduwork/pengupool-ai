@@ -107,11 +107,14 @@ func poolStore() string {
 }
 
 // hookWait is how long the CLI waits for the daemon's answer to a hook. A Stop may carry triage's
-// go-ahead, decided within 4 s (pool.StopDeadline); the harnesses give the hook 10 s (Claude) or
-// 15 s. Every other event stays quick.
+// go-ahead, decided within 10 s (pool.StopDeadline), and a prompt its route or subagent plan, asked
+// within 8 s; every harness gives the hook 15 s. Every other event stays quick.
 func hookWait(event string) time.Duration {
-	if event == "Stop" {
-		return 8 * time.Second
+	switch event {
+	case "Stop":
+		return 12 * time.Second
+	case "UserPromptSubmit":
+		return 11 * time.Second
 	}
 	return 3 * time.Second
 }

@@ -373,6 +373,13 @@ the panel is a little wider and never taller than the window (the list scrolls, 
 a go-ahead to check has Right and Wrong in words. A check-in now carries the last 1200 characters of the
 agent's reply, up from 300.
 
+v0.10.16: Agents wait for the triage model instead of cutting it off. A turn's route question and the
+go-ahead decided in an agent's Stop now give the model 8 seconds (they gave it 1.5 and 2, while a local
+model can take several), and the hooks around them wait long enough (the CLI 11 s for a prompt, 12 s for
+a Stop; Claude Code and the pi/OMP extension now give a hook 15 s, as Codex, Gemini and Copilot already
+did). A call cut short by its caller's own time limit no longer marks the triage model as not
+answering, unless it had already waited as long as the model's own 30-second limit: a model that
+fails, or never answers in that time, still does.
 v0.10.17: A model is used for triage only after its connection check passes. Settings keeps Use for
 triage off, with a line saying why, until Check connection passes for the provider's saved settings; the
 host holds that pass and refuses to make a model active without it ("Run Check connection first"), and

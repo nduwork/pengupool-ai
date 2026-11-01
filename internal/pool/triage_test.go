@@ -2,6 +2,8 @@ package pool
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -49,17 +51,17 @@ func TestTriageModelRequired(t *testing.T) {
 	if s := status(); s != "unchecked" {
 		t.Fatalf("a model not asked yet since the start: %s", s)
 	}
-	// A model that hangs past its caller's deadline is unreachable, not ok.
+	// A call its caller's own deadline cut short (a hook's budget) says nothing about the model.
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	_, _ = p.decider().Decide(ctx, decision.Request{})
 	cancel()
-	if s := status(); s != "unreachable" {
-		t.Fatalf("a hanging model: %s", s)
+	if s := status(); s != "unchecked" {
+		t.Fatalf("a call past its caller's deadline marked the model: %s", s)
 	}
 	p.mu.Lock()
 	p.testDecider = failDecider{}
 	p.mu.Unlock()
-	_, _ = p.decider().Decide(context.Background(), decision.Request{})
+	_, _ = p.decider().Decide(context.Background(), decision.Request{}) // e.g. the provider's own client timeout
 	if s := status(); s != "unreachable" {
 		t.Fatalf("a failing model: %s", s)
 	}
@@ -79,4 +81,43 @@ func (hangDecider) Name() string { return "hang" }
 func (hangDecider) Decide(ctx context.Context, _ decision.Request) (decision.Response, error) {
 	<-ctx.Done()
 	return decision.Response{}, ctx.Err()
+}
+
+// A model that never answers: a hook's short budget says nothing about it, but a call that ran the
+// provider client's whole wait marks it unreachable, even when the caller's own deadline (the
+// background callers' 30 s) ended it first.
+func TestHungModelMarkedAfterTheClientsWait(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+	defer func(d time.Duration) { clientWait = d }(clientWait)
+	clientWait = 200 * time.Millisecond // stands for the client's 30 s
+	p, st := twoTeams(t)
+	cfg := st.Config()
+	cfg.Decision.Providers = map[string]store.ProviderConfig{"ollama": {Type: "ollama", Format: "openai-chat", Address: srv.URL, Model: "m"}}
+	cfg.Decision.Active = "ollama"
+	_ = st.SaveConfig(cfg)
+	status := func() string {
+		r, _ := call(t, p, true, "triage.status", map[string]any{})
+		return r.(map[string]string)["status"]
+	}
+	ask := func(d time.Duration) {
+		ctx, cancel := context.WithTimeout(context.Background(), d)
+		defer cancel()
+		_, _ = p.decider().Decide(ctx, decision.Request{State: "s", Questions: []decision.Question{{Name: "q", Type: decision.Predicate, Instructions: "q?"}}})
+	}
+	ask(50 * time.Millisecond) // a hook's budget (8 s), shorter than the client's wait
+	if s := status(); s != "unchecked" {
+		t.Fatalf("a hook's budget marked the model: %s", s)
+	}
+	ask(clientWait) // a background caller's deadline, exactly the client's wait (30 s)
+	if s := status(); s != "unreachable" {
+		t.Fatalf("a model that never answered within the client's wait: %s", s)
+	}
 }

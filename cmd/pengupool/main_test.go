@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nduwork/pengupool-ai/internal/pool"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 )
 
@@ -69,8 +70,13 @@ func TestExitCodes(t *testing.T) {
 }
 
 func TestHookWait(t *testing.T) {
-	if hookWait("Stop") != 8*time.Second || hookWait("PreToolUse") != 3*time.Second || hookWait("UserPromptSubmit") != 3*time.Second {
-		t.Fatal("a Stop waits 8 s for the go-ahead; the other hooks 3 s")
+	if hookWait("Stop") != 12*time.Second || hookWait("PreToolUse") != 3*time.Second || hookWait("UserPromptSubmit") != 11*time.Second {
+		t.Fatal("a Stop waits 12 s for the go-ahead, a prompt 11 s for its route; the other hooks 3 s")
+	}
+	// The CLI outwaits the daemon's Stop deadline, which holds the model's budget; every harness gives
+	// a hook 15 s (internal/harness), more than the CLI waits.
+	if !(pool.StopBudget < pool.StopDeadline && pool.StopDeadline+time.Second < hookWait("Stop") && hookWait("Stop")+2*time.Second <= 15*time.Second) {
+		t.Fatalf("budgets out of order: model %v, Stop deadline %v, CLI %v, harness 15s", pool.StopBudget, pool.StopDeadline, hookWait("Stop"))
 	}
 }
 

@@ -15,8 +15,9 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
-// nextStepTimeout bounds the per-turn route question: it runs inside the prompt hook.
-const nextStepTimeout = 1500 * time.Millisecond
+// nextStepTimeout bounds the per-turn route question: it runs inside the prompt hook, which the CLI
+// waits 11 s for (cmd/pengupool/pool.go). A local model can take several seconds to answer.
+const nextStepTimeout = 8 * time.Second
 
 // nextStepNote is triage before the LEAD's next step (research-002): one typed question, who should
 // do the work this turn asks for, the LEAD or a member whose routing description covers it. A firm
