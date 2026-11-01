@@ -954,7 +954,8 @@ function Agents(): ReactElement {
   return (
     <div>
       <H title="Agents">
-        PenguPool runs the coding agents installed on this machine, each with its own settings for the session; it never changes an agent&apos;s configuration. New session offers the installed ones.
+        PenguPool runs the coding agents installed on this machine, each with its own settings for the session. It changes an agent&apos;s own configuration only to add the rules under Agent
+        permissions, when you allow them. New session offers the installed ones.
       </H>
       <Card className="mb-4 px-4">
         {failed ? <p className="border-b border-border py-3 text-caption text-danger">Couldn&apos;t check which agents are installed. Check again, or start a session: New session offers them all.</p> : null}
@@ -990,6 +991,128 @@ function Agents(): ReactElement {
           </Button>
         </div>
       </Card>
+      <AgentPermissions />
+    </div>
+  );
+}
+
+interface AgentPermsView {
+  choice: "" | "allowed" | "off";
+  agents: Record<string, { on: boolean; file: string; lines?: string[]; changed?: string[]; error?: string }>;
+  commands: string[];
+}
+
+/** Agent permissions: the owner's one consent to PenguPool's team-command rules in each agent's own settings. */
+function AgentPermissions(): ReactElement | null {
+  const app = useApp();
+  const [v, setV] = useState<AgentPermsView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [show, setShow] = useState(false);
+  const load = (): void => void app.call<{ agent_permissions: AgentPermsView }>("settings.get").then((r) => r !== undefined && setV(r.agent_permissions));
+  useEffect(load, []);
+  if (v === null) return null;
+  const allowed = v.choice === "allowed";
+  const written = (id: string, label: string): ReactElement => {
+    const a = v.agents[id];
+    const n = v.commands.length;
+    if (a === undefined) return <Row title={label}>{null}</Row>;
+    const [hint, badge, tone] = !allowed
+      ? [`${n} rules in ${a.file}, once you allow them.`, "when on", "neutral" as const]
+      : a.error !== undefined
+        ? [a.error, "not written", "danger" as const]
+        : (a.changed ?? []).length > 0
+          ? [`${a.changed?.length ?? 0} of PenguPool's lines were removed from ${a.file} outside PenguPool, so those commands ask again. Turn this off and on to write them again.`, "changed", "warning" as const]
+          : [`${n} rules in ${a.file}${id === "claude" ? " (permissions.allow)" : ""}.`, "global", "success" as const];
+    return (
+      <Row title={label} hint={hint}>
+        <Badge tone={tone}>{badge}</Badge>
+      </Row>
+    );
+  };
+  const writtenFiles = Object.values(v.agents).filter((a) => a.on && (a.lines ?? []).length > 0);
+  return (
+    <div>
+      <p className="mb-2 text-label font-semibold">Agent permissions</p>
+      <p className="mb-2 text-label text-muted-foreground">
+        Agents in a team message each other and look up past work with PenguPool&apos;s command-line tool. Each call can stop on the agent&apos;s own permission prompt. You can let agents run these
+        four commands without that prompt. PenguPool still checks who may message whom.
+      </p>
+      <Card className="px-4">
+        <Row
+          title="Let agents run PenguPool's team commands without asking"
+          hint={allowed ? "On. Written to each agent's settings; you won't be asked again." : v.choice === "off" ? "Off: agents ask each time." : "Not decided yet: agents ask each time."}
+        >
+          <Switch
+            checked={allowed}
+            disabled={busy}
+            label="Let agents run PenguPool's team commands without asking"
+            onCheckedChange={async (on) => {
+              setBusy(true);
+              const r = await app.call<{ agent_permissions?: Record<string, { ok: boolean; error?: string }> }>("settings.save", { agent_permissions: on ? "allowed" : "off" });
+              setBusy(false);
+              load();
+              if (r === undefined) return;
+              const failed = Object.entries(r.agent_permissions ?? {}).filter(([, x]) => !x.ok);
+              if (failed.length > 0) toast.error(failed.map(([a, x]) => `${AGENTS.find((g) => g.id === a)?.label ?? a}: ${x.error ?? "not written"}`).join(" "));
+              else toast.success(on ? "Agents may run the four PenguPool commands without asking." : "Agents will ask again.");
+            }}
+          />
+        </Row>
+        <Row
+          title="Commands"
+          hint={
+            <>
+              {v.commands.map((c) => (
+                <span key={c} className="block break-all font-mono text-caption text-foreground">
+                  {c}
+                </span>
+              ))}
+              <span className="block">Only these, with any message or search text. The list is fixed.</span>
+            </>
+          }
+        >
+          {null}
+        </Row>
+        <Row title="Never included" hint="Push, merge, release, delete, and every other command still ask, as they do today. So does a command that chains one of the four with anything else.">
+          <Lock className="size-3.5 text-muted-foreground" aria-hidden />
+        </Row>
+        {written("claude", "Claude Code")}
+        {written("codex", "Codex")}
+        <Row title="OMP" hint="Only when its approval mode asks; its default (yolo) never asks. PenguPool writes no rules for it yet.">
+          <Badge tone="neutral">if it asks</Badge>
+        </Row>
+        <Row title="pi" hint="Never asks, so nothing is needed.">
+          <Badge tone="neutral">not needed</Badge>
+        </Row>
+        <Row title="Muse Code" hint="Not supported yet: Muse has no documented way to add a rule. It still asks.">
+          <Badge tone="neutral">not yet</Badge>
+        </Row>
+        {writtenFiles.length > 0 ? (
+          <div className="border-t border-border py-3">
+            <button type="button" className="text-caption text-muted-foreground underline" aria-expanded={show} onClick={() => setShow(!show)}>
+              {show ? "Hide what is written" : "Show what is written"}
+            </button>
+            {show ? (
+              <div className="mt-2 space-y-2 rounded-md bg-muted p-2 font-mono text-caption">
+                {writtenFiles.map((a) => (
+                  <div key={a.file}>
+                    <span className="block font-semibold">{a.file}</span>
+                    {(a.lines ?? []).map((l) => (
+                      <span key={l} className="block break-all">
+                        {l}
+                      </span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </Card>
+      <p className="mt-2 text-caption text-faint">
+        PenguPool adds only the lines shown above to each agent&apos;s own settings, and removes exactly those when you turn this off. They apply to every session of that agent, including ones you start
+        outside PenguPool. A session already running may need a restart to pick them up.
+      </p>
     </div>
   );
 }

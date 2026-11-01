@@ -394,6 +394,13 @@ until that model is saved again, and the triage banner when it was the active on
 panel drops the API format menu, always lists Ollama's decision models, and shows one status line for
 where the saved settings stand (not saved, unsaved changes, not checked, checking, failed, passed, in
 use); the filled button follows the next step: Save, then Check connection, then Use for triage.
+Agent permissions (Settings → Agents): once the owner allows it, PenguPool writes rules into Claude
+Code's settings.json and its own file in Codex's rules folder so agents run four PenguPool commands
+(send, search, experience search, experience show) without a permission prompt, in every session of
+those agents, also outside PenguPool. Turning it off removes exactly those lines; a moved app gets
+its lines rewritten at start. Agents are now told to run the CLI with its path shell-quoted, the
+spelling the rules match. Theme font sizes no longer drop when a colour class follows them, so
+default buttons keep their 13px label size.
 
 ## Credits
 

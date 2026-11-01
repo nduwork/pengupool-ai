@@ -40,13 +40,14 @@ export function Label({ className, children, hint, hintId, ...p }: LabelHTMLAttr
   );
 }
 
-export function Switch({ checked, onCheckedChange, label }: { checked: boolean; onCheckedChange: (v: boolean) => void; label?: string }): React.ReactElement {
+export function Switch({ checked, onCheckedChange, label, disabled }: { checked: boolean; onCheckedChange: (v: boolean) => void; label?: string; disabled?: boolean }): React.ReactElement {
   return (
     <RSwitch.Root
       checked={checked}
       onCheckedChange={onCheckedChange}
       aria-label={label}
-      className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent bg-input transition-colors data-[state=checked]:bg-primary"
+      disabled={disabled}
+      className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent bg-input transition-colors disabled:opacity-50 data-[state=checked]:bg-primary"
     >
       <RSwitch.Thumb className="block size-4 translate-x-0.5 rounded-full bg-white shadow transition-transform data-[state=checked]:translate-x-4" />
     </RSwitch.Root>

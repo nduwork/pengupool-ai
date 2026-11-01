@@ -66,6 +66,7 @@ type Pool struct {
 	nodes NodeManager
 
 	mu                sync.Mutex
+	permErr           map[string]string            // agent -> why its permission rules could not be written, guarded by mu
 	achvLocks         map[string]*sync.Mutex       // one achievement job per skill, under mu
 	achvAgain         map[string]bool              // a job was asked while one ran, under mu
 	msgSock           map[string]claudeInbox       // session id → Claude inbox socket

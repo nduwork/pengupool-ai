@@ -139,6 +139,8 @@ type Config struct {
 	// AgentPermissions are the agents whose own global config PenguPool wrote its team-command rules
 	// into, with the owner's consent, and exactly what it wrote; an agent missing here has none.
 	AgentPermissions map[string]AgentPermission `json:"agent_permissions,omitempty"`
+	// AgentPermissionsChoice is the owner's answer: "" not decided yet, "allowed" or "off".
+	AgentPermissionsChoice string `json:"agent_permissions_choice,omitempty"`
 }
 
 // AgentPermission is what PenguPool wrote for one agent: the file, the lines it added (a line the

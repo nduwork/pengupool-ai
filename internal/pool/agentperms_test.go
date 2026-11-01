@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,19 +21,25 @@ func TestAgentPermissions(t *testing.T) {
 	user := "{\n  \"permissions\": {\n    \"deny\": [\n      \"Bash(git push *)\"\n    ]\n  }\n}\n"
 	os.WriteFile(claude, []byte(user), 0o600)
 
-	if _, err := call(t, p, false, "settings.save", map[string]any{"agent_permissions": map[string]bool{"claude": true}}); err == nil {
+	if _, err := call(t, p, false, "settings.save", map[string]any{"agent_permissions": "allowed"}); err == nil {
 		t.Fatal("an agent's call gave the consent")
 	}
 	if b, _ := os.ReadFile(claude); string(b) != user {
 		t.Fatal("an agent's call wrote the rules")
 	}
-	r, err := call(t, p, true, "settings.save", map[string]any{"agent_permissions": map[string]bool{"claude": true, "codex": true, "pi": true}})
+	if p.agentPermissionsView()["choice"] != "" {
+		t.Fatal("decided before the owner chose")
+	}
+	r, err := call(t, p, true, "settings.save", map[string]any{"agent_permissions": "allowed"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	res := r.(map[string]any)["agent_permissions"].(map[string]any)
-	if res["claude"].(map[string]any)["ok"] != true || res["codex"].(map[string]any)["ok"] != true || res["pi"].(map[string]any)["ok"] != false {
+	if res["claude"].(map[string]any)["ok"] != true || res["codex"].(map[string]any)["ok"] != true || len(res) != 2 {
 		t.Fatalf("results %v", res)
+	}
+	if p.agentPermissionsView()["choice"] != "allowed" {
+		t.Fatal("the choice was not kept")
 	}
 	if b, _ := os.ReadFile(claude); !strings.Contains(string(b), "Bash('"+p.exe+"' send *)") || !strings.Contains(string(b), "git push") {
 		t.Fatalf("claude settings:\n%s", b)
@@ -63,8 +70,29 @@ func TestAgentPermissions(t *testing.T) {
 		t.Fatalf("codex after the move:\n%s", c)
 	}
 
+	// a file PenguPool cannot parse: not written, with the reason, the file untouched; a later start retries
+	codexBefore, _ := os.ReadFile(codex)
+	bad := "{ not json"
+	os.WriteFile(claude, []byte(bad), 0o600)
+	cfgNow := st.Config()
+	delete(cfgNow.AgentPermissions, "claude")
+	_ = st.SaveConfig(cfgNow)
+	p.refreshAgentPermissions()
+	v = p.agentPermissionsView()["agents"].(map[string]any)["claude"].(map[string]any)
+	if b, _ := os.ReadFile(claude); string(b) != bad || v["on"] != false || !strings.Contains(fmt.Sprint(v["error"]), "not valid JSON") {
+		t.Fatalf("unparsable file: %q, view %v", b, v)
+	}
+	if c, _ := os.ReadFile(codex); string(c) != string(codexBefore) {
+		t.Fatal("codex changed because claude failed")
+	}
+	os.WriteFile(claude, []byte(user), 0o600)
+	p.refreshAgentPermissions()
+	if v = p.agentPermissionsView()["agents"].(map[string]any)["claude"].(map[string]any); v["on"] != true || v["error"] != nil {
+		t.Fatalf("retry at start: %v", v)
+	}
+
 	// off: exactly PenguPool's lines go
-	if _, err := call(t, p, true, "settings.save", map[string]any{"agent_permissions": map[string]bool{"claude": false, "codex": false}}); err != nil {
+	if _, err := call(t, p, true, "settings.save", map[string]any{"agent_permissions": "off"}); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(claude); string(b) != user {
@@ -73,7 +101,10 @@ func TestAgentPermissions(t *testing.T) {
 	if _, err := os.Stat(codex); !os.IsNotExist(err) {
 		t.Fatal("codex rules left behind")
 	}
-	if rec := st.Config().AgentPermissions; len(rec) != 0 {
-		t.Fatalf("record left %+v", rec)
+	if _, err := call(t, p, true, "settings.save", map[string]any{"agent_permissions": "maybe"}); err == nil {
+		t.Fatal("an unknown choice was taken")
+	}
+	if c := st.Config(); len(c.AgentPermissions) != 0 || c.AgentPermissionsChoice != "off" {
+		t.Fatalf("record left %+v", c)
 	}
 }

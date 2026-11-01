@@ -236,10 +236,10 @@ func (p *Pool) settingsGet(_ context.Context, _ struct{}) (any, error) {
 
 type settingsIn struct {
 	Tailscale *string `json:"tailscale,omitempty"`
-	// AgentPermissions turns PenguPool's rules in an agent's own config on or off: the owner's consent,
-	// from the app only (agents' CLI calls never reach settings.save).
-	AgentPermissions map[string]bool `json:"agent_permissions,omitempty"`
-	EnableServe      bool            `json:"enable_serve,omitempty"`
+	// AgentPermissions is the owner's consent, "allowed" or "off", to PenguPool's rules in each agent's
+	// own config: from the app only (agents' CLI calls never reach settings.save).
+	AgentPermissions string `json:"agent_permissions,omitempty"`
+	EnableServe      bool   `json:"enable_serve,omitempty"`
 }
 
 func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
@@ -254,12 +254,11 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 		return nil, err
 	}
 	res := map[string]any{"saved": true}
-	if len(in.AgentPermissions) > 0 {
-		out := map[string]any{}
-		for a, on := range in.AgentPermissions {
-			out[a] = p.setAgentPermission(a, on)
+	if in.AgentPermissions != "" {
+		if in.AgentPermissions != "allowed" && in.AgentPermissions != "off" {
+			return nil, invalid("agent_permissions is allowed or off")
 		}
-		res["agent_permissions"] = out
+		res["agent_permissions"] = p.setAgentPermissions(in.AgentPermissions)
 	}
 	if in.EnableServe {
 		port := boundPort()
