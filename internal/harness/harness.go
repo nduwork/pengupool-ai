@@ -348,7 +348,7 @@ func ClaudeSettings(exe string) string {
 	q := shellQuote(exe)
 	hooks := map[string]any{}
 	for _, ev := range ClaudeEvents {
-		entry := map[string]any{"type": "command", "command": q + " hook claude " + ev, "timeout": 10}
+		entry := map[string]any{"type": "command", "command": q + " hook claude " + ev, "timeout": 15}
 		group := map[string]any{"hooks": []any{entry}}
 		// no matcher on PreToolUse: every tool reaches the hook (triage's hold, the floor, the guards)
 		hooks[ev] = []any{group}

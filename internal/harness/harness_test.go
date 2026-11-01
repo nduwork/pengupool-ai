@@ -64,6 +64,13 @@ func TestWrapAndNewAgents(t *testing.T) {
 		cmd[4] != "--teammate-mode" || !slices.Contains(cmd, "--settings") || !slices.Contains(env, "PATH="+dir+":"+dir) {
 		t.Fatalf("claude wrapped: %q %v", cmd, env)
 	}
+	// Every harness gives a PenguPool hook 15 s, more than the CLI waits for a Stop (12 s).
+	if i := slices.Index(cmd, "--settings"); i < 0 || !strings.Contains(cmd[i+1], `"timeout":15`) {
+		t.Fatalf("claude hook timeout: %q", cmd)
+	}
+	if !strings.Contains(string(ompExtension), "{ timeout: 15000 }") {
+		t.Fatal("the pi/OMP extension waits less than 15 s for a hook")
+	}
 	// sh passes the arguments after its $0 through "$@" word for word.
 	if out, err := exec.Command("/bin/sh", "-c", `exec printf '%s|' "$@"`, "pp", "a b", "c").Output(); err != nil || string(out) != "a b|c|" {
 		t.Fatalf("arguments after the launcher keep their words: %q %v", out, err)

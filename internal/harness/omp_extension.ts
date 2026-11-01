@@ -25,7 +25,7 @@ const INBOX = SID && STORE ? path.join(STORE, "run", "inbox", `${SID}.jsonl`) : 
 const run = (event: string, payload: Record<string, unknown>) =>
   new Promise<string | null>((resolve) => {
     if (!SID) return resolve("")
-    const child = execFile(CLI, ["hook", HARNESS, event], { timeout: 5000 }, (e, out) => resolve(e ? null : String(out).trim()))
+    const child = execFile(CLI, ["hook", HARNESS, event], { timeout: 15000 }, (e, out) => resolve(e ? null : String(out).trim()))
     child.stdin?.on("error", () => {}) // EPIPE from a CLI that exited early must not end omp
     child.stdin?.end(JSON.stringify(payload))
   })
