@@ -2,6 +2,10 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
+## Unreleased
+
+The map's Compact context and Clear actions work on Muse sessions (Muse /compact and /new).
+
 ## 0.10.20
 
 An optional Welcome with two ways to start. **Start with a specialist** starts a new team led by
