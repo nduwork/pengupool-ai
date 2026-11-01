@@ -24,6 +24,11 @@ Transports (PENGUPOOL_TRANSPORT):
     tailnet address on port 443 via the runtime proxy, TLS with SNI =
     the machine's tailnet name (Serve's certificate is publicly trusted
     for that name), then plain HTTP/1.1 with Host = the tailnet name.
+  serve-http — Tailscale Serve in plain-HTTP mode (--http=80), for
+    tailnets where HTTPS certificates are not enabled. CONNECT to the
+    tailnet address on port 80 and speak plaintext HTTP with
+    Host = the tailnet name. The tailnet itself is WireGuard-encrypted,
+    and the device token remains the credential.
   direct — the pre-0.10.20 path: CONNECT to the tailnet address on the
     daemon port (7787) and speak plaintext HTTP with
     Host = <tailnet name>:<port>. Only useful while a daemon build
@@ -43,6 +48,7 @@ HOST_HEADER = os.environ.get("PENGUPOOL_HOST_HEADER",
 PORT = int(os.environ.get("PENGUPOOL_PORT", "7787"))
 TRANSPORT = os.environ.get("PENGUPOOL_TRANSPORT", "serve")
 SERVE_PORT = int(os.environ.get("PENGUPOOL_SERVE_PORT", "443"))
+SERVE_HTTP_PORT = int(os.environ.get("PENGUPOOL_SERVE_HTTP_PORT", "80"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 API = "/api/muse/v1"
 
@@ -128,6 +134,13 @@ def _tunnel_serve():
     return Sock(tls)
 
 
+def _tunnel_serve_http():
+    """Serve in plain-HTTP mode: no TLS wrap, so the proxy reader (and
+    any bytes it buffered) is used as-is."""
+    _, sk = _connect_proxy(HOST, SERVE_HTTP_PORT)
+    return sk
+
+
 def _tunnel_direct():
     _, sk = _connect_proxy(HOST, PORT)
     return sk
@@ -136,6 +149,8 @@ def _tunnel_direct():
 def tunnel():
     if TRANSPORT == "direct":
         return _tunnel_direct()
+    if TRANSPORT == "serve-http":
+        return _tunnel_serve_http()
     if TRANSPORT == "serve":
         return _tunnel_serve()
     raise SystemExit(f"unknown PENGUPOOL_TRANSPORT: {TRANSPORT!r}")
@@ -145,7 +160,7 @@ def _request(method, path, body=None, auth=True):
     """One HTTP request to the daemon over the tunnel. Returns (status, body bytes)."""
     sk = tunnel()
     payload = b""
-    host_header = HOST_HEADER if TRANSPORT == "serve" else f"{HOST_HEADER}:{PORT}"
+    host_header = HOST_HEADER if TRANSPORT in ("serve", "serve-http") else f"{HOST_HEADER}:{PORT}"
     headers = [f"Host: {host_header}", "Connection: close"]
     if auth:
         headers.append(f"Authorization: Bearer {load_device_token()}")
