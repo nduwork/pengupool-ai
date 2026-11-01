@@ -116,7 +116,7 @@ def main():
         if reachable and not prev.get("reachable", True):
             changes.append("daemon reachable again")
         if not reachable and not obs["refused"] and prev.get("reachable", True):
-            changes.append("daemon unreachable via API")
+            changes.append(pp.HOST_ERROR or "daemon unreachable via API")
         decision = "wake" if changes else "silent"
         reason = "; ".join(changes) if changes else "no material change"
 

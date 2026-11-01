@@ -69,7 +69,7 @@ def resolve_host(host, transport):
     if "://" in host:
         u = urlparse(host)
         if u.scheme not in ("http", "https"):
-            raise ValueError(f"PENGUPOOL_HOST scheme must be http or https, not {u.scheme!r}")
+            raise ValueError(f"unsupported PENGUPOOL_HOST scheme {u.scheme!r}: use http or https")
         host, port = u.hostname or "", u.port
         transport = transport or ("serve-http" if u.scheme == "http" else "serve")
     return host, transport or "serve", port

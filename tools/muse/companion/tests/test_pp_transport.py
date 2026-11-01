@@ -355,5 +355,20 @@ class HTTPWarningTests(unittest.TestCase):
         self.assertEqual(err.getvalue().count("plain HTTP over the tailnet"), 1)
 
 
+class DetectSchemeTests(unittest.TestCase):
+    def test_unsupported_scheme_named_not_unreachable(self):
+        with tempfile.TemporaryDirectory() as home:
+            state = os.path.join(home, "hooks", "state")
+            os.makedirs(state)
+            with open(os.path.join(state, "pengupool-status.json"), "w") as f:
+                json.dump({"reachable": True, "sessions": {}, "last_check_epoch": 0}, f)
+            env = dict(os.environ, HOME=home, PENGUPOOL_HOST="ftp://m.ts.net/", COMPANION_FORCE="1",
+                       HATCH_HOOK_DRY_RUN="1")
+            env.pop("PENGUPOOL_TRANSPORT", None)
+            src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "detect.py")
+            out = subprocess.run([sys.executable, src], env=env, capture_output=True, text=True, timeout=30)
+            self.assertIn("unsupported PENGUPOOL_HOST scheme 'ftp'", out.stdout, out.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
