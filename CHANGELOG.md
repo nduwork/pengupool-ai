@@ -2,7 +2,7 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
-## 0.10.22
+## Unreleased
 
 The Muse companion reaches the device API through Tailscale Serve: HTTPS by
 default, plain HTTP where the tailnet has no HTTPS certificates. The
