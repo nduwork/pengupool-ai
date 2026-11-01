@@ -710,8 +710,9 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 
 // nextCopy is the copy number a new member of sk gets on the team: 0 for the first, else one past
 // the highest so far (closed members count, so a number is never reused). A copy that left the
-// team keeps running in its folder, so a running session of the skill there counts as a copy too,
-// and a number whose folder already exists is skipped: a new copy never shares a folder.
+// team keeps running in its folder, so a running session of the skill in this team's work folder
+// counts as a copy too, and a number whose folder already exists is skipped: a new copy never
+// shares a folder of this team.
 func (p *Pool) nextCopy(t *protocol.Team, sk protocol.Skill) int {
 	n := 0
 	for _, m := range t.Members {
@@ -721,8 +722,9 @@ func (p *Pool) nextCopy(t *protocol.Team, sk protocol.Skill) int {
 	}
 	work := p.workDir(t.ID)
 	for _, s := range p.st.State().Sessions {
-		if s.State == "running" && s.SkillID == sk.ID && s.TeamID != t.ID && s.Cwd != "" &&
-			(within(s.Cwd, work) || (sk.Path != "" && within(s.Cwd, sk.Path))) {
+		// Only this team's work folder: the skill clone is every team's first copy's folder, so a
+		// session there says nothing about this team.
+		if s.State == "running" && s.SkillID == sk.ID && s.TeamID != t.ID && s.Cwd != "" && within(s.Cwd, work) {
 			n = max(n, 1)
 		}
 	}

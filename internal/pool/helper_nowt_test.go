@@ -332,11 +332,29 @@ func TestDuplicateSpecialistLeaveThenAdd(t *testing.T) {
 	if c.Copy == b.Copy || c.Name == b.Name || cwdOf(t, p, c.SessionID) == cwdOf(t, p, b.SessionID) {
 		t.Fatalf("after b left, c reuses it: b %+v in %q, c %+v in %q", b, cwdOf(t, p, b.SessionID), c, cwdOf(t, p, c.SessionID))
 	}
-	// The first copy leaves while running in the clone: a new copy must not start there.
+	// Every copy leaves; those still running in this team's folders keep their numbers.
 	leave(a.SessionID)
 	leave(c.SessionID)
 	d := place(t, p, "sk-rev")
-	if cwdOf(t, p, d.SessionID) == clone || d.Copy < 2 {
-		t.Fatalf("after the first copy left, d %+v runs in %q (the clone %q)", d, cwdOf(t, p, d.SessionID), clone)
+	for _, x := range []protocol.Member{b, c} {
+		if d.Copy == x.Copy || cwdOf(t, p, d.SessionID) == cwdOf(t, p, x.SessionID) {
+			t.Fatalf("d %+v reuses %s's number or folder", d, x.Name)
+		}
+	}
+	_ = clone
+}
+
+// A copy serving another team (in the shared skill clone) does not make this team's first add a
+// second copy: it is copy 1, in the clone, as before.
+func TestDuplicateSpecialistOtherTeam(t *testing.T) {
+	p, st, clone, _, _ := dupPool(t)
+	_ = st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions, store.Session{ID: "otherrev0001", Name: "pr-review-agent", Harness: "claude",
+			State: "running", Status: "idle", SkillID: "sk-rev", TeamID: "team2222", Cwd: clone})
+		return nil
+	})
+	m := place(t, p, "sk-rev")
+	if m.Copy >= 2 || m.Name != "pr-review-agent" || cwdOf(t, p, m.SessionID) != clone {
+		t.Fatalf("first add here: %+v in %q, want copy 1 in the clone %q", m, cwdOf(t, p, m.SessionID), clone)
 	}
 }
