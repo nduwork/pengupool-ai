@@ -406,6 +406,7 @@ v0.10.19: A status report no longer reads as waiting on the owner. The turn-end 
 reply end by asking the owner to confirm, approve or choose" now says that a report is not waiting,
 even when it says the agent will bring something to the owner later or is waiting on a teammate,
 unless it also ends by asking the owner to confirm, approve or choose.
+
 v0.10.20: An optional Welcome with two ways to start. **Start with a specialist** starts a new team led by
 team-lead-agent, with the specialists you tick as members: seven commonly useful ones are suggested
 (research, PR review, dev workflow, security, API design, CI and data analysis), and a search reaches
