@@ -762,6 +762,23 @@ func (p *Pool) permissionRan(s store.Session, tool string, input any, useID stri
 	}
 }
 
+// permissionDenied settles the open permission prompt of the call useID names: refused. Without an id
+// it settles nothing (the turn's end expires the prompt).
+func (p *Pool) permissionDenied(s store.Session, useID string) {
+	if useID == "" {
+		return
+	}
+	g := p.gs(s.ID)
+	k := permKey("", nil, useID)
+	g.mu.Lock()
+	pg, ok := g.perms[k]
+	delete(g.perms, k)
+	g.mu.Unlock()
+	if ok {
+		p.settlePermission(s, pg, false)
+	}
+}
+
 // settlePermission records the owner's choice on a permission prompt and, off the hook, keeps it as
 // a decision.
 func (p *Pool) settlePermission(s store.Session, pg permGate, allowed bool) {

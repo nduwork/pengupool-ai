@@ -386,7 +386,7 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 		return nil, invalid("no transcript was recorded for %s", s.Name)
 	}
 	if d := p.st.State().Domain; s.SkillID != "" && findSkill(&d, s.SkillID) == nil {
-		return nil, invalid("%s's helper agent was deleted; start a new session instead", s.Name)
+		return nil, invalid("%s's specialist was deleted; start a new session instead", s.Name)
 	}
 	keep := s
 	p.expireAsks(s.ID) // what it asked before it stopped has no one waiting: it asks again if it still needs to

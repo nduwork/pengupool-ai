@@ -81,7 +81,7 @@ sys.path.insert(0, os.environ["SRC"])
 import pp
 SESS = [
  {"session":"lead1","title":"lead · app","name":"lead","state":"running","status":"working","waiting":False,"team":"app","team_id":"t1","role":"LEAD"},
- {"session":"web1","title":"web <b> · app","name":"web <b>","state":"running","status":"idle","waiting":True,"team":"app","team_id":"t1","role":"HELPER","parent":"lead1"},
+ {"session":"web1","title":"web <b> · app","name":"web <b>","state":"running","status":"idle","waiting":True,"team":"app","team_id":"t1","role":"SPECIALIST","parent":"lead1"},
  {"session":"solo1","title":"solo","state":"exited","waiting":False},
 ]
 def fake(method, path, body=None):

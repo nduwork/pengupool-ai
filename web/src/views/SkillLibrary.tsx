@@ -18,8 +18,8 @@ import { groupOnMap, groupSkills } from "./skillgroups";
 
 // Skill library: registered skill repositories. Each entry's memory and task logs are kept by the
 // host (agents.db), imported once from the repository. Registration starts no session.
-// The Helper agent hub's helpers not installed yet are listed below them, each with Install; the map's
-// Helper agent pool shows only the installed ones.
+// The Specialist hub's helpers not installed yet are listed below them, each with Install; the map's
+// Specialist pool shows only the installed ones.
 
 export function SkillLibrary(): ReactElement {
   const app = useApp();
@@ -41,17 +41,17 @@ export function SkillLibrary(): ReactElement {
   return (
     <div className="flex h-full flex-col">
       <PageHeader
-        title="Helper agents"
-        subtitle="Reusable agents with their own method, experience and history. Install one here and tick On the map for the ones you use; place them on a team from the map's Helper agent pool."
+        title="Specialists"
+        subtitle="Reusable agents with their own method, experience and history. Install one here and tick On the map for the ones you use; place them on a team from the map's Specialist pool."
         action={
           <div className="flex gap-2">
             <Button onClick={() => app.showDialog(<MarketplaceSheet />)}>
-              <Store /> Helper agent hub
+              <Store /> Specialist hub
             </Button>
             <Button
               variant="ghost"
               disabled={busy !== null}
-              title="Pull the Helper agent hub's latest catalog"
+              title="Pull the Specialist hub's latest catalog"
               onClick={async () => {
                 setBusy("refresh");
                 await app.call("marketplace.refresh", {});
@@ -62,14 +62,14 @@ export function SkillLibrary(): ReactElement {
               <RefreshCw /> {busy === "refresh" ? "Pulling…" : "Refresh"}
             </Button>
             <Button variant="default" onClick={() => app.showDialog(<AddSkill />)}>
-              <Plus /> Add helper agent
+              <Plus /> Add specialist
             </Button>
           </div>
         }
       />
       {skills.length === 0 && available.length === 0 ? (
-        <Empty icon={<Mascot />} title="No helper agents yet">
-          Add one from the Helper agent hub, register an existing skill folder, add a Git source pinned to a commit, or create a new one from the skill-repo template.
+        <Empty icon={<Mascot />} title="No specialists yet">
+          Add one from the Specialist hub, register an existing skill folder, add a Git source pinned to a commit, or create a new one from the skill-repo template.
         </Empty>
       ) : (
         <ListDetail
@@ -79,11 +79,11 @@ export function SkillLibrary(): ReactElement {
               {skills.length > 0 ? <p className="px-3 pb-1 pt-2 text-caption font-medium text-muted-foreground">Installed · {skills.length}</p> : null}
               <HelperTree
                 id="installed"
-                label="Installed helper agents"
+                label="Installed specialists"
                 items={skills}
                 groupOf={(s) => s.group ?? ""}
                 holds={(s) => s.id === sel /* only a helper the owner picked, not the default one */}
-                folderCheck={(items, group) => <MapCheck value={groupOnMap(items)} label={`On the map: every helper in ${group}`} onChange={(v) => setOnMap(items, v)} />}
+                folderCheck={(items, group) => <MapCheck value={groupOnMap(items)} label={`On the map: every specialist in ${group}`} onChange={(v) => setOnMap(items, v)} />}
                 row={(s, nested) => (
                   <li key={s.id} className="flex items-start gap-1">
                     {/* A control of its own beside the row's button, never inside it. */}
@@ -100,10 +100,10 @@ export function SkillLibrary(): ReactElement {
                 )}
               />
               {available.length > 0 ? <p className="px-3 pb-1 pt-4 text-caption font-medium text-muted-foreground">Available · {available.length}</p> : null}
-              {market?.error !== undefined ? <p className="px-3 pt-4 text-caption text-danger">Helper agent hub unavailable: {market.error}</p> : null}
+              {market?.error !== undefined ? <p className="px-3 pt-4 text-caption text-danger">Specialist hub unavailable: {market.error}</p> : null}
               <HelperTree
                 id="available"
-                label="Helper agents available in the Helper agent hub"
+                label="Specialists available in the Specialist hub"
                 items={available}
                 groupOf={(e) => e.category ?? ""}
                 row={(e, nested) => (
@@ -124,8 +124,8 @@ export function SkillLibrary(): ReactElement {
           }
           detail={
             current === undefined ? (
-              <Empty icon={<Mascot />} title="No helper agents installed">
-                Install one from the list, or add your own with Add helper agent.
+              <Empty icon={<Mascot />} title="No specialists installed">
+                Install one from the list, or add your own with Add specialist.
               </Empty>
             ) : (
               <SkillDetail key={current.id} s={current} />
@@ -137,7 +137,7 @@ export function SkillLibrary(): ReactElement {
   );
 }
 
-/** "On the map": the helper is listed in the map's Helper agent pool. A folder's box is mixed when
+/** "On the map": the helper is listed in the map's Specialist pool. A folder's box is mixed when
  *  only some of its helpers are; ticking it puts them all on the map. */
 function MapCheck({ value, label, onChange, className }: { value: boolean | "mixed"; label: string; onChange: (v: boolean) => void; className?: string }): ReactElement {
   const ref = useRef<HTMLInputElement>(null);
@@ -149,7 +149,7 @@ function MapCheck({ value, label, onChange, className }: { value: boolean | "mix
       ref={ref}
       type="checkbox"
       aria-label={label}
-      title="On the map: listed in the map's Helper agent pool"
+      title="On the map: listed in the map's Specialist pool"
       checked={value === true}
       onChange={(e) => onChange(e.target.checked)}
       className={cn("shrink-0", className)}
@@ -208,7 +208,7 @@ function GroupFolder({ id, group, count, pinned, check, children }: { id: string
           aria-expanded={open}
           aria-controls={bodyId}
           aria-disabled={pinned || undefined}
-          title={pinned ? "Holds the selected helper" : undefined}
+          title={pinned ? "Holds the selected specialist" : undefined}
           onClick={() => {
             if (!pinned) setOpen(!open);
           }}
@@ -263,7 +263,7 @@ function AddSkill(): ReactElement {
   };
   return (
     <Sheet
-      title="Add helper agent"
+      title="Add specialist"
       onClose={close}
       footer={
         <>
@@ -521,7 +521,7 @@ function Overview({ s }: { s: Skill }): ReactElement {
           Working since {s.created_at.slice(0, 10)} · identity <span className="font-mono text-caption">{s.key ?? s.id}</span> · served {served.length}{" "}
           {served.length === 1 ? "team" : "teams"}
         </p>
-        <p className="mt-1 text-caption text-faint">The skill files are where this agent started. Its experience is its own: it grows with every job, follows the helper on every machine, and survives upgrades and reinstalls.</p>
+        <p className="mt-1 text-caption text-faint">The skill files are where this agent started. Its experience is its own: it grows with every job, follows the specialist on every machine, and survives upgrades and reinstalls.</p>
       </div>
       <p className="text-caption text-faint">The agent reads its skills but never changes them; what it learns goes to its experience in PenguPool.</p>
       {problems !== null && problems.length > 0 ? (

@@ -60,7 +60,7 @@ export function CloseTeamSheet({ team }: { team: Team }): ReactElement {
   return (
     <Sheet
       title={`Close ${team.name}?`}
-      description="Every helper is closed; the main session keeps running. The team's record stays."
+      description="Every member is closed; the main session keeps running. The team's record stays."
       onClose={close}
       footer={
         <>
@@ -83,7 +83,7 @@ export function CloseTeamSheet({ team }: { team: Team }): ReactElement {
   );
 }
 
-/** Closed teams, each deletable: deleting drops its helpers' team notes and raw turns. */
+/** Closed teams, each deletable: deleting drops its members' team notes and raw turns. */
 export function ClosedTeamsSheet(): ReactElement {
   const app = useApp();
   const [busy, setBusy] = useState("");
@@ -92,7 +92,7 @@ export function ClosedTeamsSheet(): ReactElement {
   return (
     <Sheet
       title="Closed groups"
-      description="Deleting one drops its helpers' team notes and raw turns. Helper agents keep their other experience; repositories and branches are untouched."
+      description="Deleting one drops its members' team notes and raw turns. Specialists keep their other experience; repositories and branches are untouched."
       onClose={() => app.showDialog(null)}
     >
       <ul className="grid gap-1 text-label">

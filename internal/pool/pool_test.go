@@ -481,7 +481,7 @@ func TestProposalAssignsHelperAgent(t *testing.T) {
 	}
 	// Candidates rank by name on a tie: ci-debug is 0 (moved to claude), ios is 1 (pi).
 	if got["ci-debug"] != "claude" || got["ios"] != "pi" {
-		t.Fatalf("helper agents %v, warnings %v", got, prop.Warnings)
+		t.Fatalf("specialists %v, warnings %v", got, prop.Warnings)
 	}
 }
 
@@ -1275,7 +1275,7 @@ func TestRepositoryKeepsNoRecord(t *testing.T) {
 	placeToolTurn(p, "repoaaaaaaaa", "fix the build", "Fixed it.")
 }
 
-// A team-hub agent joins a group with no work repository, in its own folder. It is a HELPER: the root
+// A team-hub agent joins a group with no work repository, in its own folder. It is a SPECIALIST: the root
 // of the tree still leads.
 func TestHubAgentJoinsAsHelper(t *testing.T) {
 	agentOnPath(t)
@@ -1320,15 +1320,15 @@ func TestHubAgentJoinsAsHelper(t *testing.T) {
 	d := s0.Domain
 	tm := findTeam(&d, team.ID)
 	i := slices.IndexFunc(tm.Members, func(m protocol.Member) bool { return m.SkillID == "anc" })
-	if i < 0 || tm.Members[i].Worktree != "" || leadOf(tm) != "gcp1aaaaaaaaa" || teamLabel(&s0, tm, tm.Members[i]) != "HELPER" {
+	if i < 0 || tm.Members[i].Worktree != "" || leadOf(tm) != "gcp1aaaaaaaaa" || teamLabel(&s0, tm, tm.Members[i]) != "SPECIALIST" {
 		t.Fatalf("members %+v, lead %q", tm.Members, leadOf(tm))
 	}
 	// It works in a scratch folder of its own, never in its skill repository.
 	if s, _ := p.session(tm.Members[i].SessionID); s.Cwd != filepath.Join(st.Dir(), "work", team.ID, "team-lead-agent") || s.Model != "m-picked" {
 		t.Fatalf("the hub agent runs in %q on model %q", s.Cwd, s.Model)
 	}
-	if !slices.ContainsFunc(d.Approvals, func(a protocol.Approval) bool { return strings.Contains(a.Detail, "team-lead-agent (helper agent)") }) {
-		t.Fatal("the approval does not name the helper agent")
+	if !slices.ContainsFunc(d.Approvals, func(a protocol.Approval) bool { return strings.Contains(a.Detail, "team-lead-agent (specialist)") }) {
+		t.Fatal("the approval does not name the specialist")
 	}
 }
 

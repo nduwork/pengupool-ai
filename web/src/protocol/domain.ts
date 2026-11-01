@@ -37,10 +37,10 @@ export interface Skill {
   commit?: string;
   files?: SkillFile[];
   profiles?: string[];
-  /** Listed in the map's Helper agent pool. */
+  /** Listed in the map's Specialist pool. */
   on_map?: boolean;
   key?: string;
-  /** Helper group on the Helper agents page; empty: ungrouped. */
+  /** Helper group on the Specialists page; empty: ungrouped. */
   group?: string;
   created_at: string;
 }

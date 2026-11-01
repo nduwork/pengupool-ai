@@ -111,7 +111,7 @@ export function SessionMenu({ s, folded, canFold, onFold }: { s: SessionView; fo
       ) : null}
       {team !== undefined && !main ? (
         <Item icon={<ArrowUpToLine />} onSelect={() => void app.call("team.group", { session_id: s.id })}>
-          Split off as its own group, with its helpers (leave {team.name})
+          Split off as its own group, with its members (leave {team.name})
         </Item>
       ) : null}
       {team !== undefined && !main ? (
@@ -249,7 +249,7 @@ export function CloseSheet({ s }: { s: SessionView }): ReactElement {
       title={`Close ${s.name}?`}
       description={
         helper !== undefined
-          ? "Stops the helper and takes it off its team. Its worktree is removed when nothing would be lost, otherwise it stays on disk."
+          ? "Stops the member and takes it off its team. Its worktree is removed when nothing would be lost, otherwise it stays on disk."
           : "Stops the agent and removes the session from the map. Its transcript stays, so you can add it back later."
       }
       onClose={close}
