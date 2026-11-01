@@ -207,6 +207,42 @@ class ServeTlsTests(unittest.TestCase):
             pp.device_get("/sessions")
 
 
+class ServeHttpTests(unittest.TestCase):
+    """serve-http: the real _tunnel_serve_http over a stubbed CONNECT,
+    plaintext to a socketpair server on the Serve HTTP port (80)."""
+
+    def setUp(self):
+        self._saved = (pp.TRANSPORT, pp._connect_proxy, pp.load_device_token)
+        pp.load_device_token = lambda: TOKEN
+        pp.TRANSPORT = "serve-http"
+
+    def tearDown(self):
+        pp.TRANSPORT, pp._connect_proxy, pp.load_device_token = self._saved
+
+    def test_dispatch_port_and_plaintext_round_trip(self):
+        captured = {}
+        seen = {}
+        body = b'[{"session": "s1"}]'
+        resp = b"HTTP/1.1 200 OK\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
+        client_end, server_end = socket.socketpair()
+        threading.Thread(target=run_server, args=(server_end, resp, captured), daemon=True).start()
+
+        def stub(host, port):
+            seen["host"], seen["port"] = host, port
+            return client_end, pp.Sock(client_end)
+
+        pp._connect_proxy = stub
+        pp.tunnel = pp._tunnel_serve_http
+        status, out = pp.device_get("/sessions")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(out)[0]["session"], "s1")
+        self.assertEqual(seen["port"], 80)
+        self.assertEqual(seen["host"], pp.HOST)
+        # Plain HTTP via Serve: bare tailnet name as Host, no port suffix.
+        self.assertIn(f"Host: {pp.HOST_HEADER}\r\n", captured["request"])
+        self.assertIn(f"Authorization: Bearer {TOKEN}", captured["request"])
+
+
 class SmokeTests(unittest.TestCase):
     def test_askcard_renders_and_escapes(self):
         import askcard
