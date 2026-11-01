@@ -119,7 +119,7 @@ func (p *Pool) agentPermissionsView() map[string]any {
 	}
 	cmds := make([]string, len(harness.CLIAllowed))
 	for i, c := range harness.CLIAllowed {
-		cmds[i] = p.cli() + " " + strings.Join(c, " ")
+		cmds[i] = "pengupool " + strings.Join(c, " ")
 	}
-	return map[string]any{"choice": cfg.AgentPermissionsChoice, "agents": agents, "not_written": harness.PermissionNotWritten, "commands": cmds}
+	return map[string]any{"choice": cfg.AgentPermissionsChoice, "agents": agents, "not_written": harness.PermissionNotWritten, "commands": cmds, "cli": p.cli()}
 }

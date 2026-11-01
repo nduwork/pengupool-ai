@@ -1000,6 +1000,8 @@ interface AgentPermsView {
   choice: "" | "allowed" | "off";
   agents: Record<string, { on: boolean; file: string; lines?: string[]; changed?: string[]; error?: string }>;
   commands: string[];
+  /** The executable as the rules name it, shell-quoted. */
+  cli: string;
 }
 
 /** Agent permissions: the owner's one consent to PenguPool's team-command rules in each agent's own settings. */
@@ -1032,7 +1034,7 @@ function AgentPermissions(): ReactElement | null {
   const writtenFiles = Object.values(v.agents).filter((a) => a.on && (a.lines ?? []).length > 0);
   return (
     <div>
-      <p className="mb-2 text-label font-semibold">Agent permissions</p>
+      <h3 className="mb-2 text-label font-semibold">Agent permissions</h3>
       <p className="mb-2 text-label text-muted-foreground">
         Agents in a team message each other and look up past work with PenguPool&apos;s command-line tool. Each call can stop on the agent&apos;s own permission prompt. You can let agents run these
         four commands without that prompt. PenguPool still checks who may message whom.
@@ -1063,11 +1065,14 @@ function AgentPermissions(): ReactElement | null {
           hint={
             <>
               {v.commands.map((c) => (
-                <span key={c} className="block break-all font-mono text-caption text-foreground">
+                <span key={c} className="block font-mono text-caption text-foreground [overflow-wrap:anywhere]">
                   {c}
                 </span>
               ))}
               <span className="block">Only these, with any message or search text. The list is fixed.</span>
+              <span className="block [overflow-wrap:anywhere]">
+                The rules name PenguPool by its full path: <span className="font-mono">{v.cli}</span>
+              </span>
             </>
           }
         >
@@ -1079,7 +1084,7 @@ function AgentPermissions(): ReactElement | null {
         {written("claude", "Claude Code")}
         {written("codex", "Codex")}
         <Row title="OMP" hint="Only when its approval mode asks; its default (yolo) never asks. PenguPool writes no rules for it yet.">
-          <Badge tone="neutral">if it asks</Badge>
+          <Badge tone="neutral">not yet</Badge>
         </Row>
         <Row title="pi" hint="Never asks, so nothing is needed.">
           <Badge tone="neutral">not needed</Badge>
@@ -1096,9 +1101,9 @@ function AgentPermissions(): ReactElement | null {
               <div className="mt-2 space-y-2 rounded-md bg-muted p-2 font-mono text-caption">
                 {writtenFiles.map((a) => (
                   <div key={a.file}>
-                    <span className="block font-semibold">{a.file}</span>
+                    <span className="block font-semibold [overflow-wrap:anywhere]">{a.file}</span>
                     {(a.lines ?? []).map((l) => (
-                      <span key={l} className="block break-all">
+                      <span key={l} className="block [overflow-wrap:anywhere]">
                         {l}
                       </span>
                     ))}
