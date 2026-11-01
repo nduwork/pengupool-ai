@@ -263,19 +263,22 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 	if in.EnableServe {
 		port := boundPort()
 		if port == "" {
-			port = "7787"
-		}
-		// Tailscale Serve on the tailnet only; never Funnel.
-		out, approve, err := serveOnce(ctx, port)
-		if approve != "" {
-			res["serve_approve_url"] = approve
-		} else {
-			res["serve"] = out
-			if err != nil {
-				res["serve_error"] = err.Error()
+			// Never guess a port: Serve pointed at a port nothing
+			// listens on fails silently for every remote client.
+			res["serve_error"] = "daemon HTTP port is not bound yet; try again in a moment"
+			} else {
+			// Tailscale Serve on the tailnet only; never Funnel.
+			out, approve, err := serveOnce(ctx, port)
+			if approve != "" {
+				res["serve_approve_url"] = approve
+				} else {
+				res["serve"] = out
+				if err != nil {
+					res["serve_error"] = err.Error()
+					}
+				}
 			}
 		}
-	}
 	return res, nil
 }
 
@@ -527,10 +530,22 @@ func (p *Pool) HealTailscaleServe() {
 	if cfg.Network.Tailscale == "" || !store.IsHomeDefault(p.st.Dir()) {
 		return
 	}
-	port := boundPort()
+	// cmdDaemon launches this before the gateway listener exists, and
+	// boundPort() stays "" until it binds. Wait for the bound address
+	// the way the hub.addr writer in cmdDaemon does; Heal runs in its
+	// own goroutine, so the bounded wait blocks nothing. If the
+	// listener never reports an address, there is nothing to heal.
+	port:= ""
+	for range 200 {
+		if port = boundPort(); port != "" {
+			break
+			}
+		time.Sleep(10 * time.Millisecond)
+		}
 	if port == "" {
+		p.logf("pool: tailscale serve heal skipped: daemon HTTP port not bound")
 		return
-	}
+		}
 	bin := tailscaleBin()
 	if bin == "" {
 		return
