@@ -1,5 +1,5 @@
 import { Check, FolderOpen, Loader2, Search, X } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { toast } from "sonner";
 
 import { AGENTS, checkFailed, pickable, useApp, usePersisted, type Found } from "../app/ctx";
@@ -51,6 +51,14 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<StartResult | null>(null);
   const [retrying, setRetrying] = useState("");
+  const goRef = useRef<HTMLButtonElement>(null);
+  // The result view replaces the button that had focus; the dialog's focus trap would keep focus on
+  // its container, so "Go to the team" takes it on the next frame.
+  useEffect(() => {
+    if (result === null) return;
+    const f = requestAnimationFrame(() => goRef.current?.focus());
+    return () => cancelAnimationFrame(f);
+  }, [result]);
   useEffect(() => {
     void app.conn.request<Found>("harness.probe").then(setFound, () => setFound(checkFailed())); // a failed check never blocks a start
   }, []);
@@ -96,8 +104,8 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
         onClose={onClose}
         footer={
           <Button
+            ref={goRef}
             variant="default"
-            autoFocus
             onClick={() => {
               app.select(result.lead);
               onClose();
