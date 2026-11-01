@@ -13,7 +13,8 @@ port it served and re-points only its own Serve routes, so another app published
 left alone: the Serve button reports a route it would take over instead of replacing it. The Settings checklist accepts either mode.
 
 **Serve over HTTP.** Settings has a second Tailscale button that serves plain HTTP on :80 even on a
-tailnet with HTTPS certificates. The pairing URL a device scans keeps that scheme, and the
+tailnet with HTTPS certificates; it is allowed, never gated, and Settings shows a warning that
+plain HTTP is WireGuard-encrypted but not TLS. The pairing URL a device scans keeps that scheme, and the
 checklist's Reachable row probes http:// when only HTTP serves the app.
 
 ## 0.10.20

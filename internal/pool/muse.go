@@ -616,11 +616,11 @@ func (p *Pool) musePairCode(_ context.Context, c gateway.Caller, _ json.RawMessa
 // museBaseURL is the tailnet URL the Muse app reaches: the Tailscale
 // Serve name in the scheme the owner saved with it (the Settings Serve
 // buttons save https:// or http:// with the name), or a placeholder
-// until Serve is set up.
+// until Serve is set up. HTTPS wins whenever it serves this app too.
 func (p *Pool) museBaseURL() string {
 	saved := p.st.Config().Network.Tailscale
 	scheme := "https"
-	if strings.HasPrefix(saved, "http://") {
+	if strings.HasPrefix(saved, "http://") && !httpsServesThisApp() {
 		scheme = "http"
 	}
 	name := strings.Trim(strings.TrimPrefix(strings.TrimPrefix(saved, "https://"), "http://"), "/")
@@ -628,6 +628,16 @@ func (p *Pool) museBaseURL() string {
 		return scheme + "://" + name
 	}
 	return "https://<tailnet-name>"
+}
+
+// httpsServesThisApp reports whether Serve's :443 route points at this daemon.
+func httpsServesThisApp() bool {
+	port, bin := boundPort(), tailscaleBin()
+	if port == "" || bin == "" {
+		return false
+	}
+	httpsTarget, _, _ := currentServeTargets(context.Background(), bin)
+	return httpsTarget == "127.0.0.1:"+port
 }
 
 type musePairIn struct {

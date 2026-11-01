@@ -552,3 +552,54 @@ func TestSettingsSaveServeForeignRoute(t *testing.T) {
 		})
 	}
 }
+
+// An HTTP click re-points PenguPool's own stale :443 route too, so recording the new port never
+// strands it; another app's :80 route is refused.
+func TestSettingsSaveServeHTTPPlan(t *testing.T) {
+	t.Run("staleOwnHTTPS", func(t *testing.T) {
+		ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:1111"))
+		p := testPool(t)
+		setServePort(t, p.st, "1111")
+		res, err := p.settingsSave(context.Background(), settingsIn{EnableServeHTTP: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e, _ := res.(map[string]any)["serve_http_error"].(string); e != "" {
+			t.Fatalf("serve_http_error = %q", e)
+		}
+		joined := strings.Join(*ran, "\n")
+		if len(*ran) != 2 || !strings.Contains(joined, "--http=80") || !strings.Contains(joined, "--https=443") {
+			t.Fatalf("serve runs = %v, want :80 and the stale :443", *ran)
+		}
+		if got := p.st.Config().Network.ServePort; got != "7787" {
+			t.Fatalf("serve port = %q, want 7787", got)
+		}
+	})
+	t.Run("foreignHTTP", func(t *testing.T) {
+		ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSONFor("http://127.0.0.1:2222", "probe-machine.tailnet.ts.net:80"))
+		p := testPool(t)
+		setServePort(t, p.st, "1111")
+		res, err := p.settingsSave(context.Background(), settingsIn{EnableServeHTTP: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e, _ := res.(map[string]any)["serve_http_error"].(string); !strings.Contains(e, ":80 already points at 127.0.0.1:2222") {
+			t.Fatalf("serve_http_error = %q", e)
+		}
+		if len(*ran) != 0 {
+			t.Fatalf("took over another app's :80 route: %v", *ran)
+		}
+	})
+}
+
+// The pairing URL prefers HTTPS when it serves this app, even with http:// saved.
+func TestMuseBaseURLPrefersHTTPS(t *testing.T) {
+	stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:7787"))
+	p := testPool(t)
+	if err := p.st.UpdateConfig(func(cfg *store.Config) error { cfg.Network.Tailscale = "http://m.ts.net"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.museBaseURL(); got != "https://m.ts.net" {
+		t.Fatalf("museBaseURL = %q, want https://m.ts.net", got)
+	}
+}

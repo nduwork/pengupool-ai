@@ -625,6 +625,8 @@ func (p *Pool) tailscaleChecks() []tailscaleCheck {
 	serving := ""
 	if port != "" {
 		switch {
+		case httpsTarget == want && httpTarget == want:
+			serving = "https://" + name + " and http://" + name + " serve this app"
 		case httpsTarget == want:
 			serving = "https://" + name + " serves this app"
 		case httpTarget == want:
