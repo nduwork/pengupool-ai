@@ -1,26 +1,52 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/banner-dark.png">
-  <img alt="PenguPool AI: your coding-agent team, guided by your Compass, within reach from Muse" src="assets/screenshots/banner-light.png">
+  <img alt="PenguPool AI: Muse Code at work, with you in the loop from the Muse app" src="assets/screenshots/banner-light.png">
 </picture>
 
-<p align="center">Run Muse Code and other supported agents side by side, carry your preferences into their sessions, and use the Muse app to follow work and answer supported team requests from your phone.</p>
+<p align="center">PenguPool brings your coding-agent team, your preferences and its waiting questions into one workspace. Run Muse Code on your Mac, follow the team from the Muse app, and send your answer back to the session that needs it.</p>
 
 <p align="center">
   <a href="https://github.com/nduwork/pengupool-ai/releases/latest">Download</a> ·
-  <a href="#demo">Watch the demo</a> ·
+  <a href="#muse-in-the-loop">See the Muse workflow</a> ·
   <a href="docs/getting-started.md">Get started</a> ·
   <a href="docs/phone.md">Muse setup</a>
 </p>
 
 <p align="center"><sub>Built for the Meta Global AI Developer Hackathon · Build for Your World</sub></p>
 
+## Muse in the loop
+
+<!-- MUSE LOOP MEDIA: a real desktop-and-phone pair from one recorded question, captioned:
+"A Muse Code session asks a project question; the owner answers in the Muse app; the session continues
+with that answer. Tool-permission prompts stay in the terminal." Until that footage exists, the
+diagram below stands in. -->
+
+```mermaid
+flowchart LR
+  C["Muse Code on Mac"] -->|"Hooks: context and session events"| P["PenguPool: team, Compass, waiting requests"]
+  P -->|"Paired API over Tailscale Serve"| M["Owner in Muse app"]
+  M -->|"Answer or instruction"| P
+  P -->|"Answer delivery / owner input"| C
+```
+
+<sub>The arrows show data flow, not server push or automatic phone notifications.</sub>
+
+**On your Mac, Muse Code works with your team's context.** PenguPool's Muse plugin connects session
+start, prompts and turn events to the team's context, your Compass and a specialist's own journal. That
+lets the coding agent work within the preferences you have already recorded.
+
+**On your phone, Muse brings the question back to you.** A paired Muse device can read the team's
+waiting requests, send your instructions and answer supported questions and check-ins. PenguPool returns
+your answer to the relevant session through its existing owner-input and answer paths.
+
+**The contribution is the connection:** a coding-agent workspace that keeps the owner's context and
+decisions in the loop across the Mac and Muse app. Other supported agents can join the same workspace.
+
+Coding uses the model selected by Muse Code. Memory/check-in triage uses a separately configured System
+One model; the local Tev1 default is Together AI's Qwen-based model.
+[Model responsibilities](docs/harnesses.md#who-does-what).
 
 ## What you can do
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/screen-map-dark.webp">
-  <img alt="The team map: team-lead-agent with three specialists (pr-review-agent on Muse Code) and an SME, a lit route, and an open ask" src="assets/screenshots/screen-map-light.webp">
-</picture>
 
 - **Run agents side by side.** Claude Code, Codex, Muse Code, pi and OMP, plus Claude Code through
   Ollama, each in its own terminal session. Sessions keep running when the app or its host restarts.
@@ -34,19 +60,16 @@
   you*, with enough context to decide. With the Muse app paired, you answer team questions and
   check-ins from your phone; permission prompts are answered in the agent's terminal.
 
-## Built with Meta
+### Also works with your existing agents
 
-**Muse Code does the coding.** PenguPool launches Meta's coding agent and connects its lifecycle hooks
-to team context, your Compass and specialists' journals. Muse Code controls its model selection;
-PenguPool does not pin a Muse model version.
+Claude Code, Codex, pi and OMP join the same workspace, teams and Compass as Muse Code.
 
-**Muse keeps you connected.** Pair the Muse app with PenguPool over Tailscale Serve to follow sessions,
-send instructions and answer supported team requests. Agents' tool-permission dialogs stay in the
-terminal.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/screen-map-dark.webp">
+  <img alt="The team map: team-lead-agent with three specialists (pr-review-agent on Muse Code) and an SME, a lit route, and an open ask" src="assets/screenshots/screen-map-light.webp">
+</picture>
 
-**Triage is separate.** PenguPool requires a configured System One decision model for its memory and
-check-in judgments. Its local setup default is Together AI's Tev1 (a Qwen fine-tune) through Ollama,
-which is not a Meta model. Who does what: [model responsibilities](docs/harnesses.md#who-does-what).
+<sub>Illustrative UI with synthetic project data.</sub>
 
 ## Install
 
@@ -54,8 +77,8 @@ which is not a Meta model. Who does what: [model responsibilities](docs/harnesse
    [latest release](https://github.com/nduwork/pengupool-ai/releases/latest). It runs on macOS on
    Apple Silicon.
 2. Open the disk image, drag **PenguPool AI.app** onto Applications, and open it.
-3. Install and sign in to at least one coding agent yourself (for example Claude Code). PenguPool runs
-   the agents it finds installed; it never installs them.
+3. For the walkthrough, install and sign in to **Muse Code**, Meta's coding agent. PenguPool also
+   supports Claude Code, Codex, pi and OMP; it uses agents already installed on your Mac.
 
 The app starts its host in the background and keeps its data in `~/.pengupool-ai/v2`. To build from
 source instead, see [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -72,23 +95,33 @@ source instead, see [CONTRIBUTING.md](CONTRIBUTING.md).
    Settings → Decision model: pick it, **Save**, **Check connection**, then **Use for triage**.
 3. **Decide agent permissions.** Settings → Agents → Agent permissions lets agents run four PenguPool
    team commands without a prompt, or keep asking. Either choice is fine.
-4. **Start.** *Start with a specialist* (a team, with a work folder for the specialists) or *Start in a
-   folder* (one agent, ⌘N).
-5. **Work.** Talk to the agent in its terminal. What needs you appears in *Waiting on you* (the bell)
-   and as a notification.
+4. **Start with Muse Code.** Choose *Start in a folder*, select a small demo repository and pick Muse
+   Code. Ask it to inspect the project and propose one small improvement, with a clear question for you
+   before changing it. (For a team, *Start with a specialist* and select Muse Code in the agent picker.)
+5. **Try the phone loop.** Follow [Muse setup](docs/phone.md), open the team's supported pending
+   question in Muse, reply, and confirm that the same session receives your answer. You can keep using
+   PenguPool from the Mac without pairing a phone; what needs you also appears in *Waiting on you* (the
+   bell) and as a notification.
 
 Step by step: [docs/getting-started.md](docs/getting-started.md).
 
 
 ## Demo
 
-<!-- DEMO VIDEO: link once the video exists. -->
-The demo video is coming. It walks through a Muse Code session at work, answering its question from
-the Muse app, and a specialist reusing its journal on the next job. Meanwhile, two short loops:
+Two short loops of the app, made from real app captures with demo data:
 
 <p align="center"><img src="assets/media/readme-a-specialist.gif" width="800" alt="Start a team from the Welcome screen: pick two specialists and the team appears on the map with its lead."></p>
 
 <p align="center"><img src="assets/media/readme-b-compass.gif" width="800" alt="A member's ask reaches the lead, PenguPool answers it from the owner's confident Compass line, and an ask with no clear line goes to the owner."></p>
+
+What the demo shows, against the [hackathon's](https://dev.meta.ai/events/global-hackathon) framing:
+
+| Official framing | What to demonstrate |
+| --- | --- |
+| Build for Your World | The builder's real friction: repeating context and repeatedly checking desktop sessions. The same preference or decision carried into the work. |
+| Creativity | Muse serves both the coding work and the owner's remote participation, in one concrete workflow. |
+| Technical ambition | The Muse plugin's hooks and the paired-device answer path, plus specialist-specific memory and team context. |
+| Working results | One real question-and-answer round trip, the agent's continued work and a verifiable output; the release and setup links above. |
 
 ## Help
 

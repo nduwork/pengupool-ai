@@ -19,14 +19,27 @@ Tailscale Serve.
 
 - See sessions and their waiting items (sessions on no team, or on a team with iOS access), and read
   your Compass.
-- Answer what it supports: an agent's check-in, and pending launch and team-change approvals, exactly as
-  the app's button would. An item already answered elsewhere is refused.
+- Answer what it supports: an agent's question, an agent's check-in, and pending launch and team-change
+  approvals, exactly as the app's button would. An item already answered elsewhere is refused.
 - Send words to a session (Chat).
 
 **Agents' tool-permission dialogs stay in the terminal.** They are listed in the app, but you answer
 them in the agent's own terminal, on your Mac.
 
 It can't change settings, teams or the Compass, and the app's own token doesn't work on the phone API.
+
+## Try it
+
+1. Start a **Muse Code** session in a small demo repository (Start in a folder, then pick Muse Code).
+2. Ask it to inspect the project and propose one small improvement, with a clear question for you
+   before changing it.
+3. When the question is waiting, open the Muse app: it shows the waiting item as a card with the
+   question and the agent's context. Reply or pick an option.
+4. Back on the Mac, the same session receives your answer and goes on.
+
+If the agent ends its turn with a plain paragraph instead of a question, nothing waits on you, and
+there is nothing to answer from the phone. A tool-permission prompt is also not on the phone; answer it
+in the terminal.
 
 ## Revoke a device
 

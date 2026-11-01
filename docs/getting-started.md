@@ -3,8 +3,9 @@
 ## What you need
 
 - A Mac with Apple Silicon.
-- At least one coding agent installed and signed in on its own: Claude Code, Codex, Muse Code, pi or
-  OMP. PenguPool runs the agents it finds on your login `PATH`; it never installs or signs in to them.
+- At least one coding agent installed and signed in on its own. This walkthrough uses **Muse Code**,
+  Meta's coding agent; PenguPool also supports Claude Code, Codex, pi and OMP. It runs the agents it
+  finds on your login `PATH`; it never installs or signs in to them.
 - A decision model for triage, either local through [Ollama](https://ollama.com) or online. PenguPool
   uses it to decide where your preferences belong and whether a check-in can go on. It is required.
 
@@ -67,12 +68,19 @@ Details: [Agents (harnesses)](harnesses.md#agent-permissions).
 
 - **Start with a specialist.** Starts a new team led by team-lead-agent. Tick the specialists you want
   (seven common ones are suggested; search reaches the rest), choose the work folder they will use,
-  pick the agent, and **Start team**. The lead alone needs no folder. team-lead-agent and the other
+  select **Muse Code** in the agent picker (or another installed agent), and **Start team**. The lead alone needs no folder. team-lead-agent and the other
   specialists come from the Specialist hub (the *Specialists* page).
 - **Start in a folder** (⌘N, also *New session* in the sidebar). One agent in a folder, a new worktree
   of a repository, or a fresh clone. To start with Meta's coding agent, pick **Muse Code** as the agent.
 
-Then talk to the agent in its terminal. When it needs you (a question, a permission prompt, or a
-check-in at the end of a turn) it appears under the bell as **Waiting on you**, and as a notification.
+### A first task with Muse Code
+
+Choose **Start in a folder**, select a small demo repository and pick **Muse Code**. Ask it to inspect
+the project and propose one small improvement, with a clear question for you before changing it.
+
+When it needs you (a question, a permission prompt, or a check-in at the end of a turn) it appears
+under the bell as **Waiting on you**, and as a notification. Answer the question there, or pair the
+Muse app and answer it from your phone: see [Phone access → Try it](phone.md#try-it). Permission prompts
+are answered in the agent's terminal.
 
 Next: the [Guide](guide.md).

@@ -24,6 +24,20 @@ for is not offered. GitHub Copilot and Gemini CLI are hidden: their old sessions
 | Triage: where a preference belongs, whether a check-in can go on | Your System One decision model | Required. Local default: Together AI's Tev1, a Qwen fine-tune, through Ollama (not a Meta model); or an online System One endpoint |
 | Answering from your phone | The Muse app, paired over Tailscale Serve | Supported team requests only; see [Phone access](phone.md) |
 
+## Muse plugin
+
+What it gives you: a Muse Code session that knows its team, your Compass and (for a specialist) its own
+journal, and that PenguPool can see well enough to put its questions and check-ins in front of you,
+including on your phone.
+
+How: PenguPool writes a Muse plugin manifest whose hooks call the `pengupool` CLI on session start and
+end, each prompt, each tool use and permission request, and each turn end or failed turn
+([`internal/harness/muse_plugin.go`](../internal/harness/muse_plugin.go)). The app installs and
+approves the plugin in your Muse home. Your answers, from the app or a paired Muse device, return to
+the session through PenguPool's owner-input and answer paths
+([`internal/pool/muse.go`](../internal/pool/muse.go)). Not every hook has been tested on every
+Muse version.
+
 ## Claude Code (Ollama)
 
 Offered when Claude Code and the `ollama` CLI are both installed. It is a full Claude Code session
