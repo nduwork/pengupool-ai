@@ -163,3 +163,72 @@ func TestSubagentLists(t *testing.T) {
 		t.Fatalf("pi has no subagents: %v %v %v", k, m, e)
 	}
 }
+
+// TestShiftEnterPerHarness pins what the web terminal's Shift+Enter sends for every harness: Ctrl+J
+// to pi, ESC CR to every other session (shiftEnter in TerminalPane.tsx). A harness added to Agents
+// fails here until someone has checked what its input reads Shift+Enter as and added it below.
+func TestShiftEnterPerHarness(t *testing.T) {
+	src, err := os.ReadFile("../../web/src/components/TerminalPane.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const decl = `return harness === "pi" ? "\n" : "\x1b\r";`
+	if !strings.Contains(string(src), decl) {
+		t.Fatalf("TerminalPane.tsx no longer has %s: update sent and the table below", decl)
+	}
+	sent := func(kind string) string { // what that line sends
+		if kind == Pi {
+			return "\n"
+		}
+		return "\x1b\r"
+	}
+	// What Shift+Enter must send per harness to type a new line rather than submit. Checked live: pi
+	// (0.84.3: ESC CR is Alt+Enter, which submits; Ctrl+J is its new line). Established: Claude Code
+	// reads ESC CR (what Option+Enter types) as a new line. The rest are not checked live.
+	want := map[string]string{
+		Claude: "\x1b\r", Muse: "\x1b\r", Codex: "\x1b\r", Pi: "\n", OMP: "\x1b\r",
+		Copilot: "\x1b\r", Gemini: "\x1b\r", Shell: "\x1b\r", Custom: "\x1b\r",
+	}
+	kinds := []string{Shell, Custom}
+	for _, a := range Agents {
+		kinds = append(kinds, a.ID)
+	}
+	for _, k := range kinds {
+		w, ok := want[k]
+		if !ok {
+			t.Errorf("harness %q has no Shift+Enter entry: check what its input reads Shift+Enter as", k)
+		} else if got := sent(k); got != w {
+			t.Errorf("harness %q needs Shift+Enter %q, but the web terminal sends it %q", k, w, got)
+		}
+	}
+	if len(want) != len(kinds) {
+		t.Errorf("the table lists %d harnesses, the host runs %d: drop the ones no longer run", len(want), len(kinds))
+	}
+}
+
+// Codex and OMP report a prompt waiting on the owner through their own events, and its end: Codex's
+// PermissionRequest and Interrupt hooks, OMP's approval events and its ask tool's result.
+func TestNeedsInputEventsAreWired(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, Codex), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd, _, err := Spec(Codex, Params{SessionID: "s1", Exe: "/x/pengupool", StoreDir: dir, Env: []string{"PATH=" + dir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.Join(cmd, " ")
+	for _, want := range []string{`hooks.PermissionRequest=[{hooks=[{type="command",command="'/x/pengupool' hook codex PermissionRequest"`,
+		`hooks.Interrupt=[{hooks=[{type="command",command="'/x/pengupool' hook codex Interrupted"`} {
+		if !strings.Contains(line, want) {
+			t.Errorf("codex: want %s in %s", want, line)
+		}
+	}
+	src := string(ompExtension)
+	for _, want := range []string{`pi.on("tool_approval_requested"`, `hook("PermissionRequest"`, `pi.on("tool_approval_resolved"`,
+		`hook("ToolFailed", { tool_name: String(e.toolName), tool_use_id: e.toolCallId })`, `pi.on("tool_result"`, `e.toolName === "ask"`} {
+		if !strings.Contains(src, want) {
+			t.Errorf("omp extension: no %s", want)
+		}
+	}
+}
