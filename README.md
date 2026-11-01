@@ -365,6 +365,13 @@ spec says. In the web terminal Shift+Enter now types a new line in pi (Ctrl+J; E
 there) and stays ESC CR elsewhere. Checked live: pi; established: Claude Code; the other harnesses
 are not checked live. A test lists every harness against what Shift+Enter sends, so a new harness
 cannot be added without that being checked.
+v0.10.15: The Waiting on you panel shows each question whole, wrapped inside the panel. Every item
+reads the same way: who asks, their role, their team and how long it has waited; then the question,
+cut at four lines with Show all; then the agent's last words for a check-in or the call for a permission
+prompt, cut at three lines; then the buttons on their own line. Long choices wrap inside their buttons,
+the panel is a little wider and never taller than the window (the list scrolls, the header stays), and
+a go-ahead to check has Right and Wrong in words. A check-in now carries the last 1200 characters of the
+agent's reply, up from 300.
 
 ## Credits
 

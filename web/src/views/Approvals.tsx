@@ -1,15 +1,16 @@
 import { Bell, MessageCircleQuestion, MessagesSquare, ShieldQuestion, Rocket, ThumbsDown, ThumbsUp, Users } from "lucide-react";
 import { Popover } from "radix-ui";
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 
-import { AGENTS, ago, harnessLabel, sessionName, skillName, type SpotCheck, useApp } from "../app/ctx";
+import { AGENTS, type AppCtx, ago, harnessLabel, sessionName, skillName, type SpotCheck, teamOf, useApp } from "../app/ctx";
 import { Button } from "../components/ui/button";
 import { Badge, Input, Label, RoleTag, Select, Textarea, submitOnEnter } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
+import { cn } from "../lib/utils";
 import type { Approval, Member, PerCompass, Proposal, ProposedMember, Team } from "../protocol/domain";
 import { ownerViaLabel, perCompassLabel, type Line } from "./compass";
 import { FormationSheet, roleOf } from "./Formation";
-import { askNeeds, sessionNeeds, type Need, waitingOnOwner } from "./inbox";
+import { type Need, waitingOnOwner } from "./inbox";
 import { age } from "./map/asks";
 
 // One surface for what waits on the owner: the bell in the title bar, its count the whole list
@@ -17,10 +18,15 @@ import { age } from "./map/asks";
 // an agent's question, a check-in (Go on, Stop, or a reply typed into its terminal), a permission
 // dialog (it lives in the harness, so Open terminal), a go-ahead triage picked for the owner to
 // check, and a member's ask nobody answered. An item leaves as soon as it is answered, anywhere.
+// Every item is one row: a meta line (who, team, age), the question wrapped (never cut to one line),
+// a context block, and its actions on their own wrapping line, so nothing runs out of the panel.
+
+/** The bell's panel: 440px or the window less a margin, as tall as the window allows; the list scrolls under a fixed header. */
+export const PANEL = "z-50 flex max-h-[min(36rem,var(--radix-popover-content-available-height))] w-[440px] max-w-[calc(100vw-16px)] flex-col rounded-lg border border-border bg-raised shadow-2xl";
 
 export function ApprovalsBell(): ReactElement {
   const app = useApp();
-  const { approvals: pending, items } = waitingOnOwner(app.domain.approvals, app.sessions, app.domain.messages, app.gates, app.spots);
+  const { items } = waitingOnOwner(app.domain.approvals, app.sessions, app.domain.messages, app.gates, app.spots);
   const [open, setOpen] = useState(false);
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -33,19 +39,102 @@ export function ApprovalsBell(): ReactElement {
         </Button>
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content align="end" sideOffset={6} className="z-50 w-96 rounded-lg border border-border bg-raised p-2 shadow-2xl">
-          <p className="px-2 pb-1 text-label font-semibold">Waiting on you</p>
-          {items.length === 0 ? <p className="px-2 py-3 text-label text-muted-foreground">Nothing is waiting for you.</p> : null}
-          <div className="grid grid-cols-1 gap-1">
-            {pending.map((a) =>
-              a.kind === "ask" ? <AgentAskRow key={a.id} a={a} /> : a.kind === "formation" ? <FormationRow key={a.id} a={a} /> : <LaunchRow key={a.id} a={a} />,
-            )}
+        <Popover.Content align="end" sideOffset={6} collisionPadding={8} className={PANEL}>
+          <p className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2 text-label font-semibold">
+            Waiting on you <span className="tabular-nums text-muted-foreground">{items.length}</span>
+          </p>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+            <WaitingList />
+            {open ? <DecidedForYou /> : null}
           </div>
-          <NeedsYouBar />
-          {open ? <DecidedForYou /> : null}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  );
+}
+
+/** The panel's list, in waitingOnOwner's order: approvals, then what sessions need, then members' asks, then go-aheads to check. */
+export function WaitingList(): ReactElement {
+  const app = useApp();
+  const { approvals, needs } = waitingOnOwner(app.domain.approvals, app.sessions, app.domain.messages, app.gates, app.spots);
+  const { spots, verdict } = useSpotChecks();
+  if (approvals.length + needs.length + spots.length === 0) return <p className="px-2 py-3 text-label text-muted-foreground">Nothing is waiting for you.</p>;
+  return (
+    <div role="list" className="grid grid-cols-1 gap-1">
+      {approvals.map((a) => (a.kind === "ask" ? <AgentAskRow key={a.id} a={a} /> : a.kind === "formation" ? <FormationRow key={a.id} a={a} /> : <LaunchRow key={a.id} a={a} />))}
+      {needs.map((n) => (n.kind === "ask" ? <AskRow key={n.key} n={n} /> : <NeedRow key={n.session} n={n} />))}
+      {spots.map((g) => (
+        <WaitRow key={g.id} icon={<ThumbsUp className="size-4 shrink-0 text-warning" />} label={`${g.agent}: go-ahead to check`} who={<strong className="font-semibold">{g.agent}</strong>} meta={teamName(app, g.team_id)} at={g.created_at}>
+          <Clamp lines={4}>Was this go-ahead right? {g.question}</Clamp>
+          <Actions>
+            <Button size="sm" variant="default" onClick={() => verdict(g.id, true)}>
+              <ThumbsUp /> Right
+            </Button>
+            <Button size="sm" onClick={() => verdict(g.id, false)}>
+              <ThumbsDown /> Wrong
+            </Button>
+          </Actions>
+        </WaitRow>
+      ))}
+    </div>
+  );
+}
+
+const teamName = (app: AppCtx, teamId: string | undefined, session?: string): string | undefined =>
+  app.domain.teams.find((t) => t.id === teamId)?.name ?? (session !== undefined ? teamOf(app.domain, session)?.name : undefined);
+
+/** One item in the panel: icon, who (never cut), team or other meta (cut first), age and expiry at the right; then the body. */
+function WaitRow({ icon, label, who, meta, at, after, children }: { icon: ReactElement; label: string; who?: ReactNode; meta?: string; at?: string; after?: string; children: ReactNode }): ReactElement {
+  return (
+    <div role="listitem" aria-label={label} className="grid min-w-0 grid-cols-1 gap-1.5 rounded-md p-2 text-label hover:bg-hover">
+      <div className="flex min-w-0 items-center gap-1.5">
+        {icon}
+        {who !== undefined ? <span className="flex shrink-0 items-center gap-1.5">{who}</span> : null}
+        {meta !== undefined && meta !== "" ? <span className="min-w-0 truncate text-caption text-muted-foreground">{who !== undefined ? "· " : ""}{meta}</span> : null}
+        <span className="ml-auto shrink-0 pl-2 text-caption tabular-nums text-muted-foreground">
+          {at !== undefined && at !== "" ? age(at, Date.now()) : ""}
+          {after !== undefined ? ` · ${after}` : ""}
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** A row's actions: their own line, right-aligned, wrapping rather than shrinking. */
+function Actions({ children }: { children: ReactNode }): ReactElement {
+  return <div className="flex flex-wrap justify-end gap-1.5">{children}</div>;
+}
+
+const CLAMP = { 2: "line-clamp-2", 3: "line-clamp-3", 4: "line-clamp-4" } as const;
+
+/**
+ * Text that wraps inside the row, cut to a few lines with "Show all" when it is longer (measured, so
+ * the link shows only when something is hidden). A context block (mono) opens to max-h-48 with its own
+ * scroll, so the row stays short either way.
+ */
+function Clamp({ lines, mono, className, children }: { lines: 2 | 3 | 4; mono?: boolean; className?: string; children: ReactNode }): ReactElement {
+  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [over, setOver] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el !== null && !open) setOver(el.scrollHeight > el.clientHeight + 1);
+  }, [open, children]);
+  const text = (
+    <div ref={ref} className={cn("min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]", open ? mono && "max-h-48 overflow-auto" : CLAMP[lines], !mono && className)}>
+      {children}
+    </div>
+  );
+  return (
+    <div className="grid min-w-0 grid-cols-1 justify-items-start gap-0.5">
+      {mono ? <div className="w-full min-w-0 rounded-md bg-hover p-2 font-mono text-caption">{text}</div> : text}
+      {over || open ? (
+        <button type="button" className="text-caption text-primary hover:underline" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "Show less" : "Show all"}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -65,20 +154,22 @@ function DecidedForYou(): ReactElement | null {
   if (records.length === 0 && via.length === 0) return null;
   return (
     <>
-      <p className="px-2 pb-1 pt-2 text-label font-semibold">Decided for you</p>
-      <div className="grid max-h-64 grid-cols-1 gap-1 overflow-auto">
+      <p className="flex items-center justify-between px-2 pb-1 pt-2 text-label font-semibold">
+        Decided for you <span className="tabular-nums text-muted-foreground">{records.length + via.length}</span>
+      </p>
+      <div className="grid grid-cols-1 gap-1">
         {records.map((r) => (
           <PerCompassRow key={r.item + r.at} r={r} label={perCompassLabel(r, name, lines)} wrong={app.domain.approvals.find((a) => a.id === r.item)?.wrong === true} onChange={() => setRev(rev + 1)} />
         ))}
         {via.map((a) => (
           <div key={a.id} className="grid gap-0.5 rounded-md p-2 text-label hover:bg-hover">
-            <span className="min-w-0 truncate" title={a.detail}>
+            <Clamp lines={2}>
               <strong className="font-semibold">{name(a.session_id ?? "")}</strong>: {a.detail}
-            </span>
-            <span className="text-caption text-muted-foreground [overflow-wrap:anywhere]">
+            </Clamp>
+            <Clamp lines={2} className="text-caption text-muted-foreground">
               {ownerViaLabel(a.answered_by, name)}
               {a.owner_words !== undefined && a.owner_words !== "" ? `: “${a.owner_words}”` : ""}
-            </span>
+            </Clamp>
           </div>
         ))}
       </div>
@@ -100,13 +191,13 @@ function PerCompassRow({ r, label, wrong, onChange }: { r: PerCompass; label: st
   };
   return (
     <div className="grid gap-1 rounded-md p-2 text-label hover:bg-hover">
-      <span className="min-w-0 truncate" title={r.question}>
+      <Clamp lines={2}>
         <strong className="font-semibold">{sessionName(app.sessions, r.session_id)}</strong>: {r.question}
-      </span>
-      <span className="text-caption text-muted-foreground [overflow-wrap:anywhere]">
+      </Clamp>
+      <Clamp lines={2} className="text-caption text-muted-foreground">
         {label}
         {r.outcome === "answered" ? ` → “${r.detail}”` : ""} · {ago(r.at)}
-      </span>
+      </Clamp>
       {r.outcome === "answered" && !done && !wrong ? (
         writing ? (
           <form
@@ -133,7 +224,7 @@ function PerCompassRow({ r, label, wrong, onChange }: { r: PerCompass; label: st
   );
 }
 
-/** The go-aheads waiting for the owner's 👍/👎, refreshed every 30 s; shared by the Needs-you bar and the Compass panel. */
+/** The go-aheads waiting for the owner's 👍/👎, refreshed every 30 s; shared by the panel and the Compass panel. */
 export function useSpotChecks(): { spots: SpotCheck[]; verdict: (id: number, right: boolean) => Promise<void> } {
   const app = useApp();
   // The list is App's (read every 30 s and after each action); a verdict is an action, so it clears at once.
@@ -141,49 +232,11 @@ export function useSpotChecks(): { spots: SpotCheck[]; verdict: (id: number, rig
   return { spots: app.spots, verdict };
 }
 
-/** Sessions blocked on a permission prompt: the prompt lives in their terminal, so offer to open it. */
-export function NeedsYouBar(): ReactElement | null {
-  const app = useApp();
-  const list = sessionNeeds(app.sessions, app.gates);
-  const asks = askNeeds(app.domain.messages, app.sessions);
-  const { spots, verdict } = useSpotChecks();
-  if (list.length === 0 && asks.length === 0 && spots.length === 0) return null;
-  return (
-    <div className="mt-1 grid grid-cols-1 gap-1 rounded-md bg-warning/10 px-2 py-1.5" role="region" aria-label="Needs you">
-      {list.map((n) => (
-        <NeedRow key={n.session} n={n} />
-      ))}
-      {asks.map((n) => (
-        <AskRow key={n.key} n={n} />
-      ))}
-      {spots.map((g) => (
-        <div key={g.id} className="flex items-center gap-2 text-label">
-          <ThumbsUp className="size-4 shrink-0 text-warning" />
-          <span className="min-w-0 flex-1 truncate">
-            Was this go-ahead right? <strong className="font-semibold">{g.agent}</strong>: {g.question}
-          </span>
-          <Button size="sm" variant="default" aria-label="Right" onClick={() => verdict(g.id, true)}>
-            <ThumbsUp />
-          </Button>
-          <Button size="sm" aria-label="Wrong" onClick={() => verdict(g.id, false)}>
-            <ThumbsDown />
-          </Button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** One ask of the owner. A check-in is answered here; a permission dialog lives in the harness's terminal. */
+/** A session's role tag, when it is on a team. */
 function NeedRole({ id }: { id: string }): ReactElement | null {
   const app = useApp();
   const role = roleOf(app.domain, app.sessions, id);
-  return role !== undefined ? (
-    <>
-      {" "}
-      <RoleTag role={role} className="align-middle" />
-    </>
-  ) : null;
+  return role !== undefined ? <RoleTag role={role} /> : null;
 }
 
 /** A member's ask nobody answered and triage could not settle: go on without the answer, answer it
@@ -194,31 +247,41 @@ function AskRow({ n }: { n: Need }): ReactElement | null {
   if (a === undefined) return null;
   const settle = (action: "go_on" | "dismiss"): void => void app.call("ask.settle", { id: a.id, action });
   return (
-    <div className="flex items-center gap-2 text-label">
-      <MessagesSquare className="size-4 shrink-0 text-warning" />
-      <span className="min-w-0 flex-1 truncate" title={`${n.name} asked ${n.toName ?? ""}: ${a.text}`}>
-        <strong className="font-semibold">{n.name}</strong>
-        <NeedRole id={a.from} /> asked <strong className="font-semibold">{n.toName}</strong>
-        <NeedRole id={a.to} />: “{a.text}” ·{" "}
-        {age(a.at, Date.now())}
-      </span>
-      <Button size="sm" variant="default" onClick={() => settle("go_on")}>
-        Go on
-      </Button>
-      <Button size="sm" title={`Opens ${n.toName ?? ""}'s terminal`} onClick={() => app.select(a.to)}>
-        Reply
-      </Button>
-      <Button size="sm" variant="ghost" onClick={() => settle("dismiss")}>
-        Dismiss
-      </Button>
-    </div>
+    <WaitRow
+      icon={<MessagesSquare className="size-4 shrink-0 text-warning" />}
+      label={`${n.name}: ask of ${n.toName ?? ""}`}
+      who={
+        <>
+          <strong className="font-semibold">{n.name}</strong>
+          <NeedRole id={a.from} />→<strong className="font-semibold">{n.toName}</strong>
+          <NeedRole id={a.to} />
+        </>
+      }
+      meta={teamName(app, a.team_id, a.from)}
+      at={a.at}
+    >
+      <Clamp lines={4}>“{a.text}”</Clamp>
+      <Actions>
+        <Button size="sm" variant="default" onClick={() => settle("go_on")}>
+          Go on
+        </Button>
+        <Button size="sm" title={`Opens ${n.toName ?? ""}'s terminal`} onClick={() => app.select(a.to)}>
+          Reply
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => settle("dismiss")}>
+          Dismiss
+        </Button>
+      </Actions>
+    </WaitRow>
   );
 }
 
+/** A check-in is answered here; a permission dialog or a first-run dialog lives in the harness's terminal. */
 function NeedRow({ n }: { n: Need }): ReactElement {
   const app = useApp();
   const [reply, setReply] = useState(false);
-  const [showCall, setShowCall] = useState(false);
+  // ponytail: "short" is a line and length count, not measured; a short call shows without a click.
+  const [showCall, setShowCall] = useState(n.detail !== undefined && n.detail.split("\n").length <= 3 && n.detail.length <= 180);
   const [text, setText] = useState("");
   const [confirming, setConfirming] = useState(false);
   const answer = async (t: string): Promise<void> => {
@@ -226,15 +289,49 @@ function NeedRow({ n }: { n: Need }): ReactElement {
   };
   const checkin = n.kind === "checkin";
   return (
-    <div className="grid grid-cols-1 gap-1 text-label">
-      <div className="flex items-center gap-2">
-        {checkin ? <MessageCircleQuestion className="size-4 shrink-0 text-warning" /> : <ShieldQuestion className="size-4 shrink-0 text-warning" />}
-        <span className="min-w-0 flex-1 truncate" title={n.text}>
+    <WaitRow
+      icon={checkin ? <MessageCircleQuestion className="size-4 shrink-0 text-warning" /> : <ShieldQuestion className="size-4 shrink-0 text-warning" />}
+      label={`${n.name}: ${checkin ? "check-in" : n.kind === "permission" ? "permission" : "blocked"}`}
+      who={
+        <>
           <strong className="font-semibold">{n.name}</strong>
-          <NeedRole id={n.session} /> {checkin ? "asks: " : ""}
+          <NeedRole id={n.session} />
+          {n.gate?.floor === true ? <Badge tone="danger">floor</Badge> : null}
+        </>
+      }
+      meta={teamName(app, n.gate?.team_id, n.session)}
+      at={n.gate?.created_at}
+    >
+      {checkin ? (
+        <Clamp lines={3} mono>
           {n.text}
-        </span>
-        {n.gate?.floor === true ? <Badge tone="danger">floor</Badge> : null}
+        </Clamp>
+      ) : (
+        <Clamp lines={4}>{n.text}</Clamp>
+      )}
+      {showCall && n.detail !== undefined ? (
+        <Clamp lines={3} mono>
+          {n.detail}
+        </Clamp>
+      ) : null}
+      {checkin && n.gate?.suggestion !== undefined && n.gate.suggestion !== "" ? (
+        <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-caption text-muted-foreground">
+          <span className="min-w-0 flex-1 basis-48 whitespace-pre-wrap [overflow-wrap:anywhere]">
+            Suggested: “{n.gate.suggestion}”{n.gate.evidence !== undefined && n.gate.evidence !== "" ? ` — ${n.gate.evidence}` : ""}
+          </span>
+          <Button
+            size="sm"
+            disabled={confirming}
+            onClick={() => {
+              setConfirming(true);
+              void answer(n.gate?.suggestion ?? "").finally(() => setConfirming(false));
+            }}
+          >
+            Confirm
+          </Button>
+        </div>
+      ) : null}
+      <Actions>
         {checkin ? (
           <>
             <Button size="sm" variant="default" onClick={() => void answer("Go on.")}>
@@ -248,34 +345,15 @@ function NeedRow({ n }: { n: Need }): ReactElement {
             </Button>
           </>
         ) : null}
+        <Button size="sm" variant={checkin ? "ghost" : "default"} title={checkin ? undefined : "The dialog is in the agent's terminal"} onClick={() => app.select(n.session)}>
+          Open terminal
+        </Button>
         {n.detail !== undefined ? (
           <Button size="sm" variant="ghost" aria-expanded={showCall} onClick={() => setShowCall(!showCall)}>
             {showCall ? "Hide command" : "Show command"}
           </Button>
         ) : null}
-        <Button size="sm" variant={checkin ? "ghost" : "default"} title={checkin ? undefined : "The permission dialog is in the agent's terminal"} onClick={() => app.select(n.session)}>
-          Open terminal
-        </Button>
-      </div>
-      {checkin && n.gate?.suggestion !== undefined && n.gate.suggestion !== "" ? (
-        <div className="flex items-center gap-2 pl-6 text-caption text-muted-foreground">
-          <span className="min-w-0 flex-1 truncate" title={n.gate.evidence}>
-            Suggested: “{n.gate.suggestion}”{n.gate.evidence !== undefined && n.gate.evidence !== "" ? ` — ${n.gate.evidence}` : ""}
-          </span>
-          <Button
-            size="sm"
-            variant="default"
-            disabled={confirming}
-            onClick={() => {
-              setConfirming(true);
-              void answer(n.gate?.suggestion ?? "").finally(() => setConfirming(false));
-            }}
-          >
-            Confirm
-          </Button>
-        </div>
-      ) : null}
-      {showCall && n.detail !== undefined ? <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-hover p-2 font-mono text-caption">{n.detail}</pre> : null}
+      </Actions>
       {reply ? (
         <form
           className="flex gap-2"
@@ -290,7 +368,7 @@ function NeedRow({ n }: { n: Need }): ReactElement {
           </Button>
         </form>
       ) : null}
-    </div>
+    </WaitRow>
   );
 }
 
@@ -302,15 +380,9 @@ function FormationRow({ a }: { a: Approval }): ReactElement {
   // Adding a member starts an agent: the owner picks which one before approving.
   const team = app.domain.teams.find((t) => t.id === a.team_id);
   return (
-    <div className="grid gap-2 rounded-md p-2 hover:bg-hover">
-      <div className="flex min-w-0 items-start gap-2">
-        <Users className="mt-0.5 size-4 shrink-0 text-primary" />
-        <span className="min-w-0 text-label">
-          {by !== "" ? <strong>{by} asks: </strong> : null}
-          {a.detail}
-        </span>
-      </div>
-      <div className="flex justify-end gap-1.5">
+    <WaitRow icon={<Users className="size-4 shrink-0 text-primary" />} label={`${by !== "" ? by : "Team"}: team change`} who={<strong className="font-semibold">{by !== "" ? by : "Team change"}</strong>} meta={team?.name} at={a.created_at}>
+      <Clamp lines={4}>{a.detail}</Clamp>
+      <Actions>
         <Button
           size="sm"
           variant="default"
@@ -321,60 +393,76 @@ function FormationRow({ a }: { a: Approval }): ReactElement {
         <Button size="sm" onClick={() => decide("deny")}>
           Decline
         </Button>
-      </div>
-    </div>
+      </Actions>
+    </WaitRow>
   );
 }
+
+/** Long choices wrap inside their button (Button is nowrap by design); stacked one per line when any is long. */
+const OPTION = "h-auto min-h-7 whitespace-normal py-1 text-left [overflow-wrap:anywhere]";
 
 /** An agent put a question to the owner (`pengupool ask`): one of its choices, or a reply in the owner's words. */
 function AgentAskRow({ a }: { a: Approval }): ReactElement {
   const app = useApp();
   const [reply, setReply] = useState("");
   const answer = (text: string): void => void app.call("ask.answer", { id: a.id, answer: text });
+  const name = sessionName(app.sessions, a.session_id ?? "");
+  const options = a.options ?? [];
+  const stack = options.some((o) => [...o].length > 24);
+  const left = a.expires_at !== undefined && a.expires_at !== "" ? age(new Date().toISOString(), Date.parse(a.expires_at)) : undefined;
   return (
-    <form
-      className="grid gap-2 rounded-md p-2 hover:bg-hover"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (reply.trim() !== "") answer(reply);
-      }}
+    <WaitRow
+      icon={<MessageCircleQuestion className="size-4 shrink-0 text-warning" />}
+      label={`${name}: question`}
+      who={
+        <>
+          <strong className="font-semibold">{name}</strong>
+          <NeedRole id={a.session_id ?? ""} />
+        </>
+      }
+      meta={teamName(app, a.team_id, a.session_id)}
+      at={a.created_at}
+      after={left === undefined ? undefined : left === "now" ? "expires now" : `expires in ${left}`}
     >
-      <div className="flex min-w-0 items-start gap-2">
-        <MessageCircleQuestion className="mt-0.5 size-4 shrink-0 text-warning" />
-        <span className="min-w-0 whitespace-pre-wrap text-label [overflow-wrap:anywhere]">
-          <strong>{sessionName(app.sessions, a.session_id ?? "")} asks: </strong>
-          {a.detail}
-        </span>
-      </div>
-      {(a.options ?? []).length > 0 ? (
-        <div className="flex flex-wrap justify-end gap-1.5">
-          {(a.options ?? []).map((o) => (
-            <Button key={o} size="sm" type="button" variant="default" onClick={() => answer(o)}>
+      <Clamp lines={4}>{a.detail}</Clamp>
+      {options.length > 0 ? (
+        <div className={stack ? "grid grid-cols-1 gap-1.5" : "flex flex-wrap justify-end gap-1.5"}>
+          {options.map((o, i) => (
+            <Button key={o} size="sm" variant={i === 0 ? "default" : "secondary"} className={cn(OPTION, stack && "justify-start")} onClick={() => answer(o)}>
               {o}
             </Button>
           ))}
         </div>
       ) : null}
-      <div className="flex gap-1.5">
+      <form
+        className="flex gap-1.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (reply.trim() !== "") answer(reply);
+        }}
+      >
         <Input value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Or reply in your own words" aria-label="Reply" />
-        <Button size="sm" type="submit" disabled={reply.trim() === ""}>
+        <Button size="sm" type="submit" variant={options.length === 0 ? "default" : "secondary"} disabled={reply.trim() === ""}>
           Reply
         </Button>
-      </div>
-    </form>
+      </form>
+    </WaitRow>
   );
 }
 
 function LaunchRow({ a }: { a: Approval }): ReactElement {
   const app = useApp();
+  const task = app.domain.tasks.find((t) => t.id === a.task_id);
+  const repo = app.domain.repos.find((r) => r.id === task?.repo_id);
   return (
-    <div className="flex items-center gap-2 rounded-md p-2 hover:bg-hover">
-      <Rocket className="size-4 shrink-0 text-primary" />
-      <span className="min-w-0 flex-1 truncate text-label">{a.detail}</span>
-      <Button size="sm" variant="default" onClick={() => app.showDialog(<ProposalSheet taskId={a.task_id ?? ""} />)}>
-        Review
-      </Button>
-    </div>
+    <WaitRow icon={<Rocket className="size-4 shrink-0 text-primary" />} label={`${task?.title ?? "Team"}: team launch`} meta={[task?.title, repo?.name].filter((x) => x !== undefined).join(" · ")} at={a.created_at}>
+      <Clamp lines={4}>{a.detail}</Clamp>
+      <Actions>
+        <Button size="sm" variant="default" onClick={() => app.showDialog(<ProposalSheet taskId={a.task_id ?? ""} />)}>
+          Review
+        </Button>
+      </Actions>
+    </WaitRow>
   );
 }
 
