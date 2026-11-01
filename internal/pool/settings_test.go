@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/nduwork/pengupool-ai/internal/store"
@@ -102,5 +103,75 @@ func TestProviderModelsKeepsTheKeyToItsAddress(t *testing.T) {
 	}
 	if want := []string{"Bearer saved-key", "Bearer saved-key", "", "Bearer typed"}; !slices.Equal(auths, want) {
 		t.Fatalf("auth headers %q, want %q", auths, want)
+	}
+}
+
+// A saved model is made the triage model only after the host's own connection check of exactly those
+// settings passed; saving it again needs a new pass.
+func TestActivateNeedsAPassingCheck(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"model":"m","choices":[{"message":{"content":"{\"build_failed\":true,\"next\":\"fix_errors\",\"errors\":2}"}}]}`))
+	}))
+	defer srv.Close()
+	p, st := twoTeams(t)
+	pc := map[string]any{"type": "ollama", "format": "openai-chat", "address": srv.URL, "model": "m"}
+	checked := func() []string {
+		r, _ := call(t, p, true, "decision.providers", map[string]any{})
+		return r.(map[string]any)["checked"].([]string)
+	}
+	if _, err := call(t, p, true, "provider.save", map[string]any{"provider": pc}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := call(t, p, true, "provider.activate", map[string]any{"type": "ollama"}); err == nil || !strings.Contains(err.Error(), "Run Check connection first") || st.Config().Decision.Active != "" {
+		t.Fatalf("activated without a check: %v", err)
+	}
+	if r, err := call(t, p, true, "provider.check", map[string]any{"type": "ollama"}); err != nil || r.(map[string]any)["ok"] != true {
+		t.Fatalf("check: %v %v", r, err)
+	}
+	if c := checked(); len(c) != 1 || c[0] != "ollama" {
+		t.Fatalf("checked after a pass: %v", c)
+	}
+	if _, err := call(t, p, true, "provider.save", map[string]any{"provider": pc}); err != nil {
+		t.Fatal(err)
+	}
+	if c := checked(); len(c) != 0 {
+		t.Fatalf("checked after a re-save: %v", c)
+	}
+	if _, err := call(t, p, true, "provider.activate", map[string]any{"type": "ollama"}); err == nil || st.Config().Decision.Active != "" {
+		t.Fatalf("activated after a re-save without a new check: %v", err)
+	}
+	_, _ = call(t, p, true, "provider.check", map[string]any{"type": "ollama"})
+	if _, err := call(t, p, true, "provider.activate", map[string]any{"type": "ollama"}); err != nil || st.Config().Decision.Active != "ollama" {
+		t.Fatalf("a checked model was not made active: %v", err)
+	}
+}
+
+// A save while a check runs (a new key under the same key reference looks the same in settings)
+// keeps that check's pass from counting.
+func TestSaveDuringCheckVoidsItsPass(t *testing.T) {
+	asked, release := make(chan struct{}), make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(asked)
+		<-release
+		_, _ = w.Write([]byte(`{"model":"m","choices":[{"message":{"content":"{\"build_failed\":true,\"next\":\"fix_errors\",\"errors\":2}"}}]}`))
+	}))
+	defer srv.Close()
+	p, st := twoTeams(t)
+	pc := map[string]any{"type": "ollama", "format": "openai-chat", "address": srv.URL, "model": "m"}
+	if _, err := call(t, p, true, "provider.save", map[string]any{"provider": pc}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan any, 1)
+	go func() { r, _ := call(t, p, true, "provider.check", map[string]any{"type": "ollama"}); done <- r }()
+	<-asked
+	if _, err := call(t, p, true, "provider.save", map[string]any{"provider": pc}); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if r := <-done; r.(map[string]any)["ok"] != false || !strings.Contains(r.(map[string]any)["error"].(string), "saved again while it was checked") {
+		t.Fatalf("a check that started before a save: %v", r)
+	}
+	if _, err := call(t, p, true, "provider.activate", map[string]any{"type": "ollama"}); err == nil || st.Config().Decision.Active != "" {
+		t.Fatalf("a check that started before a save made the model active: %v", err)
 	}
 }
