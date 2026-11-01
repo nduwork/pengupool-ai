@@ -2,7 +2,7 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
-## 0.10.21
+## Unreleased
 
 Tailscale Serve follows the daemon instead of guessing it. Enabling Serve and the start-up heal
 wait for the daemon's bound port rather than assuming 7787, so a restart onto a new port no longer
