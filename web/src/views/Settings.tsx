@@ -14,7 +14,7 @@ import { GitHubAccount } from "./GitHub";
 import { UpdateSheet } from "./Update";
 import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
-import type { RemovedModel } from "./triage";
+import { formatName, type RemovedModel } from "./triage";
 
 // Settings, one subpanel per topic: General (the host, updates, terminal history, the daily backup),
 // Agents (which are installed, Claude Code on Ollama), Decision model, GitHub (the account and sync),
@@ -294,7 +294,7 @@ function Providers(): ReactElement {
       {(data.removed ?? []).map((m) => (
         <p key={m.type} className="mb-4 rounded-md bg-warning/10 p-3 text-caption text-warning">
           <strong>{TYPES.find((t) => t.id === m.type)?.label ?? m.type} model removed.</strong> {m.model ? `"${m.model}" used` : "It used"} the{" "}
-          {m.format === "openai-chat" ? "Ollama chat" : m.format} format, which triage no longer supports.{" "}
+          {formatName(m)}, which triage no longer supports.{" "}
           {m.type === "ollama" ? "Pull a System One decision model in Ollama, pick it below, save, check, and use it for triage." : "Set up a System One model below, save, check, and use it for triage."}
         </p>
       ))}
@@ -416,7 +416,7 @@ function Providers(): ReactElement {
           </Button>
           {/* No "stop using a model": PenguPool needs one; switch to another instead. */}
         </div>
-        <p role="status" className={cn("text-caption", state === "failed" ? "text-danger" : state === "passed" ? "text-success" : "text-muted-foreground")}>
+        <p role="status" className={"text-caption " + cn(state === "failed" ? "text-danger" : state === "passed" ? "text-success" : "text-muted-foreground")}>
           {status[state]}
         </p>
         <CheckResult

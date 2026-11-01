@@ -71,6 +71,21 @@ func TestChatTriageModelRemovedWithANote(t *testing.T) {
 	}
 }
 
+// A saved model removed for another fault (here a bad address) leaves no note claiming its format is unsupported.
+func TestBrokenTriageModelRemovedWithoutANote(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := st.Config()
+	cfg.Decision.Providers = map[string]store.ProviderConfig{"ollama": {Type: "ollama", Format: "ollama-systemone", Address: "ftp://x", Model: "m"}}
+	_ = st.SaveConfig(cfg)
+	New(Options{Store: st, Exe: "pengupool"})
+	if d := st.Config().Decision; len(d.Providers) != 0 || len(d.Removed) != 0 {
+		t.Fatalf("decision = %+v", d)
+	}
+}
+
 // The saved key goes only to the saved address: listing models at any other address sends a typed key or none.
 func TestProviderModelsKeepsTheKeyToItsAddress(t *testing.T) {
 	var auths []string

@@ -14,10 +14,15 @@ export interface RemovedModel {
   active?: boolean;
 }
 
+/** "Ollama chat format": the format a removed model spoke, as the app names it. */
+export function formatName(r: RemovedModel): string {
+  if (r.format !== "openai-chat") return `${r.format} format`;
+  return r.type === "ollama" ? "Ollama chat format" : "chat format";
+}
+
 /** "local triage model (llama3.1:8b, Ollama chat format)": how the app names a removed model. */
 export function removedName(r: RemovedModel): string {
-  const fmt = r.format === "openai-chat" ? "Ollama chat format" : `${r.format} format`;
-  return `${r.type === "ollama" ? "local" : "online"} triage model (${r.model ? `${r.model}, ` : ""}${fmt})`;
+  return `${r.type === "ollama" ? "local" : "online"} triage model (${r.model ? `${r.model}, ` : ""}${formatName(r)})`;
 }
 
 /** What the app says while the triage model is missing or not answering; null when it works. */

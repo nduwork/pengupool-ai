@@ -46,8 +46,10 @@ func (p *Pool) dropRetiredProviders() {
 		if !providerTypes[pc.Type] || decision.Validate(pc) != nil {
 			gone = append(gone, k)
 			delete(cfg.Decision.Providers, k)
-			cfg.Decision.Removed = slices.DeleteFunc(cfg.Decision.Removed, func(r store.RemovedProvider) bool { return r.Type == pc.Type })
-			cfg.Decision.Removed = append(cfg.Decision.Removed, store.RemovedProvider{Type: pc.Type, Format: pc.Format, Model: pc.Model, Active: k == cfg.Decision.Active})
+			if !providerTypes[pc.Type] || !slices.Contains(decision.Formats, pc.Format) { // the note says triage no longer speaks it
+				cfg.Decision.Removed = slices.DeleteFunc(cfg.Decision.Removed, func(r store.RemovedProvider) bool { return r.Type == pc.Type })
+				cfg.Decision.Removed = append(cfg.Decision.Removed, store.RemovedProvider{Type: pc.Type, Format: pc.Format, Model: pc.Model, Active: k == cfg.Decision.Active})
+			}
 		}
 	}
 	if len(gone) == 0 {
