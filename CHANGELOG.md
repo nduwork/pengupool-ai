@@ -4,6 +4,13 @@ Every PenguPool AI release, newest first. Each entry describes that release as i
 
 ## Unreleased
 
+A specialist can join a team more than once, each copy in its own session. The second copy gets
+its own name (pr-review-agent-2), its own folder and its own worktree, and messages reach each copy
+by its session. Triage offers one option per specialist and picks the copy that is idle. The Add
+member sheet lists every specialist, including ones already on the team.
+
+## Unreleased
+
 The map's Compact context and Clear actions work on Muse sessions (Muse /compact and /new).
 
 ## 0.10.20

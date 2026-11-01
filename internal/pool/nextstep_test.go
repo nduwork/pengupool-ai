@@ -222,3 +222,37 @@ func TestGuardRoute(t *testing.T) {
 		t.Fatal("a turn kept by the LEAD is not held")
 	}
 }
+
+// Two copies of one skill are one route option: the idle copy when one is busy.
+func TestRouteDuplicateSkillPrefersIdle(t *testing.T) {
+	p := routedTeam(t)
+	_ = p.st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions, store.Session{ID: "plan2aaaaaaa", Name: "plan-2", Harness: "claude", State: "running", Status: "idle", SkillID: "sk-plan"})
+		s.Domain.Teams[0].Members = append(s.Domain.Teams[0].Members,
+			protocol.Member{SessionID: "plan2aaaaaaa", Name: "plan-2", Role: "helper", SkillID: "sk-plan", State: "active", Parent: "leadaaaaaaaa"})
+		return nil
+	})
+	lead, _ := p.session("leadaaaaaaaa")
+	var seen map[string]string
+	p.testDecider = optionsDecider{&seen}
+	offered := func() (n int, name string) {
+		for k := range seen {
+			if strings.HasPrefix(k, "plan") {
+				n, name = n+1, k
+			}
+		}
+		return n, name
+	}
+	for _, c := range []struct{ plan, plan2, want string }{
+		{"working", "idle", "plan-2"},
+		{"idle", "working", "plan"},
+		{"idle", "idle", "plan"},
+	} {
+		p.setSession("planaaaaaaaa", func(x *store.Session) { x.Status = c.plan })
+		p.setSession("plan2aaaaaaa", func(x *store.Session) { x.Status = c.plan2 })
+		p.nextStepNote(lead, routePrompt)
+		if n, name := offered(); n != 1 || name != c.want {
+			t.Fatalf("plan %s, plan-2 %s: offered %v, want only %s", c.plan, c.plan2, seen, c.want)
+		}
+	}
+}

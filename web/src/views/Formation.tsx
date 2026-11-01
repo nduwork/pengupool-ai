@@ -177,8 +177,8 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
 export function AddMemberSheet({ team }: { team: Team }): ReactElement {
   const app = useApp();
   const close = (): void => app.showDialog(null);
-  const taken = new Set(team.members.filter((m) => m.state === "active").map((m) => m.skill_id));
-  const skills = app.domain.skills.filter((s) => !taken.has(s.id));
+  // A specialist may join twice (each copy is its own session, named pr-review-agent-2 and so on).
+  const skills = app.domain.skills;
   const [kind, setKind] = useState<"freelancer" | "sme">(skills.length > 0 ? "freelancer" : "sme");
   const [skill, setSkill] = useState(skills[0]?.id ?? "");
   const [repo, setRepo] = useState(app.domain.repos[0]?.id ?? "");

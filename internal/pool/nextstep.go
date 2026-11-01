@@ -55,7 +55,9 @@ func (p *Pool) routeTurn(s store.Session, prompt string) (who, note string) {
 		return "", ""
 	}
 	options := map[string]string{"self": "the LEAD itself: coordinating, answering the owner, or work no member's description covers"}
-	ids := map[string]string{} // member name → session id
+	ids := map[string]string{}     // member name → session id
+	bySkill := map[string]string{} // skill id → the name offered for it: one option per skill
+	idle := map[string]bool{}      // offered name → idle
 	for _, m := range t.Members {
 		if m.State != "active" || m.SessionID == s.ID || !p.mayTalk(s.ID, m.SessionID) {
 			continue
@@ -72,7 +74,19 @@ func (p *Pool) routeTurn(s store.Session, prompt string) (who, note string) {
 		} else if ms.Status != "idle" && ms.Status != "" {
 			continue // waiting on the owner
 		}
+		if m.SkillID != "" {
+			// Copies of one skill share a description: offer one, the idle one when there is one.
+			if prev, dup := bySkill[m.SkillID]; dup {
+				if idle[prev] || busy != "" {
+					continue
+				}
+				delete(options, prev)
+				delete(ids, prev)
+			}
+			bySkill[m.SkillID] = m.Name
+		}
 		options[m.Name], ids[m.Name] = redactSecrets(desc)+busy, m.SessionID
+		idle[m.Name] = busy == ""
 	}
 	if len(ids) == 0 {
 		return "", ""

@@ -586,7 +586,12 @@ func (p *Pool) startMember(ctx context.Context, team *protocol.Team, repo protoc
 		// the team's repositories by path.
 		d := p.st.State().Domain
 		cwd = p.workDir(team.ID)
-		if sk := findSkill(&d, pm.SkillID); sk != nil && sk.Path != "" && sk.Source == "git" && within(sk.Path, filepath.Join(p.st.Dir(), "skills")) {
+		sk := findSkill(&d, pm.SkillID)
+		switch {
+		case sk != nil && pm.Name != slug(sk.Name):
+			// A second copy of the skill: a scratch folder of its own, never the first copy's.
+			cwd = filepath.Join(cwd, slug(pm.Name))
+		case sk != nil && sk.Path != "" && sk.Source == "git" && within(sk.Path, filepath.Join(p.st.Dir(), "skills")):
 			cwd = sk.Path
 		}
 		if err := os.MkdirAll(cwd, 0o755); err != nil {
@@ -652,11 +657,6 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	if sk == nil {
 		return nil, notFound("no active specialist %s", in.SkillID)
 	}
-	for _, m := range team.Members {
-		if m.State == "active" && m.SkillID == sk.ID {
-			return nil, conflict("%s already assists this team", sk.Name)
-		}
-	}
 	hub := teamHubSkill(*sk)
 	repo := findRepo(&d, team.RepoID)
 	if !hub && repo == nil {
@@ -674,7 +674,9 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	if in.Harness != "" && ag != in.Harness { // the owner picked it: start it there or not at all
 		return nil, invalid("%s", note)
 	}
-	pm := protocol.ProposedMember{SkillID: sk.ID, Name: slug(sk.Name), Role: "helper", Assignment: assignment, Harness: ag, Model: in.Model}
+	// A skill may assist a team more than once, each copy in its own session: a second copy gets
+	// its own name (pr-review-agent-2), and with it its own folder and worktree.
+	pm := protocol.ProposedMember{SkillID: sk.ID, Name: teamMemberName(team, slug(sk.Name)), Role: "helper", Assignment: assignment, Harness: ag, Model: in.Model}
 	var m protocol.Member
 	var err error
 	if hub {
@@ -702,6 +704,23 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	p.logLine(m.SessionID, "team: placed as specialist in "+team.Name)
 	p.forEachMember(team.ID, func(s string) { p.logLine(s, "team: "+m.Name+" joined as specialist") })
 	return m, nil
+}
+
+// teamMemberName returns base, or base-2, base-3… when a member of the team already has it (an
+// ended member's folder may still exist, so every member counts).
+func teamMemberName(t *protocol.Team, base string) string {
+	taken := map[string]bool{}
+	for _, m := range t.Members {
+		taken[m.Name] = true
+	}
+	if !taken[base] {
+		return base
+	}
+	for i := 2; ; i++ {
+		if n := base + "-" + itoa(i); !taken[n] {
+			return n
+		}
+	}
 }
 
 // teamHubSkill: a skill agent that coordinates a team (the marketplace's team-lead-agent), known by its
