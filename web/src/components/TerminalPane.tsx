@@ -14,10 +14,13 @@ import { TERMINAL_QUERY_CSI, TERMINAL_QUERY_OSC } from "../protocol/queries";
 import { TermCache, scrollbackSetting } from "./termCache";
 import { PATH_MIME, UNSAFE_NOTICE, onTypePath, safePath, takePaths, typePath } from "../views/explorerPaths";
 
-/** What Shift+Enter types, for every harness: ESC CR, as Option+Enter does. Claude Code reads it as a new line,
- * where a bare CR sends; for the other harnesses nothing in this repo says otherwise, and that is all that was
- * checked. TestShiftEnterPerHarness (internal/harness) lists every harness against this value. */
-export const SHIFT_ENTER = "\x1b\r";
+/** What Shift+Enter types in a session of this harness, a new line where a bare CR sends. pi gets Ctrl+J: its
+ * input reads ESC CR as Alt+Enter, which submits (checked live on pi 0.84.3). Everything else gets ESC CR, as
+ * Option+Enter types: Claude Code reads it as a new line; the other harnesses are not checked live.
+ * TestShiftEnterPerHarness (internal/harness) lists every harness against this. */
+export function shiftEnter(harness: string | undefined): string {
+  return harness === "pi" ? "\n" : "\x1b\r";
+}
 
 export function isShiftEnter(e: Pick<KeyboardEvent, "key" | "shiftKey" | "ctrlKey" | "altKey" | "metaKey">): boolean {
   return e.key === "Enter" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
@@ -46,6 +49,8 @@ export function pruneTerminals(live: ReadonlySet<string>): void {
 
 export interface TerminalPaneProps {
   sessionId: string;
+  /** The session's harness: it decides what Shift+Enter types. */
+  harness?: string;
   /** The process behind the session (`instanceOf`); a terminal kept from another one is not resumed. */
   instance: string;
   channel: number;
@@ -63,6 +68,7 @@ export interface TerminalPaneProps {
 
 export function TerminalPane({
   sessionId,
+  harness,
   instance: instanceProp,
   channel,
   connection,
@@ -199,7 +205,7 @@ export function TerminalPane({
     const input = term.onData(send);
     term.attachCustomKeyEventHandler((e) => {
       if (!isShiftEnter(e)) return true;
-      if (e.type === "keydown") send(SHIFT_ENTER);
+      if (e.type === "keydown") send(shiftEnter(harness));
       return false;
     });
     const resized = term.onResize(({ cols, rows }) => session.resize(cols, rows));
@@ -266,7 +272,7 @@ export function TerminalPane({
     };
     // The pane is remounted per session (keyed by session id); connection identity is stable. Its
     // terminal outlives the mount (see `kept`).
-  }, [sessionId, channel, clientKind, connection, onAttach, onState, onNotice]);
+  }, [sessionId, harness, channel, clientKind, connection, onAttach, onState, onNotice]);
 
   // Reconnect handling: re-attach with retained state when the daemon comes back.
   useEffect(() => {

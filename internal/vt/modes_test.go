@@ -116,9 +116,14 @@ func TestModesKeyboardFlags(t *testing.T) {
 	if got := s.Modes().KeyboardFlags; got != 4 {
 		t.Fatalf("after one pop KeyboardFlags = %d, want 4", got)
 	}
-	s.Write([]byte("\x1b[<3u"))
+	s.Write([]byte("\x1b[<u"))
 	if got := s.Modes().KeyboardFlags; got != 7 {
 		t.Fatalf("after popping the whole stack KeyboardFlags = %d, want 7", got)
+	}
+	// Popping past the bottom resets every flag, as the kitty spec says.
+	s.Write([]byte("\x1b[>4u\x1b[<3u"))
+	if got := s.Modes().KeyboardFlags; got != 0 {
+		t.Fatalf("after popping past the bottom KeyboardFlags = %d, want 0", got)
 	}
 
 	// The same byte stream, with a colour run around the flag sequence: the flags must change and

@@ -341,8 +341,11 @@ taller than the room it has scrolls; the pointer can move into it to scroll, and
 screen edges. The same holds for every tip in the app.
 v0.10.14: A terminal restored from a snapshot (a reattach, a second viewer) keeps the agent's whole
 stack of kitty keyboard modes, not only the top one, so when the agent pops a mode its keys read as
-they do on the original terminal. A test now lists every harness against what the web terminal's
-Shift+Enter sends (ESC CR), so a new harness cannot be added without that being checked.
+they do on the original terminal; popping past the bottom of the stack clears the modes, as the kitty
+spec says. In the web terminal Shift+Enter now types a new line in pi (Ctrl+J; ESC CR submitted
+there) and stays ESC CR elsewhere. Checked live: pi; established: Claude Code; the other harnesses
+are not checked live. A test lists every harness against what Shift+Enter sends, so a new harness
+cannot be added without that being checked.
 
 ## Credits
 

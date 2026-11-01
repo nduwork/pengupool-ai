@@ -164,23 +164,29 @@ func TestSubagentLists(t *testing.T) {
 	}
 }
 
-// TestShiftEnterPerHarness pins what the web terminal's Shift+Enter sends for every harness. The web
-// sends one sequence, ESC CR, to every session whatever its harness; a harness added to Agents fails
-// here until someone has checked what its input reads Shift+Enter as and added it below.
+// TestShiftEnterPerHarness pins what the web terminal's Shift+Enter sends for every harness: Ctrl+J
+// to pi, ESC CR to every other session (shiftEnter in TerminalPane.tsx). A harness added to Agents
+// fails here until someone has checked what its input reads Shift+Enter as and added it below.
 func TestShiftEnterPerHarness(t *testing.T) {
 	src, err := os.ReadFile("../../web/src/components/TerminalPane.tsx")
 	if err != nil {
 		t.Fatal(err)
 	}
-	const decl = `export const SHIFT_ENTER = "\x1b\r";`
+	const decl = `return harness === "pi" ? "\n" : "\x1b\r";`
 	if !strings.Contains(string(src), decl) {
-		t.Fatalf("TerminalPane.tsx no longer declares %s: update the table below", decl)
+		t.Fatalf("TerminalPane.tsx no longer has %s: update sent and the table below", decl)
 	}
-	// What Shift+Enter must send per harness. ESC CR is what Option+Enter types. Only Claude Code's
-	// reading of it as a new line is established (the reason TerminalPane gives); for the others
-	// nothing in this repo says otherwise, and they are not checked against the live CLI.
+	sent := func(kind string) string { // what that line sends
+		if kind == Pi {
+			return "\n"
+		}
+		return "\x1b\r"
+	}
+	// What Shift+Enter must send per harness to type a new line rather than submit. Checked live: pi
+	// (0.84.3: ESC CR is Alt+Enter, which submits; Ctrl+J is its new line). Established: Claude Code
+	// reads ESC CR (what Option+Enter types) as a new line. The rest are not checked live.
 	want := map[string]string{
-		Claude: "\x1b\r", Muse: "\x1b\r", Codex: "\x1b\r", Pi: "\x1b\r", OMP: "\x1b\r",
+		Claude: "\x1b\r", Muse: "\x1b\r", Codex: "\x1b\r", Pi: "\n", OMP: "\x1b\r",
 		Copilot: "\x1b\r", Gemini: "\x1b\r", Shell: "\x1b\r", Custom: "\x1b\r",
 	}
 	kinds := []string{Shell, Custom}
@@ -191,8 +197,8 @@ func TestShiftEnterPerHarness(t *testing.T) {
 		w, ok := want[k]
 		if !ok {
 			t.Errorf("harness %q has no Shift+Enter entry: check what its input reads Shift+Enter as", k)
-		} else if w != "\x1b\r" {
-			t.Errorf("harness %q needs Shift+Enter %q, but the web terminal sends ESC CR to every harness", k, w)
+		} else if got := sent(k); got != w {
+			t.Errorf("harness %q needs Shift+Enter %q, but the web terminal sends it %q", k, w, got)
 		}
 	}
 	if len(want) != len(kinds) {
