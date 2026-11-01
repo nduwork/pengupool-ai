@@ -73,8 +73,13 @@ describe("Waiting on you panel", () => {
   it("wraps a meta line with long agent names, the names uncut", () => {
     const row = html.split('role="listitem"').find((r) => r.includes("pengupool-agent-hub-codex")) ?? "";
     expect(row).toContain("team-lead-agent-claude");
-    const meta = /<div class="([^"]*)"><svg/.exec(row)?.[1] ?? "";
-    expect(meta).toContain("flex-wrap");
+    // The top line itself does not wrap (the icon stays beside the names); the names and team inside it do.
+    const top = /<div class="([^"]*)"><span class="[^"]*"><svg/.exec(row)?.[1] ?? "";
+    expect(top).toContain("items-start");
+    expect(top).not.toContain("flex-wrap");
+    const names = /<\/svg><\/span><span class="([^"]*)">/.exec(row)?.[1] ?? "";
+    expect(names).toContain("flex-wrap");
+    expect(names).toContain("flex-1");
     const who = /<span class="([^"]*)"><strong[^>]*>pengupool-agent-hub-codex/.exec(row)?.[1] ?? "";
     expect(who).toContain("flex-wrap");
     expect(who).not.toContain("shrink-0");
@@ -88,7 +93,9 @@ describe("Waiting on you panel", () => {
     expect(PANEL).toContain("flex-col");
   });
 
-  it("moves focus from a row that left to the row now at its index, else the last row, else the panel", () => {
+  it("moves focus from a row that left to the row now at its index (the row, not its first button), else the last row, else the panel", () => {
+    expect(html).toMatch(/role="listitem" aria-label="[^"]*" tabindex="-1" class="[^"]*focus-visible:ring-2/);
+    expect(PANEL).toContain("outline-none");
     expect(refocusRow(1, 3)).toBe(1);
     expect(refocusRow(2, 2)).toBe(1);
     expect(refocusRow(0, 0)).toBe(-1);

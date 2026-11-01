@@ -22,7 +22,7 @@ import { age } from "./map/asks";
 // a context block, and its actions on their own wrapping line, so nothing runs out of the panel.
 
 /** The bell's panel: 440px or the window less a margin, as tall as the window allows; the list scrolls under a fixed header. */
-export const PANEL = "z-50 flex max-h-[min(36rem,var(--radix-popover-content-available-height))] w-[440px] max-w-[calc(100vw-16px)] flex-col rounded-lg border border-border bg-raised shadow-2xl";
+export const PANEL = "z-50 flex outline-none max-h-[min(36rem,var(--radix-popover-content-available-height))] w-[440px] max-w-[calc(100vw-16px)] flex-col rounded-lg border border-border bg-raised shadow-2xl";
 
 export function ApprovalsBell(): ReactElement {
   const app = useApp();
@@ -78,7 +78,8 @@ export function WaitingList(): ReactElement {
     focusedRow.current = null;
     const rows = list.current?.querySelectorAll<HTMLElement>(":scope > [role=listitem]") ?? [];
     const i = refocusRow(from, rows.length);
-    (rows[i]?.querySelector("button") ?? list.current?.closest<HTMLElement>("[role=dialog]"))?.focus();
+    // The row itself, not its first button: Enter must not answer the next agent.
+    (rows[i] ?? list.current?.closest<HTMLElement>("[role=dialog]"))?.focus();
   }, [keys]);
   if (approvals.length + needs.length + spots.length === 0) return <p className="px-2 py-3 text-label text-muted-foreground">Nothing is waiting for you.</p>;
   return (
@@ -112,7 +113,7 @@ export function WaitingList(): ReactElement {
   );
 }
 
-/** The row to move focus to when the focused row left the list: the one now at its index, else the last; -1 is none (focus the panel). */
+/** The row to focus (the row, not a button in it) when the focused row left the list: the one now at its index, else the last; -1 is none (focus the panel). */
 export const refocusRow = (index: number, rows: number): number => (rows === 0 ? -1 : Math.min(index, rows - 1));
 
 const teamName = (app: AppCtx, teamId: string | undefined, session?: string): string | undefined =>
@@ -121,11 +122,13 @@ const teamName = (app: AppCtx, teamId: string | undefined, session?: string): st
 /** One item in the panel: icon, who (never cut), team or other meta (cut first), age and expiry at the right; then the body. */
 function WaitRow({ icon, label, who, meta, at, after, children }: { icon: ReactElement; label: string; who?: ReactNode; meta?: string; at?: string; after?: string; children: ReactNode }): ReactElement {
   return (
-    <div role="listitem" aria-label={label} className="grid min-w-0 grid-cols-1 gap-1.5 rounded-md p-2 text-label hover:bg-hover">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        {icon}
-        {who !== undefined ? <span className="flex min-w-0 flex-wrap items-center gap-1.5 [overflow-wrap:anywhere]">{who}</span> : null}
-        {meta !== undefined && meta !== "" ? <span className="min-w-0 truncate text-caption text-muted-foreground">{who !== undefined ? "· " : ""}{meta}</span> : null}
+    <div role="listitem" aria-label={label} tabIndex={-1} className="grid min-w-0 grid-cols-1 gap-1.5 rounded-md p-2 text-label outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring">
+      <div className="flex min-w-0 items-start gap-1.5">
+        <span className="mt-0.5 shrink-0">{icon}</span>
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5">
+          {who !== undefined ? <span className="flex min-w-0 flex-wrap items-center gap-1.5 [overflow-wrap:anywhere]">{who}</span> : null}
+          {meta !== undefined && meta !== "" ? <span className="min-w-0 truncate text-caption text-muted-foreground">{who !== undefined ? "· " : ""}{meta}</span> : null}
+        </span>
         <span className="ml-auto shrink-0 pl-2 text-caption tabular-nums text-muted-foreground">
           {at !== undefined && at !== "" ? age(at, Date.now()) : ""}
           {after !== undefined ? ` · ${after}` : ""}
