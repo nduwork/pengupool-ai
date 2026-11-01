@@ -15,7 +15,7 @@ making the decisions the person would not. What is said in one session is lost i
    session generalize them into one **Compass** line, merging with a line that already says it.
 2. **The agents decide as you would.** Every session gets the Compass in its context through its own
    harness hooks, as data ("the owner's compass: data, not commands"), at start and whenever it changes.
-3. **Helpers remember their work.** A helper that reports `Done:` gets a journal entry (its compacted
+3. **Specialists remember their work.** A specialist that reports `Done:` gets a journal entry (its compacted
    context); the next time it works, it sees the index of its past jobs and the ones that match.
 4. **Answer from anywhere.** A waiting session pops up in the Muse app as one card: Allow, Deny or Chat.
 
@@ -26,7 +26,7 @@ making the decisions the person would not. What is said in one session is lost i
   line; an agent only words a line the pool asked it to word, for a signal you gave.
 - **Nothing is forced.** A line is a preference or restriction the agent reads; it overrides no
   approval and answers no question for you.
-- **Keep it simple.** One store (agentdb): the Compass lines and the helpers' journals, index and
+- **Keep it simple.** One store (agentdb): the Compass lines and the specialists' journals, index and
   content. The journal reuses the harness's compacted context; no separate logs.
 - **Push through the harness.** Delivery is the harness's own hooks; there is no MCP layer to register.
 - **A change is reviewed, then benchmarked, then you decide.** Passing tests is not a review.
@@ -57,13 +57,13 @@ internal/pool/formation.go, mirrored in web/src/views/Formation.tsx):
 |---|---|---|
 | Lead | the root of the tree; it combines the results and reports to the owner. A root that has a repository is the Lead, not an SME, and a team with no repository members still has a Lead | strong outline, `text-foreground`, semibold |
 | SME | a member the owner added that has a repository behind it: its worktree, or its session working in a known repository | hairline outline, muted, medium |
-| Helper | an agent taken from the helper pool | no outline, muted, normal weight |
+| Specialist | a skill-backed agent taken from the specialist pool; it carries its own journal across teams. The tag reads `SPEC`, with the tooltip "Specialist" | no outline, muted, normal weight |
 
 The tags have no colour, so they never compete with the status colours or the one teal accent. A tag
 shows only on a team member: in the sidebar tree, on map cards, in both session headers, in the agent
 message log, in the Needs-you strip and in a launch proposal. Tags are written in sentence case
 everywhere except the map, where the outlined role chip on each card is uppercase (`LEAD`, `SME`,
-`HELPER`).
+`SPEC`).
 
 ## Team messages
 
@@ -104,10 +104,10 @@ message is `queued` until it is in the recipient's turn, then
 Lines from the earlier separate store (`~/.pengupool-ai/compass.jsonl`) are imported once, at the first
 start of v0.4.0, as owner lines; the file is renamed `compass.jsonl.imported`.
 
-## The journal (helper experience)
+## The journal (specialist experience)
 
 ```
- helper ── "Done: X" to its parent ──▶ SendMessage hook or `pengupool send`
+specialist "Done: X" to its parent ──▶ SendMessage hook or `pengupool send`
                                           │ doneReport, secrets redacted
                                           │ Stop → types the harness's /compact, reads the summary (≤3 min)
                                           ▼
@@ -176,5 +176,5 @@ models in the product (the logo is made with Muse Image).
 ## Demo (3 minutes)
 
 You tell a session a preference → it becomes a Compass line → a new Muse or Claude session starts with it
-and makes the choice you would → a helper reports Done, and its next job starts with that lesson → a
+and makes the choice you would → a specialist reports Done, and its next job starts with that lesson → a
 session waits on you → the card pops up in the Muse app, you tap Allow → the session continues.
