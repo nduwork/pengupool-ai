@@ -373,6 +373,13 @@ the panel is a little wider and never taller than the window (the list scrolls, 
 a go-ahead to check has Right and Wrong in words. A check-in now carries the last 1200 characters of the
 agent's reply, up from 300.
 
+v0.10.16: Agents wait for the triage model instead of cutting it off. A turn's route question and the
+go-ahead decided in an agent's Stop now give the model 8 seconds (they gave it 1.5 and 2, while a local
+model can take several), and the hooks around them wait long enough (the CLI 11 s for a prompt, 12 s for
+a Stop; Claude Code and the pi/OMP extension now give a hook 15 s, as Codex, Gemini and Copilot already
+did). A call cut short by its own caller's time limit no longer marks the triage model as not
+answering; a failure of the model itself, its own 30-second limit included, still does.
+
 ## Credits
 
 - **PAHF** — *Learning Personalized Agents from Human Feedback*, Kaiqu Liang, Julia Kruk,

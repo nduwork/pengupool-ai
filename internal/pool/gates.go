@@ -50,9 +50,9 @@ var OwnerWait = 40 * time.Second
 const autoProceed = "[PenguPool triage] The owner's decisions cover this: proceed as you proposed. Ask the owner only before " + floorWords +
 	", unless a confirmed Compass line of the owner's allows that action."
 
-// StopBudget caps the go-ahead decided inside an agent's Stop hook: the CLI gives a hook 3 s
-// (cmd/pengupool/pool.go), so this leaves a margin. Tests change it.
-var StopBudget = 2 * time.Second
+// StopBudget caps the model's go-ahead decided inside an agent's Stop hook, within StopDeadline. A
+// local model can take several seconds to answer. Tests change it.
+var StopBudget = 8 * time.Second
 
 // stopContinues: harnesses whose Stop hook can continue the turn with a reason, the sanctioned way
 // to give them triage's go-ahead (Claude and Codex Stop, Gemini AfterAgent, Copilot agentStop). A
@@ -385,9 +385,9 @@ func (p *Pool) recordGate(s store.Session, g agentdb.Gate) {
 }
 
 // StopDeadline is how long a Stop hook may take in all (store, database and model work) before it
-// gives up answering and the session goes idle as usual; the CLI waits 8 s for a Stop
+// gives up answering and the session goes idle as usual; the CLI waits 12 s for a Stop
 // (cmd/pengupool/pool.go). Tests change it.
-var StopDeadline = 4 * time.Second
+var StopDeadline = 10 * time.Second
 
 var errLate = errors.New("the Stop hook's deadline passed")
 

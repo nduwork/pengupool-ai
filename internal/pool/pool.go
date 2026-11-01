@@ -597,7 +597,7 @@ type watched struct {
 
 func (w watched) Decide(ctx context.Context, req decision.Request) (decision.Response, error) {
 	res, err := w.Provider.Decide(ctx, req)
-	if !errors.Is(ctx.Err(), context.Canceled) { // a call its caller gave up says nothing; a timeout does
+	if ctx.Err() == nil { // a call its caller cancelled or let run out says nothing about the model
 		w.p.setTriage(err)
 	}
 	return res, err

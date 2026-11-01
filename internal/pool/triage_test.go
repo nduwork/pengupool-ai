@@ -49,17 +49,17 @@ func TestTriageModelRequired(t *testing.T) {
 	if s := status(); s != "unchecked" {
 		t.Fatalf("a model not asked yet since the start: %s", s)
 	}
-	// A model that hangs past its caller's deadline is unreachable, not ok.
+	// A call its caller's own deadline cut short (a hook's budget) says nothing about the model.
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	_, _ = p.decider().Decide(ctx, decision.Request{})
 	cancel()
-	if s := status(); s != "unreachable" {
-		t.Fatalf("a hanging model: %s", s)
+	if s := status(); s != "unchecked" {
+		t.Fatalf("a call past its caller's deadline marked the model: %s", s)
 	}
 	p.mu.Lock()
 	p.testDecider = failDecider{}
 	p.mu.Unlock()
-	_, _ = p.decider().Decide(context.Background(), decision.Request{})
+	_, _ = p.decider().Decide(context.Background(), decision.Request{}) // e.g. the provider's own client timeout
 	if s := status(); s != "unreachable" {
 		t.Fatalf("a failing model: %s", s)
 	}
