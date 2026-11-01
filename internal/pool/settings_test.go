@@ -71,14 +71,19 @@ func TestChatTriageModelRemovedWithANote(t *testing.T) {
 	}
 }
 
-// A saved model removed for another fault (here a bad address) leaves no note claiming its format is unsupported.
-func TestBrokenTriageModelRemovedWithoutANote(t *testing.T) {
+// A saved model removed for another fault (a bad address) or of a kind no longer offered leaves no note:
+// the note claims an unsupported format, and only a save of a kind still offered can clear it.
+func TestRemovedWithoutANote(t *testing.T) {
 	st, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := st.Config()
-	cfg.Decision.Providers = map[string]store.ProviderConfig{"ollama": {Type: "ollama", Format: "ollama-systemone", Address: "ftp://x", Model: "m"}}
+	cfg.Decision.Active = "openrouter"
+	cfg.Decision.Providers = map[string]store.ProviderConfig{
+		"ollama":     {Type: "ollama", Format: "ollama-systemone", Address: "ftp://x", Model: "m"},
+		"openrouter": {Type: "openrouter", Format: "openai-chat", Address: "https://openrouter.ai/api/v1", Model: "m", KeyRef: "env:K"},
+	}
 	_ = st.SaveConfig(cfg)
 	New(Options{Store: st, Exe: "pengupool"})
 	if d := st.Config().Decision; len(d.Providers) != 0 || len(d.Removed) != 0 {
