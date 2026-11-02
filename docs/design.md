@@ -31,22 +31,30 @@ keeps the builder focused on changing code.
 
 ## 3. Experience transfers across projects
 
-Specialists share what they have learned. For example, once a specialist knows how the owner sets up
-a local GitHub runner (their preferences, where files and directories go), the owner never teaches
-it again and nobody redoes the research. That is a real saving in tokens.
+A specialist carries what it has learned into every team it joins. For example, once a specialist
+knows how the owner sets up a local GitHub runner (their preferences, where files and directories
+go), the owner never teaches it again and nobody redoes the research. That is a real saving in tokens.
 
 Skill repositories carry a `memory.md` plus per-session logs. In PenguPool each specialist also keeps
 a journal of its finished jobs across teams, and `pengupool experience export` / `import` move that
 experience between machines.
 
-## 4. Shared memory is the key mechanism
+## 4. Memory, scoped by role, is the key mechanism
 
-The team remembers the owner's preferences and updates them from evidence over time. It is Bayesian
-in spirit: a preference is superseded, not deleted, and the owner's corrections are the richest
-signal. This is what "an agent team that grows with you" means.
+The team's memory is scoped by role at two levels, not kept in one shared store:
 
-In PenguPool this memory is the Compass. Only the owner's own words become lines, and each line
-carries a belief (a Beta estimate) that evidence moves up or down.
+- **The Lead** remembers what the team did: its plans, dispatches, decisions and outcomes.
+- **Each specialist** remembers what it did in the team: its own reviews, research and setups.
+
+The team also learns the owner's preferences and updates them from evidence over
+time. It is Bayesian in spirit: a preference is superseded, not deleted, and the owner's corrections
+are the richest signal. This is what "an agent team that grows with you" means.
+
+In PenguPool each specialist's journal is private to it, one entry per finished job. When a
+specialist leads a team, its journal also keeps one project entry for that team: the Lead's latest
+summary of the work, replaced at each capture. The owner's preferences are the one store every member
+reads: the Compass. Only the owner's own words become Compass lines, and each line carries a belief
+(a Beta estimate) that evidence moves up or down.
 
 ## 5. The gateway model
 
