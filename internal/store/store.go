@@ -115,7 +115,17 @@ func Open(dir string) (*Store, error) {
 			return nil, err
 		}
 	}
+	tighten(dir)
 	return s, nil
+}
+
+// tighten makes the store private to its owner: MkdirAll never narrows a folder that already
+// exists, and the app creates logs/daemon.log itself. Best effort: a failure leaves the mode as it was.
+func tighten(dir string) {
+	for _, d := range []string{dir, filepath.Join(dir, RunDir), filepath.Join(dir, LogsDir), filepath.Join(dir, BackupsDir)} {
+		_ = os.Chmod(d, 0o700)
+	}
+	_ = os.Chmod(filepath.Join(dir, LogsDir, "daemon.log"), 0o600)
 }
 
 // dropRetired removes the helpers an earlier version kept retired ("archived"): there is no retired
