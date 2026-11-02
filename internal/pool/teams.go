@@ -570,7 +570,7 @@ func short(s string) string {
 func (p *Pool) startMember(ctx context.Context, team *protocol.Team, repo protocol.Repo, t protocol.Task, pm protocol.ProposedMember, base string) (protocol.Member, error) {
 	id := protocol.NewID()
 	m := protocol.Member{SessionID: id, Name: pm.Name, Role: pm.Role, SkillID: pm.SkillID, Assignment: pm.Assignment,
-		Coordinator: pm.Coordinator, State: "active", BaseCommit: base}
+		Coordinator: pm.Coordinator, State: "active", BaseCommit: base, Copy: pm.Copy}
 	cwd := repo.Path
 	var readDirs []string
 	if pm.Role != "main" { // SMEs work in their own worktree, helpers in none
@@ -586,7 +586,13 @@ func (p *Pool) startMember(ctx context.Context, team *protocol.Team, repo protoc
 		// the team's repositories by path.
 		d := p.st.State().Domain
 		cwd = p.workDir(team.ID)
-		if sk := findSkill(&d, pm.SkillID); sk != nil && sk.Path != "" && sk.Source == "git" && within(sk.Path, filepath.Join(p.st.Dir(), "skills")) {
+		sk := findSkill(&d, pm.SkillID)
+		switch {
+		case sk != nil && pm.Copy >= 2:
+			// A further copy of the skill: a scratch folder of its own (by copy number, not by the
+			// name the owner may change), never the first copy's clone.
+			cwd = filepath.Join(cwd, slugCopy(sk.Name, pm.Copy))
+		case sk != nil && sk.Path != "" && sk.Source == "git" && within(sk.Path, filepath.Join(p.st.Dir(), "skills")):
 			cwd = sk.Path
 		}
 		if err := os.MkdirAll(cwd, 0o755); err != nil {
@@ -652,11 +658,6 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	if sk == nil {
 		return nil, notFound("no active specialist %s", in.SkillID)
 	}
-	for _, m := range team.Members {
-		if m.State == "active" && m.SkillID == sk.ID {
-			return nil, conflict("%s already assists this team", sk.Name)
-		}
-	}
 	hub := teamHubSkill(*sk)
 	repo := findRepo(&d, team.RepoID)
 	if !hub && repo == nil {
@@ -674,7 +675,10 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	if in.Harness != "" && ag != in.Harness { // the owner picked it: start it there or not at all
 		return nil, invalid("%s", note)
 	}
-	pm := protocol.ProposedMember{SkillID: sk.ID, Name: slug(sk.Name), Role: "helper", Assignment: assignment, Harness: ag, Model: in.Model}
+	// A skill may assist a team more than once, each copy in its own session: a second copy gets
+	// its own name (pr-review-agent-2), and with it its own folder and worktree.
+	copyN := p.nextCopy(team, *sk)
+	pm := protocol.ProposedMember{SkillID: sk.ID, Name: teamMemberName(team, sk.Name, copyN), Role: "helper", Assignment: assignment, Harness: ag, Model: in.Model, Copy: copyN}
 	var m protocol.Member
 	var err error
 	if hub {
@@ -704,6 +708,52 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	return m, nil
 }
 
+// nextCopy is the copy number a new member of sk gets on the team: 0 for the first, else one past
+// the highest so far (closed members count, so a number is never reused). A copy that left the
+// team keeps running in its folder, so a running session of the skill in this team's work folder
+// counts as a copy too, and a number whose folder already exists is skipped: a new copy never
+// shares a folder of this team.
+func (p *Pool) nextCopy(t *protocol.Team, sk protocol.Skill) int {
+	n := 0
+	for _, m := range t.Members {
+		if m.SkillID == sk.ID {
+			n = max(n, m.Copy, 1)
+		}
+	}
+	work := p.workDir(t.ID)
+	for _, s := range p.st.State().Sessions {
+		// Only this team's work folder: the skill clone is every team's first copy's folder, so a
+		// session there says nothing about this team.
+		if s.State == "running" && s.SkillID == sk.ID && s.TeamID != t.ID && s.Cwd != "" && within(s.Cwd, work) {
+			n = max(n, 1)
+		}
+	}
+	if n == 0 {
+		return 0
+	}
+	n++
+	for {
+		if _, err := os.Stat(filepath.Join(work, slugCopy(sk.Name, n))); err != nil {
+			return n
+		}
+		n++
+	}
+}
+
+// teamMemberName is copy n's name, slugCopy(skill, n), or the next free variant when a member of
+// the team already has it (a renamed member may hold it; every member counts).
+func teamMemberName(t *protocol.Team, skill string, n int) string {
+	taken := map[string]bool{}
+	for _, m := range t.Members {
+		taken[m.Name] = true
+	}
+	for i := max(n, 1); ; i++ {
+		if name := slugCopy(skill, i); !taken[name] {
+			return name
+		}
+	}
+}
+
 // teamHubSkill: a skill agent that coordinates a team (the marketplace's team-lead-agent), known by its
 // team-hub skill. It owns no repository and edits no code.
 func teamHubSkill(sk protocol.Skill) bool { return slices.Contains(sk.Capabilities, "team-hub") }
@@ -715,10 +765,13 @@ func teamHubSkill(sk protocol.Skill) bool { return slices.Contains(sk.Capabiliti
 func (p *Pool) startHub(ctx context.Context, team *protocol.Team, sk protocol.Skill, pm protocol.ProposedMember) (protocol.Member, error) {
 	id := protocol.NewID()
 	cwd := filepath.Join(p.workDir(team.ID), slug(pm.Name))
+	if pm.Copy >= 2 { // by copy number, not by the name the owner may change
+		cwd = filepath.Join(p.workDir(team.ID), slugCopy(sk.Name, pm.Copy))
+	}
 	if err := os.MkdirAll(cwd, 0o755); err != nil {
 		return protocol.Member{}, err
 	}
-	m := protocol.Member{SessionID: id, Name: pm.Name, Role: pm.Role, SkillID: pm.SkillID, Assignment: pm.Assignment, State: "active"}
+	m := protocol.Member{SessionID: id, Name: pm.Name, Role: pm.Role, SkillID: pm.SkillID, Assignment: pm.Assignment, State: "active", Copy: pm.Copy}
 	for _, x := range team.Members {
 		if x.Role == "main" && x.State == "active" {
 			m.Parent = x.SessionID

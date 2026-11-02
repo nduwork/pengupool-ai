@@ -104,6 +104,7 @@ type ProposedMember struct {
 	Coordinator bool   `json:"coordinator,omitempty"`
 	Model       string `json:"model,omitempty"`
 	Harness     string `json:"harness,omitempty"` // empty: the team's default
+	Copy        int    `json:"copy,omitempty"`    // the Member's Copy (placeHelper sets it)
 }
 
 // Proposal is a versioned team proposal waiting for the launch approval.
@@ -135,7 +136,10 @@ type Member struct {
 	Branch      string `json:"branch,omitempty"`
 	BaseCommit  string `json:"base_commit,omitempty"`
 	Coordinator bool   `json:"coordinator,omitempty"`
-	State       string `json:"state"` // active | closed
+	// Copy numbers a skill's copies on the team from 2, fixed when it is added (0: the first). Its
+	// scratch folder comes from it, never from the name, which the owner may change.
+	Copy  int    `json:"copy,omitempty"`
+	State string `json:"state"` // active | closed
 	// Parent is the member this one hangs under on the map (empty: the team's root).
 	Parent string `json:"parent,omitempty"`
 }

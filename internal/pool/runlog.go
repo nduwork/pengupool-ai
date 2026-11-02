@@ -33,6 +33,20 @@ func slug(s string) string {
 	return s
 }
 
+// slugCopy is slug(s) for copy n of a skill: "-n" appended for n >= 2, the base cut short so the
+// suffix survives slug's 40-character limit.
+func slugCopy(s string, n int) string {
+	b := slug(s)
+	if n < 2 {
+		return b
+	}
+	suf := "-" + itoa(n)
+	if len(b)+len(suf) > 40 {
+		b = strings.Trim(b[:40-len(suf)], "-")
+	}
+	return b + suf
+}
+
 func (p *Pool) runLogPath(id, name string) string {
 	return filepath.Join(p.st.Dir(), store.LogsDir,
 		time.Now().Format("2006-01-02")+"-"+slug(name)+"-"+idTail(id)+".log")

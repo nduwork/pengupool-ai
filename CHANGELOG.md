@@ -2,6 +2,14 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
+## Unreleased
+
+A specialist can join a team more than once, each copy in its own session. A further copy gets
+its own name (pr-review-agent-2) and its own folder, fixed when it joins, so renaming a copy never
+makes two share one. Messages reach each copy by its session. Triage offers one option per
+specialist and picks the copy that is idle; the owner may name any copy, and handing the work to
+any copy counts. The Add member sheet lists every specialist, including ones already on the team.
+
 ## 0.10.21
 
 The map's Compact context and Clear actions work on Muse sessions (Muse /compact and /new).

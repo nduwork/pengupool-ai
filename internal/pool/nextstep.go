@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -55,11 +56,15 @@ func (p *Pool) routeTurn(s store.Session, prompt string) (who, note string) {
 		return "", ""
 	}
 	options := map[string]string{"self": "the LEAD itself: coordinating, answering the owner, or work no member's description covers"}
-	ids := map[string]string{} // member name → session id
+	ids := map[string]string{}     // member name → session id
+	names := map[string]string{}   // every reachable member's name, copies included: the owner may name any
+	bySkill := map[string]string{} // skill id → the name offered for it: one option per skill
+	idle := map[string]bool{}      // offered name → idle
 	for _, m := range t.Members {
 		if m.State != "active" || m.SessionID == s.ID || !p.mayTalk(s.ID, m.SessionID) {
 			continue
 		}
+		names[m.Name] = m.SessionID
 		desc := p.routingDesc(&d, m)
 		if desc == "" {
 			continue
@@ -72,12 +77,24 @@ func (p *Pool) routeTurn(s store.Session, prompt string) (who, note string) {
 		} else if ms.Status != "idle" && ms.Status != "" {
 			continue // waiting on the owner
 		}
+		if m.SkillID != "" {
+			// Copies of one skill share a description: offer one, the idle one when there is one.
+			if prev, dup := bySkill[m.SkillID]; dup {
+				if idle[prev] || busy != "" {
+					continue
+				}
+				delete(options, prev)
+				delete(ids, prev)
+			}
+			bySkill[m.SkillID] = m.Name
+		}
 		options[m.Name], ids[m.Name] = redactSecrets(desc)+busy, m.SessionID
+		idle[m.Name] = busy == ""
 	}
 	if len(ids) == 0 {
 		return "", ""
 	}
-	if ownerChose(prompt, ids) {
+	if ownerChose(prompt, names) {
 		return "", "" // the owner's own words say who does it
 	}
 	prompt = redactSecrets(clipRunes(prompt, 1500))
@@ -249,13 +266,14 @@ func (p *Pool) guardRoute(s store.Session, pl map[string]any) (HookOut, bool) {
 	if m, _ := p.session(who); m.Name != "" {
 		name = m.Name
 	}
+	copies := p.skillCopies(s.ID, who) // a message to any copy of the routed skill hands the work over
 	if tool == "SendMessage" {
-		if to, ok := p.sendTarget(pl); ok && to == who {
+		if to, ok := p.sendTarget(pl); ok && slices.Contains(copies, to) {
 			p.release(s.ID, name)
 		}
 		return HookOut{}, false
 	}
-	if cmd != "" && p.sentTo(cmd, s.ID, who) {
+	if cmd != "" && slices.ContainsFunc(copies, func(c string) bool { return p.sentTo(cmd, s.ID, c) }) {
 		p.release(s.ID, name)
 		return HookOut{}, false
 	}
@@ -269,6 +287,28 @@ func (p *Pool) guardRoute(s store.Session, pl map[string]any) (HookOut, bool) {
 		"permissionDecisionReason": fmt.Sprintf("PenguPool triage routed this turn's work to %s. Hand it over with `%s send --to %q \"...\"` (its session id: a SendMessage by name is refused when another session shares the name); a brief file holds long context. Reading is allowed meanwhile. The owner can override in their next prompt by telling you to do it yourself.",
 			name, p.cli(), who),
 	}}), true
+}
+
+// skillCopies is who and every other active member of the LEAD's team with who's skill.
+func (p *Pool) skillCopies(lead, who string) []string {
+	out := []string{who}
+	d := p.st.State().Domain
+	t := teamOf(&d, lead)
+	if t == nil {
+		return out
+	}
+	skill := ""
+	for _, m := range t.Members {
+		if m.SessionID == who {
+			skill = m.SkillID
+		}
+	}
+	for _, m := range t.Members {
+		if skill != "" && m.SkillID == skill && m.State == "active" && m.SessionID != who {
+			out = append(out, m.SessionID)
+		}
+	}
+	return out
 }
 
 func (p *Pool) release(id, name string) {
