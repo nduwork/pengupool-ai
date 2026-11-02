@@ -157,8 +157,6 @@ func (p *Pool) propose(ctx context.Context, t protocol.Task, version int) (proto
 
 	var helpers []candidate
 	prov := p.decider()
-	cfg := st.Domain // unused copy guard
-	_ = cfg
 	if prov != nil && len(cands) > 0 {
 		res, qs, err := p.askTeam(ctx, prov, t, cands)
 		line := decision.Line("team.form", res, qs, err != nil, err)
