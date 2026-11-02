@@ -66,7 +66,8 @@ Provenance is structural: an agent's yes is not the owner's yes. In November 202
 agent's ask to create the meta-demo repository could be answered only by the owner. In PenguPool
 the Lead cannot approve, merge or change direction for the owner. A question is answered in the
 owner's name only from the owner: their own prompt, or their recorded decisions and Compass lines.
-Pushes, merges, releases and similar acts still come to the owner.
+Pushes, merges, releases and similar acts still come to the owner, unless one of the owner's
+confirmed Compass lines allows that exact act.
 
 Every consequential act traces back: owner → gateway → Lead → member → reviewer.
 
