@@ -2,7 +2,10 @@ package pool
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -112,7 +115,9 @@ func stubTailscale(t *testing.T, status, serve string) *[]string {
 		return nil, os.ErrNotExist
 	}
 	HTTPAddr = func() string { return "127.0.0.1:7787" }
-	t.Cleanup(func() { tailscaleLookPath, tailscaleCmd, HTTPAddr = oldLook, oldCmd, oldAddr })
+	oldProbe := serveProbe
+	serveProbe = func(context.Context, string) error { return nil }
+	t.Cleanup(func() { tailscaleLookPath, tailscaleCmd, HTTPAddr, serveProbe = oldLook, oldCmd, oldAddr, oldProbe })
 	return &ran
 }
 
@@ -684,5 +689,63 @@ func TestSettingsSaveServeSwitch(t *testing.T) {
 				t.Fatalf("tailscale address = %q, want %s…", got, c.wantURL)
 			}
 		})
+	}
+}
+
+// A switch probes the new address first: a 502 keeps the old mode up and its address; an answer
+// lets the old mode go.
+func TestSettingsSaveServeSwitchProbe(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		probe    error
+		wantRuns []string
+		wantErr  string
+		wantURL  string
+	}{
+		{"answers", nil, []string{"serve --bg --https=443 http://127.0.0.1:7787", "serve --http=80 off"}, "", "https://"},
+		{"badGateway", errors.New("HTTP 502 Bad Gateway"), []string{"serve --bg --https=443 http://127.0.0.1:7787"}, "502 Bad Gateway", "http://"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"))
+			var probed []string
+			serveProbe = func(_ context.Context, url string) error { probed = append(probed, url); return c.probe }
+			p := testPool(t)
+			setServePort(t, p.st, "7787")
+			_ = p.st.UpdateConfig(func(cfg *store.Config) error {
+				cfg.Network.Tailscale = "http://probe-machine.tailnet.ts.net"
+				return nil
+			})
+			url := "https://probe-machine.tailnet.ts.net"
+			res, err := p.settingsSave(context.Background(), settingsIn{Tailscale: &url, EnableServeHTTPS: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(probed, []string{"https://probe-machine.tailnet.ts.net/"}) {
+				t.Fatalf("probed %q", probed)
+			}
+			if e, _ := res.(map[string]any)["serve_error"].(string); (c.wantErr == "") != (e == "") || !strings.Contains(e, c.wantErr) {
+				t.Fatalf("serve_error = %q, want %q", e, c.wantErr)
+			}
+			if !slices.Equal(*ran, c.wantRuns) {
+				t.Fatalf("serve runs = %q, want %q", *ran, c.wantRuns)
+			}
+			if got := p.st.Config().Network.Tailscale; !strings.HasPrefix(got, c.wantURL) {
+				t.Fatalf("tailscale address = %q, want %s…", got, c.wantURL)
+			}
+		})
+	}
+}
+
+// serveProbe fails on a 502 and passes a page that answers.
+func TestServeProbe(t *testing.T) {
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) }))
+	defer bad.Close()
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	defer ok.Close()
+	if err := serveProbe(context.Background(), bad.URL); err == nil || !strings.Contains(err.Error(), "502") {
+		t.Fatalf("502: err = %v", err)
+	}
+	if err := serveProbe(context.Background(), ok.URL); err != nil {
+		t.Fatalf("200: err = %v", err)
 	}
 }

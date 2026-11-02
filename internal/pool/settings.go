@@ -301,6 +301,13 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 			res["serve_approve_url"] = approve
 			return
 		}
+		if len(errs) == 0 && len(off) > 0 {
+			// The old mode goes only once the new address answers: a 502 (Serve pointing at a port
+			// nothing listens on), a refused connection or a TLS error keeps the old mode up.
+			if err := probeServeMode(ctx, modes[0]); err != nil {
+				errs = append(errs, "the new "+string(modes[0])+" address did not answer ("+err.Error()+"); the "+string(off[0])+" mode stays on")
+			}
+		}
 		if len(errs) == 0 {
 			for _, mode := range off {
 				out, err := serveOff(ctx, mode)
@@ -601,6 +608,39 @@ func serveHTTPSPlan(ctx context.Context, port, servePort string) (modes, off []s
 		off = []serveMode{serveHTTP}
 	}
 	return []serveMode{serveHTTPS}, off, nil
+}
+
+// serveProbe GETs url and fails on no answer or a 5xx (Serve answers 502 when the port it points
+// at has no listener). Tests stub it.
+var serveProbe = func(ctx context.Context, url string) error {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second) // a first HTTPS request may wait for its certificate
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 500 {
+		return errors.New("HTTP " + resp.Status)
+	}
+	return nil
+}
+
+// probeServeMode probes this machine's tailnet address in mode.
+func probeServeMode(ctx context.Context, mode serveMode) error {
+	st, err := runTailscaleStatus(ctx, tailscaleBin())
+	if err != nil {
+		return err
+	}
+	name := strings.TrimSuffix(st.Self.DNSName, ".")
+	if name == "" {
+		return errors.New("no tailnet name")
+	}
+	return serveProbe(ctx, string(mode)+"://"+name+"/")
 }
 
 // serveOff turns off Serve in one mode (20 s).
