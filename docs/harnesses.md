@@ -57,16 +57,17 @@ also apply to sessions you start outside PenguPool:
 
 | Agent | Where | What |
 | --- | --- | --- |
-| Claude Code | `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR`), merged into `permissions.allow` | 9 rules |
-| Codex | `~/.codex/rules/pengupool.rules` (or `$CODEX_HOME`), a file PenguPool owns | 9 rules |
+| Claude Code | `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR`), merged into `permissions.allow` | 10 rules |
+| Codex | `~/.codex/rules/pengupool.rules` (or `$CODEX_HOME`), a file PenguPool owns | 10 rules |
 | OMP | nothing: its default approval mode asks nothing | — |
 | pi | nothing: it has no permission prompts | — |
 | Muse Code | nothing yet: Muse has no documented rule format | — |
 
 - The rules cover only `send`, `search`, `experience search`, `experience show`, `ask`, `answer`,
-  `decide`, `team request add` and `team request remove`, named by the app's full path. The host
-  still checks each call: an answer only from the owner's own prompt, a team change only as a request
-  the owner approves. Push, merge, release, delete, `compass word` and every other command still ask.
+  `decide`, `team request add`, `team request remove` and `compass word`, named by the app's full
+  path. The host still checks each call: an answer only from the owner's own prompt, a team change
+  only as a request the owner approves, a Compass line only from the session PenguPool asked. Push,
+  merge, release, delete and every other command still ask.
 - Turned on before a command joined the list? It still asks until you turn the switch off and on;
   PenguPool never widens your yes on its own.
 - On Claude Code 2.1.316 a command that chains one of these with anything else, redirects to a

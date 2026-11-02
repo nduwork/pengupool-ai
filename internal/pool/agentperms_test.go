@@ -136,7 +136,7 @@ func TestAgentPermissionsListGrew(t *testing.T) {
 		}
 		v := p.agentPermissionsView()["agents"].(map[string]any)[a].(map[string]any)
 		added, _ := v["added"].([]string)
-		if len(added) != len(harness.CLIAllowed)-4 || !strings.Contains(strings.Join(added, " "), "ask") {
+		if len(added) != len(harness.CLIAllowed)-4 || !strings.Contains(strings.Join(added, " "), "compass") {
 			t.Fatalf("%s: added = %v", a, v["added"])
 		}
 	}

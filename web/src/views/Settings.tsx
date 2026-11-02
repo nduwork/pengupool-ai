@@ -1073,8 +1073,8 @@ function AgentPermissions(): ReactElement | null {
       <h3 className="mb-2 text-label font-semibold">Agent permissions</h3>
       <p className="mb-2 text-label text-muted-foreground">
         Agents in a team message each other, ask you questions and look up past work with PenguPool&apos;s command-line tool. Each call can stop on the agent&apos;s own permission prompt. You can let
-        agents run the commands below without that prompt. PenguPool still checks every call: who may message whom, that only your own prompt answers a question, and that a team change waits
-        for your approval.
+        agents run the commands below without that prompt. PenguPool still checks every call: who may message whom, that only your own prompt answers a question, that a team change waits
+        for your approval, and that a Compass line comes only from the session PenguPool asked.
       </p>
       <Card className="px-4">
         <Row
@@ -1115,7 +1115,7 @@ function AgentPermissions(): ReactElement | null {
         >
           {null}
         </Row>
-        <Row title="Never included" hint="Push, merge, release, delete, writing your Compass, and every other command still ask, as they do today. So does a command that chains one of these with anything else.">
+        <Row title="Never included" hint="Push, merge, release, delete, and every other command still ask, as they do today. So does a command that chains one of these with anything else.">
           <Lock className="size-3.5 text-muted-foreground" aria-hidden />
         </Row>
         {written("claude", "Claude Code")}

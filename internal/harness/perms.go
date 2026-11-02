@@ -20,11 +20,10 @@ import (
 // PenguPool. Only these fixed commands, never a floor action, experience import, kill or a whole
 // command group; the host still checks every call: who may message whom, an ask only from its own
 // session, an answer only in a turn the owner's own prompt opened, a team change only as a request
-// the owner approves. `compass word` stays out: the prompt is the owner's one look at a line before
-// it binds every agent.
+// the owner approves, a Compass wording only from the session PenguPool asked, once, checked as any line.
 var CLIAllowed = [][]string{
 	{"send"}, {"search"}, {"experience", "search"}, {"experience", "show"},
-	{"ask"}, {"answer"}, {"decide"}, {"team", "request", "add"}, {"team", "request", "remove"},
+	{"ask"}, {"answer"}, {"decide"}, {"team", "request", "add"}, {"team", "request", "remove"}, {"compass", "word"},
 }
 
 // PermissionAgents are the agents PenguPool writes rules for. The others, with why:

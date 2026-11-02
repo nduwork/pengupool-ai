@@ -8,7 +8,7 @@ Settings → Tailscale switches Serve between HTTP and HTTPS. *Serve over HTTP* 
 
 Tailscale Serve no longer answers 502 after a login or restart until the next click. At start-up the daemon keeps retrying, with backoff for about 2 minutes, until its listener is bound and tailscaled answers. Then it re-points PenguPool's own stale route. Before, it gave up after 2 s, or after one try when tailscaled was not up yet.
 
-Agent permissions cover the team commands agents are told to run: besides `send`, `search`, `experience search` and `experience show`, now also `ask`, `answer`, `decide`, `team request add` and `team request remove`. PenguPool still checks every call: an answer only from the owner's own prompt, a team change only as a request the owner approves. `compass word` still asks. If you turned this on before, the new commands keep asking until you turn the switch off and on; Settings shows them as new.
+Agent permissions cover the team commands agents are told to run: besides `send`, `search`, `experience search` and `experience show`, now also `ask`, `answer`, `decide`, `team request add`, `team request remove` and `compass word`. PenguPool still checks every call: an answer only from the owner's own prompt, a team change only as a request the owner approves, a Compass line only from the session PenguPool asked. If you turned this on before, the new commands keep asking until you turn the switch off and on; Settings shows them as new.
 
 ## 0.10.22
 

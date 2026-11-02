@@ -170,7 +170,8 @@ func claudeAllows(rules []string, cmd string) bool {
 
 var allowedCmds = [][]string{{"send", "--to", "01a1", "hi"}, {"search", "triage"}, {"experience", "search", "x"}, {"experience", "show", "3"},
 	{"ask", "--owner-only", "q"}, {"ask", "--wait", "01a1"}, {"answer", "01a1", "--option", "2"}, {"decide", "--file", "pack.json"},
-	{"team", "request", "add", "--skill", "research-agent"}, {"team", "request", "remove", "pr-review-agent", "--reason", "done"}}
+	{"team", "request", "add", "--skill", "research-agent"}, {"team", "request", "remove", "pr-review-agent", "--reason", "done"},
+	{"compass", "word", "--for", "04ab", "--none"}}
 
 // The rules allow the team commands in the spelling agents are told, and nothing else.
 func TestClaudeRulesScope(t *testing.T) {
@@ -186,7 +187,8 @@ func TestClaudeRulesScope(t *testing.T) {
 		"pengupool send --to x hi",
 		q + " experience import f",
 		q + " kill s1",
-		q + " compass word --none",
+		q + " compass",
+		q + ` compass word --none; rm -rf ~`,
 		q + " team delete t1",
 		q + " team",
 		q + " new --harness claude",
