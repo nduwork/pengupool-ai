@@ -23,8 +23,8 @@ need the owner are collected in one place and can be answered on the Mac or from
 
 **Run it.** macOS on Apple Silicon. Download `PenguPool-AI-<version>-mac-arm64.dmg` from the
 [latest release](https://github.com/nduwork/pengupool-ai/releases/latest), drag the app onto
-Applications and open it. To build from source (Go 1.26.1, Node 22), run `make install`. Details are
-in [Install](#install) and [CONTRIBUTING.md](CONTRIBUTING.md#build-from-source).
+Applications and open it. Details are in [Install](#install); building from source is in
+[CONTRIBUTING.md](CONTRIBUTING.md#build-from-source).
 
 **Architecture.**
 
