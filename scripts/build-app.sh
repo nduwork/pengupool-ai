@@ -50,7 +50,7 @@ deps
 node build.mjs
 rm -rf dist
 # For a release (make dist sets SIGN=1), a Developer ID identity in the keychain signs the app for
-# distribution (hardened runtime, nested code first; scripts/notarize.sh then notarizes the disk image).
+# distribution (hardened runtime, nested code first; scripts/notarize.sh then notarizes the app, then the disk image).
 # Otherwise, and for make install, the app is signed ad hoc, which needs no network.
 SIGN_ID=
 [ "${SIGN:-}" = 1 ] && SIGN_ID=$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"Developer ID Application: \([^"]*\)".*/\1/p' | head -1)
