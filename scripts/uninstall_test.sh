@@ -3,6 +3,7 @@
 # HOME with a stand-in app, and stubs osascript and pgrep so no real app or daemon is touched.
 #   scripts/uninstall_test.sh
 set -eu
+unset PENGUPOOL_HOME # a developer's own setting must never reach the script under test
 cd "$(dirname "$0")"
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -16,7 +17,7 @@ fail() { echo "uninstall_test: $*" >&2; exit 1; }
 # PENGUPOOL_HOME holds other files: --purge removes v2 and keeps them.
 PH="$T/home/shared"
 mkdir -p "$PH/v2/logs" && touch "$PH/v2/state.json" "$PH/keep-me"
-PENGUPOOL_HOME="$PH" run --purge
+(PENGUPOOL_HOME="$PH" run --purge) # a subshell: sh 3.2 keeps a prefix assignment after a function call
 [ -e "$PH/v2" ] && fail "v2 was not removed"
 [ -e "$PH/keep-me" ] || fail "a file beside v2 in PENGUPOOL_HOME was deleted"
 [ -e "$T/app/PenguPool AI.app" ] && fail "the app was not removed"
