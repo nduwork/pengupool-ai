@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Hardened runtime, used only when the app is signed with a Developer ID: V8 needs JIT. -->
+<!-- Hardened runtime, used only when the app is signed with a Developer ID: V8 needs JIT, and the host
+     moves files to the Trash through Finder (osascript, internal/pool/fsops.go), which sends Apple Events. -->
 <plist version="1.0">
 <dict>
   <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.automation.apple-events</key>
   <true/>
 </dict>
 </plist>
