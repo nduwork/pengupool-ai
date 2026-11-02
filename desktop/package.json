@@ -59,12 +59,16 @@
         }
       ],
       "identity": null,
-      "hardenedRuntime": false,
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "signIgnore": ["/bin/linux/"],
       "extendInfo": {
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
-        "NSLocalNetworkUsageDescription": "PenguPool AI connects to your SSH hosts on the local network."
+        "NSLocalNetworkUsageDescription": "PenguPool AI connects to your SSH hosts on the local network.",
+        "NSAppleEventsUsageDescription": "PenguPool AI asks Finder to move files you delete to the Trash."
       }
     },
     "npmRebuild": false

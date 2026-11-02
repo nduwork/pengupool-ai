@@ -49,10 +49,21 @@ cd desktop
 deps
 node build.mjs
 rm -rf dist
-npx electron-builder --mac dir --arm64 --publish never >/dev/null
+# For a release (make dist sets SIGN=1), a Developer ID identity in the keychain signs the app for
+# distribution (hardened runtime, nested code first; scripts/notarize.sh then notarizes the disk image).
+# Otherwise, and for make install, the app is signed ad hoc, which needs no network.
+SIGN_ID=
+[ "${SIGN:-}" = 1 ] && SIGN_ID=$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"Developer ID Application: \([^"]*\)".*/\1/p' | head -1)
 APP="$ROOT/desktop/dist/mac-arm64/PenguPool AI.app"
-# Ad-hoc sign the whole bundle: packaging changed it, and Apple Silicon refuses unsigned code.
-codesign --force --deep -s - "$APP" >/dev/null 2>&1 || echo "warning: ad-hoc signing failed"
+if [ -n "$SIGN_ID" ]; then
+  echo "==> signing with Developer ID Application: $SIGN_ID"
+  npx electron-builder --mac dir --arm64 --publish never -c.mac.identity="$SIGN_ID" >/dev/null
+  codesign --verify --deep --strict "$APP"
+else
+  npx electron-builder --mac dir --arm64 --publish never >/dev/null
+  # Ad-hoc sign the whole bundle: packaging changed it, and Apple Silicon refuses unsigned code.
+  codesign --force --deep -s - "$APP" >/dev/null 2>&1 || echo "warning: ad-hoc signing failed"
+fi
 cd "$ROOT"
 rm -rf "$OUT/tmp"
 echo "built $APP"
