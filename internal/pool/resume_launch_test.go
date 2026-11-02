@@ -70,8 +70,24 @@ func TestResumeKeepsModelAndReadDirs(t *testing.T) {
 	if !slices.Equal(again.ReadDirs, []string{repo, repo2}) || !slices.Equal(again.ReadDirs, first.ReadDirs) {
 		t.Fatalf("resumed read dirs %v, first start %v", again.ReadDirs, first.ReadDirs)
 	}
-	// A team-hub skill launched through a proposal (startMember) got read dirs too: resume keeps them.
-	if got := p.helperReadDirs(store.Session{TeamID: "team1111", SkillID: "sk-hub"}); !slices.Equal(got, []string{repo, repo2}) {
-		t.Fatalf("team-hub skill resume read dirs %v, want %v", got, []string{repo, repo2})
+	// A hub placed on the team (startHub) started with no read dirs, and resumes with none.
+	res, err = p.placeHelper(ctx, placeIn{TeamID: "team1111", SkillID: "sk-hub"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hubID := res.(protocol.Member).SessionID
+	if len(reqs[len(reqs)-1].ReadDirs) != 0 {
+		t.Fatalf("startHub gave read dirs %v", reqs[len(reqs)-1].ReadDirs)
+	}
+	p.setSession(hubID, func(x *store.Session) { x.State, x.Status, x.ConvID = "ended", "ended", "conv-2" })
+	if _, err := p.resume(ctx, sessionIn{SessionID: hubID}); err != nil {
+		t.Fatal(err)
+	}
+	if got := reqs[len(reqs)-1].ReadDirs; len(got) != 0 {
+		t.Fatalf("hub resumed with read dirs %v, first start had none", got)
+	}
+	// A session from before the launch was recorded falls back to startMember's rule: any skill member.
+	if got := p.resumeReadDirs(store.Session{TeamID: "team1111", SkillID: "sk-hub"}); !slices.Equal(got, []string{repo, repo2}) {
+		t.Fatalf("unrecorded skill member resume read dirs %v, want %v", got, []string{repo, repo2})
 	}
 }

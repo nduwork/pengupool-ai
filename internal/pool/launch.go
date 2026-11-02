@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -144,12 +145,11 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 	if st, err := os.Stat(r.Cwd); err != nil || !st.IsDir() {
 		return store.Session{}, invalid("workspace %s is not a directory", r.Cwd)
 	}
-	if dec, model := r.Decorate, r.Model; model != "" { // kept for a restart or a restore
-		r.Decorate = func(s *store.Session) {
-			s.LaunchModel = model
-			if dec != nil {
-				dec(s)
-			}
+	dec, model, dirs := r.Decorate, r.Model, slices.Clone(r.ReadDirs)
+	r.Decorate = func(s *store.Session) { // kept for a restart or a restore
+		s.LaunchModel, s.LaunchReadDirs, s.Launched = model, dirs, true
+		if dec != nil {
+			dec(s)
 		}
 	}
 	if p.testSpawn != nil {
@@ -400,7 +400,7 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	p.expireAsks(s.ID) // what it asked before it stopped has no one waiting: it asks again if it still needs to
 	ns, err := p.spawn(ctx, spawnReq{
 		ID: s.ID, Name: s.Name, Harness: s.Harness, Cwd: s.Cwd, Resume: resumeID, Cols: s.Cols, Rows: s.Rows, SkillID: keep.SkillID, Via: s.Via,
-		Model: keep.LaunchModel, ReadDirs: p.helperReadDirs(keep),
+		Model: keep.LaunchModel, ReadDirs: p.resumeReadDirs(keep),
 		Decorate: func(n *store.Session) {
 			n.TeamID, n.Role, n.SkillID, n.ConvID, n.Transcript = keep.TeamID, keep.Role, keep.SkillID, keep.ConvID, keep.Transcript
 			if keep.RunLog != "" {
@@ -415,7 +415,16 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	return ns.View(), nil
 }
 
-// helperReadDirs is what a team specialist (a skill helper, not a team hub) reads besides its own
+// resumeReadDirs is what s was started reading; a session from before that was recorded gets
+// startMember's rule.
+func (p *Pool) resumeReadDirs(s store.Session) []string {
+	if s.Launched {
+		return s.LaunchReadDirs
+	}
+	return p.helperReadDirs(s)
+}
+
+// helperReadDirs is what a team specialist (any skill member) reads besides its own
 // folder: the team's repositories, as startMember gives it at the start.
 func (p *Pool) helperReadDirs(s store.Session) []string {
 	if s.TeamID == "" || s.SkillID == "" {

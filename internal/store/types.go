@@ -83,6 +83,10 @@ type Session struct {
 	// LaunchModel is the model it was started with (--model; empty: the agent's default), so a
 	// restart or a restore starts it on the same model.
 	LaunchModel string `json:"launch_model,omitempty"`
+	// LaunchReadDirs is what it was started reading outside its folder, and Launched says the
+	// launch was recorded, so a resume gives back exactly that. Sessions from before have no record.
+	LaunchReadDirs []string `json:"launch_read_dirs,omitempty"`
+	Launched       bool     `json:"launched,omitempty"`
 	// Via is the launcher it runs through: "ollama" for Claude Code on Ollama; a resume uses it again.
 	Via        string    `json:"via,omitempty"`
 	JobStart   time.Time `json:"job_start,omitempty"`
