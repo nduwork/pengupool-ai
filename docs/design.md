@@ -13,8 +13,9 @@ repository. The roles:
 - **PR-review specialist**: one dedicated reviewer per repository.
 - **Research agent**: works under the Lead.
 
-In PenguPool a team is a tree of sessions, and each member's role (Lead, SME, Specialist) comes from
-its place in the tree. Members talk with `pengupool send`, only to their parent and children.
+In PenguPool a team is a tree of sessions: the Lead is its root, an SME works in a repository, and a
+Specialist comes from the Specialist pool. Members talk with `pengupool send`, only to their parent
+and children.
 
 ## 2. Why a specialist reviewer
 
@@ -63,8 +64,9 @@ jurisdiction, so no agent goes beyond what it is permitted.
 
 Provenance is structural: an agent's yes is not the owner's yes. In November 2026, for example, an
 agent's ask to create the meta-demo repository could be answered only by the owner. In PenguPool
-the Lead cannot approve, merge or change direction for the owner, and an answer on the owner's behalf
-comes only from the owner's own prompt.
+the Lead cannot approve, merge or change direction for the owner. A question is answered in the
+owner's name only from the owner: their own prompt, or their recorded decisions and Compass lines.
+Pushes, merges, releases and similar acts still come to the owner.
 
 Every consequential act traces back: owner → gateway → Lead → member → reviewer.
 
@@ -72,7 +74,7 @@ Every consequential act traces back: owner → gateway → Lead → member → r
 
 A finished job yields two things: the product, and the record of the dialogue and logs behind it. How
 the work was done can be inspected. Specialists fact-check claims, including the gateway's own account
-of what happened. In PenguPool every message between members is recorded on the team's message log.
+of what happened. In PenguPool the team's message log keeps the latest messages between members.
 
 ## 8. Notification philosophy
 
