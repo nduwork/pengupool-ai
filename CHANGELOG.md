@@ -10,6 +10,8 @@ makes two share one. Messages reach each copy by its session. Triage offers one 
 specialist and picks the copy that is idle; the owner may name any copy, and handing the work to
 any copy counts. The Add member sheet lists every specialist, including ones already on the team.
 
+Re-proposing a task whose work repository was removed reports that the repository is gone instead of crashing the host.
+
 A restarted or restored team specialist keeps the model it was started with and its read access to the team's repositories.
 
 ## 0.10.21
