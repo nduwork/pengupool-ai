@@ -760,10 +760,10 @@ func teamMemberName(t *protocol.Team, skill string, n int) string {
 // team-hub skill. It owns no repository and edits no code.
 func teamHubSkill(sk protocol.Skill) bool { return slices.Contains(sk.Capabilities, "team-hub") }
 
-// startHub starts a team-hub agent, or any specialist joining a group with no work repository, with
-// no worktree, so it can join a group with no work repository, or with several of which none is its own. It works in a scratch folder of its own,
-// <store>/work/<team>/<member>, so nothing it or its agent drops in its working directory lands in
-// its skill repository; its skills load from sk.Path (the context names it, Claude gets --plugin-dir).
+// startHub starts a team-hub agent, or a specialist joining a group with no work repository, with no
+// worktree. It works in a scratch folder of its own, <store>/work/<team>/<member>, so nothing it or its
+// agent drops in its working directory lands in its skill repository; its skills load from sk.Path
+// (the context names it, Claude gets --plugin-dir).
 func (p *Pool) startHub(ctx context.Context, team *protocol.Team, sk protocol.Skill, pm protocol.ProposedMember) (protocol.Member, error) {
 	id := protocol.NewID()
 	cwd := filepath.Join(p.workDir(team.ID), slug(pm.Name))

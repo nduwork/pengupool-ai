@@ -61,9 +61,12 @@ func (p *Pool) buildContextCap(id string, compassCap int) string {
 		fmt.Fprintf(&b, "\nYour workspace is the disposable worktree %s on branch %s. Commit your work there; the owner reviews and merges. Never merge, force-push or delete branches.", me.Worktree, me.Branch)
 	}
 	if me.SkillID != "" && me.Worktree == "" && me.Role == "helper" && !isHubSkill(&d, me.SkillID) {
-		b.WriteString("\nYou advise; you never change a team repository, and you have no worktree. When a change is needed, tell your parent which repository agent should change what. Read the team's repositories by absolute path:")
-		for _, r := range teamRepos(&d, t) {
-			fmt.Fprintf(&b, "\n- %s: %s", r.Name, r.Path)
+		b.WriteString("\nYou advise; you never change a team repository, and you have no worktree. When a change is needed, tell your parent which repository agent should change what.")
+		if repos := teamRepos(&d, t); len(repos) > 0 { // a manual group has none
+			b.WriteString(" Read the team's repositories by absolute path:")
+			for _, r := range repos {
+				fmt.Fprintf(&b, "\n- %s: %s", r.Name, r.Path)
+			}
 		}
 		b.WriteString("\nPut your temporary files in your working directory.")
 	}

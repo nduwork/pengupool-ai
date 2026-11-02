@@ -1374,6 +1374,10 @@ func TestSpecialistJoinsManualGroup(t *testing.T) {
 	if i < 0 || tm.Members[i].Worktree != "" || tm.Members[i].Parent != "web1aaaaaaaaa" {
 		t.Fatalf("members %+v", tm.Members)
 	}
+	// No repository to read, so the context lists none.
+	if ctx := p.renderContext(tm.Members[i].SessionID); strings.Contains(ctx, "Read the team's repositories") {
+		t.Fatalf("context:\n%s", ctx)
+	}
 }
 
 // agentOnPath puts an executable named claude first on PATH, for tests that place a helper on an
