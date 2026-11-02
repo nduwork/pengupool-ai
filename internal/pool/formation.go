@@ -218,7 +218,7 @@ func (p *Pool) applyFormation(ctx context.Context, a protocol.Approval) (any, er
 // own worktree.
 func (p *Pool) addMember(ctx context.Context, teamID string, c protocol.FormationChange, by string) (protocol.Member, error) {
 	if c.SkillID != "" {
-		r, err := p.placeHelper(ctx, placeIn{TeamID: teamID, SkillID: c.SkillID, Assignment: c.Assignment, Harness: c.Harness, Model: c.Model, by: by})
+		r, err := p.placeHelper(ctx, placeIn{TeamID: teamID, SkillID: c.SkillID, Assignment: c.Assignment, Harness: c.Harness, Model: c.Model, Parent: c.Parent, by: by})
 		if err != nil {
 			return protocol.Member{}, err
 		}

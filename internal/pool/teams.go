@@ -640,12 +640,13 @@ type placeIn struct {
 	Assignment string `json:"assignment,omitempty"`
 	Harness    string `json:"harness,omitempty"`
 	Model      string `json:"model,omitempty"`
+	Parent     string `json:"parent,omitempty"` // the member it goes under (dropped on that card); empty: the main member
 	by         string
 }
 
 // placeHelperRPC is the Agent pool drop: an owner formation change, approved in the same step.
 func (p *Pool) placeHelperRPC(ctx context.Context, in placeIn) (any, error) {
-	return p.teamFormation(ctx, formationIn{TeamID: in.TeamID, Change: protocol.FormationChange{Op: "add", SkillID: in.SkillID, Assignment: in.Assignment, Harness: in.Harness, Model: in.Model}})
+	return p.teamFormation(ctx, formationIn{TeamID: in.TeamID, Change: protocol.FormationChange{Op: "add", SkillID: in.SkillID, Assignment: in.Assignment, Harness: in.Harness, Model: in.Model, Parent: in.Parent}})
 }
 
 // placeHelper starts a freelancer (a skill helper) in the team, once its formation change is approved.
@@ -660,10 +661,7 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 		return nil, notFound("no active specialist %s", in.SkillID)
 	}
 	hub := teamHubSkill(*sk)
-	repo := findRepo(&d, team.RepoID)
-	if !hub && repo == nil {
-		return nil, invalid("the team has no work repository (a manual group); specialists need one")
-	}
+	repo := findRepo(&d, team.RepoID) // nil for a manual group: the specialist works in a scratch folder
 	task := protocol.Task{Title: team.Name, Objective: team.Goal}
 	if t := findTask(&d, team.TaskID); t != nil {
 		task = *t
@@ -682,13 +680,16 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	pm := protocol.ProposedMember{SkillID: sk.ID, Name: teamMemberName(team, sk.Name, copyN), Role: "helper", Assignment: assignment, Harness: ag, Model: in.Model, Copy: copyN}
 	var m protocol.Member
 	var err error
-	if hub {
+	if hub || repo == nil {
 		m, err = p.startHub(ctx, team, *sk, pm)
 	} else {
 		m, err = p.startMember(ctx, team, *repo, task, pm, headCommit(repo.Path))
 	}
 	if err != nil {
 		return nil, err
+	}
+	if slices.ContainsFunc(team.Members, func(x protocol.Member) bool { return x.SessionID == in.Parent && x.State == "active" }) {
+		m.Parent = in.Parent
 	}
 	if err := p.update(func(st *store.State) error {
 		t := findTeam(&st.Domain, in.TeamID)
@@ -759,10 +760,10 @@ func teamMemberName(t *protocol.Team, skill string, n int) string {
 // team-hub skill. It owns no repository and edits no code.
 func teamHubSkill(sk protocol.Skill) bool { return slices.Contains(sk.Capabilities, "team-hub") }
 
-// startHub starts a team-hub agent with no worktree, so it can join a group with no work
-// repository, or with several of which none is its own. It works in a scratch folder of its own,
-// <store>/work/<team>/<member>, so nothing it or its agent drops in its working directory lands in
-// its skill repository; its skills load from sk.Path (the context names it, Claude gets --plugin-dir).
+// startHub starts a team-hub agent, or a specialist joining a group with no work repository, with no
+// worktree. It works in a scratch folder of its own, <store>/work/<team>/<member>, so nothing it or its
+// agent drops in its working directory lands in its skill repository; its skills load from sk.Path
+// (the context names it, Claude gets --plugin-dir).
 func (p *Pool) startHub(ctx context.Context, team *protocol.Team, sk protocol.Skill, pm protocol.ProposedMember) (protocol.Member, error) {
 	id := protocol.NewID()
 	cwd := filepath.Join(p.workDir(team.ID), slug(pm.Name))

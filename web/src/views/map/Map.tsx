@@ -210,7 +210,7 @@ export function TeamMap(): ReactElement {
         team = t;
       }
       // Adding a member is a formation change: the owner approves it before the agent starts.
-      app.showDialog(<FormationSheet team={team} change={{ op: "add", skill_id: skill }} />);
+      app.showDialog(<FormationSheet team={team} change={{ op: "add", skill_id: skill, parent: target.id }} />);
     }
   };
 
