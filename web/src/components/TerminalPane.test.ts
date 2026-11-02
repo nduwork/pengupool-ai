@@ -118,3 +118,18 @@ describe("terminalSink", () => {
     expect(replaying.n).toBe(0);
   });
 });
+
+describe("terminalSink after user input", () => {
+  it("skips a replayed copy that xterm.js parses synchronously, as it does right after a key press", async () => {
+    const term = new Terminal({ allowProposedApi: true });
+    const replaying = { n: 0 };
+    const copied: string[] = [];
+    term.parser.registerOscHandler(52, osc52Handler(() => replaying.n === 0, (t) => copied.push(t)));
+    term.input("x", true);
+    terminalSink(term, replaying).write(new TextEncoder().encode(`old \x1b]52;c;${btoa("replayed")}\x07`), true);
+    await new Promise<void>((r) => term.write("", r));
+    expect(copied).toEqual([]);
+    expect(replaying.n).toBe(0);
+    term.dispose();
+  });
+});

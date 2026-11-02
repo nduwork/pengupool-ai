@@ -322,10 +322,15 @@ export function terminalSink(term: Pick<Terminal, "write" | "reset">, replaying:
   return {
     write: (data, replayed) => {
       if (!replayed) return term.write(data);
-      // Counted once the write is queued: a write xterm.js refuses (it throws past its pending limit)
-      // never parses, so it must not hold OSC 52 off. The callback always runs on a later tick.
-      term.write(data, () => replaying.n--);
+      // Counted before the write: right after user input xterm.js parses it synchronously, inside
+      // write(). A write it refuses (it throws past its pending limit) never parses, so it is uncounted.
       replaying.n++;
+      try {
+        term.write(data, () => replaying.n--);
+      } catch (e) {
+        replaying.n--;
+        throw e;
+      }
     },
     reset: () => term.reset(),
   };
