@@ -2,6 +2,12 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
+## 0.11.0
+
+The app is signed with a Developer ID and notarized by Apple. Download the disk image, drag PenguPool AI.app onto Applications and open it: macOS opens it without a warning, with no Gatekeeper workaround. The app and the disk image each carry their notarization ticket, so the first launch works without the network too. Installing from the disk image is now the one documented way; `make install` stays the development build (CONTRIBUTING.md).
+
+The in-app updater takes only an update signed by the same Developer ID team as the running app. Before copying the new app out of the disk image it verifies the signature and checks the team against Apple's certificate chain; an update that fails is refused, the installed app reopens, and the update log says why. An ad-hoc development build skips this check.
+
 ## 0.10.24
 
 Text an agent copies in the app's terminal now reaches the clipboard. Claude Code copies with the OSC 52 escape sequence, which the terminal dropped, so Cmd/Ctrl+V pasted whatever was copied before. The copy lands on the clipboard of the device viewing the session: in the app window and in Chrome. Safari (including iPhone), Firefox and the plain-HTTP connection refuse a clipboard write outside a click or key press; there a notice says the copy didn't reach the clipboard. A program in a session can never read the clipboard through the terminal. Switching back to a session or reconnecting never puts an old copy back on the clipboard. Other agents and tools that copy the same way (Codex, Gemini CLI, tmux or Neovim with OSC 52 on) work too.
