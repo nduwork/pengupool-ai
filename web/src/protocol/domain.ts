@@ -134,6 +134,8 @@ export interface FormationChange {
   /** add: the agent to run it on, and its model; empty: the defaults. */
   harness?: string;
   model?: string;
+  /** add, a specialist: the member it goes under; empty: the main member. */
+  parent?: string;
 }
 
 export interface Approval {

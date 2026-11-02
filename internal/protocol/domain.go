@@ -213,6 +213,7 @@ type FormationChange struct {
 	RequestedBy string `json:"requested_by,omitempty"` // a member session id; empty: the owner
 	Harness     string `json:"harness,omitempty"`      // add: the agent to run it on; empty: the helper's default
 	Model       string `json:"model,omitempty"`        // add: the model; empty: the agent's default
+	Parent      string `json:"parent,omitempty"`       // add (specialist): the member it goes under; empty: the main member
 }
 
 // TeamMessage is one routed message between members of one team.

@@ -1332,6 +1332,50 @@ func TestHubAgentJoinsAsHelper(t *testing.T) {
 	}
 }
 
+// A specialist that works in a repository joins a group with no work repository too: in a scratch
+// folder with no worktree, under the card it was dropped on.
+func TestSpecialistJoinsManualGroup(t *testing.T) {
+	agentOnPath(t)
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := hub.New(hub.Options{Store: st, Executable: os.Args[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(Options{Store: st, Hub: h, Exe: "pengupool"})
+	p.testSpawn = func(r spawnReq) (store.Session, error) {
+		s := store.Session{ID: r.ID, Name: r.Name, Harness: r.Harness, Cwd: r.Cwd, State: "running", Status: "starting"}
+		if r.Decorate != nil {
+			r.Decorate(&s)
+		}
+		return s, st.Update(func(x *store.State) error { x.Sessions = append(x.Sessions, s); return nil })
+	}
+	ctx := context.Background()
+	_ = st.Update(func(s *store.State) error {
+		for _, n := range []string{"gcp", "web"} {
+			s.Sessions = append(s.Sessions, store.Session{ID: n + "1aaaaaaaaa", Name: n, Harness: "claude", State: "running", Status: "working"})
+		}
+		s.Domain.Skills = []protocol.Skill{{ID: "rev", Name: "pr-review-agent", Path: t.TempDir()}}
+		return nil
+	})
+	res, err := p.teamCreate(ctx, teamCreateIn{Name: "app", SessionIDs: []string{"gcp1aaaaaaaaa", "web1aaaaaaaaa"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	team := res.(protocol.Team)
+	if _, err := p.placeHelperRPC(ctx, placeIn{TeamID: team.ID, SkillID: "rev", Parent: "web1aaaaaaaaa"}); err != nil {
+		t.Fatal(err)
+	}
+	d := st.State().Domain
+	tm := findTeam(&d, team.ID)
+	i := slices.IndexFunc(tm.Members, func(m protocol.Member) bool { return m.SkillID == "rev" })
+	if i < 0 || tm.Members[i].Worktree != "" || tm.Members[i].Parent != "web1aaaaaaaaa" {
+		t.Fatalf("members %+v", tm.Members)
+	}
+}
+
 // agentOnPath puts an executable named claude first on PATH, for tests that place a helper on an
 // installed agent: a CI runner has none.
 func agentOnPath(t *testing.T) {
