@@ -75,6 +75,23 @@ func (p *Pool) permissionsMoved(w store.AgentPermission) bool {
 	return slices.ContainsFunc(w.Lines, func(l string) bool { return !slices.Contains(want, l) })
 }
 
+// permissionsAdded are the agent's rules this version allows that the owner's recorded yes does not
+// cover (the list grew since). They are shown, never written on their own: a wider grant needs the
+// owner to turn the switch off and on.
+func (p *Pool) permissionsAdded(agent string, w store.AgentPermission) []string {
+	want := harness.ClaudeRules(p.exe)
+	if agent == harness.Codex {
+		want = harness.CodexRules(p.exe)
+	}
+	var out []string
+	for _, l := range want {
+		if !slices.Contains(w.Lines, l) {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 // refreshAgentPermissions runs at start with the owner's consent already given: it rewrites
 // PenguPool's own lines when the app has moved, so no stale rule for an old path stays behind, and
 // tries again an agent whose rules could not be written.
@@ -108,6 +125,9 @@ func (p *Pool) agentPermissionsView() map[string]any {
 				v["error"] = err.Error()
 			} else if len(miss) > 0 {
 				v["changed"] = miss // removed outside PenguPool; turning it off and on writes them again
+			}
+			if added := p.permissionsAdded(a, w); len(added) > 0 {
+				v["added"] = added // commands PenguPool allows since the owner said yes: never written without a new yes
 			}
 		}
 		p.mu.Lock()

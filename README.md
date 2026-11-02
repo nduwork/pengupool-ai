@@ -112,7 +112,7 @@ source instead, see [CONTRIBUTING.md](CONTRIBUTING.md).
 1. **Open the app.** The empty Workspace shows Welcome with a short Setup card.
 2. **Set a decision model.** PenguPool needs a System One triage model, local (Ollama) or online. In
    Settings → Decision model: pick it, **Save**, **Check connection**, then **Use for triage**.
-3. **Decide agent permissions.** Settings → Agents → Agent permissions lets agents run four PenguPool
+3. **Decide agent permissions.** Settings → Agents → Agent permissions lets agents run PenguPool's
    team commands without a prompt, or keep asking. Either choice is fine.
 4. **Start with Muse Code.** Choose *Start in a folder*, select a small demo repository and pick Muse
    Code. Ask it to inspect the project and propose one small improvement, with a clear question for you

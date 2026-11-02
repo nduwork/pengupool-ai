@@ -18,8 +18,14 @@ import (
 // Agent permissions: with the owner's consent per agent, PenguPool writes rules into that agent's own
 // global configuration so PenguPool's team commands run without a permission prompt, in and outside
 // PenguPool. Only these fixed commands, never a floor action, experience import, kill or a whole
-// command group; the host still checks every call (who may message whom).
-var CLIAllowed = [][]string{{"send"}, {"search"}, {"experience", "search"}, {"experience", "show"}}
+// command group; the host still checks every call: who may message whom, an ask only from its own
+// session, an answer only in a turn the owner's own prompt opened, a team change only as a request
+// the owner approves. `compass word` stays out: the prompt is the owner's one look at a line before
+// it binds every agent.
+var CLIAllowed = [][]string{
+	{"send"}, {"search"}, {"experience", "search"}, {"experience", "show"},
+	{"ask"}, {"answer"}, {"decide"}, {"team", "request", "add"}, {"team", "request", "remove"},
+}
 
 // PermissionAgents are the agents PenguPool writes rules for. The others, with why:
 var PermissionAgents = []string{Claude, Codex}

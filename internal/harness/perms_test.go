@@ -32,7 +32,7 @@ func TestClaudeRulesMergeAndRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(w.Lines) != 4 || len(w.Created) != 0 {
+	if len(w.Lines) != len(CLIAllowed) || len(w.Created) != 0 {
 		t.Fatalf("write = %+v", w)
 	}
 	b, _ := os.ReadFile(f)
@@ -61,7 +61,7 @@ func TestClaudeRulesMergeAndRemove(t *testing.T) {
 	}
 	// a later write keeps the first backup: the user's file before PenguPool
 	os.WriteFile(f, []byte(strings.Replace(string(must(os.ReadFile(f))), "opus", "sonnet", 1)), 0o644)
-	if w3, err := WritePermissions(Claude, f, "/Other/pengupool"); err != nil || len(w3.Lines) != 4 {
+	if w3, err := WritePermissions(Claude, f, "/Other/pengupool"); err != nil || len(w3.Lines) != len(CLIAllowed) {
 		t.Fatalf("third write = %+v %v", w3, err)
 	} else {
 		RemovePermissions(Claude, w3)
@@ -141,7 +141,7 @@ func TestClaudeRulesPathMoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := string(must(os.ReadFile(f)))
-	if strings.Contains(b, "Old Place") || strings.Count(b, testExe) != 4 || !strings.Contains(b, "npm run test") {
+	if strings.Contains(b, "Old Place") || strings.Count(b, testExe) != len(CLIAllowed) || !strings.Contains(b, "npm run test") {
 		t.Fatalf("after the move:\n%s", b)
 	}
 }
@@ -168,9 +168,11 @@ func claudeAllows(rules []string, cmd string) bool {
 	return true
 }
 
-var allowedCmds = [][]string{{"send", "--to", "01a1", "hi"}, {"search", "triage"}, {"experience", "search", "x"}, {"experience", "show", "3"}}
+var allowedCmds = [][]string{{"send", "--to", "01a1", "hi"}, {"search", "triage"}, {"experience", "search", "x"}, {"experience", "show", "3"},
+	{"ask", "--owner-only", "q"}, {"ask", "--wait", "01a1"}, {"answer", "01a1", "--option", "2"}, {"decide", "--file", "pack.json"},
+	{"team", "request", "add", "--skill", "research-agent"}, {"team", "request", "remove", "pr-review-agent", "--reason", "done"}}
 
-// The rules allow the four commands in the spelling agents are told, and nothing else.
+// The rules allow the team commands in the spelling agents are told, and nothing else.
 func TestClaudeRulesScope(t *testing.T) {
 	rules := ClaudeRules(testExe)
 	q := "'" + testExe + "'"
@@ -184,7 +186,12 @@ func TestClaudeRulesScope(t *testing.T) {
 		"pengupool send --to x hi",
 		q + " experience import f",
 		q + " kill s1",
-		q + " ask --owner-only q",
+		q + " compass word --none",
+		q + " team delete t1",
+		q + " team",
+		q + " new --harness claude",
+		q + ` ask q && git push`,
+		q + ` team request add --skill x; rm -rf ~`,
 		q + " sendx",
 		q + ` send --to x hi && git push`,
 		q + ` send --to x "$(cat ~/.ssh/id_rsa)"`,
@@ -205,7 +212,7 @@ func TestClaudeRulesScope(t *testing.T) {
 func TestCodexRules(t *testing.T) {
 	f := filepath.Join(t.TempDir(), "codex", "rules", "pengupool.rules")
 	w, err := WritePermissions(Codex, f, testExe)
-	if err != nil || len(w.Lines) != 4 {
+	if err != nil || len(w.Lines) != len(CLIAllowed) {
 		t.Fatalf("write = %+v %v", w, err)
 	}
 	if bin, err := exec.LookPath("codex"); err == nil {

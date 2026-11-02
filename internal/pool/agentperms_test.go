@@ -2,6 +2,8 @@ package pool
 
 import (
 	"fmt"
+	"github.com/nduwork/pengupool-ai/internal/harness"
+	"github.com/nduwork/pengupool-ai/internal/store"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,7 +49,7 @@ func TestAgentPermissions(t *testing.T) {
 	if _, err := os.Stat(codex); err != nil {
 		t.Fatal(err)
 	}
-	if rec := st.Config().AgentPermissions; len(rec["claude"].Lines) != 4 || len(rec["codex"].Lines) != 4 {
+	if rec := st.Config().AgentPermissions; len(rec["claude"].Lines) != len(harness.CLIAllowed) || len(rec["codex"].Lines) != len(harness.CLIAllowed) {
 		t.Fatalf("record %+v", rec)
 	}
 
@@ -63,7 +65,7 @@ func TestAgentPermissions(t *testing.T) {
 	p.exe = "/Applications/New Place/pengupool"
 	p.refreshAgentPermissions()
 	b, _ = os.ReadFile(claude)
-	if strings.Contains(string(b), "PenguPool AI.app") || strings.Count(string(b), p.exe) != 4 {
+	if strings.Contains(string(b), "PenguPool AI.app") || strings.Count(string(b), p.exe) != len(harness.CLIAllowed) {
 		t.Fatalf("after the move:\n%s", b)
 	}
 	if c, _ := os.ReadFile(codex); strings.Contains(string(c), "PenguPool AI.app") {
@@ -106,5 +108,36 @@ func TestAgentPermissions(t *testing.T) {
 	}
 	if c := st.Config(); len(c.AgentPermissions) != 0 || c.AgentPermissionsChoice != "off" {
 		t.Fatalf("record left %+v", c)
+	}
+}
+
+// A yes given before the list grew covers only the commands it was given for: the new ones are shown
+// as added, and the start-up refresh does not write them without a new yes.
+func TestAgentPermissionsListGrew(t *testing.T) {
+	home := t.TempDir()
+	p, st := twoTeams(t)
+	p.env = []string{"HOME=" + home} // never the real home
+	p.exe = "/Applications/PenguPool AI.app/Contents/Resources/bin/pengupool"
+	p.setAgentPermissions("allowed")
+	// What an earlier version recorded: the first four commands only.
+	if err := st.UpdateConfig(func(c *store.Config) error {
+		for a, r := range c.AgentPermissions {
+			r.Lines = r.Lines[:4]
+			c.AgentPermissions[a] = r
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p.refreshAgentPermissions()
+	for _, a := range harness.PermissionAgents {
+		if got := st.Config().AgentPermissions[a].Lines; len(got) != 4 {
+			t.Fatalf("%s: refresh widened the yes to %d lines", a, len(got))
+		}
+		v := p.agentPermissionsView()["agents"].(map[string]any)[a].(map[string]any)
+		added, _ := v["added"].([]string)
+		if len(added) != len(harness.CLIAllowed)-4 || !strings.Contains(strings.Join(added, " "), "ask") {
+			t.Fatalf("%s: added = %v", a, v["added"])
+		}
 	}
 }

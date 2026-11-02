@@ -1032,7 +1032,7 @@ function Agents(): ReactElement {
 
 interface AgentPermsView {
   choice: "" | "allowed" | "off";
-  agents: Record<string, { on: boolean; file: string; lines?: string[]; changed?: string[]; error?: string }>;
+  agents: Record<string, { on: boolean; file: string; lines?: string[]; changed?: string[]; added?: string[]; error?: string }>;
   commands: string[];
   /** The executable as the rules name it, shell-quoted. */
   cli: string;
@@ -1058,6 +1058,8 @@ function AgentPermissions(): ReactElement | null {
         ? [a.error, "not written", "danger" as const]
         : (a.changed ?? []).length > 0
           ? [`${a.changed?.length ?? 0} of PenguPool's lines were removed from ${a.file} outside PenguPool, so those commands ask again. Turn this off and on to write them again.`, "changed", "warning" as const]
+          : (a.added ?? []).length > 0
+            ? [`${a.added?.length ?? 0} commands were added to the list since you turned this on, and still ask. Turn this off and on to include them.`, "new commands", "warning" as const]
           : [`${n} rules in ${a.file}${id === "claude" ? " (permissions.allow)" : ""}.`, "global", "success" as const];
     return (
       <Row title={label} hint={hint}>
@@ -1070,8 +1072,9 @@ function AgentPermissions(): ReactElement | null {
     <div>
       <h3 className="mb-2 text-label font-semibold">Agent permissions</h3>
       <p className="mb-2 text-label text-muted-foreground">
-        Agents in a team message each other and look up past work with PenguPool&apos;s command-line tool. Each call can stop on the agent&apos;s own permission prompt. You can let agents run these
-        four commands without that prompt. PenguPool still checks who may message whom.
+        Agents in a team message each other, ask you questions and look up past work with PenguPool&apos;s command-line tool. Each call can stop on the agent&apos;s own permission prompt. You can let
+        agents run the commands below without that prompt. PenguPool still checks every call: who may message whom, that only your own prompt answers a question, and that a team change waits
+        for your approval.
       </p>
       <Card className="px-4">
         <Row
@@ -1090,7 +1093,7 @@ function AgentPermissions(): ReactElement | null {
               if (r === undefined) return;
               const failed = Object.entries(r.agent_permissions ?? {}).filter(([, x]) => !x.ok);
               if (failed.length > 0) toast.error(failed.map(([a, x]) => `${AGENTS.find((g) => g.id === a)?.label ?? a}: ${x.error ?? "not written"}`).join(" "));
-              else toast.success(on ? "Agents may run the four PenguPool commands without asking." : "Agents will ask again.");
+              else toast.success(on ? "Agents may run PenguPool's team commands without asking." : "Agents will ask again.");
             }}
           />
         </Row>
@@ -1112,7 +1115,7 @@ function AgentPermissions(): ReactElement | null {
         >
           {null}
         </Row>
-        <Row title="Never included" hint="Push, merge, release, delete, and every other command still ask, as they do today. So does a command that chains one of the four with anything else.">
+        <Row title="Never included" hint="Push, merge, release, delete, writing your Compass, and every other command still ask, as they do today. So does a command that chains one of these with anything else.">
           <Lock className="size-3.5 text-muted-foreground" aria-hidden />
         </Row>
         {written("claude", "Claude Code")}
