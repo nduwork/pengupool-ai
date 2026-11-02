@@ -507,36 +507,37 @@ const HTTP_WARNING = "Plain HTTP over the tailnet: traffic is WireGuard-encrypte
 function Tailscale(): ReactElement {
   const app = useApp();
   const [n, setN] = useState(0);
+  const [switching, setSwitching] = useState(false); // one Serve switch at a time: a second click would queue behind it and time out
   const s = useSettings(n);
   if (s === null) return <p className="text-label text-faint">Loading…</p>;
+  const serve = async (params: Record<string, unknown>, done: (r: Record<string, string>) => void): Promise<void> => {
+    setSwitching(true);
+    try {
+      const r = await app.call<Record<string, string>>("settings.save", params);
+      if (r !== undefined) done(r);
+    } finally {
+      setSwitching(false);
+      setN((x) => x + 1);
+    }
+  };
   return (
     <div>
       <H title="Tailscale">Paired devices reach this machine anywhere, over your private tailnet. PenguPool never uses Funnel.</H>
       <Card className="mb-4 px-4">
         <Row title="Tailscale" hint={s.tailscale_name !== undefined ? `This machine is ${s.tailscale_name} on your tailnet. Serve uses your private tailnet only, never Funnel.` : s.tailscale_error}>
           <Button
-            disabled={s.tailscale_name === undefined}
-            onClick={async () => {
-              const r = await app.call<Record<string, string>>("settings.save", {
-                tailscale: `https://${s.tailscale_name}`,
-                enable_serve_https: true,
-              });
-              if (r !== undefined) toast(r.serve_error ?? (r.serve || "Tailscale Serve enabled"));
-              setN(n + 1);
-            }}
+            disabled={s.tailscale_name === undefined || switching}
+            onClick={() =>
+              serve({ tailscale: `https://${s.tailscale_name}`, enable_serve_https: true }, (r) => toast(r.serve_error ?? (r.serve || "Tailscale Serve enabled")))
+            }
           >
             {s.network.tailscale !== undefined && s.network.tailscale !== "" && !s.network.tailscale.startsWith("http://") ? "Serving" : "Serve over HTTPS"}
           </Button>
           <Button
-            disabled={s.tailscale_name === undefined}
-            onClick={async () => {
-              const r = await app.call<Record<string, string>>("settings.save", {
-                tailscale: `http://${s.tailscale_name}`,
-                enable_serve_http: true,
-              });
-              if (r !== undefined) toast(r.serve_http_error ?? `Tailscale Serve (HTTP) enabled. ${HTTP_WARNING}`);
-              setN(n + 1);
-            }}
+            disabled={s.tailscale_name === undefined || switching}
+            onClick={() =>
+              serve({ tailscale: `http://${s.tailscale_name}`, enable_serve_http: true }, (r) => toast(r.serve_http_error ?? `Tailscale Serve (HTTP) enabled. ${HTTP_WARNING}`))
+            }
           >
             {s.network.tailscale !== undefined && s.network.tailscale.startsWith("http://") ? "Serving (HTTP)" : "Serve over HTTP"}
           </Button>

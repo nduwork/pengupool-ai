@@ -666,9 +666,10 @@ func probeServeMode(ctx context.Context, mode serveMode) error {
 	return serveProbe(ctx, string(mode)+"://"+name+"/")
 }
 
-// serveOff turns off Serve in one mode (20 s).
+// serveOff turns off Serve in one mode (20 s of its own). It outlives a cancelled click (a page
+// reload mid-switch): stopping halfway would leave both modes up.
 func serveOff(ctx context.Context, mode serveMode) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
 	raw, err := tailscaleCmd(ctx, tailscaleBin(), "serve", mode.flag(), "off")
 	return strings.TrimSpace(string(raw)), err
