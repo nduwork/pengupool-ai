@@ -6,6 +6,8 @@ Every PenguPool AI release, newest first. Each entry describes that release as i
 
 Settings → Tailscale switches Serve between HTTP and HTTPS. *Serve over HTTP* turns off PenguPool's own HTTPS route once HTTP serves, so the two no longer both serve. *Serve over HTTPS* now works from HTTP: it serves HTTPS, then turns off PenguPool's own HTTP route. The old mode is turned off only after the new address answers; a 502, a refused connection or a TLS error keeps the old mode up. Another app's route on either port is never touched. If HTTPS cannot start (no certificates on the tailnet), HTTP stays up with its address, and the error is shown.
 
+Tailscale Serve no longer answers 502 after a login or restart until the next click. At start-up the daemon keeps retrying, with backoff for about 2 minutes, until its listener is bound and tailscaled answers. Then it re-points PenguPool's own stale route. Before, it gave up after 2 s, or after one try when tailscaled was not up yet.
+
 ## 0.10.22
 
 A specialist can join a team more than once, each copy in its own session. A further copy gets

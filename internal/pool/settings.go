@@ -274,6 +274,8 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 	// not answer, its undo modes instead (a new mode that had no PenguPool route before the click).
 	// Never guess a port: Serve at a port nothing listens on fails silently for every remote client.
 	runServe := func(key string, click bool, plan func(port string) (modes, off, undo []serveMode, err error)) {
+		p.serveMu.Lock() // one Serve change at a time: a click never interleaves with the heal
+		defer p.serveMu.Unlock()
 		port := boundPort()
 		if port == "" {
 			res[key+"_error"] = "daemon HTTP port is not bound yet; try again in a moment"
@@ -630,7 +632,8 @@ var serveProbe = func(ctx context.Context, url string) error {
 	budget := 20 * time.Second
 	if strings.HasPrefix(url, "https://") {
 		// The first HTTPS request waits for the certificate to be issued. 45 s keeps a whole switch
-		// (status 2×10 s, serve 20 s, this, off 20 s) inside the client's 120 s call.
+		// (status 2×10 s, serve 20 s, this, off 20 s) inside the client's 120 s call: 115 s of 120 s.
+		// Any step added to a switch must fit the 5 s left, or take time from this budget.
 		budget = 45 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(ctx, budget)
@@ -814,39 +817,68 @@ func serveOnce(ctx context.Context, mode serveMode, port string) (out, approveUR
 	return out, "", err
 }
 
+// healBudget bounds how long HealTailscaleServe waits, in wall time, for the listener and
+// tailscaled; healNow and healSleep are its clock. Tests fake both.
+var (
+	healBudget = 2 * time.Minute
+	healNow    = time.Now
+	healSleep  = func(ctx context.Context, d time.Duration) {
+		select {
+		case <-ctx.Done():
+		case <-time.After(d):
+		}
+	}
+)
+
 // HealTailscaleServe re-runs Serve when a Serve target PenguPool configured is
 // not this daemon's bound port (e.g. after a restart onto a new port). Each mode
 // keeps its mode; another app's route is never touched; when nothing is
 // configured there is nothing to heal. Only for the
-// owner's real home; never for throwaway stores.
-func (p *Pool) HealTailscaleServe() {
-	cfg := p.st.Config()
-	if cfg.Network.Tailscale == "" || !store.IsHomeDefault(p.st.Dir()) {
+// owner's real home; never for throwaway stores. It stops when ctx ends.
+func (p *Pool) HealTailscaleServe(ctx context.Context) {
+	if cfg := p.st.Config(); cfg.Network.Tailscale == "" || !store.IsHomeDefault(p.st.Dir()) {
 		return
 	}
-	// cmdDaemon launches this before the gateway listener exists, and
-	// boundPort() stays "" until it binds. Wait for the bound address
-	// the way the hub.addr writer in cmdDaemon does; Heal runs in its
-	// own goroutine, so the bounded wait blocks nothing. If the
-	// listener never reports an address, there is nothing to heal.
-	port := ""
-	for range 200 {
-		if port = boundPort(); port != "" {
+	// cmdDaemon launches this before the gateway listener exists, and at login tailscaled may not
+	// be up yet. Either way a stale route answers 502 until something re-points it, so wait, with
+	// backoff, for both the bound port and a readable Serve status, up to healBudget of wall time.
+	// Heal runs in its own goroutine, so the wait blocks nothing.
+	var port, bin string
+	start := healNow()
+	for delay := 50 * time.Millisecond; ; delay = min(delay*2, 10*time.Second) {
+		if ctx.Err() != nil {
+			return
+		}
+		ok := false
+		if port, bin = boundPort(), tailscaleBin(); port != "" && bin != "" {
+			_, _, ok = currentServeTargets(ctx, bin)
+		}
+		if ok {
 			break
 		}
-		time.Sleep(10 * time.Millisecond)
+		if healNow().Sub(start)+delay > healBudget {
+			switch {
+			case port == "":
+				p.logf("pool: tailscale serve heal skipped: daemon HTTP port not bound")
+			case bin == "":
+				p.logf("pool: tailscale serve heal skipped: tailscale not found")
+			default:
+				p.logf("pool: tailscale serve heal skipped: tailscale serve status unreadable for %s", healBudget)
+			}
+			return
+		}
+		healSleep(ctx, delay)
 	}
-	if port == "" {
-		p.logf("pool: tailscale serve heal skipped: daemon HTTP port not bound")
+	// Under the Serve lock, from a fresh read: a click during the wait may have switched the mode,
+	// and the heal must not bring the old one back.
+	p.serveMu.Lock()
+	defer p.serveMu.Unlock()
+	httpsTarget, httpTarget, ok := currentServeTargets(ctx, bin)
+	if !ok {
 		return
 	}
-	bin := tailscaleBin()
-	if bin == "" {
-		return
-	}
-	httpsTarget, httpTarget, ok := currentServeTargets(context.Background(), bin)
-	httpsTarget, httpTarget = ownServeTargets(httpsTarget, httpTarget, cfg.Network.ServePort, port)
-	if !ok || (httpsTarget == "" && httpTarget == "") {
+	httpsTarget, httpTarget = ownServeTargets(httpsTarget, httpTarget, p.st.Config().Network.ServePort, port)
+	if httpsTarget == "" && httpTarget == "" {
 		return
 	}
 	want := "127.0.0.1:" + port
@@ -858,7 +890,7 @@ func (p *Pool) HealTailscaleServe() {
 		if target == "" || target == want {
 			continue
 		}
-		if out, approve, err := serveOnce(context.Background(), mode, port); err != nil && approve == "" {
+		if out, approve, err := serveOnce(ctx, mode, port); err != nil && approve == "" {
 			p.logf("pool: tailscale serve re-point failed: %v (%s)", err, out)
 		} else if approve != "" {
 			p.logf("pool: tailscale serve needs approval in the admin console")
