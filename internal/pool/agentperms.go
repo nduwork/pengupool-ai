@@ -13,6 +13,10 @@ import (
 func (p *Pool) setAgentPermissions(choice string) map[string]any {
 	_ = p.st.UpdateConfig(func(cfg *store.Config) error {
 		cfg.AgentPermissionsChoice = choice
+		cfg.AgentPermissionsGrant = nil
+		if choice == "allowed" { // the owner's yes covers the list as it is now
+			cfg.AgentPermissionsGrant = harness.Grant()
+		}
 		return nil
 	})
 	out := map[string]any{}
@@ -29,7 +33,8 @@ func (p *Pool) setAgentPermission(agent string, on bool) map[string]any {
 	var why string
 	_ = p.st.UpdateConfig(func(cfg *store.Config) error {
 		old, had := cfg.AgentPermissions[agent]
-		if had && on && !p.permissionsMoved(old) {
+		grant := p.grant(cfg)
+		if had && on && !p.permissionsMoved(old, grant) {
 			return nil
 		}
 		if had {
@@ -42,7 +47,7 @@ func (p *Pool) setAgentPermission(agent string, on bool) map[string]any {
 		if !on {
 			return nil
 		}
-		w, err := harness.WritePermissions(agent, harness.PermissionFile(agent, p.env), p.exe)
+		w, err := harness.WritePermissions(agent, harness.PermissionFile(agent, p.env), p.exe, grant...)
 		if err != nil {
 			why = err.Error()
 			return nil
@@ -69,10 +74,50 @@ func (p *Pool) setAgentPermission(agent string, on bool) map[string]any {
 	return map[string]any{"ok": true}
 }
 
-// permissionsMoved: a recorded line is not a rule for this executable (the app moved or updated).
-func (p *Pool) permissionsMoved(w store.AgentPermission) bool {
-	want := append(harness.ClaudeRules(p.exe), harness.CodexRules(p.exe)...)
+// permissionsMoved: a recorded line is not a rule of the grant for this executable (the app moved
+// or updated).
+func (p *Pool) permissionsMoved(w store.AgentPermission, grant []string) bool {
+	want := append(harness.ClaudeRules(p.exe, grant...), harness.CodexRules(p.exe, grant...)...)
 	return slices.ContainsFunc(w.Lines, func(l string) bool { return !slices.Contains(want, l) })
+}
+
+// grant is what the owner's yes covers: the recorded grant, or for a yes from before it was recorded,
+// the commands its rules allow (the old list when no agent's rules were written).
+func (p *Pool) grant(cfg *store.Config) []string {
+	if len(cfg.AgentPermissionsGrant) > 0 {
+		return cfg.AgentPermissionsGrant
+	}
+	var g []string
+	for _, a := range harness.PermissionAgents {
+		if w, ok := cfg.AgentPermissions[a]; ok {
+			for _, c := range harness.GrantOf(a, w.Lines) {
+				if !slices.Contains(g, c) {
+					g = append(g, c)
+				}
+			}
+		}
+	}
+	if len(g) == 0 {
+		g = harness.GrantOf("", nil)
+	}
+	return g
+}
+
+// permissionsAdded are the agent's rules this version allows that the owner's recorded yes does not
+// cover (the list grew since). They are shown, never written on their own: a wider grant needs the
+// owner to turn the switch off and on.
+func (p *Pool) permissionsAdded(agent string, w store.AgentPermission) []string {
+	want := harness.ClaudeRules(p.exe)
+	if agent == harness.Codex {
+		want = harness.CodexRules(p.exe)
+	}
+	var out []string
+	for _, l := range want {
+		if !slices.Contains(w.Lines, l) {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // refreshAgentPermissions runs at start with the owner's consent already given: it rewrites
@@ -84,7 +129,7 @@ func (p *Pool) refreshAgentPermissions() {
 		return
 	}
 	for _, agent := range harness.PermissionAgents {
-		if w, ok := cfg.AgentPermissions[agent]; ok && !p.permissionsMoved(w) {
+		if w, ok := cfg.AgentPermissions[agent]; ok && !p.permissionsMoved(w, p.grant(&cfg)) {
 			continue
 		}
 		if r := p.setAgentPermission(agent, true); r["ok"] != true {
@@ -108,6 +153,9 @@ func (p *Pool) agentPermissionsView() map[string]any {
 				v["error"] = err.Error()
 			} else if len(miss) > 0 {
 				v["changed"] = miss // removed outside PenguPool; turning it off and on writes them again
+			}
+			if added := p.permissionsAdded(a, w); len(added) > 0 {
+				v["added"] = added // commands PenguPool allows since the owner said yes: never written without a new yes
 			}
 		}
 		p.mu.Lock()

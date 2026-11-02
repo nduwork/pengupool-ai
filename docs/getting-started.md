@@ -55,8 +55,10 @@ checking again. Until a model is in use, a banner says so and memory work waits.
 
 Agents in a team message each other and search past work with PenguPool's command-line tool, and
 each call can stop on the agent's own permission prompt. Settings → Agents → **Agent permissions** lets
-Claude Code and Codex run four commands without asking: `send`, `search`, `experience search` and
-`experience show`. Nothing else is included. Turning it off removes exactly what PenguPool wrote.
+Claude Code and Codex run PenguPool's team commands without asking: `send`, `search`, `experience
+search`, `experience show`, `ask`, `answer`, `decide`, `team request add`, `team request remove` and
+`compass word`.
+Nothing else is included; PenguPool still checks every call. Turning it off removes exactly what PenguPool wrote.
 Details: [Agents (harnesses)](harnesses.md#agent-permissions).
 
 ## Start your first session

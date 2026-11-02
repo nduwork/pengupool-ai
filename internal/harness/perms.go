@@ -18,8 +18,87 @@ import (
 // Agent permissions: with the owner's consent per agent, PenguPool writes rules into that agent's own
 // global configuration so PenguPool's team commands run without a permission prompt, in and outside
 // PenguPool. Only these fixed commands, never a floor action, experience import, kill or a whole
-// command group; the host still checks every call (who may message whom).
-var CLIAllowed = [][]string{{"send"}, {"search"}, {"experience", "search"}, {"experience", "show"}}
+// command group; the host still checks every call: who may message whom, an ask only from its own
+// session, an answer only in a turn the owner's own prompt opened, a team change only as a request
+// the owner approves, a Compass wording only from the session PenguPool asked, once, checked as any line.
+var CLIAllowed = [][]string{
+	{"send"}, {"search"}, {"experience", "search"}, {"experience", "show"},
+	{"ask"}, {"answer"}, {"decide"}, {"team", "request", "add"}, {"team", "request", "remove"}, {"compass", "word"},
+}
+
+// legacyGrant is the list before the owner's yes was recorded with it: what an older "allowed" covers.
+var legacyGrant = []string{"send", "search", "experience search", "experience show"}
+
+// Grant is CLIAllowed as the owner's yes records it, one command per string.
+func Grant() []string {
+	out := make([]string, len(CLIAllowed))
+	for i, c := range CLIAllowed {
+		out[i] = strings.Join(c, " ")
+	}
+	return out
+}
+
+// GrantOf is the commands an older record's lines allow, for a yes recorded before its grant was:
+// the commands of CLIAllowed whose rule (for any path) is among lines; with no lines, the old list.
+func GrantOf(agent string, lines []string) []string {
+	if len(lines) == 0 {
+		return slices.Clone(legacyGrant)
+	}
+	var out []string
+	for _, l := range lines {
+		if c := ruleCommand(agent, l); c != "" && slices.Contains(Grant(), c) && !slices.Contains(out, c) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// ruleCommand is the subcommand a rule PenguPool wrote allows ("experience search"), or "".
+func ruleCommand(agent, line string) string {
+	switch agent {
+	case Claude: // Bash('<exe>' <cmd> *): the command follows the quoted path, which ends in "' "
+		body, ok := strings.CutPrefix(line, "Bash(")
+		if body, ok = strings.CutSuffix(body, " *)"); !ok {
+			return ""
+		}
+		if i := strings.LastIndex(body, "' "); i >= 0 {
+			return body[i+2:]
+		}
+	case Codex: // prefix_rule(pattern=["<exe>", "a", "b"], decision="allow")
+		rest, ok := strings.CutPrefix(line, "prefix_rule(pattern=[")
+		if !ok {
+			return ""
+		}
+		var toks []string
+		for {
+			q, err := strconv.QuotedPrefix(rest)
+			if err != nil {
+				return ""
+			}
+			t, _ := strconv.Unquote(q)
+			toks = append(toks, t)
+			rest = strings.TrimPrefix(rest[len(q):], ", ")
+			if strings.HasPrefix(rest, "]") {
+				break
+			}
+		}
+		if len(toks) > 1 {
+			return strings.Join(toks[1:], " ")
+		}
+	}
+	return ""
+}
+
+// grantCommands turns a grant back into argv words, keeping CLIAllowed's order and nothing outside it.
+func grantCommands(grant []string) [][]string {
+	var out [][]string
+	for _, c := range CLIAllowed {
+		if slices.Contains(grant, strings.Join(c, " ")) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
 
 // PermissionAgents are the agents PenguPool writes rules for. The others, with why:
 var PermissionAgents = []string{Claude, Codex}
@@ -32,20 +111,29 @@ var PermissionNotWritten = map[string]string{
 }
 
 // ClaudeRules are Claude Code Bash rules: this executable shell-quoted exactly as agents are told to
-// run it, then the subcommand.
-func ClaudeRules(exe string) []string {
+// run it, then the subcommand; for the whole list, or with a grant, only for its commands.
+func ClaudeRules(exe string, grant ...string) []string {
+	cmds := CLIAllowed
+	if len(grant) > 0 {
+		cmds = grantCommands(grant)
+	}
 	q := shellQuote(exe)
-	out := make([]string, len(CLIAllowed))
-	for i, c := range CLIAllowed {
+	out := make([]string, len(cmds))
+	for i, c := range cmds {
 		out[i] = "Bash(" + q + " " + strings.Join(c, " ") + " *)"
 	}
 	return out
 }
 
-// CodexRules are Codex prefix rules, one line each: argv tokens, so the path is one token, unquoted.
-func CodexRules(exe string) []string {
-	out := make([]string, len(CLIAllowed))
-	for i, c := range CLIAllowed {
+// CodexRules are Codex prefix rules, one line each: argv tokens, so the path is one token, unquoted;
+// with a grant, only for its commands.
+func CodexRules(exe string, grant ...string) []string {
+	cmds := CLIAllowed
+	if len(grant) > 0 {
+		cmds = grantCommands(grant)
+	}
+	out := make([]string, len(cmds))
+	for i, c := range cmds {
 		toks := []string{strconv.Quote(exe)}
 		for _, w := range c {
 			toks = append(toks, strconv.Quote(w))
@@ -83,13 +171,14 @@ func envOr(env []string, k, def string) string {
 // PermissionWrite is what PenguPool wrote for one agent (kept in its config).
 type PermissionWrite = store.AgentPermission
 
-// WritePermissions adds the agent's rules for exe to its file and reports what it wrote.
-func WritePermissions(agent, file, exe string) (PermissionWrite, error) {
+// WritePermissions adds the agent's rules for exe to its file and reports what it wrote: for the
+// commands of grant, or the whole list when none is given.
+func WritePermissions(agent, file, exe string, grant ...string) (PermissionWrite, error) {
 	switch agent {
 	case Claude:
-		return addClaude(file, ClaudeRules(exe))
+		return addClaude(file, ClaudeRules(exe, grant...))
 	case Codex:
-		lines := CodexRules(exe)
+		lines := CodexRules(exe, grant...)
 		body := "# Written by PenguPool AI with the owner's consent: its team commands run without a prompt.\n" +
 			"# Turn it off in PenguPool's Settings; edits here are replaced.\n" + strings.Join(lines, "\n") + "\n"
 		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {

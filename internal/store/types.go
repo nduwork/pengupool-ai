@@ -148,6 +148,9 @@ type Config struct {
 	AgentPermissions map[string]AgentPermission `json:"agent_permissions,omitempty"`
 	// AgentPermissionsChoice is the owner's answer: "" not decided yet, "allowed" or "off".
 	AgentPermissionsChoice string `json:"agent_permissions_choice,omitempty"`
+	// AgentPermissionsGrant is what the owner's "allowed" covers, as commands ("experience search"):
+	// the list when they said yes. A moved app or a retry rewrites only these, never a longer list.
+	AgentPermissionsGrant []string `json:"agent_permissions_grant,omitempty"`
 }
 
 // AgentPermission is what PenguPool wrote for one agent: the file, the lines it added (a line the
