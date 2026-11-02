@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -239,5 +240,25 @@ func TestCodexRules(t *testing.T) {
 	}
 	if _, err := os.Stat(f); !os.IsNotExist(err) {
 		t.Fatal("PenguPool's rules file is still there")
+	}
+}
+
+// An older record's lines give back the commands they allow, for both formats and any path; a
+// record with no lines falls back to the first list.
+func TestGrantOf(t *testing.T) {
+	for _, exe := range []string{testExe, "/Users/o'neil/Applications/PenguPool AI.app/Contents/Resources/bin/pengupool"} {
+		want := []string{"send", "experience search", "team request add"}
+		for _, agent := range []string{Claude, Codex} {
+			lines := ClaudeRules(exe, want...)
+			if agent == Codex {
+				lines = CodexRules(exe, want...)
+			}
+			if got := GrantOf(agent, append(lines, "Bash(npm run test *)")); !slices.Equal(got, want) {
+				t.Errorf("%s %s: GrantOf = %v, want %v", agent, exe, got, want)
+			}
+		}
+	}
+	if got := GrantOf(Claude, nil); !slices.Equal(got, []string{"send", "search", "experience search", "experience show"}) {
+		t.Errorf("no lines: %v", got)
 	}
 }

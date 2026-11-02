@@ -112,32 +112,71 @@ func TestAgentPermissions(t *testing.T) {
 }
 
 // A yes given before the list grew covers only the commands it was given for: the new ones are shown
-// as added, and the start-up refresh does not write them without a new yes.
+// as added, and neither the start-up refresh, nor a moved app, nor a retry for an agent whose rules
+// were never written, writes them without a new yes.
 func TestAgentPermissionsListGrew(t *testing.T) {
 	home := t.TempDir()
 	p, st := twoTeams(t)
 	p.env = []string{"HOME=" + home} // never the real home
 	p.exe = "/Applications/PenguPool AI.app/Contents/Resources/bin/pengupool"
 	p.setAgentPermissions("allowed")
-	// What an earlier version recorded: the first four commands only.
-	if err := st.UpdateConfig(func(c *store.Config) error {
-		for a, r := range c.AgentPermissions {
-			r.Lines = r.Lines[:4]
-			c.AgentPermissions[a] = r
+	// What an earlier version left: the first four commands' rules, and no recorded grant.
+	old := func() {
+		t.Helper()
+		p.setAgentPermissions("off")
+		if err := st.UpdateConfig(func(c *store.Config) error {
+			c.AgentPermissionsChoice, c.AgentPermissionsGrant = "allowed", nil
+			c.AgentPermissions = map[string]store.AgentPermission{}
+			for _, a := range harness.PermissionAgents {
+				w, err := harness.WritePermissions(a, harness.PermissionFile(a, p.env), p.exe, "send", "search", "experience search", "experience show")
+				if err != nil {
+					return err
+				}
+				c.AgentPermissions[a] = w
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
 		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
 	}
+	check := func(when string) {
+		t.Helper()
+		for _, a := range harness.PermissionAgents {
+			rec, ok := st.Config().AgentPermissions[a]
+			if !ok || len(rec.Lines) != 4 {
+				t.Fatalf("%s: %s recorded %v, want the four granted commands", when, a, rec.Lines)
+			}
+			for _, l := range rec.Lines {
+				if !strings.Contains(l, p.exe) || strings.Contains(l, "compass") || strings.Contains(l, "ask") {
+					t.Fatalf("%s: %s line %q is not one of the four for %s", when, a, l, p.exe)
+				}
+			}
+			v := p.agentPermissionsView()["agents"].(map[string]any)[a].(map[string]any)
+			added, _ := v["added"].([]string)
+			if len(added) != len(harness.CLIAllowed)-4 || !strings.Contains(strings.Join(added, " "), "compass") {
+				t.Fatalf("%s: %s added = %v", when, a, v["added"])
+			}
+		}
+	}
+
+	old()
 	p.refreshAgentPermissions()
-	for _, a := range harness.PermissionAgents {
-		if got := st.Config().AgentPermissions[a].Lines; len(got) != 4 {
-			t.Fatalf("%s: refresh widened the yes to %d lines", a, len(got))
-		}
-		v := p.agentPermissionsView()["agents"].(map[string]any)[a].(map[string]any)
-		added, _ := v["added"].([]string)
-		if len(added) != len(harness.CLIAllowed)-4 || !strings.Contains(strings.Join(added, " "), "compass") {
-			t.Fatalf("%s: added = %v", a, v["added"])
-		}
+	check("refresh")
+
+	old()
+	p.exe = filepath.Join(home, "Applications", "PenguPool AI.app", "Contents", "Resources", "bin", "pengupool") // moved to ~/Applications
+	p.refreshAgentPermissions()
+	check("after a move")
+
+	old()
+	_ = st.UpdateConfig(func(c *store.Config) error { delete(c.AgentPermissions, harness.Codex); return nil }) // Codex was never written
+	p.refreshAgentPermissions()
+	check("retry")
+
+	// A new yes (off, then on) covers the list as it is now.
+	p.setAgentPermissions("off")
+	p.setAgentPermissions("allowed")
+	if got := st.Config().AgentPermissions[harness.Claude].Lines; len(got) != len(harness.CLIAllowed) {
+		t.Fatalf("a new yes wrote %d lines, want %d", len(got), len(harness.CLIAllowed))
 	}
 }
