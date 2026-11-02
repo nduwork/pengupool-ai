@@ -23,7 +23,9 @@ export type AttachState = "detached" | "attaching" | "replay" | "snapshot" | "li
 
 /** The terminal pane side of the attach, so this state machine stays free of DOM and xterm.js. */
 export interface TerminalSink {
-  write(data: Uint8Array): void;
+  /** `replayed`: bytes the session already produced before this attach (a snapshot, or the ring up to
+   * where it ended at attach), drawn again but not to be acted on again, e.g. an OSC 52 copy. */
+  write(data: Uint8Array, replayed: boolean): void;
   /** Drops scrollback and screen state before a freshly captured snapshot is applied. */
   reset(): void;
 }
@@ -82,6 +84,8 @@ export class AttachSession {
   private generation = 0;
   private offset = 0n;
   private hasRetained = false;
+  /** Output before this offset is replay (session.attached `end`). */
+  private replayEnd = 0n;
   /** True while an attach request is outstanding on this connection; cleared by detach. */
   private attachedSent = false;
   private ownsLease = false;
@@ -308,6 +312,7 @@ export class AttachSession {
     this.rows = m.rows ?? this.rows;
     this.pending = undefined;
     this.held = [];
+    this.replayEnd = m.mode === Mode.Snapshot || m.end === undefined ? 0n : BigInt(m.end);
     if (m.mode === Mode.Snapshot) {
       this.setState("snapshot", "capturing a fresh snapshot");
       return;
@@ -331,7 +336,7 @@ export class AttachSession {
       this.resync(`output gap: expected ${this.offset}, got ${seq}`);
       return;
     }
-    this.sink.write(f.payload);
+    this.sink.write(f.payload, seq < this.replayEnd);
     this.offset = seq + BigInt(f.payload.length);
     this.hasRetained = true;
     if (this.state !== "live") this.setState("live", "live");
@@ -353,7 +358,7 @@ export class AttachSession {
       return;
     }
     this.sink.reset();
-    this.sink.write(concat(pending.parts));
+    this.sink.write(concat(pending.parts), true);
     this.generation = pending.generation;
     this.offset = BigInt(pending.offset);
     this.hasRetained = true;

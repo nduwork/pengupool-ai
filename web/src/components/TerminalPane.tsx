@@ -8,7 +8,7 @@ import { desktop, localDesktop } from "../app/desktop";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { toast } from "sonner";
 
-import { AttachSession, type AttachEvents, type AttachState } from "../client/attach";
+import { AttachSession, type AttachEvents, type AttachState, type TerminalSink } from "../client/attach";
 import type { Connection } from "../client/connection";
 import { TERMINAL_QUERY_CSI, TERMINAL_QUERY_OSC } from "../protocol/queries";
 import { TermCache, scrollbackSetting } from "./termCache";
@@ -38,6 +38,9 @@ interface Kept {
   term: Terminal;
   fit: FitAddon;
   retained: { generation: number; offset: bigint } | undefined;
+  /** Replayed writes handed to xterm.js and not parsed yet; it parses on a later tick, so this travels
+   * with the terminal rather than the mount. */
+  replaying: { n: number };
 }
 
 /**
@@ -117,6 +120,7 @@ export function TerminalPane({
       },
     });
     const fit = back?.fit ?? new FitAddon();
+    const replaying = back?.replaying ?? { n: 0 };
     if (back === undefined) {
       term.loadAddon(fit);
       const unicode = new Unicode11Addon();
@@ -164,10 +168,7 @@ export function TerminalPane({
       sessionId,
       channel,
       kind: clientKind,
-      sink: {
-        write: (data) => term.write(data),
-        reset: () => term.reset(),
-      },
+      sink: terminalSink(term, replaying),
       send: (m) => connection.send(m),
       sendFrame: (type, seq, payload) =>
         connection.sendFrame({ type, channel, seq, length: payload.length }, payload),
@@ -185,9 +186,10 @@ export function TerminalPane({
       ...TERMINAL_QUERY_CSI.map((id) => term.parser.registerCsiHandler(id, silent)),
       ...TERMINAL_QUERY_OSC.map((code) => term.parser.registerOscHandler(code, silent)),
       // OSC 52: what the agent copies (Claude Code's copy) lands on the clipboard of the device viewing
-      // this pane. Live output only: a replayed copy must not overwrite the clipboard on reattach.
+      // this pane. Live output only: a replayed copy must not overwrite the clipboard on reattach. Live
+      // is judged when the bytes are handed to xterm.js, which parses them on a later tick.
       term.parser.registerOscHandler(52, osc52Handler(
-        () => session.attachState === "live",
+        () => replaying.n === 0,
         (text) => void navigator.clipboard?.writeText(text).catch(() => {}),
       )),
     ];
@@ -279,7 +281,7 @@ export function TerminalPane({
       session.detach();
       sessionRef.current = null;
       onAttach(null);
-      kept.put(sessionId, { instance, term, fit, retained: session.retainedState() });
+      kept.put(sessionId, { instance, term, fit, retained: session.retainedState(), replaying });
     };
     // The pane is remounted per session (keyed by session id); connection identity is stable. Its
     // terminal outlives the mount (see `kept`).
@@ -313,6 +315,18 @@ export function osc52Text(data: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Writes into xterm.js, counting replayed writes until xterm.js has parsed them (on a later tick). */
+export function terminalSink(term: Pick<Terminal, "write" | "reset">, replaying: { n: number }): TerminalSink {
+  return {
+    write: (data, replayed) => {
+      if (!replayed) return term.write(data);
+      replaying.n++;
+      term.write(data, () => replaying.n--);
+    },
+    reset: () => term.reset(),
+  };
 }
 
 /** The OSC 52 handler: a write goes to `write` while `live`; every OSC 52, read query included, is

@@ -481,6 +481,7 @@ func (c *client) attach(m *protocol.Message) bool {
 	}
 	gen, cols, rows := w.gen, w.cols, w.rows
 	start := w.ring.End()
+	end := start
 	mode := protocol.ModeSnapshot
 	var snap []byte
 	if r := m.Retained; r != nil && r.Generation == gen && r.Offset >= w.ring.Start() && r.Offset <= start {
@@ -507,6 +508,7 @@ func (c *client) attach(m *protocol.Message) bool {
 		Rows:       rows,
 		Mode:       mode,
 		Offset:     start,
+		End:        end,
 	})
 	if mode == protocol.ModeSnapshot {
 		c.sendSnapshot(gen, cols, rows, snap, start)

@@ -125,6 +125,8 @@ export interface ControlMessage {
   rows?: number;
   mode?: string;
   offset?: number;
+  /** session.attached, replay mode: where the ring ended at attach; output before it is replay. */
+  end?: number;
   /** Kind of the client behind a relayed request (session.attach): "cli" | "browser" | "ios". */
   kind?: string;
 
