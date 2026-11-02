@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -113,9 +116,12 @@ func stubTailscale(t *testing.T, status, serve string) *[]string {
 		return nil, os.ErrNotExist
 	}
 	HTTPAddr = func() string { return "127.0.0.1:7787" }
-	oldSleep := healSleep
+	oldSleep, oldProbe := healSleep, serveProbe
 	healSleep = func(time.Duration) {}
-	t.Cleanup(func() { tailscaleLookPath, tailscaleCmd, HTTPAddr, healSleep = oldLook, oldCmd, oldAddr, oldSleep })
+	serveProbe = func(context.Context, string) error { return nil }
+	t.Cleanup(func() {
+		tailscaleLookPath, tailscaleCmd, HTTPAddr, healSleep, serveProbe = oldLook, oldCmd, oldAddr, oldSleep, oldProbe
+	})
 	return &ran
 }
 
@@ -568,8 +574,8 @@ func TestSettingsSaveServeForeignRoute(t *testing.T) {
 	}
 }
 
-// An HTTP click re-points PenguPool's own stale :443 route too, so recording the new port never
-// strands it; another app's :80 route is refused.
+// An HTTP click turns PenguPool's own :443 route off (a switch, never both); another app's :80
+// route is refused.
 func TestSettingsSaveServeHTTPPlan(t *testing.T) {
 	t.Run("staleOwnHTTPS", func(t *testing.T) {
 		ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:1111"))
@@ -582,9 +588,8 @@ func TestSettingsSaveServeHTTPPlan(t *testing.T) {
 		if e, _ := res.(map[string]any)["serve_http_error"].(string); e != "" {
 			t.Fatalf("serve_http_error = %q", e)
 		}
-		joined := strings.Join(*ran, "\n")
-		if len(*ran) != 2 || !strings.Contains(joined, "--http=80") || !strings.Contains(joined, "--https=443") {
-			t.Fatalf("serve runs = %v, want :80 and the stale :443", *ran)
+		if len(*ran) != 2 || !strings.Contains((*ran)[0], "--http=80") || (*ran)[1] != "serve --https=443 off" {
+			t.Fatalf("serve runs = %v, want :80 then PenguPool's :443 off", *ran)
 		}
 		if got := p.st.Config().Network.ServePort; got != "7787" {
 			t.Fatalf("serve port = %q, want 7787", got)
@@ -668,5 +673,140 @@ func TestHealTailscaleServeWaitsForTailscaled(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The Settings buttons switch the mode: each serves its own, then turns off PenguPool's route in the
+// other mode, never another app's; HTTPS without certificates keeps HTTP up and its address.
+func TestSettingsSaveServeSwitch(t *testing.T) {
+	both := func(https, http string) string {
+		return `{"Web":{"probe-machine.tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"` + https +
+			`"}}},"probe-machine.tailnet.ts.net:80":{"Handlers":{"/":{"Proxy":"` + http + `"}}}}}`
+	}
+	for _, c := range []struct {
+		name, status, serve string
+		in                  settingsIn
+		key                 string
+		wantRuns            []string
+		wantErr, wantURL    string
+	}{
+		{"httpsToHTTP", tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:7787"),
+			settingsIn{EnableServeHTTP: true}, "serve_http",
+			[]string{"serve --bg --http=80 http://127.0.0.1:7787", "serve --https=443 off"}, "", "http://"},
+		{"httpToHTTPS", tailscaleStatusRunning, tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"),
+			settingsIn{EnableServeHTTPS: true}, "serve",
+			[]string{"serve --bg --https=443 http://127.0.0.1:7787", "serve --http=80 off"}, "", "https://"},
+		{"foreignHTTPSKept", tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:2222"),
+			settingsIn{EnableServeHTTP: true}, "serve_http",
+			[]string{"serve --bg --http=80 http://127.0.0.1:7787"}, "", "http://"},
+		{"foreignHTTPKept", tailscaleStatusRunning, both("http://127.0.0.1:7787", "http://127.0.0.1:2222"),
+			settingsIn{EnableServeHTTPS: true}, "serve",
+			[]string{"serve --bg --https=443 http://127.0.0.1:7787"}, "", "https://"},
+		{"httpsNoCertsKeepsHTTP", tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"),
+			settingsIn{EnableServeHTTPS: true}, "serve",
+			nil, "HTTPS certificates are not enabled", "http://"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ran := stubTailscale(t, c.status, c.serve)
+			p := testPool(t)
+			setServePort(t, p.st, "7787")
+			old := "http://probe-machine.tailnet.ts.net"
+			if c.in.EnableServeHTTP {
+				old = "https://probe-machine.tailnet.ts.net"
+			}
+			_ = p.st.UpdateConfig(func(cfg *store.Config) error { cfg.Network.Tailscale = old; return nil })
+			url := "https://probe-machine.tailnet.ts.net"
+			if c.in.EnableServeHTTP {
+				url = "http://probe-machine.tailnet.ts.net"
+			}
+			c.in.Tailscale = &url
+			res, err := p.settingsSave(context.Background(), c.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if e, _ := res.(map[string]any)[c.key+"_error"].(string); (c.wantErr == "") != (e == "") || !strings.Contains(e, c.wantErr) {
+				t.Fatalf("%s_error = %q, want %q", c.key, e, c.wantErr)
+			}
+			if !slices.Equal(*ran, c.wantRuns) {
+				t.Fatalf("serve runs = %q, want %q", *ran, c.wantRuns)
+			}
+			if got := p.st.Config().Network.Tailscale; !strings.HasPrefix(got, c.wantURL) {
+				t.Fatalf("tailscale address = %q, want %s…", got, c.wantURL)
+			}
+		})
+	}
+}
+
+// A switch probes the new address first: a 502 keeps the old mode up and its address; an answer
+// lets the old mode go.
+func TestSettingsSaveServeSwitchProbe(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		http     bool
+		serve    string
+		probe    error
+		wantRuns []string
+		wantErr  string
+		wantURL  string
+	}{
+		{"answers", false, tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"), nil, []string{"serve --bg --https=443 http://127.0.0.1:7787", "serve --http=80 off"}, "", "https://"},
+		{"badGateway", false, tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"), errors.New("HTTP 502 Bad Gateway"), []string{"serve --bg --https=443 http://127.0.0.1:7787", "serve --https=443 off"}, "502 Bad Gateway", "http://"},
+		// :443 was already PenguPool's: a 502 leaves it as it was rather than turning it off.
+		{"badGatewayOwnHTTPS", false, `{"Web":{"probe-machine.tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7787"}}},"probe-machine.tailnet.ts.net:80":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7787"}}}}}`,
+			errors.New("HTTP 502 Bad Gateway"), []string{"serve --bg --https=443 http://127.0.0.1:7787"}, "502 Bad Gateway", "http://"},
+		// The HTTP mirror: :80 was already PenguPool's, so a 502 on an HTTP click leaves it on too.
+		{"badGatewayOwnHTTP", true, `{"Web":{"probe-machine.tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7787"}}},"probe-machine.tailnet.ts.net:80":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7787"}}}}}`,
+			errors.New("HTTP 502 Bad Gateway"), []string{"serve --bg --http=80 http://127.0.0.1:7787"}, "502 Bad Gateway", "https://"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ran := stubTailscale(t, tailscaleStatusRunning, c.serve)
+			var probed []string
+			serveProbe = func(_ context.Context, url string) error { probed = append(probed, url); return c.probe }
+			p := testPool(t)
+			setServePort(t, p.st, "7787")
+			_ = p.st.UpdateConfig(func(cfg *store.Config) error {
+				cfg.Network.Tailscale = "http://probe-machine.tailnet.ts.net"
+				return nil
+			})
+			url, in, key := "https://probe-machine.tailnet.ts.net", settingsIn{EnableServeHTTPS: true}, "serve"
+			if c.http {
+				url, in, key = "http://probe-machine.tailnet.ts.net", settingsIn{EnableServeHTTP: true}, "serve_http"
+				_ = p.st.UpdateConfig(func(cfg *store.Config) error {
+					cfg.Network.Tailscale = "https://probe-machine.tailnet.ts.net"
+					return nil
+				})
+			}
+			in.Tailscale = &url
+			res, err := p.settingsSave(context.Background(), in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(probed, []string{url + "/"}) {
+				t.Fatalf("probed %q", probed)
+			}
+			if e, _ := res.(map[string]any)[key+"_error"].(string); (c.wantErr == "") != (e == "") || !strings.Contains(e, c.wantErr) {
+				t.Fatalf("%s_error = %q, want %q", key, e, c.wantErr)
+			}
+			if !slices.Equal(*ran, c.wantRuns) {
+				t.Fatalf("serve runs = %q, want %q", *ran, c.wantRuns)
+			}
+			if got := p.st.Config().Network.Tailscale; !strings.HasPrefix(got, c.wantURL) {
+				t.Fatalf("tailscale address = %q, want %s…", got, c.wantURL)
+			}
+		})
+	}
+}
+
+// serveProbe fails on a 502 and passes a page that answers.
+func TestServeProbe(t *testing.T) {
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) }))
+	defer bad.Close()
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	defer ok.Close()
+	if err := serveProbe(context.Background(), bad.URL); err == nil || !strings.Contains(err.Error(), "502") {
+		t.Fatalf("502: err = %v", err)
+	}
+	if err := serveProbe(context.Background(), ok.URL); err != nil {
+		t.Fatalf("200: err = %v", err)
 	}
 }
