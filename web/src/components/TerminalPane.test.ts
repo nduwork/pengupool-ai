@@ -5,7 +5,7 @@ import { AttachSession } from "../client/attach";
 import { T, type ControlMessage } from "../protocol/control";
 import { FrameType } from "../protocol/frame";
 
-import { isShiftEnter, macOptionKeys, osc52Handler, osc52Text, shellQuote, shiftEnter, terminalSink } from "./TerminalPane";
+import { COPY_BLOCKED, deliverCopy, isShiftEnter, macOptionKeys, osc52Handler, osc52Text, shellQuote, shiftEnter, terminalSink } from "./TerminalPane";
 
 describe("shellQuote", () => {
   it("escapes what a shell would split or expand, as Terminal.app does", () => {
@@ -94,5 +94,27 @@ describe("OSC 52 through a real attach and xterm.js", () => {
     await new Promise<void>((r) => term.write("", r));
     expect(copied).toEqual(["new copy"]);
     term.dispose();
+  });
+});
+
+describe("deliverCopy", () => {
+  it("writes the copy, and says so when the browser has no clipboard or refuses the write", async () => {
+    const written: string[] = [];
+    const failed: string[] = [];
+    await deliverCopy("a", { writeText: async (t) => void written.push(t) }, (m) => failed.push(m));
+    expect(written).toEqual(["a"]);
+    expect(failed).toEqual([]);
+    await deliverCopy("b", undefined, (m) => failed.push(m)); // plain HTTP
+    await deliverCopy("c", { writeText: () => Promise.reject(new DOMException("not allowed", "NotAllowedError")) }, (m) => failed.push(m)); // Safari, Firefox
+    expect(failed).toEqual([COPY_BLOCKED, COPY_BLOCKED]);
+  });
+});
+
+describe("terminalSink", () => {
+  it("does not count a replayed write xterm.js refused, so OSC 52 is not held off", () => {
+    const replaying = { n: 0 };
+    const sink = terminalSink({ write: () => { throw new Error("write data discarded"); }, reset: () => {} }, replaying);
+    expect(() => sink.write(new Uint8Array([1]), true)).toThrow();
+    expect(replaying.n).toBe(0);
   });
 });

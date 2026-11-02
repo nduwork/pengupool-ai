@@ -190,7 +190,7 @@ export function TerminalPane({
       // is judged when the bytes are handed to xterm.js, which parses them on a later tick.
       term.parser.registerOscHandler(52, osc52Handler(
         () => replaying.n === 0,
-        (text) => void navigator.clipboard?.writeText(text).catch(() => {}),
+        (text) => void deliverCopy(text, navigator.clipboard, (m) => toast.error(m, { id: "osc52-copy" })),
       )),
     ];
 
@@ -322,11 +322,26 @@ export function terminalSink(term: Pick<Terminal, "write" | "reset">, replaying:
   return {
     write: (data, replayed) => {
       if (!replayed) return term.write(data);
-      replaying.n++;
+      // Counted once the write is queued: a write xterm.js refuses (it throws past its pending limit)
+      // never parses, so it must not hold OSC 52 off. The callback always runs on a later tick.
       term.write(data, () => replaying.n--);
+      replaying.n++;
     },
     reset: () => term.reset(),
   };
+}
+
+export const COPY_BLOCKED = "Copy didn't reach the clipboard: this browser blocked it";
+
+/** Puts an agent's copy on the clipboard. The app window and Chrome allow it; Safari and Firefox refuse
+ * a write outside a click or key press, and plain HTTP has no clipboard, so `fail` says so. */
+export async function deliverCopy(text: string, clipboard: Pick<Clipboard, "writeText"> | undefined, fail: (message: string) => void): Promise<void> {
+  try {
+    if (clipboard === undefined) throw new Error("no clipboard");
+    await clipboard.writeText(text);
+  } catch {
+    fail(COPY_BLOCKED);
+  }
 }
 
 /** The OSC 52 handler: a write goes to `write` while `live`; every OSC 52, read query included, is
