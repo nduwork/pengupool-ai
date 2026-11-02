@@ -81,7 +81,7 @@ export function App(): ReactElement {
   const panels = usePanelRefs();
   const [compassOpen, setCompassOpen] = usePersisted("compass.open", false);
   const [messagesOpen, setMessagesOpen] = usePersisted("messages.open", true);
-  const [welcomeShow, setWelcomeShow] = usePersisted("welcome.show", true);
+  const [welcomeShow, setWelcomeShow] = usePersisted("welcome.show", false);
   const [welcomeOpen, setWelcomeOpen] = useState(false); // opened explicitly, over the Workspace; not kept
   const sessionCount = useRef(0);
   const [, setSettingsSection] = usePersisted("settings.section", "general");

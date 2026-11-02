@@ -113,7 +113,7 @@ export function Sidebar(): ReactElement {
           <div className="h-full overflow-y-auto px-2">
             <SectionTitle>Groups</SectionTitle>
             {groups.length === 0 ? <p className="px-2 py-1 text-caption text-muted-foreground">No sessions yet.</p> : null}
-            {app.sessions.length > 0 ? <GettingStarted /> : null}
+            {app.sessions.length > 0 || !app.welcome.show ? <GettingStarted /> : null}
             {groups.map((g) => (
               <div key={g.key} className="mb-1">
                 <div className="group/g flex h-7 items-center rounded-md hover:bg-hover">
