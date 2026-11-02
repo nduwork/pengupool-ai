@@ -18,7 +18,8 @@ install-app:
 uninstall:
 	scripts/uninstall.sh
 
-# The prebuilt app as a disk image: open it, drag PenguPool AI.app onto Applications.
+# The prebuilt app as a disk image: open it, drag PenguPool AI.app onto Applications. With a Developer ID
+# identity in the keychain the app and the image are signed, notarized and stapled (scripts/notarize.sh).
 dist:
 	scripts/build-app.sh --no-install
 	rm -rf build/dmg $(DIST) && mkdir -p build/dmg
@@ -26,6 +27,7 @@ dist:
 	ln -s /Applications build/dmg/Applications
 	hdiutil create -volname PenguPool-AI -srcfolder build/dmg -fs HFS+ -format ULFO -ov $(DIST) >/dev/null
 	rm -rf build/dmg
+	scripts/notarize.sh $(DIST) "desktop/dist/mac-arm64/PenguPool AI.app"
 	find build -maxdepth 1 -name 'PenguPool-AI-*-mac-arm64.dmg' ! -name '$(notdir $(DIST))' -delete # the new one replaces older images
 	@echo "built $(DIST)"
 

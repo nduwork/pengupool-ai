@@ -59,7 +59,10 @@
         }
       ],
       "identity": null,
-      "hardenedRuntime": false,
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "signIgnore": ["/bin/linux/"],
       "extendInfo": {
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
