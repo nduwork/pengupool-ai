@@ -1702,3 +1702,21 @@ func TestWorkerExitWaitsForAReaderStillWaking(t *testing.T) {
 	}
 	t.Fatal("session.exit never arrived")
 }
+
+func TestReadLimitStopsAtReplayEnd(t *testing.T) {
+	for _, c := range []struct {
+		sent, end uint64
+		want      int
+	}{
+		{0, 10, 10},                // replay shorter than a frame: stop at its end
+		{4, 10, 6},                 // mid-replay
+		{10, 10, maxOutputPayload}, // replay done
+		{20, 10, maxOutputPayload}, // live
+		{0, 0, maxOutputPayload},   // snapshot attach: no replay
+		{0, uint64(maxOutputPayload) * 3, maxOutputPayload}, // long replay: full frames until the last
+	} {
+		if got := readLimit(c.sent, c.end); got != c.want {
+			t.Errorf("readLimit(%d, %d) = %d, want %d", c.sent, c.end, got, c.want)
+		}
+	}
+}

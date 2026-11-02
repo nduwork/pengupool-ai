@@ -144,6 +144,9 @@ type Message struct {
 	Rows   int    `json:"rows,omitempty"`
 	Mode   string `json:"mode,omitempty"`
 	Offset uint64 `json:"offset,omitempty"`
+	// End (session.attached, replay mode): where the ring ended at attach. Output before it is replay,
+	// already seen once, so the client does not act on it again (an OSC 52 copy, for one).
+	End uint64 `json:"end,omitempty"`
 
 	// session.create
 	Name    string   `json:"name,omitempty"`

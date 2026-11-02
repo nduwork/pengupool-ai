@@ -73,6 +73,7 @@ type client struct {
 	gen         uint64 // session generation this client's screen is valid for
 	sent        uint64 // next byte offset this client has been sent
 	acked       uint64 // next byte offset this client has acknowledged
+	replayEnd   uint64 // where the ring ended at a replay attach; no output frame crosses it
 	paused      bool
 	// pendingExit is the session.exit this client is owed, queued by pump once the client has
 	// caught up with every byte it is owed. Guarded by worker.mu.
@@ -481,6 +482,7 @@ func (c *client) attach(m *protocol.Message) bool {
 	}
 	gen, cols, rows := w.gen, w.cols, w.rows
 	start := w.ring.End()
+	end := start
 	mode := protocol.ModeSnapshot
 	var snap []byte
 	if r := m.Retained; r != nil && r.Generation == gen && r.Offset >= w.ring.Start() && r.Offset <= start {
@@ -497,6 +499,7 @@ func (c *client) attach(m *protocol.Message) bool {
 	c.gen = gen
 	c.sent = start
 	c.acked = start
+	c.replayEnd = end
 	c.enqueueControl(&protocol.Message{
 		ID:         m.ID,
 		Type:       protocol.TypeSessionAttached,
@@ -507,6 +510,7 @@ func (c *client) attach(m *protocol.Message) bool {
 		Rows:       rows,
 		Mode:       mode,
 		Offset:     start,
+		End:        end,
 	})
 	if mode == protocol.ModeSnapshot {
 		c.sendSnapshot(gen, cols, rows, snap, start)
@@ -672,6 +676,15 @@ func (c *client) queueExitLocked(sessionID string, code int, at time.Time) {
 	c.wakeUp()
 }
 
+// readLimit caps a read so no output frame holds both replayed bytes (before replayEnd) and live
+// ones: the client tells them apart per frame (session.attached end).
+func readLimit(sent, replayEnd uint64) int {
+	if sent < replayEnd && replayEnd-sent < uint64(maxOutputPayload) {
+		return int(replayEnd - sent)
+	}
+	return maxOutputPayload
+}
+
 // pump sends every byte the client has not been sent yet, in ≤64 KiB output frames at their byte
 // offsets. It stops while the client is paused above the high-water mark, and resynchronises with a
 // snapshot whenever a replay would leave a gap or the client's screen is stale.
@@ -722,7 +735,7 @@ func (c *client) pump() {
 			w.mu.Unlock()
 			return
 		}
-		data, ok := w.ring.Read(c.sent, maxOutputPayload)
+		data, ok := w.ring.Read(c.sent, readLimit(c.sent, c.replayEnd))
 		if !ok {
 			gen, cols, rows := w.gen, w.cols, w.rows
 			snap := c.snapshotFor()

@@ -8,7 +8,7 @@ import { desktop, localDesktop } from "../app/desktop";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { toast } from "sonner";
 
-import { AttachSession, type AttachEvents, type AttachState } from "../client/attach";
+import { AttachSession, type AttachEvents, type AttachState, type TerminalSink } from "../client/attach";
 import type { Connection } from "../client/connection";
 import { TERMINAL_QUERY_CSI, TERMINAL_QUERY_OSC } from "../protocol/queries";
 import { TermCache, scrollbackSetting } from "./termCache";
@@ -38,6 +38,9 @@ interface Kept {
   term: Terminal;
   fit: FitAddon;
   retained: { generation: number; offset: bigint } | undefined;
+  /** Replayed writes handed to xterm.js and not parsed yet; it parses on a later tick, so this travels
+   * with the terminal rather than the mount. */
+  replaying: { n: number };
 }
 
 /**
@@ -117,6 +120,7 @@ export function TerminalPane({
       },
     });
     const fit = back?.fit ?? new FitAddon();
+    const replaying = back?.replaying ?? { n: 0 };
     if (back === undefined) {
       term.loadAddon(fit);
       const unicode = new Unicode11Addon();
@@ -164,10 +168,7 @@ export function TerminalPane({
       sessionId,
       channel,
       kind: clientKind,
-      sink: {
-        write: (data) => term.write(data),
-        reset: () => term.reset(),
-      },
+      sink: terminalSink(term, replaying),
       send: (m) => connection.send(m),
       sendFrame: (type, seq, payload) =>
         connection.sendFrame({ type, channel, seq, length: payload.length }, payload),
@@ -184,6 +185,13 @@ export function TerminalPane({
     const queryHandlers: IDisposable[] = [
       ...TERMINAL_QUERY_CSI.map((id) => term.parser.registerCsiHandler(id, silent)),
       ...TERMINAL_QUERY_OSC.map((code) => term.parser.registerOscHandler(code, silent)),
+      // OSC 52: what the agent copies (Claude Code's copy) lands on the clipboard of the device viewing
+      // this pane. Live output only: a replayed copy must not overwrite the clipboard on reattach. Live
+      // is judged when the bytes are handed to xterm.js, which parses them on a later tick.
+      term.parser.registerOscHandler(52, osc52Handler(
+        () => replaying.n === 0,
+        (text) => void deliverCopy(text, navigator.clipboard, (m) => toast.error(m, { id: "osc52-copy" })),
+      )),
     ];
 
     // Inbound wiring: data frames arrive on this session's channel, control messages (session
@@ -273,7 +281,7 @@ export function TerminalPane({
       session.detach();
       sessionRef.current = null;
       onAttach(null);
-      kept.put(sessionId, { instance, term, fit, retained: session.retainedState() });
+      kept.put(sessionId, { instance, term, fit, retained: session.retainedState(), replaying });
     };
     // The pane is remounted per session (keyed by session id); connection identity is stable. Its
     // terminal outlives the mount (see `kept`).
@@ -293,6 +301,62 @@ export function TerminalPane({
       <div className="min-h-0 flex-1" ref={hostRef} />
     </section>
   );
+}
+
+/** The text an OSC 52 clipboard write carries (`Pc;base64`), or undefined for a read query (`?`), an
+ * empty payload or bad base64. Reads are never answered: a program in the session must not see the
+ * viewer's clipboard. */
+export function osc52Text(data: string): string | undefined {
+  const sep = data.indexOf(";");
+  const payload = sep < 0 ? "" : data.slice(sep + 1);
+  if (payload === "" || payload === "?") return undefined;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(atob(payload), (c) => c.charCodeAt(0)));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Writes into xterm.js, counting replayed writes until xterm.js has parsed them. */
+export function terminalSink(term: Pick<Terminal, "write" | "reset">, replaying: { n: number }): TerminalSink {
+  return {
+    write: (data, replayed) => {
+      if (!replayed) return term.write(data);
+      // Counted before the write: right after user input xterm.js parses it synchronously, inside
+      // write(). A write it refuses (it throws past its pending limit) never parses, so it is uncounted.
+      replaying.n++;
+      try {
+        term.write(data, () => replaying.n--);
+      } catch (e) {
+        replaying.n--;
+        throw e;
+      }
+    },
+    reset: () => term.reset(),
+  };
+}
+
+export const COPY_BLOCKED = "Copy didn't reach the clipboard: this browser blocked it";
+
+/** Puts an agent's copy on the clipboard. The app window and Chrome allow it; Safari and Firefox refuse
+ * a write outside a click or key press, and plain HTTP has no clipboard, so `fail` says so. */
+export async function deliverCopy(text: string, clipboard: Pick<Clipboard, "writeText"> | undefined, fail: (message: string) => void): Promise<void> {
+  try {
+    if (clipboard === undefined) throw new Error("no clipboard");
+    await clipboard.writeText(text);
+  } catch {
+    fail(COPY_BLOCKED);
+  }
+}
+
+/** The OSC 52 handler: a write goes to `write` while `live`; every OSC 52, read query included, is
+ * consumed so nothing answers it. */
+export function osc52Handler(live: () => boolean, write: (text: string) => void): (data: string) => boolean {
+  return (data) => {
+    const text = osc52Text(data);
+    if (text !== undefined && live()) write(text);
+    return true;
+  };
 }
 
 /** A path as a shell reads it: anything beyond safe characters backslash-escaped (Terminal.app's form). */
