@@ -175,7 +175,7 @@ func cmdDaemon(args []string) error {
 		return err
 	}
 	pool.HTTPAddr = srv.HTTPAddr
-	go pl.HealTailscaleServe() // re-serve after a port change; owner's home only
+	go pl.HealTailscaleServe(ctx) // re-serve after a port change; owner's home only
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ctx) }()

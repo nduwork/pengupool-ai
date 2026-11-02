@@ -58,12 +58,13 @@ type NodeManager interface {
 
 // Pool is the domain service behind every pool request.
 type Pool struct {
-	st    *store.Store
-	hub   *hub.Hub
-	exe   string
-	env   []string
-	logf  func(string, ...any)
-	nodes NodeManager
+	serveMu sync.Mutex // serialises Tailscale Serve changes: settings clicks and the start-up heal
+	st      *store.Store
+	hub     *hub.Hub
+	exe     string
+	env     []string
+	logf    func(string, ...any)
+	nodes   NodeManager
 
 	mu                sync.Mutex
 	permErr           map[string]string            // agent -> why its permission rules could not be written, guarded by mu

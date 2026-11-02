@@ -116,11 +116,13 @@ func stubTailscale(t *testing.T, status, serve string) *[]string {
 		return nil, os.ErrNotExist
 	}
 	HTTPAddr = func() string { return "127.0.0.1:7787" }
-	oldSleep, oldProbe := healSleep, serveProbe
-	healSleep = func(time.Duration) {}
+	oldSleep, oldNow, oldProbe := healSleep, healNow, serveProbe
+	clock := time.Unix(0, 0) // a fake clock: each heal sleep advances it
+	healNow = func() time.Time { return clock }
+	healSleep = func(_ context.Context, d time.Duration) { clock = clock.Add(d) }
 	serveProbe = func(context.Context, string) error { return nil }
 	t.Cleanup(func() {
-		tailscaleLookPath, tailscaleCmd, HTTPAddr, healSleep, serveProbe = oldLook, oldCmd, oldAddr, oldSleep, oldProbe
+		tailscaleLookPath, tailscaleCmd, HTTPAddr, healSleep, healNow, serveProbe = oldLook, oldCmd, oldAddr, oldSleep, oldNow, oldProbe
 	})
 	return &ran
 }
@@ -215,9 +217,21 @@ func TestServeApproveURL(t *testing.T) {
 }
 
 // healHomeStore opens the owner's home store with Serve enabled, for heal tests.
+// looseHome is a temporary HOME whose cleanup tolerates late writers: New starts the Muse plugin
+// install in the background, and it may still be writing under HOME when a quick test ends.
+func looseHome(t *testing.T) string {
+	t.Helper()
+	home, err := os.MkdirTemp("", "pp-home-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
+	return home
+}
+
 func healHomeStore(t *testing.T) *store.Store {
 	t.Helper()
-	home := t.TempDir()
+	home := looseHome(t)
 	t.Setenv("HOME", home)
 	withUnsetEnv(t, "PENGUPOOL_HOME")
 	st, err := store.Open(filepath.Join(home, ".pengupool-ai", "v2"))
@@ -265,7 +279,7 @@ func TestHealTailscaleServe(t *testing.T) {
 		withUnsetEnv(t, "PENGUPOOL_HOME")
 	}
 	t.Run("stale", func(t *testing.T) {
-		withHome(t, t.TempDir())
+		withHome(t, looseHome(t))
 		st, err := store.Open(filepath.Join(os.Getenv("HOME"), ".pengupool-ai", "v2"))
 		if err != nil {
 			t.Fatal(err)
@@ -277,13 +291,13 @@ func TestHealTailscaleServe(t *testing.T) {
 		}
 		ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:1111"))
 		p := New(Options{Store: st, Exe: "pengupool"})
-		p.HealTailscaleServe()
+		p.HealTailscaleServe(context.Background())
 		if len(*ran) != 1 || !strings.Contains((*ran)[0], "--https=443") || !strings.Contains((*ran)[0], "127.0.0.1:7787") {
 			t.Fatalf("serve runs: %v", *ran)
 		}
 	})
 	t.Run("healthy", func(t *testing.T) {
-		withHome(t, t.TempDir())
+		withHome(t, looseHome(t))
 		st, err := store.Open(filepath.Join(os.Getenv("HOME"), ".pengupool-ai", "v2"))
 		if err != nil {
 			t.Fatal(err)
@@ -295,13 +309,13 @@ func TestHealTailscaleServe(t *testing.T) {
 		}
 		ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:7787"))
 		p := New(Options{Store: st, Exe: "pengupool"})
-		p.HealTailscaleServe()
+		p.HealTailscaleServe(context.Background())
 		if len(*ran) != 0 {
 			t.Fatalf("healthy setup re-served: %v", *ran)
 		}
 	})
 	t.Run("throwaway", func(t *testing.T) {
-		withHome(t, t.TempDir())
+		withHome(t, looseHome(t))
 		st, err := store.Open(t.TempDir())
 		if err != nil {
 			t.Fatal(err)
@@ -323,7 +337,7 @@ func TestHealTailscaleServe(t *testing.T) {
 			return oldRun(ctx, bin, args...)
 		}
 		defer func() { tailscaleCmd = oldRun }()
-		p.HealTailscaleServe()
+		p.HealTailscaleServe(context.Background())
 		if called {
 			t.Fatal("throwaway store re-served")
 		}
@@ -340,7 +354,7 @@ func TestHealTailscaleServe(t *testing.T) {
 			return "127.0.0.1:7787"
 		}
 		p := New(Options{Store: st, Exe: "pengupool"})
-		p.HealTailscaleServe()
+		p.HealTailscaleServe(context.Background())
 		if len(*ran) != 1 || !strings.Contains((*ran)[0], "--https=443") || !strings.Contains((*ran)[0], "127.0.0.1:7787") {
 			t.Fatalf("serve runs: %v", *ran)
 		}
@@ -351,7 +365,7 @@ func TestHealTailscaleServe(t *testing.T) {
 		HTTPAddr = func() string { return "" }
 		logf, logs := logSink()
 		p := New(Options{Store: st, Exe: "pengupool", Logf: logf})
-		p.HealTailscaleServe()
+		p.HealTailscaleServe(context.Background())
 		if len(*ran) != 0 {
 			t.Fatalf("unbound heal served: %v", *ran)
 		}
@@ -365,7 +379,7 @@ func TestHealTailscaleServe(t *testing.T) {
 		ran := stubTailscale(t, tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:1111", "probe-machine.tailnet.ts.net:80"))
 		logf, logs := logSink()
 		p := New(Options{Store: st, Exe: "pengupool", Logf: logf})
-		p.HealTailscaleServe()
+		p.HealTailscaleServe(context.Background())
 		if len(*ran) != 1 || !strings.Contains((*ran)[0], "--http=80") || !strings.Contains((*ran)[0], "127.0.0.1:7787") {
 			t.Fatalf("serve runs: %v", *ran)
 		}
@@ -385,7 +399,7 @@ func TestHealTailscaleServe(t *testing.T) {
 		setServePort(t, st, "1111")
 		ran := stubTailscale(t, tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:2222", "probe-machine.tailnet.ts.net:80"))
 		p := New(Options{Store: st, Exe: "pengupool"})
-		p.HealTailscaleServe()
+		p.HealTailscaleServe(context.Background())
 		if len(*ran) != 0 {
 			t.Fatalf("heal overwrote another app's route: %v", *ran)
 		}
@@ -395,7 +409,7 @@ func TestHealTailscaleServe(t *testing.T) {
 		st := healHomeStore(t)
 		ran := stubTailscale(t, tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:1111", "probe-machine.tailnet.ts.net:80"))
 		p := New(Options{Store: st, Exe: "pengupool"})
-		p.HealTailscaleServe()
+		p.HealTailscaleServe(context.Background())
 		if len(*ran) != 0 {
 			t.Fatalf("heal touched an unrecorded :80 route: %v", *ran)
 		}
@@ -404,7 +418,7 @@ func TestHealTailscaleServe(t *testing.T) {
 		st := healHomeStore(t)
 		ran := stubTailscale(t, tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"))
 		p := New(Options{Store: st, Exe: "pengupool"})
-		p.HealTailscaleServe()
+		p.HealTailscaleServe(context.Background())
 		if len(*ran) != 0 {
 			t.Fatalf("healthy http setup re-served: %v", *ran)
 		}
@@ -413,7 +427,7 @@ func TestHealTailscaleServe(t *testing.T) {
 		st := healHomeStore(t)
 		ran := stubTailscale(t, tailscaleStatusNoCerts, tailscaleServeJSON(""))
 		p := New(Options{Store: st, Exe: "pengupool"})
-		p.HealTailscaleServe()
+		p.HealTailscaleServe(context.Background())
 		if len(*ran) != 0 {
 			t.Fatalf("heal added serve that was never configured: %v", *ran)
 		}
@@ -657,10 +671,11 @@ func TestHealTailscaleServeWaitsForTailscaled(t *testing.T) {
 				return stub(ctx, bin, args...)
 			}
 			var slept time.Duration
-			healSleep = func(d time.Duration) { slept += d }
+			sleep := healSleep
+			healSleep = func(ctx context.Context, d time.Duration) { slept += d; sleep(ctx, d) }
 			logf, logs := logSink()
 			p := New(Options{Store: st, Exe: "pengupool", Logf: logf})
-			p.HealTailscaleServe()
+			p.HealTailscaleServe(context.Background())
 			if len(*ran) != c.wantRuns {
 				t.Fatalf("serve runs = %v, want %d", *ran, c.wantRuns)
 			}
@@ -808,5 +823,124 @@ func TestServeProbe(t *testing.T) {
 	}
 	if err := serveProbe(context.Background(), ok.URL); err != nil {
 		t.Fatalf("200: err = %v", err)
+	}
+}
+
+// fakeServe is a stateful Tailscale Serve: serve --bg sets a route, serve --X off removes it, and
+// serve status reports what is set. down makes status fail (tailscaled not up yet).
+type fakeServe struct {
+	routes map[string]string // "443" or "80" → proxy
+	down   int
+	onRead func()
+}
+
+func (f *fakeServe) install(t *testing.T) {
+	stubTailscale(t, tailscaleStatusRunning, "")
+	tailscaleCmd = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		switch {
+		case len(args) >= 2 && args[0] == "serve" && args[1] == "status":
+			if f.down > 0 {
+				f.down--
+				return nil, errors.New("tailscaled not running")
+			}
+			if f.onRead != nil {
+				f.onRead()
+			}
+			web := []string{}
+			for port, proxy := range f.routes {
+				web = append(web, `"probe-machine.tailnet.ts.net:`+port+`":{"Handlers":{"/":{"Proxy":"`+proxy+`"}}}`)
+			}
+			return []byte(`{"Web":{` + strings.Join(web, ",") + `}}`), nil
+		case len(args) >= 1 && args[0] == "status":
+			return []byte(tailscaleStatusRunning), nil
+		case len(args) == 3 && args[0] == "serve" && args[2] == "off":
+			delete(f.routes, strings.TrimPrefix(strings.TrimPrefix(args[1], "--https="), "--http="))
+			return []byte("ok"), nil
+		case len(args) == 4 && args[0] == "serve" && args[1] == "--bg":
+			f.routes[strings.TrimPrefix(strings.TrimPrefix(args[2], "--https="), "--http=")] = args[3]
+			return []byte("ok"), nil
+		}
+		return nil, os.ErrNotExist
+	}
+}
+
+// A Settings switch to HTTP that lands while the heal waits for tailscaled: the heal reads the
+// state afresh after the wait and does not bring the stale HTTPS route back.
+func TestHealAfterSwitchDuringWait(t *testing.T) {
+	st := healHomeStore(t)
+	setServePort(t, st, "1111")
+	f := &fakeServe{routes: map[string]string{"443": "http://127.0.0.1:1111"}, down: 3}
+	f.install(t)
+	p := New(Options{Store: st, Exe: "pengupool"})
+	clicked := false
+	sleep := healSleep
+	healSleep = func(ctx context.Context, d time.Duration) {
+		if !clicked && f.down == 0 { // tailscaled is up now; the owner clicks before the heal's next try
+			clicked = true
+			url := "http://probe-machine.tailnet.ts.net"
+			res, err := p.settingsSave(context.Background(), settingsIn{Tailscale: &url, EnableServeHTTP: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if e, _ := res.(map[string]any)["serve_http_error"].(string); e != "" {
+				t.Fatalf("switch: %s", e)
+			}
+		}
+		sleep(ctx, d)
+	}
+	p.HealTailscaleServe(context.Background())
+	if !clicked {
+		t.Fatal("the switch never ran during the wait")
+	}
+	if len(f.routes) != 1 || f.routes["80"] != "http://127.0.0.1:7787" {
+		t.Fatalf("routes after heal = %v, want only :80 at 7787", f.routes)
+	}
+}
+
+// The heal holds the Serve lock from its fresh read through its re-point, so a click cannot
+// interleave and be undone.
+func TestHealHoldsServeLock(t *testing.T) {
+	st := healHomeStore(t)
+	setServePort(t, st, "1111")
+	f := &fakeServe{routes: map[string]string{"443": "http://127.0.0.1:1111"}}
+	f.install(t)
+	p := New(Options{Store: st, Exe: "pengupool"})
+	reads, lockedOnRead := 0, false
+	f.onRead = func() {
+		if reads++; reads == 2 { // the read after the wait, under the lock
+			if p.serveMu.TryLock() {
+				p.serveMu.Unlock()
+			} else {
+				lockedOnRead = true
+			}
+		}
+	}
+	p.HealTailscaleServe(context.Background())
+	if !lockedOnRead {
+		t.Fatal("the heal re-read Serve without holding the Serve lock")
+	}
+	if f.routes["443"] != "http://127.0.0.1:7787" {
+		t.Fatalf("routes = %v, want :443 re-pointed at 7787", f.routes)
+	}
+}
+
+// The heal stops when the daemon's context ends, without serving.
+func TestHealStopsOnShutdown(t *testing.T) {
+	st := healHomeStore(t)
+	f := &fakeServe{routes: map[string]string{"443": "http://127.0.0.1:1111"}, down: 1000}
+	f.install(t)
+	p := New(Options{Store: st, Exe: "pengupool"})
+	ctx, cancel := context.WithCancel(context.Background())
+	tries := 0
+	sleep := healSleep
+	healSleep = func(c context.Context, d time.Duration) {
+		if tries++; tries == 3 {
+			cancel()
+		}
+		sleep(c, d)
+	}
+	p.HealTailscaleServe(ctx)
+	if tries != 3 || f.routes["443"] != "http://127.0.0.1:1111" {
+		t.Fatalf("tries = %d, routes = %v: heal went on after shutdown", tries, f.routes)
 	}
 }
