@@ -12,6 +12,8 @@ any copy counts. The Add member sheet lists every specialist, including ones alr
 
 Re-proposing a task whose work repository was removed reports that the repository is gone instead of crashing the host.
 
+`scripts/uninstall.sh --purge` deletes only this version's data folder (`~/.pengupool-ai/v2`, or `v2` under PENGUPOOL_HOME) and the parent only when it is then empty, never the whole PENGUPOOL_HOME.
+
 ## 0.10.21
 
 The map's Compact context and Clear actions work on Muse sessions (Muse /compact and /new).
