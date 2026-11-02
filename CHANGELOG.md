@@ -2,13 +2,17 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
-## Unreleased
+## 0.10.23
 
 Settings → Tailscale switches Serve between HTTP and HTTPS. *Serve over HTTP* turns off PenguPool's own HTTPS route once HTTP serves, so the two no longer both serve. *Serve over HTTPS* now works from HTTP: it serves HTTPS, then turns off PenguPool's own HTTP route. The old mode is turned off only after the new address answers; a 502, a refused connection or a TLS error keeps the old mode up. Another app's route on either port is never touched. If HTTPS cannot start (no certificates on the tailnet), HTTP stays up with its address, and the error is shown.
 
 Tailscale Serve no longer answers 502 after a login or restart until the next click. At start-up the daemon keeps retrying, with backoff for about 2 minutes, until its listener is bound and tailscaled answers. Then it re-points PenguPool's own stale route. Before, it gave up after 2 s, or after one try when tailscaled was not up yet.
 
 Switching Serve between HTTP and HTTPS finishes even if the page reloads mid-switch: turning the old mode off, or turning a new mode that did not answer back off, now runs to the end instead of leaving both modes up. Both Serve buttons are disabled while a switch runs, so a second click cannot queue behind it.
+
+Agent permissions cover the team commands agents are told to run: besides `send`, `search`, `experience search` and `experience show`, now also `ask`, `answer`, `decide`, `team request add`, `team request remove` and `compass word`. PenguPool still checks every call: an answer only from the owner's own prompt, a team change only as a request the owner approves, a Compass line only from the session PenguPool asked. If you turned this on before, the new commands keep asking until you turn the switch off and on; Settings shows them as new.
+
+Text in the app's terminal can now be selected while an agent such as Claude Code has mouse reporting on: hold Option and drag. Option still works as Meta for keys, so Option+Enter types a new line as before. Option-drag now selects lines; column selection is no longer available.
 
 ## 0.10.22
 
