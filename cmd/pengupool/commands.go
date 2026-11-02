@@ -186,7 +186,7 @@ func cmdDaemon(args []string) error {
 				os.WriteFile(filepath.Join(dir, "run", "hub.addr"), []byte(bound+"\n"), 0o600)
 				logf("host listening on %s", bound)
 				logf("unix socket %s", srv.SocketPath())
-				logf("browser app: %s", browserURL(dir, bound))
+				logf("%s", browserAppLine(bound))
 				return
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -229,6 +229,12 @@ func browserURL(dir, addr string) string {
 		return "http://" + addr + "/"
 	}
 	return "http://" + addr + "/#token=" + string(trimSpace(tok))
+}
+
+// browserAppLine is the daemon log's line for the browser app: the address only. The owner token
+// never goes into a log; `pengupool web` prints the signed-in link.
+func browserAppLine(addr string) string {
+	return "browser app: http://" + addr + "/ (signed-in link: pengupool web)"
 }
 
 func trimSpace(b []byte) []byte {

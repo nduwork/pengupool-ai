@@ -4,7 +4,7 @@
 // the bundled binary with the user's login-shell PATH. The host is never tied to the app's
 // lifetime: quitting the app leaves it, and every session, running.
 import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -89,8 +89,17 @@ export class Host {
   /** Starts the host detached from the app; its output goes to logs/daemon.log. */
   async start(): Promise<void> {
     const dir = storeDir();
-    mkdirSync(join(dir, "logs"), { recursive: true });
-    const log = openSync(join(dir, "logs", "daemon.log"), "a");
+    // Private to the owner: mode only applies to what is created now, so tighten existing ones too.
+    mkdirSync(join(dir, "logs"), { recursive: true, mode: 0o700 });
+    const logPath = join(dir, "logs", "daemon.log");
+    const log = openSync(logPath, "a", 0o600);
+    for (const [p, m] of [[dir, 0o700], [join(dir, "logs"), 0o700], [logPath, 0o600]] as const) {
+      try {
+        chmodSync(p, m);
+      } catch {
+        // best effort: the host tightens the store again when it opens it
+      }
+    }
     const child = spawn(this.binary, ["daemon", "--store", dir], {
       env: await userEnv(),
       detached: true,
