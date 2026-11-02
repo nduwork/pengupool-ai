@@ -15,6 +15,7 @@ fi
 
 # By certificate hash, so two certificates with the same name are not ambiguous.
 ID=$(security find-identity -v -p codesigning | grep -F "\"$NAME\"" | awk '{print $2}' | head -1)
+[ -n "$ID" ] || { echo "no keychain identity for $NAME" >&2; exit 1; }
 echo "==> signing $DMG"
 codesign --force --timestamp -s "$ID" "$DMG"
 
