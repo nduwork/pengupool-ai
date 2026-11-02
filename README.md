@@ -109,7 +109,9 @@ source instead, see [CONTRIBUTING.md](CONTRIBUTING.md).
   <img alt="The Welcome screen: Start with a specialist, Start in a folder, and a three-step setup card" src="assets/screenshots/screen-welcome-light.webp">
 </picture>
 
-1. **Open the app.** The empty Workspace shows Welcome with a short Setup card.
+1. **Open the app.** The empty Workspace shows the map, with a short Setup card in the sidebar.
+   **Welcome** (above) is off by default: open it from the empty map's *show Welcome* link or
+   Settings → General → **Open Welcome**.
 2. **Set a decision model.** PenguPool needs a System One triage model, local (Ollama) or online. In
    Settings → Decision model: pick it, **Save**, **Check connection**, then **Use for triage**.
 3. **Decide agent permissions.** Settings → Agents → Agent permissions lets agents run PenguPool's

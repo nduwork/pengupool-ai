@@ -19,10 +19,12 @@
 
 When a newer release is out, the app shows an update pill in its title bar.
 
-## First launch: Welcome
+## First launch: the Setup card and Welcome
 
-An empty Workspace shows **Welcome**: two ways to start, and a **Setup** card with three rows. Each
-row opens the setting that fixes it.
+An empty Workspace shows the map, with a **Setup** card in the sidebar. It has three rows, and each
+row opens the setting that fixes it. **Welcome** adds two ways to start (*Start with a specialist*,
+*Start in a folder*) beside the same card. It is off by default: open it from the empty map's
+*show Welcome* link or Settings → General → **Open Welcome**.
 
 | Setup row | Done when |
 | --- | --- |
@@ -30,8 +32,8 @@ row opens the setting that fixes it.
 | Decision model | a model is in use for triage (it passed its check) |
 | Agent permissions | you chose either way |
 
-You can hide Welcome with *Show Welcome when Workspace is empty*. Reopen it from Settings → General or
-from the empty map.
+Turn on *Show Welcome when Workspace is empty* in Settings → General to see Welcome whenever the
+Workspace is empty.
 
 ## Set the decision model
 
