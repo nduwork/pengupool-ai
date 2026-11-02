@@ -37,7 +37,6 @@ func TestTailscaleBinFallbackOrder(t *testing.T) {
 	// PATH wins, through the real lookup.
 	pathBin := mk(filepath.Join(t.TempDir(), "bin"))
 	t.Setenv("PATH", filepath.Dir(pathBin))
-	t.Logf("DBG PATH=%q lookpath=%v", os.Getenv("PATH"), func() string { p, _ := tailscaleLookPath("tailscale"); return p }())
 	if got := tailscaleBin(); got != pathBin {
 		t.Fatalf("PATH: %q", got)
 	}
@@ -942,5 +941,40 @@ func TestHealStopsOnShutdown(t *testing.T) {
 	p.HealTailscaleServe(ctx)
 	if tries != 3 || f.routes["443"] != "http://127.0.0.1:1111" {
 		t.Fatalf("tries = %d, routes = %v: heal went on after shutdown", tries, f.routes)
+	}
+}
+
+// A page reload mid-switch cancels the click's context: the off (after an answer) and the undo
+// (after a 502) still run, so the switch never leaves both modes up.
+func TestSettingsSaveServeSwitchCancelled(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		probe    error
+		wantRuns []string
+	}{
+		{"offAfterAnswer", nil, []string{"serve --bg --https=443 http://127.0.0.1:7787", "serve --http=80 off"}},
+		{"undoAfter502", errors.New("HTTP 502 Bad Gateway"), []string{"serve --bg --https=443 http://127.0.0.1:7787", "serve --https=443 off"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"))
+			stub := tailscaleCmd
+			tailscaleCmd = func(ctx context.Context, bin string, args ...string) ([]byte, error) {
+				if err := ctx.Err(); err != nil {
+					return nil, err // a cancelled command does not run
+				}
+				return stub(ctx, bin, args...)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			serveProbe = func(context.Context, string) error { cancel(); return c.probe } // the reload lands during the probe
+			p := testPool(t)
+			setServePort(t, p.st, "7787")
+			if _, err := p.settingsSave(ctx, settingsIn{EnableServeHTTPS: true}); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(*ran, c.wantRuns) {
+				t.Fatalf("serve runs = %q, want %q", *ran, c.wantRuns)
+			}
+		})
 	}
 }

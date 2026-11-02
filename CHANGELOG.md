@@ -8,6 +8,8 @@ Settings → Tailscale switches Serve between HTTP and HTTPS. *Serve over HTTP* 
 
 Tailscale Serve no longer answers 502 after a login or restart until the next click. At start-up the daemon keeps retrying, with backoff for about 2 minutes, until its listener is bound and tailscaled answers. Then it re-points PenguPool's own stale route. Before, it gave up after 2 s, or after one try when tailscaled was not up yet.
 
+Switching Serve between HTTP and HTTPS finishes even if the page reloads mid-switch: turning the old mode off, or turning a new mode that did not answer back off, now runs to the end instead of leaving both modes up. Both Serve buttons are disabled while a switch runs, so a second click cannot queue behind it.
+
 ## 0.10.22
 
 A specialist can join a team more than once, each copy in its own session. A further copy gets
