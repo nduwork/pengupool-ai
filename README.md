@@ -14,6 +14,33 @@
 
 <p align="center"><sub>Built for the Meta Global AI Developer Hackathon · Build for Your World</sub></p>
 
+## At a glance
+
+**What it is.** A macOS desktop app with a Go host. The host runs coding agents (Muse Code, Claude
+Code, Codex, pi, OMP), each in its own terminal session that outlives the app, and groups them into
+teams. Every agent gets the owner's recorded preferences (the Compass) in its context. Questions that
+need the owner are collected in one place and can be answered on the Mac or from the paired Muse app.
+
+**Run it.** macOS on Apple Silicon. Download `PenguPool-AI-<version>-mac-arm64.dmg` from the
+[latest release](https://github.com/nduwork/pengupool-ai/releases/latest), drag the app onto
+Applications and open it. To build from source (Go 1.26.1, Node 22), run `make install`. Details are
+in [Install](#install) and [CONTRIBUTING.md](CONTRIBUTING.md#build-from-source).
+
+**Architecture.**
+
+```
+ Electron app (desktop/) / browser (web/)  ─┐
+ CLI (cmd/pengupool) ── unix socket ────────┼─ gateway: loopback HTTP + WebSocket, Muse device API
+ Muse app ── Tailscale Serve ───────────────┘        │
+                                      pool: teams, sessions, specialists, Compass, triage
+                                ┌────────────┬───────┴──────┬──────────────────┐
+                               hub        store (JSON)   agentdb (SQLite)   decision (System One)
+                                │
+                     one PTY worker per session ── agents launched with PenguPool hooks
+```
+
+Package by package: [How it fits together](CONTRIBUTING.md#how-it-fits-together).
+
 ## Muse in the loop
 
 <picture>
