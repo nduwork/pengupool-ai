@@ -23,9 +23,15 @@ BUILD=$(git rev-parse --short HEAD 2>/dev/null || echo dev)
 if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
   BUILD="$BUILD-$( (git diff HEAD; git ls-files --others --exclude-standard | xargs cat 2>/dev/null) | shasum | cut -c1-8)"
 fi
+# A clean checkout at its release tag (v<Version>) is the release itself: no build id, so it reports
+# the version alone.
+VERSION=$(sed -n 's/^const Version = "\(.*\)"/\1/p' cmd/pengupool/main.go)
+if [ -z "$(git status --porcelain 2>/dev/null)" ] && [ "$(git rev-parse HEAD 2>/dev/null)" = "$(git rev-parse -q --verify "refs/tags/v$VERSION^{commit}" 2>/dev/null)" ]; then
+  BUILD=""
+fi
 LDFLAGS="-X main.Build=$BUILD"
 
-echo "==> go host (arm64), build $BUILD"
+echo "==> go host (arm64), build ${BUILD:-release v$VERSION}"
 rm -f "$OUT/host/pengupool" # go build won't overwrite an earlier universal (lipo) binary
 CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$LDFLAGS" -o "$OUT/host/pengupool" ./cmd/pengupool
 
