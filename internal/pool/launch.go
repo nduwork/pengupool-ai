@@ -144,6 +144,14 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 	if st, err := os.Stat(r.Cwd); err != nil || !st.IsDir() {
 		return store.Session{}, invalid("workspace %s is not a directory", r.Cwd)
 	}
+	if dec, model := r.Decorate, r.Model; model != "" { // kept for a restart or a restore
+		r.Decorate = func(s *store.Session) {
+			s.LaunchModel = model
+			if dec != nil {
+				dec(s)
+			}
+		}
+	}
 	if p.testSpawn != nil {
 		return p.testSpawn(r)
 	}
@@ -392,6 +400,7 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	p.expireAsks(s.ID) // what it asked before it stopped has no one waiting: it asks again if it still needs to
 	ns, err := p.spawn(ctx, spawnReq{
 		ID: s.ID, Name: s.Name, Harness: s.Harness, Cwd: s.Cwd, Resume: resumeID, Cols: s.Cols, Rows: s.Rows, SkillID: keep.SkillID, Via: s.Via,
+		Model: keep.LaunchModel, ReadDirs: p.helperReadDirs(keep),
 		Decorate: func(n *store.Session) {
 			n.TeamID, n.Role, n.SkillID, n.ConvID, n.Transcript = keep.TeamID, keep.Role, keep.SkillID, keep.ConvID, keep.Transcript
 			if keep.RunLog != "" {
@@ -404,6 +413,24 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	}
 	p.logLine(ns.ID, "session: resumed from "+resumeID)
 	return ns.View(), nil
+}
+
+// helperReadDirs is what a team specialist (a skill helper, not a team hub) reads besides its own
+// folder: the team's repositories, as startMember gives it at the start.
+func (p *Pool) helperReadDirs(s store.Session) []string {
+	if s.TeamID == "" || s.SkillID == "" {
+		return nil
+	}
+	d := p.st.State().Domain
+	t, sk := findTeam(&d, s.TeamID), findSkill(&d, s.SkillID)
+	if t == nil || sk == nil || teamHubSkill(*sk) {
+		return nil
+	}
+	var dirs []string
+	for _, r := range teamRepos(&d, t) {
+		dirs = append(dirs, r.Path)
+	}
+	return dirs
 }
 
 // forget drops an ended session's record. A running session must be stopped first.
