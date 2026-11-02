@@ -10,7 +10,9 @@ makes two share one. Messages reach each copy by its session. Triage offers one 
 specialist and picks the copy that is idle; the owner may name any copy, and handing the work to
 any copy counts. The Add member sheet lists every specialist, including ones already on the team.
 
-The daemon log no longer records the owner token: it names only the browser app's address (`pengupool web` prints the signed-in link). The store, its logs folder and daemon.log are now private to the owner (folders 0700, the log 0600), including stores made by earlier versions. A daemon.log written before this release still holds the token; delete it to remove the token from disk.
+Re-proposing a task whose work repository was removed reports that the repository is gone instead of crashing the host.
+
+`scripts/uninstall.sh --purge` deletes only this version's data folder (`~/.pengupool-ai/v2`, or `v2` under PENGUPOOL_HOME) and the parent only when it is then empty, never the whole PENGUPOOL_HOME.
 
 ## 0.10.21
 
