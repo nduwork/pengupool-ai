@@ -84,12 +84,10 @@ hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$DMG" >> "$LOG" 2>&1 || f
 MOUNTED=1
 [ -d "$MNT/PenguPool AI.app" ] || fail "the disk image has no PenguPool AI.app"
 # A signed app takes only an update that verifies and is signed by the same team; an ad-hoc build (make install) skips this.
-team() { codesign -dvv "$1" 2>&1 | sed -n 's/^TeamIdentifier=//p'; }
-TEAM=$(team "$BUNDLE")
+# The team is checked against Apple's Developer ID chain: an ad-hoc signature can claim any TeamIdentifier.
+TEAM=$(codesign -dvv "$BUNDLE" 2>&1 | sed -n 's/^TeamIdentifier=//p')
 if [ -n "$TEAM" ] && [ "$TEAM" != "not set" ]; then
-  codesign --verify --deep --strict "$MNT/PenguPool AI.app" >> "$LOG" 2>&1 || fail "the new app's signature does not verify"
-  NEWTEAM=$(team "$MNT/PenguPool AI.app")
-  [ "$NEWTEAM" = "$TEAM" ] || fail "the new app is signed by team '$NEWTEAM', not '$TEAM'"
+  codesign --verify --deep --strict -R="anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = \\"$TEAM\\"" "$MNT/PenguPool AI.app" >> "$LOG" 2>&1 || fail "the new app is not a verified Developer ID app of team $TEAM"
 fi
 rm -rf "$NEW"
 [ -e "$NEW" ] && fail "could not remove $NEW"

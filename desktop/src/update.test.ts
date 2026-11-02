@@ -65,8 +65,8 @@ test("installScript names every path, quoted", () => {
   assert.ok(s.includes(`ditto "$MNT/PenguPool AI.app" "$NEW"`));
   // A signed app checks the new app's signature and team before copying it; an ad-hoc one skips the check.
   assert.ok(s.includes(`if [ -n "$TEAM" ] && [ "$TEAM" != "not set" ]; then`));
-  assert.ok(s.includes(`codesign --verify --deep --strict "$MNT/PenguPool AI.app"`));
-  assert.ok(s.includes(`[ "$NEWTEAM" = "$TEAM" ] || fail`));
+  // The team is anchored to Apple's Developer ID chain, not read from a field an ad-hoc signer can set.
+  assert.ok(s.includes(`codesign --verify --deep --strict -R="anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = \\"$TEAM\\"" "$MNT/PenguPool AI.app"`));
   assert.ok(s.indexOf("codesign --verify") < s.indexOf("ditto"));
   // The installed app is moved aside only after the copy, and put back if the new one can't move in.
   assert.ok(s.indexOf("ditto") < s.indexOf(`mv "$BUNDLE" "$OLD"`));
