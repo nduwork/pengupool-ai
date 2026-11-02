@@ -519,7 +519,7 @@ function Tailscale(): ReactElement {
             onClick={async () => {
               const r = await app.call<Record<string, string>>("settings.save", {
                 tailscale: `https://${s.tailscale_name}`,
-                enable_serve: true,
+                enable_serve_https: true,
               });
               if (r !== undefined) toast(r.serve_error ?? (r.serve || "Tailscale Serve enabled"));
               setN(n + 1);

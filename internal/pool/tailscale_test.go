@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -564,8 +565,8 @@ func TestSettingsSaveServeForeignRoute(t *testing.T) {
 	}
 }
 
-// An HTTP click re-points PenguPool's own stale :443 route too, so recording the new port never
-// strands it; another app's :80 route is refused.
+// An HTTP click turns PenguPool's own :443 route off (a switch, never both); another app's :80
+// route is refused.
 func TestSettingsSaveServeHTTPPlan(t *testing.T) {
 	t.Run("staleOwnHTTPS", func(t *testing.T) {
 		ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:1111"))
@@ -578,9 +579,8 @@ func TestSettingsSaveServeHTTPPlan(t *testing.T) {
 		if e, _ := res.(map[string]any)["serve_http_error"].(string); e != "" {
 			t.Fatalf("serve_http_error = %q", e)
 		}
-		joined := strings.Join(*ran, "\n")
-		if len(*ran) != 2 || !strings.Contains(joined, "--http=80") || !strings.Contains(joined, "--https=443") {
-			t.Fatalf("serve runs = %v, want :80 and the stale :443", *ran)
+		if len(*ran) != 2 || !strings.Contains((*ran)[0], "--http=80") || (*ran)[1] != "serve --https=443 off" {
+			t.Fatalf("serve runs = %v, want :80 then PenguPool's :443 off", *ran)
 		}
 		if got := p.st.Config().Network.ServePort; got != "7787" {
 			t.Fatalf("serve port = %q, want 7787", got)
@@ -623,5 +623,66 @@ func TestMuseBaseURLPrefersHTTPS(t *testing.T) {
 	}
 	if got := p.museBaseURL(); got != "https://m.ts.net" {
 		t.Fatalf("museBaseURL = %q, want https://m.ts.net", got)
+	}
+}
+
+// The Settings buttons switch the mode: each serves its own, then turns off PenguPool's route in the
+// other mode, never another app's; HTTPS without certificates keeps HTTP up and its address.
+func TestSettingsSaveServeSwitch(t *testing.T) {
+	both := func(https, http string) string {
+		return `{"Web":{"probe-machine.tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"` + https +
+			`"}}},"probe-machine.tailnet.ts.net:80":{"Handlers":{"/":{"Proxy":"` + http + `"}}}}}`
+	}
+	for _, c := range []struct {
+		name, status, serve string
+		in                  settingsIn
+		key                 string
+		wantRuns            []string
+		wantErr, wantURL    string
+	}{
+		{"httpsToHTTP", tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:7787"),
+			settingsIn{EnableServeHTTP: true}, "serve_http",
+			[]string{"serve --bg --http=80 http://127.0.0.1:7787", "serve --https=443 off"}, "", "http://"},
+		{"httpToHTTPS", tailscaleStatusRunning, tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"),
+			settingsIn{EnableServeHTTPS: true}, "serve",
+			[]string{"serve --bg --https=443 http://127.0.0.1:7787", "serve --http=80 off"}, "", "https://"},
+		{"foreignHTTPSKept", tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:2222"),
+			settingsIn{EnableServeHTTP: true}, "serve_http",
+			[]string{"serve --bg --http=80 http://127.0.0.1:7787"}, "", "http://"},
+		{"foreignHTTPKept", tailscaleStatusRunning, both("http://127.0.0.1:7787", "http://127.0.0.1:2222"),
+			settingsIn{EnableServeHTTPS: true}, "serve",
+			[]string{"serve --bg --https=443 http://127.0.0.1:7787"}, "", "https://"},
+		{"httpsNoCertsKeepsHTTP", tailscaleStatusNoCerts, tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"),
+			settingsIn{EnableServeHTTPS: true}, "serve",
+			nil, "HTTPS certificates are not enabled", "http://"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ran := stubTailscale(t, c.status, c.serve)
+			p := testPool(t)
+			setServePort(t, p.st, "7787")
+			old := "http://probe-machine.tailnet.ts.net"
+			if c.in.EnableServeHTTP {
+				old = "https://probe-machine.tailnet.ts.net"
+			}
+			_ = p.st.UpdateConfig(func(cfg *store.Config) error { cfg.Network.Tailscale = old; return nil })
+			url := "https://probe-machine.tailnet.ts.net"
+			if c.in.EnableServeHTTP {
+				url = "http://probe-machine.tailnet.ts.net"
+			}
+			c.in.Tailscale = &url
+			res, err := p.settingsSave(context.Background(), c.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if e, _ := res.(map[string]any)[c.key+"_error"].(string); (c.wantErr == "") != (e == "") || !strings.Contains(e, c.wantErr) {
+				t.Fatalf("%s_error = %q, want %q", c.key, e, c.wantErr)
+			}
+			if !slices.Equal(*ran, c.wantRuns) {
+				t.Fatalf("serve runs = %q, want %q", *ran, c.wantRuns)
+			}
+			if got := p.st.Config().Network.Tailscale; !strings.HasPrefix(got, c.wantURL) {
+				t.Fatalf("tailscale address = %q, want %s…", got, c.wantURL)
+			}
+		})
 	}
 }
