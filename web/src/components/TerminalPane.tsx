@@ -184,6 +184,12 @@ export function TerminalPane({
     const queryHandlers: IDisposable[] = [
       ...TERMINAL_QUERY_CSI.map((id) => term.parser.registerCsiHandler(id, silent)),
       ...TERMINAL_QUERY_OSC.map((code) => term.parser.registerOscHandler(code, silent)),
+      // OSC 52: what the agent copies (Claude Code's copy) lands on the clipboard of the device viewing
+      // this pane. Live output only: a replayed copy must not overwrite the clipboard on reattach.
+      term.parser.registerOscHandler(52, osc52Handler(
+        () => session.attachState === "live",
+        (text) => void navigator.clipboard?.writeText(text).catch(() => {}),
+      )),
     ];
 
     // Inbound wiring: data frames arrive on this session's channel, control messages (session
@@ -293,6 +299,30 @@ export function TerminalPane({
       <div className="min-h-0 flex-1" ref={hostRef} />
     </section>
   );
+}
+
+/** The text an OSC 52 clipboard write carries (`Pc;base64`), or undefined for a read query (`?`), an
+ * empty payload or bad base64. Reads are never answered: a program in the session must not see the
+ * viewer's clipboard. */
+export function osc52Text(data: string): string | undefined {
+  const sep = data.indexOf(";");
+  const payload = sep < 0 ? "" : data.slice(sep + 1);
+  if (payload === "" || payload === "?") return undefined;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(atob(payload), (c) => c.charCodeAt(0)));
+  } catch {
+    return undefined;
+  }
+}
+
+/** The OSC 52 handler: a write goes to `write` while `live`; every OSC 52, read query included, is
+ * consumed so nothing answers it. */
+export function osc52Handler(live: () => boolean, write: (text: string) => void): (data: string) => boolean {
+  return (data) => {
+    const text = osc52Text(data);
+    if (text !== undefined && live()) write(text);
+    return true;
+  };
 }
 
 /** A path as a shell reads it: anything beyond safe characters backslash-escaped (Terminal.app's form). */

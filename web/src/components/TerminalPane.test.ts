@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isShiftEnter, macOptionKeys, shellQuote, shiftEnter } from "./TerminalPane";
+import { isShiftEnter, macOptionKeys, osc52Handler, osc52Text, shellQuote, shiftEnter } from "./TerminalPane";
 
 describe("shellQuote", () => {
   it("escapes what a shell would split or expand, as Terminal.app does", () => {
@@ -30,5 +30,31 @@ describe("shiftEnter", () => {
 describe("macOptionKeys", () => {
   it("keeps Option as Meta for keys and lets Option-drag select over an agent's mouse mode", () => {
     expect(macOptionKeys).toEqual({ macOptionIsMeta: true, macOptionClickForcesSelection: true });
+  });
+});
+
+describe("osc52Text", () => {
+  it("decodes a clipboard write, UTF-8 included", () => {
+    expect(osc52Text("c;" + btoa("hello world"))).toBe("hello world");
+    expect(osc52Text(";" + btoa(String.fromCharCode(...new TextEncoder().encode("héllo ✓"))))).toBe("héllo ✓");
+  });
+  it("never answers a read query, and ignores empty or broken payloads", () => {
+    expect(osc52Text("c;?")).toBeUndefined();
+    expect(osc52Text("c;")).toBeUndefined();
+    expect(osc52Text("c")).toBeUndefined();
+    expect(osc52Text("c;not base64!")).toBeUndefined();
+  });
+});
+
+describe("osc52Handler", () => {
+  it("writes a decoded copy to the clipboard while live, and consumes every OSC 52", () => {
+    const writes: string[] = [];
+    let live = true;
+    const h = osc52Handler(() => live, (t) => writes.push(t));
+    expect(h("c;" + btoa("copied"))).toBe(true);
+    expect(h("c;?")).toBe(true); // read query: consumed, not answered, no write
+    live = false;
+    expect(h("c;" + btoa("replayed"))).toBe(true);
+    expect(writes).toEqual(["copied"]);
   });
 });
