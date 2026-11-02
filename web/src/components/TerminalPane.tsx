@@ -22,6 +22,11 @@ export function shiftEnter(harness: string | undefined): string {
   return harness === "pi" ? "\n" : "\x1b\r";
 }
 
+/** Option on the Mac: Meta for keys (Option+Enter types ESC CR), and Option-drag selects text even
+ * when the agent has turned mouse reporting on, as Claude Code does. Shift does not force a selection
+ * on a Mac in xterm.js; Option-click does only with macOptionClickForcesSelection. */
+export const macOptionKeys = { macOptionIsMeta: true, macOptionClickForcesSelection: true } as const;
+
 export function isShiftEnter(e: Pick<KeyboardEvent, "key" | "shiftKey" | "ctrlKey" | "altKey" | "metaKey">): boolean {
   return e.key === "Enter" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
 }
@@ -98,7 +103,7 @@ export function TerminalPane({
       cursorBlink: true,
       allowProposedApi: true,
       scrollback: scrollbackSetting(),
-      macOptionIsMeta: true,
+      ...macOptionKeys,
       theme: {
         background: "#0d1117",
         foreground: "#d6dde6",
