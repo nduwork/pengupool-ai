@@ -10,6 +10,8 @@ makes two share one. Messages reach each copy by its session. Triage offers one 
 specialist and picks the copy that is idle; the owner may name any copy, and handing the work to
 any copy counts. The Add member sheet lists every specialist, including ones already on the team.
 
+## 0.10.21
+
 The map's Compact context and Clear actions work on Muse sessions (Muse /compact and /new).
 
 Muse sessions idle reliably at turn end. A tool hook processed after its turn's Stop no longer
