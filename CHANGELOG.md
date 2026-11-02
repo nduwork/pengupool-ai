@@ -10,6 +10,8 @@ makes two share one. Messages reach each copy by its session. Triage offers one 
 specialist and picks the copy that is idle; the owner may name any copy, and handing the work to
 any copy counts. The Add member sheet lists every specialist, including ones already on the team.
 
+`scripts/uninstall.sh --purge` deletes only this version's data folder (`~/.pengupool-ai/v2`, or `v2` under PENGUPOOL_HOME) and the parent only when it is then empty, never the whole PENGUPOOL_HOME.
+
 ## 0.10.21
 
 The map's Compact context and Clear actions work on Muse sessions (Muse /compact and /new).
