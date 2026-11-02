@@ -22,6 +22,7 @@ uninstall:
 # identity in the keychain the app and the image are signed, notarized and stapled (scripts/notarize.sh).
 dist:
 	SIGN=1 scripts/build-app.sh --no-install
+	scripts/notarize.sh "desktop/dist/mac-arm64/PenguPool AI.app"
 	rm -rf build/dmg $(DIST) && mkdir -p build/dmg
 	ditto "desktop/dist/mac-arm64/PenguPool AI.app" build/dmg/PenguPool\ AI.app
 	ln -s /Applications build/dmg/Applications
