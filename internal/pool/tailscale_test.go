@@ -697,16 +697,20 @@ func TestSettingsSaveServeSwitch(t *testing.T) {
 func TestSettingsSaveServeSwitchProbe(t *testing.T) {
 	for _, c := range []struct {
 		name     string
+		serve    string
 		probe    error
 		wantRuns []string
 		wantErr  string
 		wantURL  string
 	}{
-		{"answers", nil, []string{"serve --bg --https=443 http://127.0.0.1:7787", "serve --http=80 off"}, "", "https://"},
-		{"badGateway", errors.New("HTTP 502 Bad Gateway"), []string{"serve --bg --https=443 http://127.0.0.1:7787"}, "502 Bad Gateway", "http://"},
+		{"answers", tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"), nil, []string{"serve --bg --https=443 http://127.0.0.1:7787", "serve --http=80 off"}, "", "https://"},
+		{"badGateway", tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"), errors.New("HTTP 502 Bad Gateway"), []string{"serve --bg --https=443 http://127.0.0.1:7787", "serve --https=443 off"}, "502 Bad Gateway", "http://"},
+		// :443 was already PenguPool's: a 502 leaves it as it was rather than turning it off.
+		{"badGatewayOwnHTTPS", `{"Web":{"probe-machine.tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7787"}}},"probe-machine.tailnet.ts.net:80":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7787"}}}}}`,
+			errors.New("HTTP 502 Bad Gateway"), []string{"serve --bg --https=443 http://127.0.0.1:7787"}, "502 Bad Gateway", "http://"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSONFor("http://127.0.0.1:7787", "probe-machine.tailnet.ts.net:80"))
+			ran := stubTailscale(t, tailscaleStatusRunning, c.serve)
 			var probed []string
 			serveProbe = func(_ context.Context, url string) error { probed = append(probed, url); return c.probe }
 			p := testPool(t)

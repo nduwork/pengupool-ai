@@ -270,9 +270,10 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 	}
 	// runServe points Tailscale Serve (tailnet only; never Funnel) at the bound port in each mode
 	// the plan names and reports under key; only when all of them took, it turns off the plan's
-	// off modes (PenguPool's own route in the mode a switch leaves). Never guess a port: Serve at a
-	// port nothing listens on fails silently for every remote client.
-	runServe := func(key string, click bool, plan func(port string) (modes, off []serveMode, err error)) {
+	// off modes (PenguPool's own route in the mode a switch leaves), and when the new address does
+	// not answer, its undo modes instead (a new mode that had no PenguPool route before the click).
+	// Never guess a port: Serve at a port nothing listens on fails silently for every remote client.
+	runServe := func(key string, click bool, plan func(port string) (modes, off, undo []serveMode, err error)) {
 		port := boundPort()
 		if port == "" {
 			res[key+"_error"] = "daemon HTTP port is not bound yet; try again in a moment"
@@ -280,7 +281,7 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 		}
 		var outs, errs []string
 		approve := ""
-		modes, off, perr := plan(port)
+		modes, off, undo, perr := plan(port)
 		if perr != nil {
 			errs = append(errs, perr.Error())
 		}
@@ -306,6 +307,11 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 			// nothing listens on), a refused connection or a TLS error keeps the old mode up.
 			if err := probeServeMode(ctx, modes[0]); err != nil {
 				errs = append(errs, "the new "+string(modes[0])+" address did not answer ("+err.Error()+"); the "+string(off[0])+" mode stays on")
+				for _, mode := range undo { // never two modes up with one of them answering 502
+					if out, err := serveOff(ctx, mode); err != nil {
+						errs = append(errs, string(mode)+" off: "+err.Error()+" "+out)
+					}
+				}
 			}
 		}
 		if len(errs) == 0 {
@@ -327,18 +333,18 @@ func (p *Pool) settingsSave(ctx context.Context, in settingsIn) (any, error) {
 	}
 	if in.EnableServe {
 		// Stale modes keep their mode; a fresh setup gets HTTPS, or an error without certificates.
-		runServe("serve", false, func(port string) ([]serveMode, []serveMode, error) {
+		runServe("serve", false, func(port string) ([]serveMode, []serveMode, []serveMode, error) {
 			modes, err := servePlan(ctx, port, p.st.Config().Network.ServePort)
-			return modes, nil, err
+			return modes, nil, nil, err
 		})
 	}
 	if in.EnableServeHTTPS {
-		runServe("serve", true, func(port string) ([]serveMode, []serveMode, error) {
+		runServe("serve", true, func(port string) ([]serveMode, []serveMode, []serveMode, error) {
 			return serveHTTPSPlan(ctx, port, p.st.Config().Network.ServePort)
 		})
 	}
 	if in.EnableServeHTTP {
-		runServe("serve_http", true, func(port string) ([]serveMode, []serveMode, error) {
+		runServe("serve_http", true, func(port string) ([]serveMode, []serveMode, []serveMode, error) {
 			return serveHTTPPlan(ctx, port, p.st.Config().Network.ServePort)
 		})
 	}
@@ -568,52 +574,66 @@ func ownServeRoute(target, servePort, port string) bool {
 }
 
 // serveHTTPPlan is the explicit HTTP click: serve :80, then turn off PenguPool's own :443 route,
-// so the two never both serve. Another app's :80 route is refused; another app's :443 is left alone.
-func serveHTTPPlan(ctx context.Context, port, servePort string) (modes, off []serveMode, err error) {
+// so the two never both serve; undo is :80 when it had no route before. Another app's :80 route
+// is refused; another app's :443 is left alone.
+func serveHTTPPlan(ctx context.Context, port, servePort string) (modes, off, undo []serveMode, err error) {
 	bin := tailscaleBin()
 	if bin == "" {
-		return []serveMode{serveHTTP}, nil, nil // serveOnce reports that Tailscale is missing
+		return []serveMode{serveHTTP}, nil, nil, nil // serveOnce reports that Tailscale is missing
 	}
 	rawHTTPS, rawHTTP, ok := currentServeTargets(ctx, bin)
 	if !ok {
-		return []serveMode{serveHTTP}, nil, nil
+		return []serveMode{serveHTTP}, nil, nil, nil
 	}
 	if rawHTTP != "" && !ownServeRoute(rawHTTP, servePort, port) {
-		return nil, nil, errors.New("Serve on :80 already points at " + rawHTTP + " (another app); PenguPool leaves it alone")
+		return nil, nil, nil, errors.New("Serve on :80 already points at " + rawHTTP + " (another app); PenguPool leaves it alone")
 	}
 	if ownServeRoute(rawHTTPS, servePort, port) {
 		off = []serveMode{serveHTTPS}
 	}
-	return []serveMode{serveHTTP}, off, nil
+	if rawHTTP == "" {
+		undo = []serveMode{serveHTTP}
+	}
+	return []serveMode{serveHTTP}, off, undo, nil
 }
 
 // serveHTTPSPlan is the explicit HTTPS click: serve :443, then turn off PenguPool's own :80 route.
-// Without certificates, or with another app on :443, it is an error and the HTTP mode stays up.
-func serveHTTPSPlan(ctx context.Context, port, servePort string) (modes, off []serveMode, err error) {
+// Without certificates, or with another app on :443, it is an error and the HTTP mode stays up;
+// undo is :443 when it had no route before.
+func serveHTTPSPlan(ctx context.Context, port, servePort string) (modes, off, undo []serveMode, err error) {
 	bin := tailscaleBin()
 	if bin == "" {
-		return []serveMode{serveHTTPS}, nil, nil // serveOnce reports that Tailscale is missing
+		return []serveMode{serveHTTPS}, nil, nil, nil // serveOnce reports that Tailscale is missing
 	}
 	if st, err := runTailscaleStatus(ctx, bin); err == nil && !serveCerts(st) {
-		return nil, nil, errors.New("HTTPS certificates are not enabled on this tailnet; enable HTTPS in Tailscale, or use Serve over HTTP")
+		return nil, nil, nil, errors.New("HTTPS certificates are not enabled on this tailnet; enable HTTPS in Tailscale, or use Serve over HTTP")
 	}
 	rawHTTPS, rawHTTP, ok := currentServeTargets(ctx, bin)
 	if !ok {
-		return []serveMode{serveHTTPS}, nil, nil
+		return []serveMode{serveHTTPS}, nil, nil, nil
 	}
 	if own, _ := ownServeTargets(rawHTTPS, "", servePort, port); rawHTTPS != "" && own == "" {
-		return nil, nil, errors.New("Serve on :443 already points at " + rawHTTPS + " (another app); PenguPool leaves it alone")
+		return nil, nil, nil, errors.New("Serve on :443 already points at " + rawHTTPS + " (another app); PenguPool leaves it alone")
 	}
 	if ownServeRoute(rawHTTP, servePort, port) {
 		off = []serveMode{serveHTTP}
 	}
-	return []serveMode{serveHTTPS}, off, nil
+	if rawHTTPS == "" {
+		undo = []serveMode{serveHTTPS}
+	}
+	return []serveMode{serveHTTPS}, off, undo, nil
 }
 
 // serveProbe GETs url and fails on no answer or a 5xx (Serve answers 502 when the port it points
 // at has no listener). Tests stub it.
 var serveProbe = func(ctx context.Context, url string) error {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second) // a first HTTPS request may wait for its certificate
+	budget := 20 * time.Second
+	if strings.HasPrefix(url, "https://") {
+		// The first HTTPS request waits for the certificate to be issued. 45 s keeps a whole switch
+		// (status 2×10 s, serve 20 s, this, off 20 s) inside the client's 120 s call.
+		budget = 45 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
