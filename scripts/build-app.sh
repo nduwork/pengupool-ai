@@ -49,9 +49,11 @@ cd desktop
 deps
 node build.mjs
 rm -rf dist
-# A Developer ID identity in the keychain signs the app for distribution (hardened runtime, nested code
-# first; scripts/notarize.sh then notarizes the disk image). Without one the app is signed ad hoc.
-SIGN_ID=$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"Developer ID Application: \([^"]*\)".*/\1/p' | head -1)
+# For a release (make dist sets SIGN=1), a Developer ID identity in the keychain signs the app for
+# distribution (hardened runtime, nested code first; scripts/notarize.sh then notarizes the disk image).
+# Otherwise, and for make install, the app is signed ad hoc, which needs no network.
+SIGN_ID=
+[ "${SIGN:-}" = 1 ] && SIGN_ID=$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"Developer ID Application: \([^"]*\)".*/\1/p' | head -1)
 APP="$ROOT/desktop/dist/mac-arm64/PenguPool AI.app"
 if [ -n "$SIGN_ID" ]; then
   echo "==> signing with Developer ID Application: $SIGN_ID"
