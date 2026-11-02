@@ -45,7 +45,8 @@ func TestResumeKeepsModelAndReadDirs(t *testing.T) {
 	_ = st.Update(func(s *store.State) error {
 		s.Sessions = append(s.Sessions, store.Session{ID: "leadaaaaaaaa", Name: "lead", Harness: "claude", State: "running", Status: "idle"})
 		s.Domain.Repos = []protocol.Repo{{ID: "r1", Name: "app", Path: repo}, {ID: "r2", Name: "api", Path: repo2}}
-		s.Domain.Skills = []protocol.Skill{{ID: "sk-rev", Name: "reviewer", Path: t.TempDir(), Source: "local"}}
+		s.Domain.Skills = []protocol.Skill{{ID: "sk-rev", Name: "reviewer", Path: t.TempDir(), Source: "local"},
+			{ID: "sk-hub", Name: "lead-agent", Path: t.TempDir(), Source: "local", Capabilities: []string{"team-hub"}}}
 		s.Domain.Teams = []protocol.Team{{ID: "team1111", Name: "app", RepoID: "r1", Repos: []string{"r2"}, Harness: "claude", State: "active",
 			Members: []protocol.Member{{SessionID: "leadaaaaaaaa", Name: "lead", Role: "main", State: "active"}}}}
 		return nil
@@ -56,7 +57,9 @@ func TestResumeKeepsModelAndReadDirs(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := res.(protocol.Member).SessionID
-	p.setSession(id, func(x *store.Session) { x.State, x.Status, x.ConvID, x.Model = "ended", "ended", "conv-1", "Model X (reported)" })
+	p.setSession(id, func(x *store.Session) {
+		x.State, x.Status, x.ConvID, x.Model = "ended", "ended", "conv-1", "Model X (reported)"
+	})
 	if _, err := p.resume(ctx, sessionIn{SessionID: id}); err != nil {
 		t.Fatal(err)
 	}
@@ -66,5 +69,9 @@ func TestResumeKeepsModelAndReadDirs(t *testing.T) {
 	}
 	if !slices.Equal(again.ReadDirs, []string{repo, repo2}) || !slices.Equal(again.ReadDirs, first.ReadDirs) {
 		t.Fatalf("resumed read dirs %v, first start %v", again.ReadDirs, first.ReadDirs)
+	}
+	// A team-hub skill launched through a proposal (startMember) got read dirs too: resume keeps them.
+	if got := p.helperReadDirs(store.Session{TeamID: "team1111", SkillID: "sk-hub"}); !slices.Equal(got, []string{repo, repo2}) {
+		t.Fatalf("team-hub skill resume read dirs %v, want %v", got, []string{repo, repo2})
 	}
 }

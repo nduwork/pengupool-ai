@@ -423,7 +423,7 @@ func (p *Pool) helperReadDirs(s store.Session) []string {
 	}
 	d := p.st.State().Domain
 	t, sk := findTeam(&d, s.TeamID), findSkill(&d, s.SkillID)
-	if t == nil || sk == nil || teamHubSkill(*sk) {
+	if t == nil || sk == nil { // as startMember: any skill member, a team-hub one included
 		return nil
 	}
 	var dirs []string
