@@ -4,7 +4,7 @@ Every PenguPool AI release, newest first. Each entry describes that release as i
 
 ## 0.11.0
 
-The app is signed with a Developer ID and notarized by Apple. Download the disk image, drag PenguPool AI.app onto Applications and open it: macOS opens it without a warning, with no Gatekeeper workaround. The app and the disk image each carry their notarization ticket, so the first launch works without the network too. Installing from the disk image is now the one documented way; `make install` stays the development build (CONTRIBUTING.md).
+The app is signed with a Developer ID and notarized by Apple. Download the disk image, drag PenguPool AI.app onto Applications and open it: macOS opens it after its usual confirmation for downloaded apps, with no unidentified-developer warning and no Gatekeeper workaround. The app and the disk image each carry their notarization ticket, so the first launch works without the network too. Installing from the disk image is now the one documented way; `make install` stays the development build (CONTRIBUTING.md). Coming from an earlier build, macOS may ask once more for permissions it granted the old one, such as controlling Finder for Move to Trash and local network access.
 
 The in-app updater takes only an update signed by the same Developer ID team as the running app. Before copying the new app out of the disk image it verifies the signature and checks the team against Apple's certificate chain; an update that fails is refused, the installed app reopens, and the update log says why. An ad-hoc development build skips this check.
 
