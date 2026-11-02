@@ -317,7 +317,7 @@ export function osc52Text(data: string): string | undefined {
   }
 }
 
-/** Writes into xterm.js, counting replayed writes until xterm.js has parsed them (on a later tick). */
+/** Writes into xterm.js, counting replayed writes until xterm.js has parsed them. */
 export function terminalSink(term: Pick<Terminal, "write" | "reset">, replaying: { n: number }): TerminalSink {
   return {
     write: (data, replayed) => {
