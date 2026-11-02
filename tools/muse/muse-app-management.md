@@ -172,7 +172,8 @@ launches, check-ins), not the agent's own tool prompts.
 
 An agent client that needs more than the device API (a screen to read, keys to type) uses the
 same WebSocket the PenguPool app uses. It takes **the owner's token**, which is full control of
-this PenguPool, so keep it on machines you own. On the PenguPool machine, `pengupool-ai web`
+this PenguPool, so keep it on machines you own. On the PenguPool machine,
+`"/Applications/PenguPool AI.app/Contents/Resources/bin/pengupool" web` ([command line](../../docs/cli.md))
 prints the app URL, and the token is the part after `#token=`.
 
 This API answers only on the PenguPool machine itself (or through an SSH port forward to it).
