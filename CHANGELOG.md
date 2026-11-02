@@ -2,7 +2,7 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
-## Unreleased
+## 0.10.22
 
 A specialist can join a team more than once, each copy in its own session. A further copy gets
 its own name (pr-review-agent-2) and its own folder, fixed when it joins, so renaming a copy never
@@ -13,6 +13,14 @@ any copy counts. The Add member sheet lists every specialist, including ones alr
 Re-proposing a task whose work repository was removed reports that the repository is gone instead of crashing the host.
 
 `scripts/uninstall.sh --purge` deletes only this version's data folder (`~/.pengupool-ai/v2`, or `v2` under PENGUPOOL_HOME) and the parent only when it is then empty, never the whole PENGUPOOL_HOME.
+
+A restarted or restored team specialist keeps the model it was started with and its read access to the team's repositories.
+
+The daemon log no longer records the owner token: it names only the browser app's address (`pengupool web` prints the signed-in link). The store, its logs folder and daemon.log are now private to the owner (folders 0700, the log 0600), including stores made by earlier versions. A daemon.log written before this release still holds the token; delete it to remove the token from disk.
+
+The README opens with an at-a-glance section: what PenguPool is, how to run it, and an architecture sketch that links CONTRIBUTING's package map.
+
+Internal: a dead variable in team proposals is removed (no behaviour change).
 
 ## 0.10.21
 
