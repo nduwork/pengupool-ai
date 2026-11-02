@@ -145,6 +145,9 @@ func (p *Pool) propose(ctx context.Context, t protocol.Task, version int) (proto
 	st := p.st.State()
 	d := st.Domain
 	repo := findRepo(&d, t.RepoID)
+	if repo == nil { // removed since the task was made: a proposal needs its work repository
+		return protocol.Proposal{}, notFound("the task's work repository %s is gone; add it again or make a new task", t.RepoID)
+	}
 	text := t.Title + " " + t.Objective
 	required := t.Capabilities
 	if len(required) == 0 {
