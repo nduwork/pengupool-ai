@@ -2,6 +2,10 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
+## Unreleased
+
+Settings → Tailscale switches Serve between HTTP and HTTPS. *Serve over HTTP* turns off PenguPool's own HTTPS route once HTTP serves, so the two no longer both serve. *Serve over HTTPS* now works from HTTP: it serves HTTPS, then turns off PenguPool's own HTTP route. The old mode is turned off only after the new address answers; a 502, a refused connection or a TLS error keeps the old mode up. Another app's route on either port is never touched. If HTTPS cannot start (no certificates on the tailnet), HTTP stays up with its address, and the error is shown.
+
 ## 0.10.22
 
 A specialist can join a team more than once, each copy in its own session. A further copy gets
