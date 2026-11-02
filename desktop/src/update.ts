@@ -83,6 +83,14 @@ log "the app quit"
 hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$DMG" >> "$LOG" 2>&1 || fail "could not open the disk image"
 MOUNTED=1
 [ -d "$MNT/PenguPool AI.app" ] || fail "the disk image has no PenguPool AI.app"
+# A signed app takes only an update that verifies and is signed by the same team; an ad-hoc build (make install) skips this.
+team() { codesign -dvv "$1" 2>&1 | sed -n 's/^TeamIdentifier=//p'; }
+TEAM=$(team "$BUNDLE")
+if [ -n "$TEAM" ] && [ "$TEAM" != "not set" ]; then
+  codesign --verify --deep --strict "$MNT/PenguPool AI.app" >> "$LOG" 2>&1 || fail "the new app's signature does not verify"
+  NEWTEAM=$(team "$MNT/PenguPool AI.app")
+  [ "$NEWTEAM" = "$TEAM" ] || fail "the new app is signed by team '$NEWTEAM', not '$TEAM'"
+fi
 rm -rf "$NEW"
 [ -e "$NEW" ] && fail "could not remove $NEW"
 ditto "$MNT/PenguPool AI.app" "$NEW" >> "$LOG" 2>&1 || fail "could not copy the new app"
