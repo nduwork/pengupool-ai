@@ -697,6 +697,13 @@ func serveOnce(ctx context.Context, mode serveMode, port string) (out, approveUR
 	return out, "", err
 }
 
+// healBudget bounds how long HealTailscaleServe waits, in total between tries, for the listener
+// and tailscaled; healSleep waits. Tests stub the sleep.
+var (
+	healBudget = 2 * time.Minute
+	healSleep  = time.Sleep
+)
+
 // HealTailscaleServe re-runs Serve when a Serve target PenguPool configured is
 // not this daemon's bound port (e.g. after a restart onto a new port). Each mode
 // keeps its mode; another app's route is never touched; when nothing is
@@ -707,29 +714,35 @@ func (p *Pool) HealTailscaleServe() {
 	if cfg.Network.Tailscale == "" || !store.IsHomeDefault(p.st.Dir()) {
 		return
 	}
-	// cmdDaemon launches this before the gateway listener exists, and
-	// boundPort() stays "" until it binds. Wait for the bound address
-	// the way the hub.addr writer in cmdDaemon does; Heal runs in its
-	// own goroutine, so the bounded wait blocks nothing. If the
-	// listener never reports an address, there is nothing to heal.
-	port := ""
-	for range 200 {
-		if port = boundPort(); port != "" {
+	// cmdDaemon launches this before the gateway listener exists, and at login tailscaled may not
+	// be up yet. Either way a stale route answers 502 until something re-points it, so wait, with
+	// backoff, for both the bound port and a readable Serve status, up to healBudget. Heal runs in
+	// its own goroutine, so the wait blocks nothing.
+	var port, bin, httpsTarget, httpTarget string
+	waited := time.Duration(0)
+	for delay := 50 * time.Millisecond; ; delay = min(delay*2, 10*time.Second) {
+		ok := false
+		if port, bin = boundPort(), tailscaleBin(); port != "" && bin != "" {
+			httpsTarget, httpTarget, ok = currentServeTargets(context.Background(), bin)
+		}
+		if ok {
 			break
 		}
-		time.Sleep(10 * time.Millisecond)
+		if waited += delay; waited > healBudget {
+			switch {
+			case port == "":
+				p.logf("pool: tailscale serve heal skipped: daemon HTTP port not bound")
+			case bin == "":
+				p.logf("pool: tailscale serve heal skipped: tailscale not found")
+			default:
+				p.logf("pool: tailscale serve heal skipped: tailscale serve status unreadable for %s", healBudget)
+			}
+			return
+		}
+		healSleep(delay)
 	}
-	if port == "" {
-		p.logf("pool: tailscale serve heal skipped: daemon HTTP port not bound")
-		return
-	}
-	bin := tailscaleBin()
-	if bin == "" {
-		return
-	}
-	httpsTarget, httpTarget, ok := currentServeTargets(context.Background(), bin)
 	httpsTarget, httpTarget = ownServeTargets(httpsTarget, httpTarget, cfg.Network.ServePort, port)
-	if !ok || (httpsTarget == "" && httpTarget == "") {
+	if httpsTarget == "" && httpTarget == "" {
 		return
 	}
 	want := "127.0.0.1:" + port

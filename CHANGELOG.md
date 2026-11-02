@@ -2,6 +2,10 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
+## Unreleased
+
+Tailscale Serve no longer answers 502 after a login or restart until the next click. At start-up the daemon keeps retrying, with backoff for about 2 minutes, until its listener is bound and tailscaled answers. Then it re-points PenguPool's own stale route. Before, it gave up after 2 s, or after one try when tailscaled was not up yet.
+
 ## 0.10.22
 
 A specialist can join a team more than once, each copy in its own session. A further copy gets

@@ -2,6 +2,7 @@ package pool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
@@ -111,7 +113,9 @@ func stubTailscale(t *testing.T, status, serve string) *[]string {
 		return nil, os.ErrNotExist
 	}
 	HTTPAddr = func() string { return "127.0.0.1:7787" }
-	t.Cleanup(func() { tailscaleLookPath, tailscaleCmd, HTTPAddr = oldLook, oldCmd, oldAddr })
+	oldSleep := healSleep
+	healSleep = func(time.Duration) {}
+	t.Cleanup(func() { tailscaleLookPath, tailscaleCmd, HTTPAddr, healSleep = oldLook, oldCmd, oldAddr, oldSleep })
 	return &ran
 }
 
@@ -623,5 +627,46 @@ func TestMuseBaseURLPrefersHTTPS(t *testing.T) {
 	}
 	if got := p.museBaseURL(); got != "https://m.ts.net" {
 		t.Fatalf("museBaseURL = %q, want https://m.ts.net", got)
+	}
+}
+
+// At login tailscaled may come up after the daemon: heal keeps trying, with backoff, until Serve
+// status is readable, then re-points the stale route; it gives up after about healBudget.
+func TestHealTailscaleServeWaitsForTailscaled(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		failures int
+		wantRuns int
+	}{{"upAfterAWhile", 8, 1}, {"neverUp", 1000, 0}} {
+		t.Run(c.name, func(t *testing.T) {
+			st := healHomeStore(t)
+			ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:1111"))
+			stub := tailscaleCmd
+			tries := 0
+			tailscaleCmd = func(ctx context.Context, bin string, args ...string) ([]byte, error) {
+				if len(args) >= 2 && args[0] == "serve" && args[1] == "status" {
+					if tries++; tries <= c.failures {
+						return nil, errors.New("tailscaled not running")
+					}
+				}
+				return stub(ctx, bin, args...)
+			}
+			var slept time.Duration
+			healSleep = func(d time.Duration) { slept += d }
+			logf, logs := logSink()
+			p := New(Options{Store: st, Exe: "pengupool", Logf: logf})
+			p.HealTailscaleServe()
+			if len(*ran) != c.wantRuns {
+				t.Fatalf("serve runs = %v, want %d", *ran, c.wantRuns)
+			}
+			if c.wantRuns == 0 {
+				if slept > healBudget || slept < healBudget/2 {
+					t.Fatalf("waited %s, want about %s", slept, healBudget)
+				}
+				if !strings.Contains(logs(), "status unreadable") {
+					t.Fatalf("no give-up logged: %q", logs())
+				}
+			}
+		})
 	}
 }
