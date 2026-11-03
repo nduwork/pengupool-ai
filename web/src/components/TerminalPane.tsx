@@ -22,6 +22,20 @@ export function shiftEnter(harness: string | undefined): string {
   return harness === "pi" ? "\n" : "\x1b\r";
 }
 
+/** Runs claim once per attach, when the session first becomes usable. Every resize bumps the
+ * generation and the worker sends each client a fresh snapshot, so claiming on every return to live
+ * let two focused panes of different sizes take the lease back from each other forever. */
+export function oncePerAttach(claim: () => void): (state: AttachState) => void {
+  let done = false;
+  return (state) => {
+    if (state === "attaching" || state === "detached") done = false;
+    else if (!done && (state === "live" || state === "replay")) {
+      done = true;
+      claim();
+    }
+  };
+}
+
 /** Option on the Mac: Meta for keys (Option+Enter types ESC CR), and Option-drag selects text even
  * when the agent has turned mouse reporting on, as Claude Code does. Shift does not force a selection
  * on a Mac in xterm.js; Option-click does only with macOptionClickForcesSelection. */
@@ -147,13 +161,14 @@ export function TerminalPane({
 
     let claimIfFocused = (): void => {};
     let typeQueued = (): void => {};
+    // The app focuses the terminal at mount, before the attach completes, so a pane the user is
+    // already looking at takes the size lease the moment the session becomes usable.
+    const claimOnAttach = oncePerAttach(() => claimIfFocused());
 
     const events: AttachEvents = {
       state: (state, detail) => {
         onState(state, detail);
-        // The app focuses the terminal at mount, before the attach completes, so a pane the user is
-        // already looking at takes the size lease the moment the session becomes usable.
-        if (state === "live" || state === "replay") claimIfFocused();
+        claimOnAttach(state);
         if (state === "live") typeQueued();
       },
       error: (code, message) => onNotice({ code, message }),
@@ -199,12 +214,10 @@ export function TerminalPane({
     const offChannel = connection.registerChannel(channel, (f) => session.handleFrame(f));
     const offControl = connection.onControl((m) => session.handleControl(m));
 
-    const send = (data: string): void => {
-      // The first keystroke is the other moment the browser may take the lease; the size comes from
-      // the pane, never from the PTY's last known size.
-      session.claimLease(term.cols, term.rows);
-      session.input(data);
-    };
+    // A keystroke is the other moment the browser may take the lease; the size comes from the pane,
+    // never from the PTY's last known size. input() claims only after dropping xterm.js's own replies
+    // (a focus report on blur, a query answer), which are not the user typing here.
+    const send = (data: string): void => session.input(data, term.cols, term.rows);
     // Paths dropped on this session (here, or on its map tile) are typed into the prompt once it is live.
     typeQueued = (): void => {
       if (session.attachState !== "live" || clientKind === "ios") return;

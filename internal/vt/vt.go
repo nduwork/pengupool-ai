@@ -17,6 +17,7 @@
 package vt
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -226,6 +227,12 @@ func (s *screen) setKeyboardFlags(flags uint16, mode int) {
 // recordScrollRegion mirrors the clampings of x/vt's own DECSTBM handler, so the tracked region
 // stays exactly what the emulator applied: below one row, the parameters default to the screen,
 // and top >= bottom is a request the emulator declines.
+//
+// A bottom below the screen is clamped to the last row, as xterm does. x/vt v0.1.0 (and its main
+// branch) takes it as is, and the next reverse index or insert line indexes a row the buffer does not
+// have and panics. An agent sends exactly that when it draws for the size it had before a resize.
+// params aliases the parser's own buffer, which x/vt's handler reads next, so the clamp is written
+// back there; TestShrinkThenStaleScrollRegion fails if that stops holding.
 func (s *screen) recordScrollRegion(params ansi.Params) {
 	top, _, _ := params.Param(0, 1)
 	if top < 1 {
@@ -235,6 +242,10 @@ func (s *screen) recordScrollRegion(params ansi.Params) {
 	bottom, _, _ := params.Param(1, height)
 	if bottom < 1 {
 		bottom = height
+	}
+	if bottom > height {
+		bottom = height
+		params[1] = ansi.Param(height)
 	}
 	if top >= bottom {
 		return
@@ -246,10 +257,29 @@ func (s *screen) recordScrollRegion(params ansi.Params) {
 	s.mode.ScrollTop, s.mode.ScrollBottom = top, bottom
 }
 
-// Write feeds terminal output into the emulator.
-func (s *screen) Write(p []byte) (int, error) {
+// Write feeds terminal output into the emulator. The mirror must never take the worker down with
+// it: if x/vt panics on output it cannot handle, the rest of p is dropped, the scroll region is
+// reset by resizing to the same size (the cursor stays, clamped), CAN returns the parser to ground
+// so the next write is not read as the rest of the broken sequence, and the panic comes back as an
+// error.
+// ponytail: the screen may show a few wrong cells until the agent repaints; a full repaint would
+// need the agent's help, and Claude Code and Muse repaint often anyway.
+func (s *screen) Write(p []byte) (n int, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer func() {
+		if r := recover(); r != nil {
+			func() {
+				// The reset runs the same x/vt code that just failed (CAN flushes a pending grapheme
+				// first), so a second panic here is dropped rather than let out of Write.
+				defer func() { _ = recover() }()
+				s.emu.Resize(s.emu.Width(), s.emu.Height())
+				_, _ = s.emu.Write([]byte{0x18}) // CAN
+			}()
+			s.mode.ScrollTop, s.mode.ScrollBottom = 0, 0
+			n, err = len(p), fmt.Errorf("terminal emulator panic, screen reset: %v", r)
+		}
+	}()
 	return s.emu.Write(p)
 }
 

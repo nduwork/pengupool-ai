@@ -361,7 +361,9 @@ func (w *worker) readPTY() {
 func (w *worker) onOutput(p []byte) {
 	w.mu.Lock()
 	w.ring.Write(p)
-	w.screen.Write(p)
+	if _, err := w.screen.Write(p); err != nil {
+		w.logf("session %s: %v", w.spec.SessionID, err)
+	}
 	for c := range w.clients {
 		c.wakeUp()
 	}

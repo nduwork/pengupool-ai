@@ -5,13 +5,25 @@ import { AttachSession } from "../client/attach";
 import { T, type ControlMessage } from "../protocol/control";
 import { FrameType } from "../protocol/frame";
 
-import { COPY_BLOCKED, deliverCopy, isShiftEnter, macOptionKeys, osc52Handler, osc52Text, shellQuote, shiftEnter, terminalSink } from "./TerminalPane";
+import { COPY_BLOCKED, deliverCopy, isShiftEnter, macOptionKeys, oncePerAttach, osc52Handler, osc52Text, shellQuote, shiftEnter, terminalSink } from "./TerminalPane";
 
 describe("shellQuote", () => {
   it("escapes what a shell would split or expand, as Terminal.app does", () => {
     expect(shellQuote("/Users/me/a-b_c.v2/file.png")).toBe("/Users/me/a-b_c.v2/file.png");
     expect(shellQuote("/Users/me/My Shots/it's (1).png")).toBe("/Users/me/My\\ Shots/it\\'s\\ \\(1\\).png");
     expect(shellQuote("/tmp/$x&y;z")).toBe("/tmp/\\$x\\&y\\;z");
+  });
+});
+
+describe("oncePerAttach", () => {
+  it("claims when the attach becomes usable, not again on the snapshot another client's resize sends", () => {
+    let n = 0;
+    const on = oncePerAttach(() => n++);
+    for (const st of ["attaching", "snapshot", "live", "snapshot", "live", "snapshot", "live"] as const) on(st);
+    expect(n).toBe(1);
+    // A reconnect is a fresh attach and may claim once more.
+    for (const st of ["detached", "attaching", "replay", "live"] as const) on(st);
+    expect(n).toBe(2);
   });
 });
 
