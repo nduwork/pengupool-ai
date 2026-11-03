@@ -66,6 +66,19 @@ Coding uses the model selected by Muse Code. Memory/check-in triage uses a separ
 One model; the local Tev1 default is Together AI's Qwen-based model.
 [Model responsibilities](docs/harnesses.md#who-does-what).
 
+## Built on Meta Muse models
+
+PenguPool is the harness. The agent brains are swappable, and the
+team behind this app's demo runs on Meta's Muse models through
+the Meta Model API, routed per role:
+
+- Lead: Muse Wonder, for planning, decisions, and owner questions
+- Builders: Muse Spark, for cost-effective implementation
+- Helpers: Muse Spark, carrying skills and Experience across projects
+
+Routing is set per team in the app, so a Lead can run a frontier
+model while its Builders run the cheaper tier.
+
 ## What you can do
 
 - **Run agents side by side.** Claude Code, Codex, Muse Code, pi and OMP, plus Claude Code through
