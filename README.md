@@ -99,7 +99,8 @@ Claude Code, Codex, pi and OMP join the same workspace, teams and Compass as Mus
    [latest release](https://github.com/nduwork/pengupool-ai/releases/latest). It runs on macOS on
    Apple Silicon.
 2. Open the disk image, drag **PenguPool AI.app** onto Applications, and open it. The app is notarized
-   by Apple, so macOS opens it with no unidentified-developer warning.
+   by Apple, so macOS opens it after its usual confirmation for downloaded apps, with no
+   unidentified-developer warning.
 3. For the walkthrough, install and sign in to **Muse Code**, Meta's coding agent. PenguPool also
    supports Claude Code, Codex, pi and OMP; it uses agents already installed on your Mac.
 
