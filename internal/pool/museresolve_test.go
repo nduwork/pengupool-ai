@@ -173,6 +173,9 @@ func TestMuseSubagentAfterStopLeavesSessionIdle(t *testing.T) {
 	hook("SessionStart", `{"session_id":"conv"}`)
 	hook("UserPromptSubmit", `{"session_id":"conv","prompt":"go"}`)
 	hook("PreToolUse", `{"session_id":"sub","tool_name":"read_file","tool_input":{}}`) // a subagent during the turn
+	if s := status(); s.Status != "working" || s.ConvID != "conv" {
+		t.Fatalf("a subagent during the turn: status %q conv %q, want working and conv", s.Status, s.ConvID)
+	}
 	hook("Stop", `{"session_id":"conv"}`)
 	if s := status(); s.Status != "idle" || s.ConvID != "conv" {
 		t.Fatalf("after Stop: status %q conv %q, want idle and conv", s.Status, s.ConvID)

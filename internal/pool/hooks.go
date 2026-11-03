@@ -46,7 +46,8 @@ type HookOut struct {
 // folder is bound. Anything else resolves to nothing: the hook is a silent, fast no-op.
 // A subagent runs under its session's process with a session id of its own and fires only tool hooks,
 // so only the conversation's turn events (or a session not bound yet) rebind ConvID; hookEventFrom keeps a
-// subagent's hooks after the turn off the session.
+// subagent's hooks after the turn off the session. After a resume or clear, the new conversation binds at
+// its first turn event; a tool hook before it counts as a subagent's.
 func (p *Pool) resolveMuseSession(c gateway.Caller, event string, pl map[string]any) (store.Session, bool) {
 	msid, _ := pl["session_id"].(string)
 	st := p.st.State()
@@ -114,7 +115,6 @@ func museLive(s store.Session) bool {
 }
 
 // sameDir reports whether two working directories are the same folder,
-// sameDir reports whether two working directories are the same folder,
 // through symlinks (/tmp vs /private/tmp) as well as literally.
 func sameDir(a, b string) bool {
 	if a == b {
@@ -150,6 +150,9 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		if msid, _ := pl["session_id"].(string); msid != "" && msid != s.ConvID && s.Status == "idle" {
 			// A subagent working on after its session's turn ended (Muse fires no Stop for it): its tool
 			// calls are still guarded, but it does not reopen the turn or hold the session's queue.
+			// ponytail: its permission prompt is dropped too, not shown as approval: that status would
+			// let its next hooks through and leave the session working again. Track subagents (Muse's
+			// subagentStart/subagentStop hooks) if they turn out to prompt.
 			if _, named := pl["tool_name"].(string); named && in.Event == "PreToolUse" {
 				if out, done := p.toolGuards(s, in.Payload, pl); done {
 					return out, nil
