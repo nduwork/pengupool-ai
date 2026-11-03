@@ -65,36 +65,55 @@ type Marketplace struct {
 }
 
 type MarketEntry struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	Harness      string   `json:"harness,omitempty"`
-	Requires     []string `json:"requires,omitempty"`
-	Repo         string   `json:"repo"`
-	Path         string   `json:"path,omitempty"` // git-subdir: the helper's folder in Repo
-	Ref          string   `json:"ref,omitempty"`
-	Commit       string   `json:"commit"`
-	Category     string   `json:"category,omitempty"` // the catalog's grouping; becomes the helper's group on install
+	Name         string            `json:"name"`
+	Description  string            `json:"description,omitempty"`
+	Capabilities []string          `json:"capabilities,omitempty"`
+	Harness      string            `json:"harness,omitempty"`
+	Requires     []string          `json:"requires,omitempty"`
+	Repo         string            `json:"repo"`
+	Path         string            `json:"path,omitempty"` // git-subdir: the helper's folder in Repo
+	Ref          string            `json:"ref,omitempty"`
+	Commit       string            `json:"commit"`
+	Category     string            `json:"category,omitempty"` // the catalog's grouping; becomes the helper's group on install
+	Credits      []protocol.Credit `json:"credits,omitempty"`  // display only
 }
 
 // catalogEntry is one helper in .pengupool/catalog.json.
 type catalogEntry struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	Group        string   `json:"group"`
-	Capabilities []string `json:"capabilities"`
-	Harness      string   `json:"harness"`
-	Requires     []string `json:"requires"`
-	Repo         string   `json:"repo"`
-	Path         string   `json:"path"`
-	Ref          string   `json:"ref"`
-	SHA          string   `json:"sha"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	Group        string          `json:"group"`
+	Capabilities []string        `json:"capabilities"`
+	Harness      string          `json:"harness"`
+	Requires     []string        `json:"requires"`
+	Repo         string          `json:"repo"`
+	Path         string          `json:"path"`
+	Ref          string          `json:"ref"`
+	SHA          string          `json:"sha"`
+	Credits      json.RawMessage `json:"credits"` // display only: read leniently by credits()
+}
+
+// credits keeps the well-formed items, each a name and an https link; anything else is dropped, so a
+// malformed display-only field never costs the entry or the catalog.
+func credits(raw json.RawMessage) []protocol.Credit {
+	var items []json.RawMessage
+	if json.Unmarshal(raw, &items) != nil {
+		return nil
+	}
+	var out []protocol.Credit
+	for _, it := range items {
+		var c protocol.Credit
+		if json.Unmarshal(it, &c) == nil && c.Name != "" && strings.HasPrefix(c.URL, "https://") {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // entry is the helper this entry installs, or why it cannot be one.
 func (c catalogEntry) entry() (MarketEntry, string) {
 	e := MarketEntry{Name: c.Name, Description: c.Description, Category: strings.TrimSpace(c.Group), Capabilities: c.Capabilities,
-		Harness: c.Harness, Requires: c.Requires, Repo: c.Repo, Path: strings.Trim(c.Path, "/"), Ref: c.Ref, Commit: c.SHA}
+		Harness: c.Harness, Requires: c.Requires, Repo: c.Repo, Path: strings.Trim(c.Path, "/"), Ref: c.Ref, Commit: c.SHA, Credits: credits(c.Credits)}
 	if parts := strings.Split(e.Path, "/"); e.Path != "" && (slices.Contains(parts, "..") || slices.Contains(parts, ".")) {
 		return e, "its path must not contain . or .."
 	}
@@ -618,7 +637,7 @@ func (p *Pool) marketplaceInstall(ctx context.Context, in marketIn) (any, error)
 	e := m.Skills[i]
 	dest := firstNonEmpty(in.Path, p.installDest(e))
 	res, err := p.skillAdd(ctx, skillAddIn{Name: e.Name, Path: dest, URL: e.Repo, Commit: e.Commit, Subdir: e.Path,
-		Description: e.Description, Capabilities: e.Capabilities, Harness: e.Harness, Requires: e.Requires, Group: groupName(e.Category), Category: e.Category, Auto: in.Auto})
+		Description: e.Description, Capabilities: e.Capabilities, Harness: e.Harness, Requires: e.Requires, Group: groupName(e.Category), Category: e.Category, Credits: e.Credits, Auto: in.Auto})
 	if err == nil && !in.Auto && p.db != nil && p.db.Setting(deletedKey(e.key())) != "" {
 		_ = p.db.SetSetting(deletedKey(e.key()), "") // the owner installs a helper they deleted: the sync keeps it again
 	}
@@ -675,7 +694,7 @@ func (p *Pool) updateHelper(ctx context.Context, e marketEntryView, cats map[str
 			if g := strings.ToLower(s.Group); g == "" || g == strings.ToLower(groupName(s.Category)) || cats[g] {
 				s.Group = groupName(e.Category) // came from the catalog: follows it; an owner-made group stays
 			}
-			s.Category = e.Category
+			s.Category, s.Credits = e.Category, e.Credits
 		}
 		return nil
 	}); err != nil {

@@ -1554,6 +1554,7 @@ type testCatalog struct {
 	url, work string
 	last      map[string][]string // the last sync's report
 	skill     map[string]string   // folder → the skill it provides (default: the folder's name)
+	credits   string              // the entries' "credits" JSON, when set
 }
 
 func newTestCatalog(t *testing.T) *testCatalog {
@@ -1603,7 +1604,11 @@ func (c *testCatalog) publish(helpers map[string]string) {
 	sha := git("rev-parse", "HEAD")
 	var plugins []string
 	for folder, cat := range helpers {
-		plugins = append(plugins, fmt.Sprintf(`{"name":%q,"group":%q,"repo":%q,"path":%q,"sha":%q}`, filepath.Base(folder), cat, c.url, folder, sha))
+		e := fmt.Sprintf(`{"name":%q,"group":%q,"repo":%q,"path":%q,"sha":%q`, filepath.Base(folder), cat, c.url, folder, sha)
+		if c.credits != "" {
+			e += `,"credits":` + c.credits
+		}
+		plugins = append(plugins, e+"}")
 	}
 	dir := c.p.marketDir()
 	os.MkdirAll(filepath.Join(dir, ".pengupool"), 0o755)
@@ -1623,6 +1628,26 @@ func (c *testCatalog) sync(want string) protocol.Skill {
 		c.t.Fatalf("no helper %s after sync: %v", want, out)
 	}
 	return d.Skills[i]
+}
+
+// An installed helper carries its entry's credits, and a sync follows the catalog's changes to them.
+func TestHelperCarriesCatalogCredits(t *testing.T) {
+	c := newTestCatalog(t)
+	c.credits = `[{"name":"a/one","url":"https://example.com/a/one"}]`
+	c.publish(map[string]string{"agents/x": ""})
+	if got := c.sync("x").Credits; len(got) != 1 || got[0].Name != "a/one" {
+		t.Fatalf("installed credits: %+v", got)
+	}
+	c.credits = `[{"name":"b/two","url":"https://example.com/b/two"}]`
+	c.publish(map[string]string{"agents/x": ""})
+	if got := c.sync("x").Credits; len(got) != 1 || got[0].Name != "b/two" {
+		t.Fatalf("synced credits: %+v", got)
+	}
+	c.credits = ""
+	c.publish(map[string]string{"agents/x": ""})
+	if got := c.sync("x").Credits; len(got) != 0 {
+		t.Fatalf("credits the catalog dropped: %+v", got)
+	}
 }
 
 // The catalog moves a helper from agents/x to agents/code/x: the installed helper follows, keeping
@@ -2172,6 +2197,17 @@ func TestWorktreeSessionKeepsItsWorktreeOffTeam(t *testing.T) {
 	}
 }
 
+// Credits are display only: a helper's context never carries them.
+func TestHelperContextLeavesOutCredits(t *testing.T) {
+	var b strings.Builder
+	(&Pool{}).renderSkill(&b, &protocol.Skill{Name: "x", Path: t.TempDir(), Method: "m", Description: "d",
+		Credits: []protocol.Credit{{Name: "credit-owner/credit-repo", URL: "https://example.com/credit-owner/credit-repo"}},
+		Files:   []protocol.SkillFile{{Name: "s", Description: "sd"}}})
+	if strings.Contains(b.String(), "credit-") || strings.Contains(b.String(), "Adapted from") {
+		t.Fatalf("credits reached the context:\n%s", b.String())
+	}
+}
+
 // The hub's catalog is .pengupool/catalog.json; the old Claude-format file is read only while it is
 // missing, and the new one wins when both exist.
 func TestCatalogFile(t *testing.T) {
@@ -2184,7 +2220,7 @@ func TestCatalogFile(t *testing.T) {
 		}
 	}
 	newBody := `{"name":"hub","agents":[
-	 {"name":"rev","description":"d","group":"development","capabilities":["review"],"harness":"claude","requires":["claude","omp"],"repo":"https://x/r.git","path":"agents/rev/","ref":"main","sha":"` + sha + `"},
+	 {"name":"rev","description":"d","group":"development","capabilities":["review"],"harness":"claude","requires":["claude","omp"],"repo":"https://x/r.git","path":"agents/rev/","ref":"main","sha":"` + sha + `","credits":[{"name":"o/r","url":"https://github.com/o/r"}]},
 	 {"name":"unpinned","repo":"https://x/u.git"},
 	 {"name":"escape","repo":"https://x/e.git","path":"../up","sha":"` + sha + `"}]}`
 	oldBody := `{"name":"m","plugins":[{"name":"old","category":"ops","source":{"source":"url","url":"https://x/o.git","sha":"` + sha + `"}}]}`
@@ -2205,6 +2241,9 @@ func TestCatalogFile(t *testing.T) {
 	if e.Name != "rev" || e.Category != "development" || e.Harness != "claude" || len(e.Requires) != 2 || e.Repo != "https://x/r.git" ||
 		e.Path != "agents/rev" || e.Ref != "main" || e.Commit != sha || e.key() != "x/r/agents/rev" {
 		t.Fatalf("entry: %+v", e)
+	}
+	if len(e.Credits) != 1 || e.Credits[0] != (protocol.Credit{Name: "o/r", URL: "https://github.com/o/r"}) {
+		t.Fatalf("credits: %+v", e.Credits)
 	}
 
 	only := t.TempDir()
@@ -2251,6 +2290,34 @@ func TestMistypedCatalogEntrySkipsOnlyItself(t *testing.T) {
 	}
 	if !strings.Contains(m.Problems[0], `"badcaps"`) {
 		t.Fatalf("a mistyped entry's problem names it: %q", m.Problems[0])
+	}
+}
+
+// Credits are display only: a malformed value drops that entry's credits, never the entry or the catalog.
+func TestMalformedCreditsDropOnlyTheCredits(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	bad := []string{`null`, `"o/r"`, `{"name":"o/r","url":"https://x"}`, `[{"name":"o/r"}]`, `[{"name":"o/r","url":"http://x"}]`,
+		`[{"name":"o/r","url":"javascript:alert(1)"}]`, `[{"url":"https://x"}]`, `[1]`, `[{"name":2,"url":"https://x"}]`}
+	var agents []string
+	for i, c := range bad {
+		agents = append(agents, fmt.Sprintf(`{"name":"bad%d","repo":"https://x/b%d.git","sha":%q,"credits":%s}`, i, i, sha, c))
+	}
+	agents = append(agents, `{"name":"good","repo":"https://x/g.git","sha":"`+sha+`","credits":[{"name":"o/r","url":"http://x"},{"name":"a/b","url":"https://github.com/a/b"}]}`)
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".pengupool"), 0o755)
+	os.WriteFile(filepath.Join(dir, marketFile), []byte(`{"name":"hub","agents":[`+strings.Join(agents, ",")+`]}`), 0o644)
+	m, err := readMarketplace(dir)
+	if err != nil || len(m.Skills) != len(bad)+1 || m.Skipped != 0 {
+		t.Fatalf("catalog: %+v %v", m, err)
+	}
+	for _, e := range m.Skills {
+		want := 0
+		if e.Name == "good" {
+			want = 1 // the http item is dropped, the https one kept
+		}
+		if len(e.Credits) != want || (want == 1 && e.Credits[0] != (protocol.Credit{Name: "a/b", URL: "https://github.com/a/b"})) {
+			t.Fatalf("%s credits: %+v", e.Name, e.Credits)
+		}
 	}
 }
 
