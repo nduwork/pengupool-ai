@@ -126,13 +126,13 @@ func (p *Pool) buildContextCap(id string, compassCap int) string {
 	return b.String()
 }
 
-// labelPhrase names a member's place for its own context: "the LEAD", "a builder", "a HELPER", "a member".
+// labelPhrase names a member's place for its own context: "the LEAD", "a BUILDER", "a HELPER", "a member".
 func labelPhrase(st *store.State, t *protocol.Team, m protocol.Member) string {
 	switch teamLabel(st, t, m) {
 	case "LEAD":
 		return "the LEAD"
 	case "BUILDER":
-		return "a builder"
+		return "a BUILDER"
 	case "HELPER":
 		return "a HELPER"
 	}
