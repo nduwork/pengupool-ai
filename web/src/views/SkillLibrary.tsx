@@ -507,10 +507,6 @@ function Overview({ s }: { s: Skill }): ReactElement {
     requires: s.requires ?? [],
     group: s.group ?? "",
   });
-  const [problems, setProblems] = useState<string[] | null>(null);
-  useEffect(() => {
-    void app.call<{ problems: string[] }>("skill.check", { id: s.id }).then((r) => setProblems(r?.problems ?? null));
-  }, [s.id, s.commit, s.files?.length]);
   const market = useMarketplace(0);
   const groups = [...new Set([...app.domain.skills.map((x) => x.group ?? ""), ...(market?.skills ?? []).map((e) => e.category ?? "")].filter((g) => g !== ""))].sort();
   const served = app.domain.teams.filter((t) => t.members.some((m) => m.skill_id === s.id));
@@ -525,16 +521,6 @@ function Overview({ s }: { s: Skill }): ReactElement {
         <p className="mt-1 text-caption text-faint">The skill files are where this agent started. Its experience is its own: it grows with every job, follows the helper on every machine, and survives upgrades and reinstalls.</p>
       </div>
       <p className="text-caption text-faint">The agent reads its skills but never changes them; what it learns goes to its experience in PenguPool.</p>
-      {problems !== null && problems.length > 0 ? (
-        <div className="rounded-md bg-warning/10 p-3 text-label">
-          <p className="font-medium text-warning">Does not pass the checklist yet</p>
-          <ul className="mt-1 list-disc pl-5 text-muted-foreground">
-            {problems.map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
       {edit ? (
         <div className="grid grid-cols-1 gap-3">
           <Label>
