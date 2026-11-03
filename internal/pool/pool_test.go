@@ -2265,6 +2265,34 @@ func TestCatalogFile(t *testing.T) {
 	}
 }
 
+// A wrongly typed field skips only its own entry: the rest of a third-party hub still loads.
+func TestMistypedCatalogEntrySkipsOnlyItself(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".pengupool"), 0o755)
+	os.WriteFile(filepath.Join(dir, marketFile), []byte(`{"name":"hub","agents":[
+	 {"name":"good1","repo":"https://x/g1.git","sha":"`+sha+`"},
+	 {"name":"badcaps","capabilities":"review","repo":"https://x/b1.git","sha":"`+sha+`"},
+	 {"name":5,"repo":"https://x/b2.git","sha":"`+sha+`"},
+	 {"name":"badsha","repo":"https://x/b3.git","sha":12},
+	 "not an object",
+	 {"name":"good2","repo":"https://x/g2.git","sha":"`+sha+`"}]}`), 0o644)
+	m, err := readMarketplace(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range m.Skills {
+		names = append(names, e.Name)
+	}
+	if !slices.Equal(names, []string{"good1", "good2"}) || m.Skipped != 4 || len(m.Problems) != 4 {
+		t.Fatalf("loaded %v, skipped %d, problems %q", names, m.Skipped, m.Problems)
+	}
+	if !strings.Contains(m.Problems[0], `"badcaps"`) {
+		t.Fatalf("a mistyped entry's problem names it: %q", m.Problems[0])
+	}
+}
+
 // Credits are display only: a malformed value drops that entry's credits, never the entry or the catalog.
 func TestMalformedCreditsDropOnlyTheCredits(t *testing.T) {
 	sha := strings.Repeat("a", 40)
