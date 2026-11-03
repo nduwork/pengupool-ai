@@ -2172,6 +2172,17 @@ func TestWorktreeSessionKeepsItsWorktreeOffTeam(t *testing.T) {
 	}
 }
 
+// Credits are display only: a helper's context never carries them.
+func TestHelperContextLeavesOutCredits(t *testing.T) {
+	var b strings.Builder
+	(&Pool{}).renderSkill(&b, &protocol.Skill{Name: "x", Path: t.TempDir(), Method: "m", Description: "d",
+		Credits: []protocol.Credit{{Name: "credit-owner/credit-repo", URL: "https://example.com/credit-owner/credit-repo"}},
+		Files:   []protocol.SkillFile{{Name: "s", Description: "sd"}}})
+	if strings.Contains(b.String(), "credit-") || strings.Contains(b.String(), "Adapted from") {
+		t.Fatalf("credits reached the context:\n%s", b.String())
+	}
+}
+
 // The hub's catalog is .pengupool/catalog.json; the old Claude-format file is read only while it is
 // missing, and the new one wins when both exist.
 func TestCatalogFile(t *testing.T) {
@@ -2184,7 +2195,7 @@ func TestCatalogFile(t *testing.T) {
 		}
 	}
 	newBody := `{"name":"hub","agents":[
-	 {"name":"rev","description":"d","group":"development","capabilities":["review"],"harness":"claude","requires":["claude","omp"],"repo":"https://x/r.git","path":"agents/rev/","ref":"main","sha":"` + sha + `"},
+	 {"name":"rev","description":"d","group":"development","capabilities":["review"],"harness":"claude","requires":["claude","omp"],"repo":"https://x/r.git","path":"agents/rev/","ref":"main","sha":"` + sha + `","credits":[{"name":"o/r","url":"https://github.com/o/r"}]},
 	 {"name":"unpinned","repo":"https://x/u.git"},
 	 {"name":"escape","repo":"https://x/e.git","path":"../up","sha":"` + sha + `"}]}`
 	oldBody := `{"name":"m","plugins":[{"name":"old","category":"ops","source":{"source":"url","url":"https://x/o.git","sha":"` + sha + `"}}]}`
@@ -2205,6 +2216,9 @@ func TestCatalogFile(t *testing.T) {
 	if e.Name != "rev" || e.Category != "development" || e.Harness != "claude" || len(e.Requires) != 2 || e.Repo != "https://x/r.git" ||
 		e.Path != "agents/rev" || e.Ref != "main" || e.Commit != sha || e.key() != "x/r/agents/rev" {
 		t.Fatalf("entry: %+v", e)
+	}
+	if len(e.Credits) != 1 || e.Credits[0] != (protocol.Credit{Name: "o/r", URL: "https://github.com/o/r"}) {
+		t.Fatalf("credits: %+v", e.Credits)
 	}
 
 	only := t.TempDir()

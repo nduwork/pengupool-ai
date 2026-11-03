@@ -10,7 +10,7 @@ import { Sheet } from "../components/ui/dialog";
 import { cn } from "../lib/utils";
 import { Codes } from "../protocol/errors";
 import type { Skill } from "../protocol/domain";
-import { MarketplaceSheet, useMarketplace } from "./Marketplace";
+import { Credits, MarketplaceSheet, useMarketplace } from "./Marketplace";
 import { HelperExperience } from "./Experience";
 import { Mascot } from "./Mascot";
 import { ListDetail, PageHeader } from "./Page";
@@ -117,6 +117,7 @@ export function SkillLibrary(): ReactElement {
                       </Button>
                     </span>
                     <span className={cn("line-clamp-2 text-caption text-muted-foreground", nested ? "pl-[18px]" : "pl-9")}>{e.description ?? ((e.capabilities ?? []).join(", ") || "no capabilities")}</span>
+                    <Credits credits={e.credits} className={nested ? "pl-[18px]" : "pl-9"} />
                   </li>
                 )}
               />
@@ -612,7 +613,10 @@ function Overview({ s }: { s: Skill }): ReactElement {
           <dt className="text-muted-foreground">Method</dt>
           <dd>{s.method || "—"}</dd>
           <dt className="text-muted-foreground">Description</dt>
-          <dd>{s.description || "—"}</dd>
+          <dd>
+            {s.description || "—"}
+            <Credits credits={s.credits} className="mt-0.5" />
+          </dd>
           <dt className="text-muted-foreground">Group</dt>
           <dd>{s.group || "—"}</dd>
           <dt className="text-muted-foreground">Capabilities</dt>

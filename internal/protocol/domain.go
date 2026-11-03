@@ -56,6 +56,12 @@ type SkillFile struct {
 	Problem       string            `json:"problem,omitempty"`
 }
 
+// Credit is a source a helper was adapted from: "owner/repo" and its link.
+type Credit struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
 // Skill is a Skill library entry: a reusable method with capabilities, memory and history.
 // Registration starts no session.
 type Skill struct {
@@ -74,6 +80,9 @@ type Skill struct {
 	Group        string      `json:"group,omitempty"`    // the library's section: the catalog's category, or the owner's own
 	Category     string      `json:"category,omitempty"` // the catalog's category it last had: a Group equal to it came from the catalog
 	OnMap        bool        `json:"on_map,omitempty"`   // listed in the map's Specialist pool
+	// Credits name the public repositories a helper was adapted from. Display only: never in an
+	// agent's context.
+	Credits []Credit `json:"credits,omitempty"`
 	// Key is the agent's identity beyond this machine: the normalised Git remote of its repository,
 	// or its folder name. One agent per key per environment.
 	Key       string `json:"key,omitempty"`
