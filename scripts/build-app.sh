@@ -42,7 +42,7 @@ for arch in amd64 arm64; do
 done
 
 echo "==> icon"
-[ desktop/build/icon.icns -nt assets/app-icon.svg ] || scripts/make-icon.sh
+[ desktop/build/icon.icns -nt assets/app-icon.svg ] && [ desktop/build/icon.icns -nt assets/app-icon-small.svg ] || scripts/make-icon.sh
 
 echo "==> desktop app"
 cd desktop
