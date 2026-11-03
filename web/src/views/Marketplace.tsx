@@ -8,8 +8,8 @@ import { Empty, Input } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
 import type { Credit } from "../protocol/domain";
 
-// The Specialist hub: a catalog of skill repositories pinned to a commit (the hub's
-// .pengupool/catalog.json). Install clones the helper at its pin into the Skill library.
+// The Specialist hub: a catalog of skill repositories (the hub's .pengupool/catalog.json). Install clones
+// the helper into the Skill library, at its pinned commit or, with none, the latest of its ref.
 
 interface Entry {
   name: string;
@@ -83,7 +83,7 @@ export function MarketplaceSheet(): ReactElement {
     setRev((n) => n + 1);
   };
   return (
-    <Sheet title="Specialist hub" description="Specialists from the hub's catalog, each pinned to a commit. Install one, then put it on a team." onClose={close} wide>
+    <Sheet title="Specialist hub" description="Specialists from the hub's catalog. Install one, then put it on a team." onClose={close} wide>
       <div className="grid grid-cols-1 gap-3">
         {m === null ? <p className="text-label text-faint">Loading…</p> : null}
         {m !== null ? (
@@ -98,7 +98,7 @@ export function MarketplaceSheet(): ReactElement {
             {m.error !== undefined ? <p className="rounded-md bg-danger/10 p-2 text-caption text-danger">{m.error}</p> : null}
             {(m.skipped ?? 0) > 0 ? (
               <p className="text-caption text-faint">
-                {m.skipped} more {m.skipped === 1 ? "entry is" : "entries are"} bundled in the catalog or not pinned to a commit, so PenguPool cannot install {m.skipped === 1 ? "it" : "them"}.
+                {m.skipped} more {m.skipped === 1 ? "entry is" : "entries are"} malformed, bundled in the catalog or not pinned to a commit, so PenguPool cannot install {m.skipped === 1 ? "it" : "them"}.
               </p>
             ) : null}
             {m.error === undefined && m.skills.length === 0 ? (
@@ -148,15 +148,15 @@ function EntryRow({ e, busy, run }: { e: Entry; busy: string | null; run: (k: st
   const [path, setPath] = useState("");
   const [asking, setAsking] = useState(false);
   const installed = e.skill_id !== undefined;
-  const behind = installed && e.installed_commit !== undefined && e.installed_commit !== e.commit;
+  // An entry without a commit follows the latest of its ref: the library sync keeps it current.
+  const behind = installed && e.commit !== "" && e.installed_commit !== undefined && e.installed_commit !== e.commit;
   const harness = AGENTS.find((a) => a.id === e.harness)?.label;
   return (
     <div className="grid grid-cols-1 gap-1.5 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-label font-semibold">{e.name}</span>
         <span className="font-mono text-micro text-faint" title={e.commit}>
-          {e.ref !== undefined && e.ref !== "" ? `${e.ref} @ ` : "@ "}
-          {short(e.commit)}
+          {e.commit === "" ? `${e.ref !== undefined && e.ref !== "" ? e.ref : "latest"}` : `${e.ref !== undefined && e.ref !== "" ? `${e.ref} @ ` : "@ "}${short(e.commit)}`}
         </span>
         {harness !== undefined ? <span className="text-micro text-muted-foreground">runs best on {harness}</span> : null}
         {(e.requires ?? []).length > 0 ? (
@@ -185,7 +185,7 @@ function EntryRow({ e, busy, run }: { e: Entry; busy: string | null; run: (k: st
             void run(`i${e.name}`, async () => {
               const r = await app.call("marketplace.install", { name: e.name, path: path.trim() });
               if (r !== undefined) {
-                toast.success(`Installed ${e.name} at ${short(e.commit)}`);
+                toast.success(e.commit === "" ? `Installed ${e.name}` : `Installed ${e.name} at ${short(e.commit)}`);
                 setAsking(false);
               }
             });
