@@ -335,7 +335,6 @@ func TestCatalogSkipsOnlyTheBadEntry(t *testing.T) {
 	for name, bad := range map[string]string{
 		"short sha":        `{"name":"bad","repo":"https://x/bad.git","sha":"abc123"}`,
 		"branch as sha":    `{"name":"bad","repo":"https://x/bad.git","sha":"main"}`,
-		"no sha":           `{"name":"bad","repo":"https://x/bad.git"}`,
 		"no repo":          `{"name":"bad","sha":"` + sha + `"}`,
 		"option as repo":   `{"name":"bad","repo":"--upload-pack=x","sha":"` + sha + `"}`,
 		"dash github repo": `{"name":"bad","repo":"https://github.com/-x","sha":"` + sha + `"}`,
@@ -1555,6 +1554,8 @@ type testCatalog struct {
 	last      map[string][]string // the last sync's report
 	skill     map[string]string   // folder → the skill it provides (default: the folder's name)
 	credits   string              // the entries' "credits" JSON, when set
+	unpinned  bool                // publish entries without a sha: they follow the latest commit
+	ref       string              // push to this branch and name it as the entries' "ref", when set
 }
 
 func newTestCatalog(t *testing.T) *testCatalog {
@@ -1600,11 +1601,17 @@ func (c *testCatalog) publish(helpers map[string]string) {
 	}
 	git("add", "-A")
 	git("commit", "-q", "--allow-empty", "-m", "helpers")
-	git("push", "-q", "origin", "HEAD")
+	git("push", "-q", "origin", "HEAD:refs/heads/"+firstNonEmpty(c.ref, git("branch", "--show-current")))
 	sha := git("rev-parse", "HEAD")
 	var plugins []string
 	for folder, cat := range helpers {
 		e := fmt.Sprintf(`{"name":%q,"group":%q,"repo":%q,"path":%q,"sha":%q`, filepath.Base(folder), cat, c.url, folder, sha)
+		if c.unpinned {
+			e = fmt.Sprintf(`{"name":%q,"group":%q,"repo":%q,"path":%q`, filepath.Base(folder), cat, c.url, folder)
+		}
+		if c.ref != "" {
+			e += fmt.Sprintf(`,"ref":%q`, c.ref)
+		}
 		if c.credits != "" {
 			e += `,"credits":` + c.credits
 		}
@@ -1647,6 +1654,52 @@ func TestHelperCarriesCatalogCredits(t *testing.T) {
 	c.publish(map[string]string{"agents/x": ""})
 	if got := c.sync("x").Credits; len(got) != 0 {
 		t.Fatalf("credits the catalog dropped: %+v", got)
+	}
+}
+
+// A helper whose entry has no sha follows the latest commit of its ref, not of the default branch:
+// the sync brings it up to date. A pinned helper stays at its pin when the repository moves on.
+func TestUnpinnedHelperFollowsLatest(t *testing.T) {
+	head := func(dir string) string {
+		out, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	c := newTestCatalog(t)
+	for _, a := range [][]string{{"commit", "-q", "--allow-empty", "-m", "default"}, {"push", "-q", "origin", "HEAD"}} {
+		if out, err := exec.Command("git", append([]string{"-C", c.work, "-c", "user.name=t", "-c", "user.email=t@t"}, a...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s", a, out)
+		}
+	}
+	c.unpinned, c.ref = true, "dev"
+	c.publish(map[string]string{"agents/x": ""})
+	if x := c.sync("x"); head(x.Path) != head(c.work) {
+		t.Fatalf("installed at %s, want the latest %s", head(x.Path), head(c.work))
+	}
+	c.publish(map[string]string{"agents/x": ""}) // a new commit in the repository, the catalog unchanged
+	x := c.sync("x")
+	if head(x.Path) != head(c.work) || !slices.Equal(c.last["updated"], []string{"x"}) {
+		t.Fatalf("after sync at %s, want %s; report %v", head(x.Path), head(c.work), c.last)
+	}
+	if c.sync("x"); len(c.last["updated"]) != 0 {
+		t.Fatalf("nothing new, yet updated: %v", c.last)
+	}
+
+	pinned := newTestCatalog(t)
+	pinned.publish(map[string]string{"agents/y": ""})
+	pin := head(pinned.work)
+	if y := pinned.sync("y"); head(y.Path) != pin {
+		t.Fatalf("pinned helper installed at %s, want %s", head(y.Path), pin)
+	}
+	for _, a := range [][]string{{"commit", "-q", "--allow-empty", "-m", "later"}, {"push", "-q", "origin", "HEAD"}} {
+		if out, err := exec.Command("git", append([]string{"-C", pinned.work, "-c", "user.name=t", "-c", "user.email=t@t"}, a...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s", a, out)
+		}
+	}
+	if y := pinned.sync("y"); head(y.Path) != pin || len(pinned.last["updated"]) != 0 {
+		t.Fatalf("pinned helper moved to %s (pin %s): %v", head(y.Path), pin, pinned.last)
 	}
 }
 
@@ -2234,7 +2287,7 @@ func TestCatalogFile(t *testing.T) {
 
 	write(dir, marketFile, newBody) // both present: the new one wins
 	m, err = readMarketplace(dir)
-	if err != nil || m.Legacy || m.Name != "hub" || len(m.Skills) != 1 || m.Skipped != 2 {
+	if err != nil || m.Legacy || m.Name != "hub" || len(m.Skills) != 2 || m.Skipped != 1 || m.Skills[1].Commit != "" { // no sha: it follows the latest
 		t.Fatalf("both: %+v %v", m, err)
 	}
 	e := m.Skills[0]
@@ -2248,7 +2301,7 @@ func TestCatalogFile(t *testing.T) {
 
 	only := t.TempDir()
 	write(only, marketFile, newBody)
-	if m, err = readMarketplace(only); err != nil || m.Legacy || len(m.Skills) != 1 {
+	if m, err = readMarketplace(only); err != nil || m.Legacy || len(m.Skills) != 2 {
 		t.Fatalf("new only: %+v %v", m, err)
 	}
 	if _, err = readMarketplace(t.TempDir()); err == nil {

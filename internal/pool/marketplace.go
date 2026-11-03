@@ -36,13 +36,13 @@ import (
 //	    "requires": ["claude"],                   // optional: any one of these agents must be installed
 //	    "repo": "https://github.com/o/r.git",     // required: the helper's Git repository
 //	    "path": "agents/pr-review-agent",         // optional: the helper's folder in repo
-//	    "ref": "main",                            // optional: the branch the pin is on
-//	    "sha": "<40 hex>"                         // required: the pinned commit
+//	    "ref": "main",                            // optional: the branch the pin is on, or to follow
+//	    "sha": "<40 hex>"                         // optional: the pinned commit; none follows the latest of ref
 //	  }]
 //	}
 //
 // One bad entry never stops the rest: an entry with no name, no repo, a "path" with "." or ".." in
-// it, or no full 40-hex "sha" is skipped, counted, and logged once with its name and the reason. So is
+// it, or a "sha" that is not a full 40-hex commit is skipped, counted, and logged once with its name and the reason. So is
 // every entry whose name another entry has too (case-insensitive): a duplicate is ambiguous, so none
 // of that name is read, and a helper installed under it stays as it is until the hub fixes it. The
 // other entries load. A file that is not valid JSON is refused whole.
@@ -54,12 +54,12 @@ const (
 	legacyMarketFile = ".claude-plugin/marketplace.json"
 )
 
-// Marketplace is PenguPool's reading of the catalog: only plugins with a pinned Git source.
+// Marketplace is PenguPool's reading of the catalog: the entries with a Git source it can install.
 type Marketplace struct {
 	Name        string
 	Description string
 	Skills      []MarketEntry
-	Skipped     int      // entries PenguPool cannot install: not pinned to a commit, or (old file) bundled in the catalog
+	Skipped     int      // entries PenguPool cannot install: a mistake in the entry, or (old file) bundled or not pinned to a commit
 	Legacy      bool     // read from the old .claude-plugin/marketplace.json
 	Problems    []string // why each entry that was skipped for a mistake was
 }
@@ -186,8 +186,8 @@ func problem(e MarketEntry) string {
 		return "it has no name"
 	case e.Repo == "" || strings.HasPrefix(e.Repo, "-") || strings.HasPrefix(e.Repo, "https://github.com/-"):
 		return "it has no repository"
-	case !shaRe.MatchString(e.Commit):
-		return "it must pin a full 40-hex commit sha"
+	case e.Commit != "" && !shaRe.MatchString(e.Commit): // no sha: the helper follows the latest of its ref
+		return "its sha must be a full 40-hex commit"
 	}
 	return ""
 }
@@ -494,7 +494,7 @@ func (p *Pool) syncLocked(ctx context.Context) map[string][]string {
 				p.logf("pool: library sync: %s moved to %s", e.Name, path)
 			} else if updated {
 				out["updated"] = append(out["updated"], e.Name)
-				p.logf("pool: library sync: %s updated to %s", e.Name, e.Commit[:7])
+				p.logf("pool: library sync: %s updated", e.Name)
 			}
 			continue
 		}
@@ -619,7 +619,8 @@ func (p *Pool) marketplaceList(ctx context.Context, _ struct{}) (any, error) {
 	return v, nil
 }
 
-// marketplaceInstall clones an entry's repository at its pinned commit into the Skill library;
+// marketplaceInstall clones an entry's repository at its pinned commit, or the latest of its ref when
+// it has no sha, into the Skill library;
 // a git-subdir entry registers its folder of that clone.
 func (p *Pool) marketplaceInstall(ctx context.Context, in marketIn) (any, error) {
 	dir, err := p.ensureMarket(ctx)
@@ -636,7 +637,11 @@ func (p *Pool) marketplaceInstall(ctx context.Context, in marketIn) (any, error)
 	}
 	e := m.Skills[i]
 	dest := firstNonEmpty(in.Path, p.installDest(e))
-	res, err := p.skillAdd(ctx, skillAddIn{Name: e.Name, Path: dest, URL: e.Repo, Commit: e.Commit, Subdir: e.Path,
+	pin := e.Commit
+	if pin == "" && e.Ref != "" {
+		pin = "origin/" + e.Ref // no sha: the latest of its ref (no ref: the clone's default branch)
+	}
+	res, err := p.skillAdd(ctx, skillAddIn{Name: e.Name, Path: dest, URL: e.Repo, Commit: pin, Subdir: e.Path,
 		Description: e.Description, Capabilities: e.Capabilities, Harness: e.Harness, Requires: e.Requires, Group: groupName(e.Category), Category: e.Category, Credits: e.Credits, Auto: in.Auto})
 	if err == nil && !in.Auto && p.db != nil && p.db.Setting(deletedKey(e.key())) != "" {
 		_ = p.db.SetSetting(deletedKey(e.key()), "") // the owner installs a helper they deleted: the sync keeps it again
@@ -710,6 +715,21 @@ func (p *Pool) updateHelper(ctx context.Context, e marketEntryView, cats map[str
 		p.logf("pool: library sync: %s: %s is not where its clone %s says; left alone", sk.Name, sk.Path, top)
 		return "", false, nil
 	}
+	fetched := e.Commit == ""
+	if fetched { // no sha: follow the latest of its ref
+		if _, err := p.ghGit(ctx, root, "fetch", "-q", "origin"); err != nil {
+			p.logf("pool: library sync: %s: fetch: %v (left as it is)", sk.Name, err)
+			return "", false, nil
+		}
+		if e.Ref == "" { // follow the default branch even when the repository renames it
+			_, _ = p.ghGit(ctx, root, "remote", "set-head", "origin", "-a")
+		}
+		tip, err := p.gitIn(ctx, root, "rev-parse", "--verify", "origin/"+firstNonEmpty(e.Ref, "HEAD")+"^{commit}")
+		if err != nil {
+			return "", false, err
+		}
+		e.Commit = tip
+	}
 	path, dest := filepath.Join(root, filepath.FromSlash(e.Path)), p.installDest(e.MarketEntry)
 	repin, relocate := e.InstalledCommit != e.Commit || path != sk.Path, realPath(root) != realPath(dest)
 	if !repin && !relocate {
@@ -733,8 +753,10 @@ func (p *Pool) updateHelper(ctx context.Context, e marketEntryView, cats map[str
 		return "", false, conflict("%s has local changes; not updated", root)
 	}
 	if repin {
-		if _, err := p.ghGit(ctx, root, "fetch", "-q", "origin"); err != nil {
-			return "", false, err
+		if !fetched {
+			if _, err := p.ghGit(ctx, root, "fetch", "-q", "origin"); err != nil {
+				return "", false, err
+			}
 		}
 		if _, err := p.gitIn(ctx, root, "cat-file", "-e", e.Commit+":"+e.Path); err != nil {
 			return "", false, invalid("%s has no folder %s at %s", e.Repo, e.Path, e.Commit[:10])
