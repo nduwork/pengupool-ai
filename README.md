@@ -88,7 +88,7 @@ Claude Code, Codex, pi and OMP join the same workspace, teams and Compass as Mus
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/screen-map-dark.webp">
-  <img alt="The team map, three levels. team-lead-agent (LEAD, Muse Code) leads three HELPERs, research-agent and pr-review-agent (Muse Code) and dev-workflow-agent (Claude Code), and two BUILDERs. acme-api-muse (Muse Code) leads security-agent (Codex); acme-web-muse (Muse Code) leads frontend-ui-agent (Muse Code). research-agent's ask to the lead is lit, and pr-review-agent reads ? Need input." src="assets/screenshots/screen-map-light.webp">
+  <img alt="The team map, three levels. team-lead-agent (LEAD, Muse Code) leads three HELPERs, research-agent and pr-review-agent (Muse Code) and dev-workflow-agent (Claude Code), and two BUILDERs. acme-api-muse (Muse Code) leads security-agent (Codex); acme-web-muse (Muse Code) leads frontend-ui-agent (Muse Code). research-agent reads ? Need input: its question waits for you. The route from acme-api-muse to security-agent is lit with a reply." src="assets/screenshots/screen-map-light.webp">
 </picture>
 
 <sub>Illustrative UI with synthetic project data.</sub>
@@ -136,9 +136,9 @@ Step by step: [docs/getting-started.md](docs/getting-started.md).
 
 Two short loops of the app, made from real app captures with demo data:
 
-<p align="center"><img src="assets/media/readme-a-specialist.gif" width="800" alt="Starting a team from the Welcome screen: research-agent and pr-review-agent are ticked, the agent is set to Muse Code, and the team appears on the map with the lead and both members running Muse Code."></p>
+<p align="center"><img src="assets/media/readme-a-team.gif" width="800" alt="Starting a team from an empty Workspace: show Welcome, Start with a helper, research-agent and pr-review-agent ticked, the work folder ~/code/acme-shop and the agent Muse Code, then the lead appears on the map and both helpers join it, all running Muse Code."></p>
 
-<p align="center"><img src="assets/media/readme-b-compass.gif" width="800" alt="research-agent asks the lead a question, PenguPool answers it from the owner's confident Compass line, and when security-agent asks acme-api-muse a question no line covers, it goes to the owner's Waiting on you."></p>
+<p align="center"><img src="assets/media/readme-b-compass.gif" width="800" alt="research-agent asks the lead a question, PenguPool checks it against the owner's confident Compass line and the answer goes back, and when security-agent asks a question no line covers, its card reads ? Need input and the question waits for the owner in Waiting on you."></p>
 
 What the demo shows, against the [hackathon's](https://dev.meta.ai/events/global-hackathon) framing:
 

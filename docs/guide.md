@@ -50,7 +50,7 @@ helper. You can list, open and delete entries on the Helpers page.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/screenshots/screen-ask-dark.webp">
-  <img alt="Waiting on you: pr-review-agent (Muse Code) asks whether to approve PR #12, with its options, answered from the notification. The three-level team is behind it." src="../assets/screenshots/screen-ask-light.webp">
+  <img alt="Waiting on you: pr-review-agent (Muse Code) asks whether to approve PR #12, with its options, answered from the notification. Behind it, the three-level team, where pr-review-agent's card reads ? Need input." src="../assets/screenshots/screen-ask-light.webp">
 </picture>
 
 Questions, check-ins and permission prompts collect under the bell. Each shows who asks, their team,

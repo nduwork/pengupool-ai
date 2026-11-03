@@ -39,7 +39,7 @@ Workspace is empty.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/screenshots/screen-settings-dark.webp">
-  <img alt="Settings → Decision model: a local System One model in use for triage" src="../assets/screenshots/screen-settings-light.webp">
+  <img alt="Settings → Decision model: a local System One model, tev1:0.8b, in use for triage" src="../assets/screenshots/screen-settings-light.webp">
 </picture>
 
 Settings → **Decision model**:
