@@ -44,7 +44,11 @@ type HookOut struct {
 // Without a process to go by (a platform with no readable process tree, tests), a live Muse session
 // whose ConvID is the payload's session id wins, else the newest live, unbound Muse session in the same
 // folder is bound. Anything else resolves to nothing: the hook is a silent, fast no-op.
-func (p *Pool) resolveMuseSession(c gateway.Caller, pl map[string]any) (store.Session, bool) {
+// A subagent runs under its session's process with a session id of its own and fires only tool hooks,
+// so only the conversation's turn events (or a session not bound yet) rebind ConvID; hookEventFrom keeps a
+// subagent's hooks after the turn off the session. After a resume or clear, the new conversation binds at
+// its first turn event; a tool hook before it counts as a subagent's.
+func (p *Pool) resolveMuseSession(c gateway.Caller, event string, pl map[string]any) (store.Session, bool) {
 	msid, _ := pl["session_id"].(string)
 	st := p.st.State()
 	if c.PeerPID > 0 && procTreeReadable {
@@ -53,7 +57,7 @@ func (p *Pool) resolveMuseSession(c gateway.Caller, pl map[string]any) (store.Se
 				continue
 			}
 			if yes, _ := descendsFrom(c.PeerPID, s.Pid); yes {
-				if msid != "" && s.ConvID != msid {
+				if msid != "" && s.ConvID != msid && (s.ConvID == "" || museTurnEvent(event)) {
 					p.setSession(s.ID, func(x *store.Session) { x.ConvID = msid })
 					s, _ = p.session(s.ID)
 				}
@@ -93,6 +97,16 @@ func (p *Pool) resolveMuseSession(c gateway.Caller, pl map[string]any) (store.Se
 	return store.Session{}, false
 }
 
+// museTurnEvent is a hook only the conversation itself fires, never a subagent: it may rebind ConvID
+// (a new or resumed conversation in the same process).
+func museTurnEvent(event string) bool {
+	switch event {
+	case "SessionStart", "UserPromptSubmit", "Stop", "TurnFailed", "Interrupted", "SessionEnd":
+		return true
+	}
+	return false
+}
+
 // museLive reports whether a pool session may take a Muse hook: still
 // running and not marked ended or unsupported. An exited session never
 // binds again.
@@ -100,7 +114,6 @@ func museLive(s store.Session) bool {
 	return s.State != "exited" && s.Status != "ended" && s.Status != "harness no longer supported"
 }
 
-// sameDir reports whether two working directories are the same folder,
 // sameDir reports whether two working directories are the same folder,
 // through symlinks (/tmp vs /private/tmp) as well as literally.
 func sameDir(a, b string) bool {
@@ -129,11 +142,24 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	if in.Harness == harness.Muse {
 		// Muse scrubs the hook environment, so the session is resolved for every event, in this
 		// one place.
-		s, ok := p.resolveMuseSession(c, pl)
+		s, ok := p.resolveMuseSession(c, in.Event, pl)
 		if !ok {
 			return HookOut{}, nil // outside PenguPool, or the daemon just started: untouched
 		}
 		in.SessionID = s.ID
+		if msid, _ := pl["session_id"].(string); msid != "" && msid != s.ConvID && s.Status == "idle" {
+			// A subagent working on after its session's turn ended (Muse fires no Stop for it): its tool
+			// calls are still guarded, but it does not reopen the turn or hold the session's queue.
+			// ponytail: its permission prompt is dropped too, not shown as approval: that status would
+			// let its next hooks through and leave the session working again. Track subagents (Muse's
+			// subagentStart/subagentStop hooks) if they turn out to prompt.
+			if _, named := pl["tool_name"].(string); named && in.Event == "PreToolUse" {
+				if out, done := p.toolGuards(s, in.Payload, pl); done {
+					return out, nil
+				}
+			}
+			return HookOut{}, nil
+		}
 	}
 	s, ok := p.session(in.SessionID)
 	if !ok {
@@ -274,19 +300,9 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			p.setQuestion(s.ID, askedSummary(t, pl["tool_input"]), str("tool_use_id"))
 			p.setStatus(s.ID, "approval") // it waits on the owner's answer from now
 		}
-		if out, deny := p.guardRoute(s, pl); deny {
+		if out, done := p.toolGuards(s, in.Payload, pl); done {
 			return out, nil
 		}
-		if str("tool_name") == "SendMessage" {
-			return p.guardSendMessage(s, pl), nil
-		}
-		if out, deny := p.guardStore(in.Payload); deny {
-			return out, nil
-		}
-		if out, deny := p.guardSkill(s, pl); deny {
-			return out, nil
-		}
-		p.logStrayWrite(s, pl)
 		// No floor check here: PenguPool never adds a prompt to what the agent's own permissions allow.
 		// The floor only limits what it answers for the owner (autoAnswer).
 	case "PostToolUse":
@@ -707,6 +723,25 @@ func (p *Pool) addCost(s store.Session, cost float64) {
 		}
 		return nil
 	})
+}
+
+// toolGuards are the checks on a tool call before it runs: done with the answer to give, or false to let
+// it run as the agent's own permissions say.
+func (p *Pool) toolGuards(s store.Session, payload []byte, pl map[string]any) (HookOut, bool) {
+	if out, deny := p.guardRoute(s, pl); deny {
+		return out, true
+	}
+	if name, _ := pl["tool_name"].(string); name == "SendMessage" {
+		return p.guardSendMessage(s, pl), true
+	}
+	if out, deny := p.guardStore(payload); deny {
+		return out, true
+	}
+	if out, deny := p.guardSkill(s, pl); deny {
+		return out, true
+	}
+	p.logStrayWrite(s, pl)
+	return HookOut{}, false
 }
 
 // guardStore refuses an agent's tool call that names the host's own files: agents.db (the Compass
