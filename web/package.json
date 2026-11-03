@@ -1,7 +1,7 @@
 {
   "name": "pengupool-web",
   "private": true,
-  "version": "0.11.1",
+  "version": "0.11.2",
   "type": "module",
   "description": "PenguPool browser terminal: React + TypeScript client for the v1 wire protocol, embedded by internal/webapp.",
   "scripts": {
