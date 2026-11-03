@@ -6,6 +6,8 @@ Every PenguPool AI release, newest first. Each entry describes that release as i
 
 A Muse session no longer stays Active after its turn ends. Muse runs subagents, such as its memory reminder, in the session after a turn; their tool calls were taken for a new turn, so the session read Active until its next real turn and messages sent to it waited. Now the session reads Waiting when its turn ends, and messages reach it. A subagent's tool calls are still checked, as before. A Muse session stuck this way before updating recovers at its next turn.
 
+The map now shows a session as **? Need input** while it has a pending ask: an approval or question that the bell and the phone already showed. This includes Muse sessions.
+
 0.11.1 was tagged but never published; this release carries its changes, described below.
 
 ## 0.11.1
