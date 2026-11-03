@@ -1230,7 +1230,7 @@ function DailyBackup(): ReactElement {
   if (b === null) return <></>;
   return (
     <Card className="mb-4 px-4">
-      <Row title="Daily backup" hint={`The Compass, specialists' experience and team records: the last 14 days, in ${b.local_dir}. Always on.`}>
+      <Row title="Daily backup" hint={`The Compass, helpers' experience and team records: the last 14 days, in ${b.local_dir}. Always on.`}>
         <span className="text-label text-muted-foreground">{b.status.last_snapshot !== undefined ? shortTime(b.status.last_snapshot) : "Not yet"}</span>
       </Row>
     </Card>
@@ -1272,7 +1272,7 @@ function Sync(): ReactElement {
   return (
     <div>
       <p className="mb-2 text-label text-muted-foreground">
-        The Compass and specialists&apos; experience: with sync on, PenguPool syncs the record through a private repository you pick, one your account can push to or a new name it creates on the first sync. Nothing syncs until you pick one.
+        The Compass and helpers&apos; experience: with sync on, PenguPool syncs the record through a private repository you pick, one your account can push to or a new name it creates on the first sync. Nothing syncs until you pick one.
       </p>
       <Card className="px-4">
         <Row

@@ -400,7 +400,7 @@ export function TeamMap(): ReactElement {
               {empty ? (
                 <div className="h-full">
                   <Empty icon={<Users />} title="No agent sessions yet">
-                    Start one with <strong>New session</strong> (⌘N), drag a specialist from the Specialist pool here, or right-click for more. Or{" "}
+                    Start one with <strong>New session</strong> (⌘N), drag a helper from the Helper pool here, or right-click for more. Or{" "}
                     <button type="button" className="underline" onClick={app.welcome.open}>
                       show Welcome
                     </button>
@@ -548,7 +548,7 @@ export function TeamMap(): ReactElement {
               {anyUnfolded ? "Fold all groups" : "Unfold all groups"}
             </Item>
             <Item icon={<BookOpen />} onSelect={() => setDrawer(!drawer)}>
-              {drawer ? "Hide Specialist pool" : "Show Specialist pool"}
+              {drawer ? "Hide Helper pool" : "Show Helper pool"}
             </Item>
             {domain.teams.some((t) => t.state !== "active") ? (
               <Item icon={<Archive />} onSelect={() => app.showDialog(<ClosedTeamsSheet />)}>
@@ -820,4 +820,4 @@ export function useChains(): Record<string, Chain> {
   return chains;
 }
 
-const roleWord = (r: Role | undefined): string => (r === undefined ? "Member" : r === "sme" ? "SME" : r[0].toUpperCase() + r.slice(1));
+const roleWord = (r: Role | undefined): string => (r === undefined ? "Member" : r === "sme" ? "Builder" : r[0].toUpperCase() + r.slice(1));

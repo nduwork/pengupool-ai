@@ -15,7 +15,7 @@ image. Building from source with `make install` also links it into `~/.local/bin
 | `kill <session>` | Stop a session |
 | `web` | Print the browser app's URL for the running host |
 | `doctor [--fix] [--restore]` | Check this machine: agent CLIs, keychain, what reaches the Compass |
-| `experience export FILE` / `experience import FILE` | Back up or restore specialists' journals |
+| `experience export FILE` / `experience import FILE` | Back up or restore helpers' journals |
 | `daemon [--store DIR] [--http ADDR]` | Run the host yourself (the app normally does this) |
 | `version` | Print the version |
 
@@ -27,8 +27,8 @@ quoted.
 | Command | Does |
 | --- | --- |
 | `send --to MEMBER [--type tell\|ask\|done\|blocked] TEXT` | Message a teammate (parent or child on the team's tree) |
-| `search WORDS` | Search your Compass and the specialist's own journal |
-| `experience search WORDS` / `experience show ID` | A specialist's own journal entries |
+| `search WORDS` | Search your Compass and the helper's own journal |
+| `experience search WORDS` / `experience show ID` | A helper's own journal entries |
 | `ask [--owner-only] [--option O]... QUESTION` | Ask you a question; waits for the answer |
 | `team request add --skill S \| remove MEMBER` | Ask you to change who is on the team |
 | `decide` | Ask your decision model typed questions (JSON in, JSON out) |

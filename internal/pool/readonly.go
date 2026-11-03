@@ -49,7 +49,7 @@ func setWritable(root string, w bool) error {
 // moves and removals; lockClones puts the locks back afterwards.
 func (p *Pool) unlockClones() {
 	if err := setWritable(filepath.Join(p.st.Dir(), "skills"), true); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		p.logf("pool: specialist skills: unlock: %v", err)
+		p.logf("pool: helper skills: unlock: %v", err)
 	}
 }
 
@@ -67,7 +67,7 @@ func (p *Pool) lockClones(ctx context.Context) {
 	}
 	for root := range roots {
 		if err := p.lockClone(ctx, root); err != nil {
-			p.logf("pool: specialist skills: %s: %v", root, err)
+			p.logf("pool: helper skills: %s: %v", root, err)
 		}
 	}
 }
@@ -127,7 +127,7 @@ func (p *Pool) lockClone(ctx context.Context, root string) error {
 // longer update), and the sync's own lockClones at its end locks what it added.
 func (p *Pool) lockClonesIdle(ctx context.Context) {
 	if !p.syncMu.TryLock() {
-		p.logf("pool: specialist skills: a library sync is running; it applies the locks when it ends")
+		p.logf("pool: helper skills: a library sync is running; it applies the locks when it ends")
 		return
 	}
 	defer p.syncMu.Unlock()

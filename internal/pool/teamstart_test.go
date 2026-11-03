@@ -42,7 +42,7 @@ func startPool(t *testing.T, fail map[string]bool) (*Pool, *store.Store) {
 	return p, st
 }
 
-// Start with a specialist: a new team led by team-lead-agent, the picked specialists below it.
+// Start with a helper: a new team led by team-lead-agent, the picked helpers below it.
 func TestTeamStart(t *testing.T) {
 	p, st := startPool(t, nil)
 	folder := t.TempDir()
@@ -95,7 +95,7 @@ func TestTeamStartRefusals(t *testing.T) {
 		want string
 	}{
 		{map[string]any{"skill_ids": []string{"sk-res"}}, "choose a folder"},
-		{map[string]any{"skill_ids": []string{"nope"}}, "no specialist"},
+		{map[string]any{"skill_ids": []string{"nope"}}, "no helper"},
 		{map[string]any{"skill_ids": []string{"sk-lead"}}, "leads the team"},
 		{map[string]any{"skill_ids": []string{}, "harness": "muse"}, ""}, // not installed (agentOnPath puts only claude first)
 	} {
@@ -115,7 +115,7 @@ func TestTeamStartRefusals(t *testing.T) {
 	}
 }
 
-// A lead that does not start leaves no team behind; a specialist that does not start is reported, and
+// A lead that does not start leaves no team behind; a helper that does not start is reported, and
 // the team keeps its lead.
 func TestTeamStartFailures(t *testing.T) {
 	p, st := startPool(t, map[string]bool{"team-lead-agent": true})

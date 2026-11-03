@@ -10,18 +10,18 @@ import { Input, Label, Select } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
 import type { Skill } from "../protocol/domain";
 
-/** The lead of a team started here: the Specialist hub's team-hub agent. */
+/** The lead of a team started here: the Helper hub's team-hub agent. */
 export const LEAD = "team-lead-agent";
 
-/** Commonly useful specialists, in this order; only the installed ones show. Every other one is a search away. */
+/** Commonly useful helpers, in this order; only the installed ones show. Every other one is a search away. */
 export const SUGGESTED = ["research-agent", "pr-review-agent", "dev-workflow-agent", "security-agent", "api-design-agent", "git-ci-agent", "data-analysis-agent"];
 
-/** The installed specialists Start with a specialist offers: the lead excluded, Suggested first in its order. */
+/** The installed helpers Start with a helper offers: the lead excluded, Suggested first in its order. */
 export function suggested(skills: Skill[]): Skill[] {
   return SUGGESTED.map((n) => skills.find((s) => s.name === n)).filter((s): s is Skill => s !== undefined);
 }
 
-/** Specialists matching a search by name, description or capability. */
+/** Helpers matching a search by name, description or capability. */
 export function matching(skills: Skill[], q: string): Skill[] {
   const w = q.trim().toLowerCase();
   if (w === "") return skills;
@@ -35,7 +35,7 @@ interface StartResult {
   members: { skill_id: string; name: string; ok: boolean; session_id?: string; error?: string }[];
 }
 
-/** Start with a specialist: a new team led by team-lead-agent, with the specialists the owner ticks as members. */
+/** Start with a helper: a new team led by team-lead-agent, with the helpers the owner ticks as members. */
 export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; onStarted?: () => void }): ReactElement {
   const app = useApp();
   const lead = app.domain.skills.find((s) => s.name === LEAD);
@@ -65,10 +65,10 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
   const options = pickable(found, AGENTS);
   const pick = agent !== "" ? agent : (options[0]?.value ?? "");
   const shown = q.trim() !== "" ? matching(all, q) : showAll ? all : suggested(all);
-  const needFolder = picked.length > 0; // every specialist but the lead works in a repository
+  const needFolder = picked.length > 0; // every helper but the lead works in a repository
   const names = picked.map((id) => all.find((s) => s.id === id)?.name ?? id);
   const toggle = (id: string): void => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]);
-  const plural = new Intl.PluralRules("en").select(picked.length) === "one" ? "specialist" : "specialists";
+  const plural = new Intl.PluralRules("en").select(picked.length) === "one" ? "helper" : "helpers";
   const canStart = lead !== undefined && found !== null && pick !== "" && !busy && (!needFolder || folder.trim() !== "");
 
   const start = async (): Promise<void> => {
@@ -99,8 +99,8 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
     const ok = result.members.filter((m) => m.ok).length;
     return (
       <Sheet
-        title="Start with a specialist"
-        description={`Team ${result.name} started with ${ok} of ${result.members.length} specialists.`}
+        title="Start with a helper"
+        description={`Team ${result.name} started with ${ok} of ${result.members.length} helpers.`}
         onClose={onClose}
         footer={
           <Button
@@ -139,7 +139,7 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
   if (lead === undefined) {
     return (
       <Sheet
-        title="Start with a specialist"
+        title="Start with a helper"
         onClose={onClose}
         footer={
           <Button
@@ -149,19 +149,19 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
               app.setNav("skills");
             }}
           >
-            Open Specialists
+            Open Helpers
           </Button>
         }
       >
-        <p className="rounded-md bg-warning/10 p-3 text-caption text-warning">{LEAD} isn&apos;t installed, so a team can&apos;t be led. Install it from Specialists, then start again.</p>
+        <p className="rounded-md bg-warning/10 p-3 text-caption text-warning">{LEAD} isn&apos;t installed, so a team can&apos;t be led. Install it from Helpers, then start again.</p>
       </Sheet>
     );
   }
 
   return (
     <Sheet
-      title="Start with a specialist"
-      description={`Starts a new team. ${LEAD} leads it; the specialists you pick join as members.`}
+      title="Start with a helper"
+      description={`Starts a new team. ${LEAD} leads it; the helpers you pick join as members.`}
       onClose={onClose}
       footer={
         <>
@@ -190,15 +190,15 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
       >
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-faint" />
-          <Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search all ${all.length} specialists`} className="pl-7" aria-label="Search specialists" />
+          <Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search all ${all.length} helpers`} className="pl-7" aria-label="Search helpers" />
         </div>
         <div>
           <p className="mb-1 text-caption font-medium text-muted-foreground">
-            {q.trim() !== "" ? `${shown.length} ${shown.length === 1 ? "specialist matches" : "specialists match"}` : showAll ? "All specialists" : "Suggested"}
+            {q.trim() !== "" ? `${shown.length} ${shown.length === 1 ? "helper matches" : "helpers match"}` : showAll ? "All helpers" : "Suggested"}
           </p>
           {all.length === 0 ? (
             <p className="text-caption text-muted-foreground">
-              No other specialists are installed. Install them from{" "}
+              No other helpers are installed. Install them from{" "}
               <button
                 type="button"
                 className="underline"
@@ -207,12 +207,12 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
                   app.setNav("skills");
                 }}
               >
-                Specialists
+                Helpers
               </button>
               , or start with the lead only.
             </p>
           ) : shown.length === 0 ? (
-            <p className="text-caption text-muted-foreground">No specialist matches “{q.trim()}”.</p>
+            <p className="text-caption text-muted-foreground">No helper matches “{q.trim()}”.</p>
           ) : (
             <div className="grid">
               {shown.map((s) => (
@@ -230,7 +230,7 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
           )}
           {q.trim() === "" && !showAll && all.length > shown.length ? (
             <Button variant="ghost" size="sm" className="mt-1" onClick={() => setShowAll(true)}>
-              Show all {all.length} specialists
+              Show all {all.length} helpers
             </Button>
           ) : null}
         </div>
@@ -239,7 +239,7 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
           <Label
             hint={
               folder.trim() === "" ? (
-                <span className="text-danger">Choose a folder: the specialists you picked work in a repository.</span>
+                <span className="text-danger">Choose a folder: the helpers you picked work in a repository.</span>
               ) : (
                 "The repository the team works in. The lead alone needs none."
               )
@@ -270,7 +270,7 @@ export function StartTeamSheet({ onClose, onStarted }: { onClose: () => void; on
             ) : null}
           </Label>
         ) : null}
-        <Label hint={found === null ? "Checking…" : options.length === 0 ? "None of the agents can run here." : "The lead and each specialist run on it."}>
+        <Label hint={found === null ? "Checking…" : options.length === 0 ? "None of the agents can run here." : "The lead and each helper run on it."}>
           Agent
           <Select value={pick} onChange={(e) => setAgent(e.target.value)} disabled={found === null || options.length === 0}>
             {options.map((o) => (

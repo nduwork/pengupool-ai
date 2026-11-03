@@ -30,7 +30,7 @@ function treeParent(t: Team, id: string): string {
 }
 
 /** A member's label, derived, never stored (mirrors the host's teamLabel): LEAD for the root of the
- * tree, SPECIALIST for an agent from the specialist pool, SME for a member the owner added with a repository
+ * tree, HELPER for an agent from the helper pool, BUILDER for a member the owner added with a repository
  * behind it (its worktree, or a session working in a known repository); undefined for any other member. */
 export function teamLabel(t: Team, m: Member, cwd?: string, repos: { path: string }[] = []): Role | undefined {
   if (m.session_id === leadOf(t)) return "lead";
@@ -56,8 +56,8 @@ export function describeChange(domain: Domain, t: Team | undefined, c: Formation
   switch (c.op) {
     case "add":
       return c.skill_id !== undefined && c.skill_id !== ""
-        ? `Add ${skillName(domain, c.skill_id)} as a specialist`
-        : `Add an SME for ${domain.repos.find((r) => r.id === c.repo_id)?.name ?? "a repository"}`;
+        ? `Add ${skillName(domain, c.skill_id)} as a helper`
+        : `Add a builder for ${domain.repos.find((r) => r.id === c.repo_id)?.name ?? "a repository"}`;
     case "remove":
       return `Remove ${member}`;
     default: // a request from an older record to choose who leads; it changes nothing
@@ -145,7 +145,7 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
                 : usable.length === 0
                   ? `None of the agents ${skill?.name ?? "it"} runs on is installed here.`
                   : allowed.length === 1
-                    ? `Only ${allowed[0].label} can run ${skill?.name ?? "this specialist"}.`
+                    ? `Only ${allowed[0].label} can run ${skill?.name ?? "this helper"}.`
                     : [AGENTS.find((a) => a.id === agent)?.hint, found[agent]?.version, probeFailed ? "Couldn't check which agents are installed; all are offered." : undefined]
                         .filter((x) => x !== undefined && x !== "")
                         .join(" · ")
@@ -153,7 +153,7 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
           >
             Agent
             <Select value={harness} onChange={(e) => setHarness(e.target.value)} aria-label="Agent runtime" aria-describedby={hintId} autoFocus>
-              {agentOptions(usable, (id) => (skill?.harness === id ? " (specialist's default)" : ""))}
+              {agentOptions(usable, (id) => (skill?.harness === id ? " (helper's default)" : ""))}
             </Select>
           </Label>
         ) : null}
@@ -177,7 +177,7 @@ export function FormationSheet({ team, change, onDone, approvalId }: { team: Tea
 export function AddMemberSheet({ team }: { team: Team }): ReactElement {
   const app = useApp();
   const close = (): void => app.showDialog(null);
-  // A specialist may join twice (each copy is its own session, named pr-review-agent-2 and so on).
+  // A helper may join twice (each copy is its own session, named pr-review-agent-2 and so on).
   const skills = app.domain.skills;
   const [kind, setKind] = useState<"freelancer" | "sme">(skills.length > 0 ? "freelancer" : "sme");
   const [skill, setSkill] = useState(skills[0]?.id ?? "");
@@ -187,7 +187,7 @@ export function AddMemberSheet({ team }: { team: Team }): ReactElement {
   return (
     <Sheet
       title={`Add a member to ${team.name}`}
-      description="A specialist comes from Specialists; an SME is an agent for one more repository. Each works in its own worktree."
+      description="A helper comes from Helpers; a builder is an agent for one more repository. Each works in its own worktree."
       onClose={close}
       footer={
         <>
@@ -210,13 +210,13 @@ export function AddMemberSheet({ team }: { team: Team }): ReactElement {
               aria-pressed={kind === k}
               className={cn("flex h-7 flex-1 items-center justify-center rounded-md", kind === k ? "bg-panel font-medium shadow-sm" : "text-muted-foreground")}
             >
-              {k === "freelancer" ? "Specialist" : "Repository SME"}
+              {k === "freelancer" ? "Helper" : "Repository builder"}
             </button>
           ))}
         </div>
         {kind === "freelancer" ? (
           <Label>
-            Specialist
+            Helper
             <Select value={skill} onChange={(e) => setSkill(e.target.value)}>
               {skills.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -248,6 +248,6 @@ export function AddMemberSheet({ team }: { team: Team }): ReactElement {
 
 export function memberBadge(domain: Domain, m: Member): string {
   if (m.role === "main") return "Main";
-  if (m.role === "sme") return `SME · ${domain.repos.find((r) => r.id === m.repo_id)?.name ?? "repository"}`;
-  return skillName(domain, m.skill_id) || "Specialist";
+  if (m.role === "sme") return `Builder · ${domain.repos.find((r) => r.id === m.repo_id)?.name ?? "repository"}`;
+  return skillName(domain, m.skill_id) || "Helper";
 }

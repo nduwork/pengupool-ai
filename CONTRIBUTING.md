@@ -33,7 +33,7 @@ directory.
           │  loads the web app, starts the host        │
           └────────────── gateway (internal/gateway) ──┘   unix socket for the CLI, loopback HTTP/WebSocket
                                    │
-                            pool (internal/pool): teams, sessions, specialists, Compass, triage
+                            pool (internal/pool): teams, sessions, helpers, Compass, triage
                        ┌───────────┼───────────────┬───────────────────┐
              hub (internal/hub)  store (JSON)   agentdb (SQLite)   decision (System One)
                   │               state/config   Compass, journals   triage questions
@@ -45,15 +45,15 @@ directory.
 | Package | Role |
 | --- | --- |
 | `cmd/pengupool` | The CLI and the host daemon entry point |
-| `internal/pool` | PenguPool's domain: repositories, sessions, teams, specialists, the Compass, triage, the Muse app API |
+| `internal/pool` | PenguPool's domain: repositories, sessions, teams, helpers, the Compass, triage, the Muse app API |
 | `internal/harness` | How each agent is launched, resumed and hooked; the agent permission rules |
 | `internal/hub`, `internal/session`, `internal/vt` | Workers: one PTY per session, its terminal state, adoption after a host restart |
 | `internal/gateway` | The daemon's front door: unix socket, HTTP and WebSocket, the Muse device API |
 | `internal/store` | Durable state as JSON under `$PENGUPOOL_HOME/v2` |
-| `internal/agentdb` | The record: Compass lines, specialists' journals, gates (SQLite) |
+| `internal/agentdb` | The record: Compass lines, helpers' journals, gates (SQLite) |
 | `internal/decision` | The System One triage client |
 | `internal/node` | SSH hosts the app can switch to |
-| `internal/pool/skilltemplate` | Templates shipped inside specialists; changing them changes the product |
+| `internal/pool/skilltemplate` | Templates shipped inside helpers; changing them changes the product |
 | `web/` | The React app (Vite, Tailwind, Radix) |
 | `desktop/` | The Electron shell |
 | `tools/muse/` | The Muse app guide and the Muse companion |

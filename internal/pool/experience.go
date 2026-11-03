@@ -159,7 +159,7 @@ func (p *Pool) helperKey(sessionID string) (string, error) {
 	}
 	sk := p.helperOf(sessionID)
 	if sk == nil {
-		return "", invalid("only a specialist has a journal")
+		return "", invalid("only a helper has a journal")
 	}
 	return agentOf(*sk), nil
 }
@@ -312,7 +312,7 @@ func (p *Pool) experienceImport(_ context.Context, in importIn) (any, error) {
 		key, ok := keyOf(x.Helper)
 		switch {
 		case !ok:
-			return nil, notFound("entry %d: no specialist named %q; specialists: %s", i+1, x.Helper, strings.Join(names, ", "))
+			return nil, notFound("entry %d: no helper named %q; helpers: %s", i+1, x.Helper, strings.Join(names, ", "))
 		case strings.TrimSpace(x.Title) == "" || strings.TrimSpace(x.Body) == "":
 			return nil, invalid("entry %d: a title and a body are required", i+1)
 		}
@@ -352,9 +352,9 @@ func (p *Pool) experienceImport(_ context.Context, in importIn) (any, error) {
 	return out, nil
 }
 
-// ---- a SPECIALIST LEAD's project entry -------------------------------------------------------------
+// ---- a HELPER LEAD's project entry -------------------------------------------------------------
 
-// A team led by a SPECIALIST keeps one project entry in that specialist's journal: the lead's latest
+// A team led by a HELPER keeps one project entry in that helper's journal: the lead's latest
 // compaction summary under the host's facts about the team at capture. Only compactions that happen
 // anyway count (the owner's compact command or the harness's own) and only Claude Code's, pi's and
 // OMP's, whose transcripts hold the summary; PenguPool types nothing. Each
@@ -365,10 +365,10 @@ const (
 	transcriptTail = 8 << 20     // how much of a transcript's end is read for the summary
 )
 
-// leadGuide is the paragraph a SPECIALIST LEAD's context carries.
+// leadGuide is the paragraph a HELPER LEAD's context carries.
 const leadGuide = "When your harness compacts this team's session, preserve a self-contained understanding of the project: enduring goal and constraints; repos, component relationships and responsibilities; delivered behavior with evidence and exact status; decisions, reasons and rejected alternatives; dated current state and open threads; durable locations and operational know-how. Carry still-valid earlier project learning forward and explicitly supersede changes. Distinguish facts, plans and unknowns. Do not invent missing information or include credentials. Preserve enough explanation that a later teammate can act without this conversation."
 
-// specialistLead is the skill of id when it is its team's LEAD and a SPECIALIST (a session with a
+// specialistLead is the skill of id when it is its team's LEAD and a HELPER (a session with a
 // journal, helperOf); nil otherwise.
 func (p *Pool) specialistLead(t *protocol.Team, id string) *protocol.Skill {
 	if t == nil || leadOf(t) != id {
@@ -377,7 +377,7 @@ func (p *Pool) specialistLead(t *protocol.Team, id string) *protocol.Skill {
 	return p.helperOf(id)
 }
 
-// leadCompaction runs at a session's turn end: when it is a SPECIALIST LEAD whose transcript holds a
+// leadCompaction runs at a session's turn end: when it is a HELPER LEAD whose transcript holds a
 // compaction newer than its team's project entry, that entry is replaced, in one transaction.
 func (p *Pool) leadCompaction(id string) {
 	if p.db == nil {

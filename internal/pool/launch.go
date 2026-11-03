@@ -394,7 +394,7 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 		return nil, invalid("no transcript was recorded for %s", s.Name)
 	}
 	if d := p.st.State().Domain; s.SkillID != "" && findSkill(&d, s.SkillID) == nil {
-		return nil, invalid("%s's specialist was deleted; start a new session instead", s.Name)
+		return nil, invalid("%s's helper was deleted; start a new session instead", s.Name)
 	}
 	keep := s
 	p.expireAsks(s.ID) // what it asked before it stopped has no one waiting: it asks again if it still needs to
@@ -424,7 +424,7 @@ func (p *Pool) resumeReadDirs(s store.Session) []string {
 	return p.helperReadDirs(s)
 }
 
-// helperReadDirs is what a team specialist (any skill member) reads besides its own
+// helperReadDirs is what a team helper (any skill member) reads besides its own
 // folder: the team's repositories, as startMember gives it at the start.
 func (p *Pool) helperReadDirs(s store.Session) []string {
 	if s.TeamID == "" || s.SkillID == "" {

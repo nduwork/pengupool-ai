@@ -33,7 +33,7 @@ Applications and open it. Details are in [Install](#install); building from sour
  Electron app (desktop/) / browser (web/)  ─┐
  CLI (cmd/pengupool) ── unix socket ────────┼─ gateway: loopback HTTP + WebSocket, Muse device API
  Muse app ── Tailscale Serve ───────────────┘        │
-                                      pool: teams, sessions, specialists, Compass, triage
+                                      pool: teams, sessions, helpers, Compass, triage
                                 ┌────────────┬───────┴──────┬──────────────────┐
                                hub        store (JSON)   agentdb (SQLite)   decision (System One)
                                 │
@@ -52,7 +52,7 @@ Package by package: [How it fits together](CONTRIBUTING.md#how-it-fits-together)
 <sub>Data flow, not push notifications: the Muse app checks PenguPool for waiting questions.</sub>
 
 **On your Mac, Muse Code works with your team's context.** PenguPool's Muse plugin connects session
-start, prompts and turn events to the team's context, your Compass and a specialist's own journal. That
+start, prompts and turn events to the team's context, your Compass and a helper's own journal. That
 lets the coding agent work within the preferences you have already recorded.
 
 **On your phone, Muse brings the question back to you.** A paired Muse device can read the team's
@@ -70,12 +70,12 @@ One model; the local Tev1 default is Together AI's Qwen-based model.
 
 - **Run agents side by side.** Claude Code, Codex, Muse Code, pi and OMP, plus Claude Code through
   Ollama, each in its own terminal session. Sessions keep running when the app or its host restarts.
-- **Start a team.** Welcome's *Start with a specialist* starts a team led by team-lead-agent with the
-  specialists you pick (research, PR review, security, …), or start one agent in a folder and grow a
+- **Start a team.** Welcome's *Start with a helper* starts a team led by team-lead-agent with the
+  helpers you pick (research, PR review, security, …), or start one agent in a folder and grow a
   team around it on the map.
 - **Say it once.** Tell any session how you want things ("small commits", "never touch the migrations
   folder"). It becomes a line in your **Compass**, and every agent gets your Compass in its context.
-  Each specialist also keeps a private **journal** of the jobs it finished and starts its next job with them.
+  Each helper also keeps a private **journal** of the jobs it finished and starts its next job with them.
 - **Answer what waits on you.** Questions, check-ins and permission prompts collect in *Waiting on
   you*, with enough context to decide. With the Muse app paired, you answer team questions and
   check-ins from your phone; permission prompts are answered in the agent's terminal.
@@ -86,7 +86,7 @@ Claude Code, Codex, pi and OMP join the same workspace, teams and Compass as Mus
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/screen-map-dark.webp">
-  <img alt="The team map, three levels. team-lead-agent (LEAD, Muse Code) leads research-agent (Muse Code), pr-review-agent (Muse Code), dev-workflow-agent (Claude Code) and two repository SMEs. acme-api-muse (Muse Code) leads security-agent (Codex); acme-web-muse (Muse Code) leads frontend-ui-agent (Muse Code). Lit routes and an open ask from research-agent." src="assets/screenshots/screen-map-light.webp">
+  <img alt="The team map, three levels. team-lead-agent (LEAD, Muse Code) leads research-agent (Muse Code), pr-review-agent (Muse Code), dev-workflow-agent (Claude Code) and two repository builders. acme-api-muse (Muse Code) leads security-agent (Codex); acme-web-muse (Muse Code) leads frontend-ui-agent (Muse Code). Lit routes and an open ask from research-agent." src="assets/screenshots/screen-map-light.webp">
 </picture>
 
 <sub>Illustrative UI with synthetic project data.</sub>
@@ -107,7 +107,7 @@ source instead, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/screen-welcome-dark.webp">
-  <img alt="The Welcome screen: Start with a specialist, Start in a folder, and a three-step setup card" src="assets/screenshots/screen-welcome-light.webp">
+  <img alt="The Welcome screen: Start with a helper, Start in a folder, and a three-step setup card" src="assets/screenshots/screen-welcome-light.webp">
 </picture>
 
 1. **Open the app.** The empty Workspace shows the map, with a short Setup card in the sidebar.
@@ -119,7 +119,7 @@ source instead, see [CONTRIBUTING.md](CONTRIBUTING.md).
    team commands without a prompt, or keep asking. Either choice is fine.
 4. **Start with Muse Code.** Choose *Start in a folder*, select a small demo repository and pick Muse
    Code. Ask it to inspect the project and propose one small improvement, with a clear question for you
-   before changing it. (For a team, *Start with a specialist* and select Muse Code in the agent picker.)
+   before changing it. (For a team, *Start with a helper* and select Muse Code in the agent picker.)
 5. **Try the phone loop.** Follow [Muse setup](docs/phone.md), open the team's supported pending
    question in Muse, and reply. The session gets your answer from its waiting ask, or as a notice if it
    had stopped waiting ([details](docs/phone.md#try-it)). You can keep using
@@ -143,7 +143,7 @@ What the demo shows, against the [hackathon's](https://dev.meta.ai/events/global
 | --- | --- |
 | Build for Your World | The builder's real friction: repeating context and repeatedly checking desktop sessions. The same preference or decision carried into the work. |
 | Creativity | Muse serves both the coding work and the owner's remote participation, in one concrete workflow. |
-| Technical ambition | The Muse plugin's hooks and the paired-device answer path, plus specialist-specific memory and team context. |
+| Technical ambition | The Muse plugin's hooks and the paired-device answer path, plus helper-specific memory and team context. |
 | Working results | One real question-and-answer round trip, the agent's continued work and a verifiable output; the release and setup links above. |
 
 ## Help

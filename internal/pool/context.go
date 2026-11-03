@@ -126,29 +126,29 @@ func (p *Pool) buildContextCap(id string, compassCap int) string {
 	return b.String()
 }
 
-// labelPhrase names a member's place for its own context: "the LEAD", "an SME", "a SPECIALIST", "a member".
+// labelPhrase names a member's place for its own context: "the LEAD", "a BUILDER", "a HELPER", "a member".
 func labelPhrase(st *store.State, t *protocol.Team, m protocol.Member) string {
 	switch teamLabel(st, t, m) {
 	case "LEAD":
 		return "the LEAD"
-	case "SME":
-		return "an SME"
-	case "SPECIALIST":
-		return "a SPECIALIST"
+	case "BUILDER":
+		return "a BUILDER"
+	case "HELPER":
+		return "a HELPER"
 	}
 	return "a member"
 }
 
 func (p *Pool) renderSkill(b *strings.Builder, sk *protocol.Skill) {
 	// Skills are never installed into a harness: a helper gets them here, for this session only.
-	fmt.Fprintf(b, "\n## Your skills as the %s specialist\nThey are active for this team session only and are not installed in your agent. Before using one, read its SKILL.md under %s.\n", sk.Name, sk.Path)
+	fmt.Fprintf(b, "\n## Your skills as the %s helper\nThey are active for this team session only and are not installed in your agent. Before using one, read its SKILL.md under %s.\n", sk.Name, sk.Path)
 	if sk.Source == "git" && within(sk.Path, filepath.Join(p.st.Dir(), "skills")) {
 		fmt.Fprintf(b, "Your installed skill files in %s are read-only: never edit them. Temp files and folders of your own there are fine.\n", sk.Path)
 	}
 	// Codex reads AGENTS.md on its own, other agents do not: every agent is told to.
 	agents := filepath.Join(sk.Path, "AGENTS.md")
 	if _, err := os.Stat(agents); err == nil {
-		fmt.Fprintf(b, "First read %s: who you are as this specialist and how to use its skills.\n", agents)
+		fmt.Fprintf(b, "First read %s: who you are as this helper and how to use its skills.\n", agents)
 	}
 	if sk.Method != "" {
 		fmt.Fprintf(b, "Method: %s\n", sk.Method)

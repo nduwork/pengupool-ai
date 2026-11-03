@@ -5,10 +5,12 @@ import { describe, expect, it } from "vitest";
 import { RoleTag } from "./controls";
 
 describe("role tag", () => {
-  it("shows a specialist as SPEC with the tooltip Specialist", () => {
-    const html = renderToStaticMarkup(createElement(RoleTag, { role: "helper" }));
-    expect(html).toContain('title="Specialist"');
-    expect(html).toContain(">SPEC</span>");
-    expect(html).not.toMatch(/helper/i);
+  it("shows a helper as Helper and an sme as Builder", () => {
+    const helper = renderToStaticMarkup(createElement(RoleTag, { role: "helper" }));
+    expect(helper).toContain('title="Helper: an agent from the helper pool"');
+    expect(helper).toContain(">Helper</span>");
+    const sme = renderToStaticMarkup(createElement(RoleTag, { role: "sme" }));
+    expect(sme).toContain(">Builder</span>");
+    expect(sme).not.toMatch(/SME|Specialist/);
   });
 });

@@ -7,15 +7,15 @@ const m = (id: string, x: Partial<Member> = {}): Member => ({ session_id: id, na
 const team = (members: Member[]): Team => ({ id: "t", name: "t", harness: "claude", members, state: "active", ios_access: false, created_at: "" });
 
 describe("team labels", () => {
-  it("derives Lead, SME and Specialist from the tree", () => {
+  it("derives Lead, Builder and Helper from the tree", () => {
     const t = team([
-      m("root", { role: "main", repo_id: "r1", worktree: "/w" }), // a root with a repository is the Lead, not an SME
+      m("root", { role: "main", repo_id: "r1", worktree: "/w" }), // a root with a repository is the Lead, not a builder
       m("sme", { role: "sme", repo_id: "r2", worktree: "/w2", parent: "root" }),
       m("help", { skill_id: "k", parent: "root" }),
       m("plain", { parent: "root" }),
     ]);
     expect(t.members.map((x) => teamLabel(t, x))).toEqual(["lead", "sme", "helper", undefined]);
-    // A session the owner grouped in that works in a known repository is an SME.
+    // A session the owner grouped in that works in a known repository is a builder.
     expect(teamLabel(t, t.members[3], "/src/app/sub", [{ path: "/src/app" }])).toBe("sme");
     expect(teamLabel(t, t.members[3], "/src/application", [{ path: "/src/app" }])).toBeUndefined();
   });

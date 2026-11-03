@@ -415,7 +415,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		}
 		p.noteTurnEnd(s.ID, seq)
 		p.setStatus(s.ID, "idle")
-		go p.leadCompaction(s.ID) // a SPECIALIST LEAD's compaction since, as its team's project entry
+		go p.leadCompaction(s.ID) // a HELPER LEAD's compaction since, as its team's project entry
 		p.typeAnswersLater(s.ID)  // the owner's answers first, typed as the member's next prompt
 		p.flushQueue(s.ID)        // after the turn's end: a message it delivers starts the next turn
 		return out, nil

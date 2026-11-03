@@ -331,8 +331,8 @@ func cmdTeam(args []string) error {
 	}
 	op := args[1]
 	fs := flag.NewFlagSet("team request", flag.ContinueOnError)
-	skill := fs.String("skill", "", "a specialist, by name")
-	repo := fs.String("repo", "", "a work repository (an SME), by name")
+	skill := fs.String("skill", "", "a helper, by name")
+	repo := fs.String("repo", "", "a work repository (a builder), by name")
 	assignment := fs.String("assignment", "", "what the new member should do")
 	reason := fs.String("reason", "", "why")
 	rest := args[2:]

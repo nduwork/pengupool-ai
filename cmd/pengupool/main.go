@@ -40,11 +40,11 @@ const help = `usage: pengupool <command> [options]
         open until the member answers; without --type, a first line starting Done:, Ask: or
         Blocked: gives the type.
   search WORDS
-        (inside an agent session) search the owner's compass and a specialist's own journal entries.
+        (inside an agent session) search the owner's compass and a helper's own journal entries.
         "memory search" is the same, under its old name.
   experience search WORDS | experience show ID
-        (inside a specialist session) list its own journal entries that match words (id, date, title,
-        a snippet), or print one in full. An entry is kept when the specialist tells its parent
+        (inside a helper session) list its own journal entries that match words (id, date, title,
+        a snippet), or print one in full. An entry is kept when the helper tells its parent
         "Done: <title>".
   team request add --skill S|--repo R [--assignment A] | remove MEMBER [--reason R]
         (inside a team session) ask the owner to change who is on the team; it waits for approval.
@@ -69,14 +69,14 @@ const help = `usage: pengupool <command> [options]
   experience import FILE
         (the owner's terminal only) add journal entries from a JSON file (- for stdin), an array of
         {"helper": NAME, "at": RFC3339, "title": "...", "body": "..."}. An entry already there
-        (same specialist, at and title), or deleted before, is skipped; nothing is written if any is refused.
+        (same helper, at and title), or deleted before, is skipped; nothing is written if any is refused.
         The file may instead be {"entries": [...], "drop": [{"id": N, "reason": "..."}]}: the dropped
         entries are deleted first, in the same run.
   experience export FILE
-        (the owner's terminal only) write every specialist's journal entries, bodies and ids included,
+        (the owner's terminal only) write every helper's journal entries, bodies and ids included,
         to FILE in the import format: the source for a rebuild.
   decide [--file PACK.json]
-        (inside a specialist session) ask the owner's decision model typed questions: JSON
+        (inside a helper session) ask the owner's decision model typed questions: JSON
         {state, questions: [{name, type: predicate|choice|score, instructions, options|levels}]}
         on stdin or in the file, the answers as JSON on stdout. Exit 3: no decision model is set.
   eval (--transcripts DIR [--since YYYY-MM-DD] [--limit N] | --sample) [--home DIR] [--json]
