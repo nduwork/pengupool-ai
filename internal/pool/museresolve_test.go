@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -134,13 +135,59 @@ func TestResolveMuseSessionByProcess(t *testing.T) {
 		return nil
 	})
 	me := gateway.Caller{Unix: true, PeerPID: os.Getpid()}
-	got, ok := p.resolveMuseSession(me, map[string]any{"session_id": "their-uuid", "cwd": dir})
+	got, ok := p.resolveMuseSession(me, "", map[string]any{"session_id": "their-uuid", "cwd": dir})
 	if !ok || got.ID != "muse-mine" {
 		t.Fatalf("resolved %q %v, want muse-mine (the caller's own)", got.ID, ok)
 	}
 	// The test's parent runs under neither session (the owner's own Muse, say).
 	stranger := gateway.Caller{Unix: true, PeerPID: os.Getppid()}
-	if got, ok := p.resolveMuseSession(stranger, map[string]any{"session_id": "x", "cwd": dir}); ok {
+	if got, ok := p.resolveMuseSession(stranger, "", map[string]any{"session_id": "x", "cwd": dir}); ok {
 		t.Fatalf("a process under no Muse session resolved to %q", got.ID)
+	}
+}
+
+// Muse runs a subagent under its session's process: its hooks carry the subagent's own session id, and
+// only for tool calls, with no Stop. One that lands after the turn's Stop must not reopen the turn
+// (the session read working until its next turn, and messages to it queued) or take over the
+// session's conversation; its tool calls are still guarded.
+func TestMuseSubagentAfterStopLeavesSessionIdle(t *testing.T) {
+	if !procTreeReadable {
+		t.Skip("no readable process tree here")
+	}
+	p, st := helperPool(t)
+	_ = st.Update(func(s *store.State) error {
+		s.Sessions = append(s.Sessions, store.Session{ID: "muse-lead", Name: "muse-lead", State: "running", Status: "idle",
+			Harness: harness.Muse, Cwd: t.TempDir(), Pid: os.Getpid()})
+		return nil
+	})
+	me := gateway.Caller{Unix: true, PeerPID: os.Getpid()}
+	hook := func(event, payload string) HookOut {
+		t.Helper()
+		out, err := p.hookEventFrom(context.Background(), me, hookIn{Harness: harness.Muse, Event: event, Payload: json.RawMessage(payload)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.(HookOut)
+	}
+	status := func() store.Session { s, _ := p.session("muse-lead"); return s }
+	hook("SessionStart", `{"session_id":"conv"}`)
+	hook("UserPromptSubmit", `{"session_id":"conv","prompt":"go"}`)
+	hook("PreToolUse", `{"session_id":"sub","tool_name":"read_file","tool_input":{}}`) // a subagent during the turn
+	hook("Stop", `{"session_id":"conv"}`)
+	if s := status(); s.Status != "idle" || s.ConvID != "conv" {
+		t.Fatalf("after Stop: status %q conv %q, want idle and conv", s.Status, s.ConvID)
+	}
+	hook("PreToolUse", `{"session_id":"sub","tool_name":"read_file","tool_input":{}}`)
+	hook("PostToolUse", `{"session_id":"sub","tool_name":"read_file","tool_input":{}}`)
+	if s := status(); s.Status != "idle" || s.ConvID != "conv" {
+		t.Fatalf("a subagent after the Stop: status %q conv %q, want idle and conv", s.Status, s.ConvID)
+	}
+	deny := `{"session_id":"sub","tool_name":"shell","tool_input":{"command":"cat ` + filepath.Join(st.Dir(), store.StateFile) + `"}}`
+	if out := hook("PreToolUse", deny); !strings.Contains(out.Stdout, `"deny"`) {
+		t.Fatalf("a subagent's call on the host's files was not denied: %+v", out)
+	}
+	hook("UserPromptSubmit", `{"session_id":"conv","prompt":"next"}`) // the conversation's next turn still opens
+	if s := status(); s.Status != "working" {
+		t.Fatalf("next turn: status %q, want working", s.Status)
 	}
 }
