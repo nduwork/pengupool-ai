@@ -73,7 +73,7 @@ func (p *Pool) lockClones(ctx context.Context) {
 }
 
 // lockClone takes write permission from the files Git tracks in root and gives every folder its
-// owner's write permission (a clone locked by PenguPool before 0.11.2 had read-only folders). A
+// owner's write permission (a clone locked by an early PenguPool build had read-only folders). A
 // helper's own files stay writable and, untracked, out of the clone's status: the library sync
 // refuses a clone with changes.
 func (p *Pool) lockClone(ctx context.Context, root string) error {

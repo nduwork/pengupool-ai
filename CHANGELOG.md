@@ -2,6 +2,16 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
+## 0.11.2
+
+A Muse session no longer stays Active after its turn ends. Muse runs subagents, such as its memory reminder, in the session after a turn; their tool calls were taken for a new turn, so the session read Active until its next real turn and messages sent to it waited. Now the session reads Waiting when its turn ends, and messages reach it. A subagent's tool calls are still checked, as before. A Muse session stuck this way before updating recovers at its next turn.
+
+The map now shows a session as **? Need input** while it has a pending ask: an approval or question that the bell and the phone already showed. This includes Muse sessions.
+
+A terminal glitch after a resize can no longer crash a session's worker and take its agent down. Two open panes of the same session no longer fight over its size.
+
+0.11.1 was tagged but never published; this release carries its changes, described below.
+
 ## 0.11.1
 
 A Specialist hub entry no longer needs a `sha`. An entry without one installs at the latest commit of its `ref` (the repository's default branch when it names none), and each library sync moves the helper to that branch's latest commit, waiting while a session of it runs or its folder has local changes. A renamed default branch is followed. An entry with a `sha` stays pinned to that commit as before. To control what a helper runs, fork its repository and point the entry at the fork. Builds before 0.11.1 skip entries without a `sha`.
