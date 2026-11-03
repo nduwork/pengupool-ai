@@ -210,10 +210,17 @@ export function sessionStatus(s: { status?: string; state: string; harness?: str
 }
 
 /** What a session's card and dot show: "approval" also when it waits on the owner's answer to a
- * check-in, the condition the Needs-you bar uses (inbox.ts sessionNeeds). */
-export function shownStatus(s: { id: string; status?: string; state: string; harness?: string; active_at?: string; role?: string }, gates: readonly { session_id: string; kind: string }[]): string {
+ * check-in, the condition the Needs-you bar uses (inbox.ts sessionNeeds), or to its ask (`pengupool ask`,
+ * pending in the bell): the agent sits in that tool call, so its own status reads working. */
+export function shownStatus(
+  s: { id: string; status?: string; state: string; harness?: string; active_at?: string; role?: string },
+  gates: readonly { session_id: string; kind: string }[],
+  approvals: readonly { session_id?: string; kind: string; state: string }[] = [],
+): string {
   const st = sessionStatus(s);
-  if (s.state === "running" && st !== "working" && st !== "lost" && st !== "unreachable" && gates.some((g) => g.session_id === s.id && g.kind === "checkin")) return "approval";
+  if (s.state !== "running" || st === "lost" || st === "unreachable") return st;
+  if (approvals.some((a) => a.session_id === s.id && a.kind === "ask" && a.state === "pending")) return "approval";
+  if (st !== "working" && gates.some((g) => g.session_id === s.id && g.kind === "checkin")) return "approval";
   return st;
 }
 
@@ -231,7 +238,7 @@ export function ctxClass(pct: number): string {
 
 export function StatusDot({ id, status, state, label, harness, active_at, role }: { id: string; status?: string; state: string; label?: boolean; harness?: string; active_at?: string; role?: string }): ReactElement {
   const app = useApp();
-  const s = STATUS[shownStatus({ id, status, state, harness: harness ?? "claude", active_at, role }, app.gates)] ?? STATUS.idle;
+  const s = STATUS[shownStatus({ id, status, state, harness: harness ?? "claude", active_at, role }, app.gates, app.domain.approvals)] ?? STATUS.idle;
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-caption", s.text)} title={s.label}>
       <span className={cn("size-2 shrink-0 rounded-full", s.dot)} />

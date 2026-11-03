@@ -11,7 +11,7 @@ describe("map hover card", () => {
   it("shows its content whole, and the tip scrolls within the room it has instead of being cut", () => {
     const long = "Shall I push the release branch? ".repeat(30);
     const s = { id: "a", name: "web", state: "running", status: "approval", harness: "claude", question: long, cwd: "/a/very/long/path/".repeat(10), cols: 80, rows: 24 } as SessionView;
-    const app = { conn: { request: () => new Promise(() => undefined) }, gates: [] } as unknown as AppCtx;
+    const app = { conn: { request: () => new Promise(() => undefined) }, gates: [], domain: { approvals: [] } } as unknown as AppCtx;
     const html = renderToStaticMarkup(createElement(Ctx.Provider, { value: app }, createElement(SessionHover, { s })));
     expect(html).toContain(long.trim());
     expect(html).not.toMatch(/line-clamp|truncate/);

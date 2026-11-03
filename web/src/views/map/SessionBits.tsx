@@ -30,8 +30,8 @@ export function SessionHover({ s }: { s: SessionView }): ReactElement {
   return (
     <div className="grid max-w-72 grid-cols-1 gap-0.5">
       <strong>{s.name}</strong>
-      <span className={statusStyle(shownStatus(s, app.gates)).text}>
-        {statusStyle(shownStatus(s, app.gates)).label} · {harnessLabel(s.harness)}
+      <span className={statusStyle(shownStatus(s, app.gates, app.domain.approvals)).text}>
+        {statusStyle(shownStatus(s, app.gates, app.domain.approvals)).label} · {harnessLabel(s.harness)}
       </span>
       {s.question !== undefined && s.question !== "" ? <span className="text-foreground [overflow-wrap:anywhere]">{s.question}</span> : null}
       {s.hooks_missing === true ? (
