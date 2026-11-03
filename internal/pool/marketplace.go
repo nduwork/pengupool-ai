@@ -80,23 +80,40 @@ type MarketEntry struct {
 
 // catalogEntry is one helper in .pengupool/catalog.json.
 type catalogEntry struct {
-	Name         string            `json:"name"`
-	Description  string            `json:"description"`
-	Group        string            `json:"group"`
-	Capabilities []string          `json:"capabilities"`
-	Harness      string            `json:"harness"`
-	Requires     []string          `json:"requires"`
-	Repo         string            `json:"repo"`
-	Path         string            `json:"path"`
-	Ref          string            `json:"ref"`
-	SHA          string            `json:"sha"`
-	Credits      []protocol.Credit `json:"credits"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	Group        string          `json:"group"`
+	Capabilities []string        `json:"capabilities"`
+	Harness      string          `json:"harness"`
+	Requires     []string        `json:"requires"`
+	Repo         string          `json:"repo"`
+	Path         string          `json:"path"`
+	Ref          string          `json:"ref"`
+	SHA          string          `json:"sha"`
+	Credits      json.RawMessage `json:"credits"` // display only: read leniently by credits()
+}
+
+// credits keeps the well-formed items, each a name and an https link; anything else is dropped, so a
+// malformed display-only field never costs the entry or the catalog.
+func credits(raw json.RawMessage) []protocol.Credit {
+	var items []json.RawMessage
+	if json.Unmarshal(raw, &items) != nil {
+		return nil
+	}
+	var out []protocol.Credit
+	for _, it := range items {
+		var c protocol.Credit
+		if json.Unmarshal(it, &c) == nil && c.Name != "" && strings.HasPrefix(c.URL, "https://") {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // entry is the helper this entry installs, or why it cannot be one.
 func (c catalogEntry) entry() (MarketEntry, string) {
 	e := MarketEntry{Name: c.Name, Description: c.Description, Category: strings.TrimSpace(c.Group), Capabilities: c.Capabilities,
-		Harness: c.Harness, Requires: c.Requires, Repo: c.Repo, Path: strings.Trim(c.Path, "/"), Ref: c.Ref, Commit: c.SHA, Credits: c.Credits}
+		Harness: c.Harness, Requires: c.Requires, Repo: c.Repo, Path: strings.Trim(c.Path, "/"), Ref: c.Ref, Commit: c.SHA, Credits: credits(c.Credits)}
 	if parts := strings.Split(e.Path, "/"); e.Path != "" && (slices.Contains(parts, "..") || slices.Contains(parts, ".")) {
 		return e, "its path must not contain . or .."
 	}

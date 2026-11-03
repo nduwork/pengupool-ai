@@ -2265,6 +2265,34 @@ func TestCatalogFile(t *testing.T) {
 	}
 }
 
+// Credits are display only: a malformed value drops that entry's credits, never the entry or the catalog.
+func TestMalformedCreditsDropOnlyTheCredits(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	bad := []string{`null`, `"o/r"`, `{"name":"o/r","url":"https://x"}`, `[{"name":"o/r"}]`, `[{"name":"o/r","url":"http://x"}]`,
+		`[{"name":"o/r","url":"javascript:alert(1)"}]`, `[{"url":"https://x"}]`, `[1]`, `[{"name":2,"url":"https://x"}]`}
+	var agents []string
+	for i, c := range bad {
+		agents = append(agents, fmt.Sprintf(`{"name":"bad%d","repo":"https://x/b%d.git","sha":%q,"credits":%s}`, i, i, sha, c))
+	}
+	agents = append(agents, `{"name":"good","repo":"https://x/g.git","sha":"`+sha+`","credits":[{"name":"o/r","url":"http://x"},{"name":"a/b","url":"https://github.com/a/b"}]}`)
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".pengupool"), 0o755)
+	os.WriteFile(filepath.Join(dir, marketFile), []byte(`{"name":"hub","agents":[`+strings.Join(agents, ",")+`]}`), 0o644)
+	m, err := readMarketplace(dir)
+	if err != nil || len(m.Skills) != len(bad)+1 || m.Skipped != 0 {
+		t.Fatalf("catalog: %+v %v", m, err)
+	}
+	for _, e := range m.Skills {
+		want := 0
+		if e.Name == "good" {
+			want = 1 // the http item is dropped, the https one kept
+		}
+		if len(e.Credits) != want || (want == 1 && e.Credits[0] != (protocol.Credit{Name: "a/b", URL: "https://github.com/a/b"})) {
+			t.Fatalf("%s credits: %+v", e.Name, e.Credits)
+		}
+	}
+}
+
 // A name the hub gives twice reads as none of them: a stray entry before or after the real one can neither
 // stand in for the installed helper (a move of its folder and journal) nor stop it. It stays as it is, and
 // the other helpers still sync.
