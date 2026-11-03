@@ -46,7 +46,7 @@ export function Credits({ credits, className }: { credits?: Credit[]; className?
     <span className={`block text-caption text-faint ${className ?? ""}`}>
       Adapted from{" "}
       {cs.map((c, i) => (
-        <span key={c.name}>
+        <span key={i}>
           {i > 0 ? ", " : null}
           {/^https?:\/\//.test(c.url) ? (
             <a className="underline hover:text-muted-foreground" href={c.url} target="_blank" rel="noreferrer">

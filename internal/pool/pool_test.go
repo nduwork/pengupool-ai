@@ -1554,6 +1554,7 @@ type testCatalog struct {
 	url, work string
 	last      map[string][]string // the last sync's report
 	skill     map[string]string   // folder → the skill it provides (default: the folder's name)
+	credits   string              // the entries' "credits" JSON, when set
 }
 
 func newTestCatalog(t *testing.T) *testCatalog {
@@ -1603,7 +1604,11 @@ func (c *testCatalog) publish(helpers map[string]string) {
 	sha := git("rev-parse", "HEAD")
 	var plugins []string
 	for folder, cat := range helpers {
-		plugins = append(plugins, fmt.Sprintf(`{"name":%q,"group":%q,"repo":%q,"path":%q,"sha":%q}`, filepath.Base(folder), cat, c.url, folder, sha))
+		e := fmt.Sprintf(`{"name":%q,"group":%q,"repo":%q,"path":%q,"sha":%q`, filepath.Base(folder), cat, c.url, folder, sha)
+		if c.credits != "" {
+			e += `,"credits":` + c.credits
+		}
+		plugins = append(plugins, e+"}")
 	}
 	dir := c.p.marketDir()
 	os.MkdirAll(filepath.Join(dir, ".pengupool"), 0o755)
@@ -1623,6 +1628,26 @@ func (c *testCatalog) sync(want string) protocol.Skill {
 		c.t.Fatalf("no helper %s after sync: %v", want, out)
 	}
 	return d.Skills[i]
+}
+
+// An installed helper carries its entry's credits, and a sync follows the catalog's changes to them.
+func TestHelperCarriesCatalogCredits(t *testing.T) {
+	c := newTestCatalog(t)
+	c.credits = `[{"name":"a/one","url":"https://example.com/a/one"}]`
+	c.publish(map[string]string{"agents/x": ""})
+	if got := c.sync("x").Credits; len(got) != 1 || got[0].Name != "a/one" {
+		t.Fatalf("installed credits: %+v", got)
+	}
+	c.credits = `[{"name":"b/two","url":"https://example.com/b/two"}]`
+	c.publish(map[string]string{"agents/x": ""})
+	if got := c.sync("x").Credits; len(got) != 1 || got[0].Name != "b/two" {
+		t.Fatalf("synced credits: %+v", got)
+	}
+	c.credits = ""
+	c.publish(map[string]string{"agents/x": ""})
+	if got := c.sync("x").Credits; len(got) != 0 {
+		t.Fatalf("credits the catalog dropped: %+v", got)
+	}
 }
 
 // The catalog moves a helper from agents/x to agents/code/x: the installed helper follows, keeping
