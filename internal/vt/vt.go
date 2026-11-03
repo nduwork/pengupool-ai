@@ -269,8 +269,13 @@ func (s *screen) Write(p []byte) (n int, err error) {
 	defer s.mu.Unlock()
 	defer func() {
 		if r := recover(); r != nil {
-			s.emu.Resize(s.emu.Width(), s.emu.Height())
-			_, _ = s.emu.Write([]byte{0x18}) // CAN
+			func() {
+				// The reset runs the same x/vt code that just failed (CAN flushes a pending grapheme
+				// first), so a second panic here is dropped rather than let out of Write.
+				defer func() { _ = recover() }()
+				s.emu.Resize(s.emu.Width(), s.emu.Height())
+				_, _ = s.emu.Write([]byte{0x18}) // CAN
+			}()
 			s.mode.ScrollTop, s.mode.ScrollBottom = 0, 0
 			n, err = len(p), fmt.Errorf("terminal emulator panic, screen reset: %v", r)
 		}

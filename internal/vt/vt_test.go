@@ -9,6 +9,7 @@ import (
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
+	xvt "github.com/charmbracelet/x/vt"
 )
 
 const (
@@ -374,4 +375,12 @@ func TestWritePanicResetsScreen(t *testing.T) {
 	if _, err := s.Write([]byte("ok")); err != nil || !strings.HasPrefix(s.Text(), "ok") {
 		t.Fatalf("screen unusable after a recovered panic: %v %q", err, s.Text())
 	}
+
+	// A fault while drawing a character is met again by the reset (CAN flushes the pending
+	// grapheme first); that second panic must stay inside Write too.
+	s.emu.SetCallbacks(xvt.Callbacks{CursorPosition: func(_, _ uv.Position) { panic("draw fault") }})
+	if _, err := s.Write([]byte("a")); err == nil || !strings.Contains(err.Error(), "draw fault") {
+		t.Fatalf("err = %v, want the recovered draw fault", err)
+	}
+	s.emu.SetCallbacks(xvt.Callbacks{}) // the deferred Close writes too
 }
