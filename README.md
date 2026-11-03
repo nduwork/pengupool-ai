@@ -9,7 +9,8 @@
   <a href="https://github.com/nduwork/pengupool-ai/releases/latest">Download</a> ·
   <a href="#muse-in-the-loop">See the Muse workflow</a> ·
   <a href="docs/getting-started.md">Get started</a> ·
-  <a href="docs/phone.md">Muse setup</a>
+  <a href="docs/phone.md">Muse setup</a> ·
+  <a href="docs/design.md">Design</a>
 </p>
 
 <p align="center"><sub>Built for the Meta Global AI Developer Hackathon · Build for Your World</sub></p>
