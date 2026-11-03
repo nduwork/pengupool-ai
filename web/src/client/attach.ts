@@ -95,7 +95,6 @@ export class AttachSession {
   /** Output that arrived while a snapshot was open; applied, in order, after snapshot.end. */
   private held: Frame[] = [];
   private lastAck = -1n;
-  private sawInput = false;
 
   constructor(opts: AttachOptions) {
     this.sessionId = opts.sessionId;
@@ -151,7 +150,6 @@ export class AttachSession {
     this.held = [];
     this.ownsLease = false;
     this.attachedSent = false;
-    this.sawInput = false;
     if (this.state !== "exited") this.setState("detached", "connection lost");
   }
 
@@ -197,8 +195,11 @@ export class AttachSession {
     });
   }
 
-  /** Keystrokes and pastes from xterm.js. Input is best-effort and never replayed. */
-  input(data: string | Uint8Array): void {
+  /**
+   * Keystrokes and pastes from xterm.js. Input is best-effort and never replayed. A real keystroke
+   * takes the lease, sized to the pane when the caller passes it; a swallowed query reply never does.
+   */
+  input(data: string | Uint8Array, cols?: number, rows?: number): void {
     if (this.state === "detached" || this.state === "exited" || this.viewOnly) return;
     const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
     // While another client holds the lease, its real terminal answers the PTY's queries; ours must
@@ -206,10 +207,7 @@ export class AttachSession {
     const out = this.ownsLease ? bytes : this.queryFilter.push(bytes);
     // A swallowed query reply is not a keystroke, so it must not be what claims the lease.
     if (out.length === 0) return;
-    if (!this.sawInput) {
-      this.sawInput = true;
-      this.claimLease();
-    }
+    this.claimLease(cols, rows);
     this.sendFrame(FrameType.Input, 0n, out);
   }
 
@@ -395,8 +393,6 @@ export class AttachSession {
     this.lastAck = -1n;
     this.hasRetained = false;
     this.ownsLease = false;
-    // The next keystroke may claim the lease again, exactly as it may on a fresh attach.
-    this.sawInput = false;
   }
 
   /**

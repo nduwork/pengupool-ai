@@ -257,9 +257,12 @@ describe("AttachSession", () => {
     h.session.resize(120, 40);
     expect(h.sent.filter((m) => m.type === T.SessionResize)).toHaveLength(1);
 
-    // xterm.js's own query replies are dropped again: we are not the responder.
-    h.session.input("\u001b[?1;2c");
+    // xterm.js's own query replies are dropped again: we are not the responder. Neither they nor a
+    // focus report on blur take the lease back.
+    h.session.input("\u001b[?1;2c", 120, 40);
+    h.session.input("\u001b[O", 120, 40);
     expect(h.frames.filter((f) => f.type === FrameType.Input)).toHaveLength(0);
+    expect(h.sent.filter((m) => m.type === T.SessionResize)).toHaveLength(1);
 
     // Regaining the lease puts us back in charge, and the PTY is realigned with our pane size.
     h.control({

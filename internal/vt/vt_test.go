@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -337,4 +338,40 @@ func head(b []byte, n int) []byte {
 		return b[:n]
 	}
 	return b
+}
+
+// TestShrinkThenStaleScrollRegion replays the output that killed a worker: the agent set a scroll
+// region for the 26 rows it had, the PTY shrank to 20 before the output was mirrored, and the next
+// reverse index (ESC M) indexed row 24 of a 20-row buffer. The bottom is clamped to the screen, as
+// xterm does, so the region and the scroll stay inside it and Write reports no reset.
+func TestShrinkThenStaleScrollRegion(t *testing.T) {
+	s := New(144, 26)
+	defer s.Close()
+	s.Resize(162, 20)
+	if _, err := s.Write([]byte("\x1b[5;25r")); err != nil {
+		t.Fatal(err)
+	}
+	if m := s.Modes(); m.ScrollTop != 5 || m.ScrollBottom != 20 {
+		t.Fatalf("scroll region %d;%d, want 5;20", m.ScrollTop, m.ScrollBottom)
+	}
+	if _, err := s.Write([]byte("\x1b[1;25r\x1b[20;1Hbottom\x1b[Htop\x1bM\x1bM")); err != nil {
+		t.Fatalf("stale region reached x/vt: %v", err)
+	}
+	lines := strings.Split(s.Text(), "\n")
+	if len(lines) != 20 || !strings.HasPrefix(lines[2], "top") {
+		t.Fatalf("two reverse indexes at the top should push the screen down two rows, got %q", lines)
+	}
+}
+
+// TestWritePanicResetsScreen: whatever x/vt cannot handle, the mirror survives it and keeps working.
+func TestWritePanicResetsScreen(t *testing.T) {
+	s := New(10, 4).(*screen)
+	defer s.Close()
+	s.emu.RegisterCsiHandler('z', func(ansi.Params) bool { panic("boom") })
+	if _, err := s.Write([]byte("\x1b[z")); err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("err = %v, want the recovered panic", err)
+	}
+	if _, err := s.Write([]byte("\x1b[Hok")); err != nil || !strings.HasPrefix(s.Text(), "ok") {
+		t.Fatalf("screen unusable after a recovered panic: %v %q", err, s.Text())
+	}
 }
