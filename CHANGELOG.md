@@ -2,6 +2,14 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
+## 0.11.1
+
+A Specialist hub entry no longer needs a `sha`. An entry without one installs at the latest commit of its `ref` (the repository's default branch when it names none), and each library sync moves the helper to that branch's latest commit, waiting while a session of it runs or its folder has local changes. A renamed default branch is followed. An entry with a `sha` stays pinned to that commit as before. To control what a helper runs, fork its repository and point the entry at the fork. Builds before 0.11.1 skip entries without a `sha`.
+
+A hub entry can credit the work it adapts: its optional `credits` show as a muted *Adapted from* line, with links, in the Specialist hub, the Specialists page and an installed specialist's description. Credits are display-only and never reach an agent's context. A malformed `credits` value drops only that entry's credits.
+
+One wrongly typed field in a hub entry, such as `capabilities` given as a string, no longer empties the whole Specialist hub. Only that entry is skipped, with the reason in the log, and the others load. A helper already installed from it stays as it is.
+
 ## 0.11.0
 
 The app is signed with a Developer ID and notarized by Apple. Download the disk image, drag PenguPool AI.app onto Applications and open it: macOS opens it after its usual confirmation for downloaded apps, with no unidentified-developer warning and no Gatekeeper workaround. The app and the disk image each carry their notarization ticket, so the first launch works without the network too. Installing from the disk image is now the one documented way; `make install` stays the development build (CONTRIBUTING.md). Coming from an earlier build, macOS may ask once more for permissions it granted the old one, such as controlling Finder for Move to Trash and local network access.
