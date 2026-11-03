@@ -371,7 +371,7 @@ func TestWritePanicResetsScreen(t *testing.T) {
 	if _, err := s.Write([]byte("\x1b[z")); err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("err = %v, want the recovered panic", err)
 	}
-	if _, err := s.Write([]byte("\x1b[Hok")); err != nil || !strings.HasPrefix(s.Text(), "ok") {
+	if _, err := s.Write([]byte("ok")); err != nil || !strings.HasPrefix(s.Text(), "ok") {
 		t.Fatalf("screen unusable after a recovered panic: %v %q", err, s.Text())
 	}
 }

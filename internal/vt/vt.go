@@ -258,8 +258,10 @@ func (s *screen) recordScrollRegion(params ansi.Params) {
 }
 
 // Write feeds terminal output into the emulator. The mirror must never take the worker down with
-// it: if x/vt panics on output it cannot handle, the rest of p is dropped, the scroll region and
-// cursor are reset by resizing to the same size, and the panic comes back as an error.
+// it: if x/vt panics on output it cannot handle, the rest of p is dropped, the scroll region is
+// reset by resizing to the same size (the cursor stays, clamped), CAN returns the parser to ground
+// so the next write is not read as the rest of the broken sequence, and the panic comes back as an
+// error.
 // ponytail: the screen may show a few wrong cells until the agent repaints; a full repaint would
 // need the agent's help, and Claude Code and Muse repaint often anyway.
 func (s *screen) Write(p []byte) (n int, err error) {
@@ -268,6 +270,7 @@ func (s *screen) Write(p []byte) (n int, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			s.emu.Resize(s.emu.Width(), s.emu.Height())
+			_, _ = s.emu.Write([]byte{0x18}) // CAN
 			s.mode.ScrollTop, s.mode.ScrollBottom = 0, 0
 			n, err = len(p), fmt.Errorf("terminal emulator panic, screen reset: %v", r)
 		}
