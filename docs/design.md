@@ -3,6 +3,39 @@
 This is the source of truth for how PenguPool is meant to work and why. Features come and go; these
 concepts are what they answer to.
 
+## What PenguPool delivers
+
+Four values set PenguPool apart:
+
+1. **AI-native communication carrying dense information.** Agents talk to each other in dense,
+   structured messages made for machines. The owner never relays them and never reads the raw
+   traffic; they get the one decision that is theirs. *Others:* human-style agent chatter, or
+   everything routed through the human.
+2. **Team-first design, not task-first.** Other orchestration systems start from the task: a ticket,
+   a spawn, a dissolve. PenguPool starts from the team: named members, standing roles, and
+   relationships that exist before the job and after it. Tasks flow through the team; the team is
+   the product.
+3. **Uncertainty-based memory: the Compass as guide.** Preferences and decisions carry weight from
+   evidence, and corrections supersede. The Compass guides the team under uncertainty instead of
+   pretending certainty, as honestly as a forecast band that widens rather than faking precision.
+   *Others:* a memory file that treats a guess and a hard-won rule as equals.
+4. **Specialists carry experience across projects**, each with a narrow focus on its domain. The
+   reviewer brings standards built on every past review into each new team; experience compounds in
+   the specialist, not inside one project's folder. Memory is scoped as section 4 describes:
+   specialist journals are private and portable, a Lead's memory is kept per team, and the Compass
+   is the one shared store.
+
+The pains PenguPool answers:
+
+- the human as the message bus between isolated agents;
+- work that grades itself;
+- unscoped authority with no provenance;
+- experience trapped inside one project.
+
+Single-agent memory is not one of them: memory.md and session resume exist, and that pain is solved.
+
+The ten concepts below are the design that serves these values.
+
 ## 1. Peer agents, not subagents
 
 Professional development work is a collaboration of long-lived peer agents, each managing its own
