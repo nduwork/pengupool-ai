@@ -4,10 +4,7 @@ import { useState, type ReactElement } from "react";
 
 import { useApp } from "../app/ctx";
 import { desktop, type Environment } from "../app/desktop";
-// The mark below 32 px is the small cut; on the dark theme it sits on its ice tile, as the colour mark
-// must never go straight onto a dark background (the navy bodies disappear).
-import logo from "../../../assets/logo-16.svg";
-import logoTile from "../../../assets/logo-16-tile.svg";
+import logo from "../../../assets/app-icon.svg"; // the one mark, shared with the app icon and favicon
 import { cn } from "../lib/utils";
 
 // The environment switcher at the top of the window: the app works on this machine or on one SSH
@@ -22,8 +19,7 @@ export function EnvSwitcher(): ReactElement {
   const [switching, setSwitching] = useState<string | null>(null);
   if (desktop === undefined) return (
       <span className="flex items-center gap-1.5 text-body font-semibold tracking-tight">
-        <img src={logo} alt="" className="size-5 dark:hidden" />
-        <img src={logoTile} alt="" className="hidden size-5 dark:block" />
+        <img src={logo} alt="" className="size-5" />
         PenguPool
       </span>
     );
