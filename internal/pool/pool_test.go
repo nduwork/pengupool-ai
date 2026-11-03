@@ -1555,6 +1555,7 @@ type testCatalog struct {
 	skill     map[string]string   // folder → the skill it provides (default: the folder's name)
 	credits   string              // the entries' "credits" JSON, when set
 	unpinned  bool                // publish entries without a sha: they follow the latest commit
+	ref       string              // push to this branch and name it as the entries' "ref", when set
 }
 
 func newTestCatalog(t *testing.T) *testCatalog {
@@ -1600,13 +1601,16 @@ func (c *testCatalog) publish(helpers map[string]string) {
 	}
 	git("add", "-A")
 	git("commit", "-q", "--allow-empty", "-m", "helpers")
-	git("push", "-q", "origin", "HEAD")
+	git("push", "-q", "origin", "HEAD:refs/heads/"+firstNonEmpty(c.ref, git("branch", "--show-current")))
 	sha := git("rev-parse", "HEAD")
 	var plugins []string
 	for folder, cat := range helpers {
 		e := fmt.Sprintf(`{"name":%q,"group":%q,"repo":%q,"path":%q,"sha":%q`, filepath.Base(folder), cat, c.url, folder, sha)
 		if c.unpinned {
 			e = fmt.Sprintf(`{"name":%q,"group":%q,"repo":%q,"path":%q`, filepath.Base(folder), cat, c.url, folder)
+		}
+		if c.ref != "" {
+			e += fmt.Sprintf(`,"ref":%q`, c.ref)
 		}
 		if c.credits != "" {
 			e += `,"credits":` + c.credits
@@ -1653,8 +1657,8 @@ func TestHelperCarriesCatalogCredits(t *testing.T) {
 	}
 }
 
-// A helper whose entry has no sha follows the latest commit of its repository: the sync brings it
-// up to date. A pinned helper stays at its pin when the repository moves on.
+// A helper whose entry has no sha follows the latest commit of its ref, not of the default branch:
+// the sync brings it up to date. A pinned helper stays at its pin when the repository moves on.
 func TestUnpinnedHelperFollowsLatest(t *testing.T) {
 	head := func(dir string) string {
 		out, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
@@ -1664,7 +1668,12 @@ func TestUnpinnedHelperFollowsLatest(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 	c := newTestCatalog(t)
-	c.unpinned = true
+	for _, a := range [][]string{{"commit", "-q", "--allow-empty", "-m", "default"}, {"push", "-q", "origin", "HEAD"}} {
+		if out, err := exec.Command("git", append([]string{"-C", c.work, "-c", "user.name=t", "-c", "user.email=t@t"}, a...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s", a, out)
+		}
+	}
+	c.unpinned, c.ref = true, "dev"
 	c.publish(map[string]string{"agents/x": ""})
 	if x := c.sync("x"); head(x.Path) != head(c.work) {
 		t.Fatalf("installed at %s, want the latest %s", head(x.Path), head(c.work))

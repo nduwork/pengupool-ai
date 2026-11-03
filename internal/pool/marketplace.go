@@ -715,10 +715,14 @@ func (p *Pool) updateHelper(ctx context.Context, e marketEntryView, cats map[str
 		p.logf("pool: library sync: %s: %s is not where its clone %s says; left alone", sk.Name, sk.Path, top)
 		return "", false, nil
 	}
-	if e.Commit == "" { // no sha: follow the latest of its ref
+	fetched := e.Commit == ""
+	if fetched { // no sha: follow the latest of its ref
 		if _, err := p.ghGit(ctx, root, "fetch", "-q", "origin"); err != nil {
 			p.logf("pool: library sync: %s: fetch: %v (left as it is)", sk.Name, err)
 			return "", false, nil
+		}
+		if e.Ref == "" { // follow the default branch even when the repository renames it
+			_, _ = p.ghGit(ctx, root, "remote", "set-head", "origin", "-a")
 		}
 		tip, err := p.gitIn(ctx, root, "rev-parse", "--verify", "origin/"+firstNonEmpty(e.Ref, "HEAD")+"^{commit}")
 		if err != nil {
@@ -749,8 +753,10 @@ func (p *Pool) updateHelper(ctx context.Context, e marketEntryView, cats map[str
 		return "", false, conflict("%s has local changes; not updated", root)
 	}
 	if repin {
-		if _, err := p.ghGit(ctx, root, "fetch", "-q", "origin"); err != nil {
-			return "", false, err
+		if !fetched {
+			if _, err := p.ghGit(ctx, root, "fetch", "-q", "origin"); err != nil {
+				return "", false, err
+			}
 		}
 		if _, err := p.gitIn(ctx, root, "cat-file", "-e", e.Commit+":"+e.Path); err != nil {
 			return "", false, invalid("%s has no folder %s at %s", e.Repo, e.Path, e.Commit[:10])
