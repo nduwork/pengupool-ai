@@ -332,11 +332,19 @@ func readMarketplace(dir string) (*Marketplace, error) {
 			}
 		}
 	} else {
-		var agents []catalogEntry
+		// Each entry is decoded on its own: a wrongly typed field skips that entry, not the hub.
+		var agents []json.RawMessage
 		if err := json.Unmarshal(raw.Agents, &agents); raw.Agents != nil && err != nil {
 			return nil, invalid("%s: %v", file, err)
 		}
-		for _, c := range agents {
+		for _, a := range agents {
+			var c catalogEntry
+			if err := json.Unmarshal(a, &c); err != nil {
+				var named struct{ Name string }
+				_ = json.Unmarshal(a, &named)
+				cands = append(cands, cand{MarketEntry{Name: named.Name}, "it is not a valid entry: " + err.Error()})
+				continue
+			}
 			e, why := c.entry()
 			cands = append(cands, cand{e, why})
 		}
