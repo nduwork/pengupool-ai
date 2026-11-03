@@ -19,6 +19,16 @@ describe("? Need input", () => {
     expect(shownStatus(s("e", "idle"), [checkin("x")])).toBe("idle");
     expect(statusStyle("idle").label).toBe("Waiting");
   });
+  it("shows while the agent waits on its ask to the owner, even though it reads working", () => {
+    const ask = (id: string, state = "pending", kind = "ask") => ({ id: "ap-" + id, session_id: id, kind, state });
+    expect(shownStatus(s("f", "working"), [], [ask("f")])).toBe("approval");
+    expect(shownStatus(s("g", "idle"), [], [ask("g")])).toBe("approval");
+    expect(shownStatus(s("h", "working"), [], [ask("h", "answered")])).toBe("working");
+    expect(shownStatus(s("i", "working"), [], [ask("x")])).toBe("working");
+    expect(shownStatus(s("j", "working"), [], [ask("j", "pending", "launch")])).toBe("working");
+    expect(shownStatus(s("k", "idle", "ended"), [], [ask("k")])).toBe("ended");
+    expect(shownStatus(s("l", "lost"), [], [ask("l")])).toBe("lost");
+  });
   it("matches what the Needs-you bar lists", () => {
     const sessions = [s("a", "approval"), s("b", "idle"), s("c", "working"), s("e", "idle")];
     const gates = [checkin("b"), checkin("c")];

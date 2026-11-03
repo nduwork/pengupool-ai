@@ -215,7 +215,7 @@ export function TeamMap(): ReactElement {
   };
 
   const card = (s: SessionView, box: { x: number; y: number; w: number; h: number }, opts: { teamId?: string; hidden?: string[]; hasKids: boolean; lone?: boolean }): ReactElement => {
-    const st = shownStatus(s, app.gates);
+    const st = shownStatus(s, app.gates, domain.approvals);
     const style = statusStyle(st);
     const team = opts.teamId !== undefined ? domain.teams.find((t) => t.id === opts.teamId) : undefined;
     const member = team?.members.find((m) => m.session_id === s.id);
@@ -223,7 +223,7 @@ export function TeamMap(): ReactElement {
     const urgent = (opts.hidden ?? [])
       .map((id) => byId.get(id))
       .filter((x): x is SessionView => x !== undefined)
-      .map((x) => shownStatus(x, app.gates))
+      .map((x) => shownStatus(x, app.gates, domain.approvals))
       .sort((a, b) => (URGENCY[b] ?? 0) - (URGENCY[a] ?? 0))[0];
     const repoName = s.cwd.split("/").filter(Boolean).pop() ?? "";
     const mine = asks.filter((a) => a.from === s.id);
