@@ -12,6 +12,8 @@ A terminal glitch after a resize can no longer crash a session's worker and take
 
 The team roles read **Helper** again, in place of Specialist (the Helper hub, the Helpers page, the Helper pool), and **Builder** in place of SME. This covers the app, the team context agents read, the CLI and the docs. A team member's `role` in the Muse app API reads `BUILDER` or `HELPER` where it read `SME` or `SPECIALIST`. Nothing stored changes.
 
+A helper's page no longer shows the "Does not pass the checklist yet" box. Its checks flagged harmless lines as possible secrets; a helper is checked in its pull request to the hub instead.
+
 0.11.1 was tagged but never published; this release carries its changes, described below.
 
 ## 0.11.1

@@ -354,7 +354,6 @@ func (p *Pool) handlers() map[string]handler {
 		"skill.add":             bind(p.skillAdd),
 		"skill.update":          bind(p.skillUpdate),
 		"skill.delete":          bind(p.skillDelete),
-		"skill.check":           bind(p.skillCheck),
 		"compass.list":          bind(p.compassList),
 		"compass.save":          bind(p.compassSave),
 		"compass.delete":        bind(p.compassDelete),

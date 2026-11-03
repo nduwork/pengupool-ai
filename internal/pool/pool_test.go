@@ -498,19 +498,6 @@ func TestHelperAgentHonoursRequires(t *testing.T) {
 	}
 }
 
-func TestSkillChecklist(t *testing.T) {
-	src := t.TempDir()
-	os.MkdirAll(filepath.Join(src, "skills", "ci"), 0o755)
-	os.WriteFile(filepath.Join(src, "skills", "ci", "SKILL.md"), []byte("---\nname: ci\ndescription: Triage CI.\n---\nBody\n"), 0o644)
-	if got := checkSkillRepo(src); len(got) != 1 || !strings.Contains(got[0], "AGENTS.md") {
-		t.Fatalf("checklist %v", got)
-	}
-	os.WriteFile(filepath.Join(src, "AGENTS.md"), []byte("# ci helper\n"), 0o644)
-	if got := checkSkillRepo(src); len(got) != 0 {
-		t.Fatalf("checklist %v", got)
-	}
-}
-
 func TestGithubSlug(t *testing.T) {
 	for in, want := range map[string]string{
 		"https://github.com/nduwork/pengupool-ai.git": "nduwork/pengupool-ai",
@@ -1903,21 +1890,6 @@ func TestHelperContextReadsAgentsFirst(t *testing.T) {
 	(&Pool{}).renderSkill(&b, &protocol.Skill{Name: "x", Path: dir})
 	if !strings.Contains(b.String(), "First read "+filepath.Join(dir, "AGENTS.md")) {
 		t.Fatalf("context:\n%s", b.String())
-	}
-}
-
-// One agent's own config in a helper is a checklist problem: helpers are harness-agnostic.
-func TestChecklistFlagsHarnessFiles(t *testing.T) {
-	src := t.TempDir()
-	os.MkdirAll(filepath.Join(src, "skills", "ci", ".claude"), 0o755)
-	os.MkdirAll(filepath.Join(src, ".git"), 0o755)
-	os.WriteFile(filepath.Join(src, ".git", "CLAUDE.md"), []byte("x\n"), 0o644)
-	os.WriteFile(filepath.Join(src, "AGENTS.md"), []byte("# ci helper\n"), 0o644)
-	os.WriteFile(filepath.Join(src, "GEMINI.md"), []byte("# ci helper\n"), 0o644)
-	os.WriteFile(filepath.Join(src, "skills", "ci", "SKILL.md"), []byte("---\nname: ci\ndescription: Triage CI.\n---\nBody\n"), 0o644)
-	got := checkSkillRepo(src)
-	if len(got) != 2 || !strings.HasPrefix(got[0], "GEMINI.md is specific") || !strings.HasPrefix(got[1], filepath.Join("skills", "ci", ".claude")+"/ is specific") {
-		t.Fatalf("checklist %q", got)
 	}
 }
 
