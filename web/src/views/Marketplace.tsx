@@ -6,6 +6,7 @@ import { AGENTS, useApp } from "../app/ctx";
 import { Button } from "../components/ui/button";
 import { Empty, Input } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
+import type { Credit } from "../protocol/domain";
 
 // The Specialist hub: a catalog of skill repositories pinned to a commit (the hub's
 // .pengupool/catalog.json). Install clones the helper at its pin into the Skill library.
@@ -16,6 +17,7 @@ interface Entry {
   capabilities?: string[];
   harness?: string;
   category?: string;
+  credits?: Credit[];
   requires?: string[];
   repo: string;
   ref?: string;
@@ -35,6 +37,29 @@ interface MarketView {
 }
 
 const short = (sha?: string): string => (sha ?? "").slice(0, 7);
+
+/** "Adapted from …" under a helper's description; nothing when it has no credits. Only http(s) links open. */
+export function Credits({ credits, className }: { credits?: Credit[]; className?: string }): ReactElement | null {
+  const cs = (credits ?? []).filter((c) => c.name !== "");
+  if (cs.length === 0) return null;
+  return (
+    <span className={`block text-caption text-faint ${className ?? ""}`}>
+      Adapted from{" "}
+      {cs.map((c, i) => (
+        <span key={i}>
+          {i > 0 ? ", " : null}
+          {/^https?:\/\//.test(c.url) ? (
+            <a className="underline hover:text-muted-foreground" href={c.url} target="_blank" rel="noreferrer">
+              {c.name}
+            </a>
+          ) : (
+            c.name
+          )}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 export function useMarketplace(rev = 0): MarketView | null {
   const app = useApp();
@@ -150,6 +175,7 @@ function EntryRow({ e, busy, run }: { e: Entry; busy: string | null; run: (k: st
         )}
       </div>
       {e.description !== undefined ? <p className="text-label text-muted-foreground">{e.description}</p> : null}
+      <Credits credits={e.credits} />
       {(e.capabilities ?? []).length > 0 ? <p className="text-caption text-faint">{(e.capabilities ?? []).join(" · ")}</p> : null}
       {asking ? (
         <form

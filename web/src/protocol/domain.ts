@@ -22,6 +22,12 @@ export interface SkillFile {
   problem?: string;
 }
 
+/** A public repository a helper was adapted from. */
+export interface Credit {
+  name: string;
+  url: string;
+}
+
 export interface Skill {
   id: string;
   name: string;
@@ -42,6 +48,8 @@ export interface Skill {
   key?: string;
   /** Helper group on the Specialists page; empty: ungrouped. */
   group?: string;
+  /** Sources it was adapted from. Display only. */
+  credits?: Credit[];
   created_at: string;
 }
 

@@ -33,21 +33,22 @@ const (
 )
 
 type skillAddIn struct {
-	Name         string   `json:"name"`
-	Path         string   `json:"path"`
-	URL          string   `json:"url,omitempty"`    // git source
-	Commit       string   `json:"commit,omitempty"` // pin for a git source (default: the cloned HEAD)
-	Subdir       string   `json:"subdir,omitempty"` // git source: the skill is this folder of the clone
-	Method       string   `json:"method,omitempty"`
-	Description  string   `json:"description,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	Harness      string   `json:"harness,omitempty"`
-	Requires     []string `json:"requires,omitempty"`
-	Group        string   `json:"group,omitempty"`  // set only when the helper has none yet
-	Category     string   `json:"-"`                // the catalog's category (marketplace installs)
-	Create       bool     `json:"create,omitempty"` // scaffold a new skill repository at Path
-	Auto         bool     `json:"-"`                // installed by the library sync, not the owner: off the map
-	Task         string   `json:"task,omitempty"`   // skill name for a new repository
+	Name         string            `json:"name"`
+	Path         string            `json:"path"`
+	URL          string            `json:"url,omitempty"`    // git source
+	Commit       string            `json:"commit,omitempty"` // pin for a git source (default: the cloned HEAD)
+	Subdir       string            `json:"subdir,omitempty"` // git source: the skill is this folder of the clone
+	Method       string            `json:"method,omitempty"`
+	Description  string            `json:"description,omitempty"`
+	Capabilities []string          `json:"capabilities,omitempty"`
+	Harness      string            `json:"harness,omitempty"`
+	Requires     []string          `json:"requires,omitempty"`
+	Group        string            `json:"group,omitempty"`  // set only when the helper has none yet
+	Category     string            `json:"-"`                // the catalog's category (marketplace installs)
+	Credits      []protocol.Credit `json:"-"`                // the catalog's credits (marketplace installs)
+	Create       bool              `json:"create,omitempty"` // scaffold a new skill repository at Path
+	Auto         bool              `json:"-"`                // installed by the library sync, not the owner: off the map
+	Task         string            `json:"task,omitempty"`   // skill name for a new repository
 }
 
 func (p *Pool) skillAdd(ctx context.Context, in skillAddIn) (_ any, err error) {
@@ -107,7 +108,7 @@ func (p *Pool) skillAdd(ctx context.Context, in skillAddIn) (_ any, err error) {
 	sk := protocol.Skill{
 		ID: protocol.NewID(), Key: agentKey(ctx, path), Name: strings.TrimSpace(firstNonEmpty(in.Name, filepath.Base(path))), Path: path,
 		Method: in.Method, Description: in.Description, Capabilities: normTags(in.Capabilities),
-		Harness: in.Harness, Requires: normTags(in.Requires), Group: groupName(in.Group), Category: in.Category, Source: source, Commit: commit, CreatedAt: now(),
+		Harness: in.Harness, Requires: normTags(in.Requires), Group: groupName(in.Group), Category: in.Category, Credits: in.Credits, Source: source, Commit: commit, CreatedAt: now(),
 		OnMap: !in.Auto,
 	}
 	if err := checkRequires(sk.Requires); err != nil {
