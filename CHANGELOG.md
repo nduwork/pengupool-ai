@@ -8,6 +8,8 @@ A Muse session no longer stays Active after its turn ends. Muse runs subagents, 
 
 The map now shows a session as **? Need input** while it has a pending ask: an approval or question that the bell and the phone already showed. This includes Muse sessions.
 
+A terminal glitch after a resize can no longer crash a session's worker and take its agent down. Two open panes of the same session no longer fight over its size.
+
 0.11.1 was tagged but never published; this release carries its changes, described below.
 
 ## 0.11.1
