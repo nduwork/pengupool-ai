@@ -360,7 +360,16 @@ var tailscaleLookPath = exec.LookPath
 var tailscaleAppBundle = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 
 var tailscaleCmd = func(ctx context.Context, bin string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, bin, args...).CombinedOutput()
+	return tailscaleExec(ctx, bin, args...).CombinedOutput()
+}
+
+// tailscaleExec runs the Tailscale CLI as a CLI. The macOS app bundle's binary is both the app and
+// its CLI and picks by the environment: started by the host, which has no TERM, it tries to be the
+// app, prints "The Tailscale GUI failed to start" and exits 0. TAILSCALE_BE_CLI makes it the CLI.
+func tailscaleExec(ctx context.Context, bin string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Env = append(os.Environ(), "TAILSCALE_BE_CLI=1")
+	return cmd
 }
 
 // tailscaleBin finds the Tailscale CLI: PATH first, then the userBins
@@ -397,7 +406,7 @@ func tailscaleName() (string, error) {
 	// Bounded: every settings read asks, and a hung tailscaled must not hold the Settings page.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, "status", "--json").Output()
+	out, err := tailscaleExec(ctx, bin, "status", "--json").Output()
 	if err != nil {
 		return "", errors.New("tailscale is not running or not installed")
 	}
@@ -694,9 +703,12 @@ func runTailscaleStatus(ctx context.Context, bin string) (tailscaleStatus, error
 	if err != nil {
 		return st, err
 	}
-	if i := bytes.IndexByte(out, '{'); i > 0 {
-		out = out[i:] // the CLI may print a version-skew warning before the JSON
+	i := bytes.IndexByte(out, '{')
+	if i < 0 {
+		// Not JSON at all: the CLI's own words say more than the decoder's.
+		return st, errors.New(firstNonEmpty(strings.TrimSpace(string(out)), "tailscale status printed nothing"))
 	}
+	out = out[i:] // the CLI may print a version-skew warning before the JSON
 	if err := json.Unmarshal(out, &st); err != nil {
 		return st, err
 	}
