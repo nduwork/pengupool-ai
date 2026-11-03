@@ -43,10 +43,10 @@ export interface Skill {
   commit?: string;
   files?: SkillFile[];
   profiles?: string[];
-  /** Listed in the map's Specialist pool. */
+  /** Listed in the map's Helper pool. */
   on_map?: boolean;
   key?: string;
-  /** Helper group on the Specialists page; empty: ungrouped. */
+  /** Helper group on the Helpers page; empty: ungrouped. */
   group?: string;
   /** Sources it was adapted from. Display only. */
   credits?: Credit[];
@@ -97,7 +97,7 @@ export interface Member {
   name: string;
   role: string;
   skill_id?: string;
-  /** An SME's repository (empty: the team's). */
+  /** A builder's repository (empty: the team's). */
   repo_id?: string;
   assignment?: string;
   worktree?: string;
@@ -113,7 +113,7 @@ export interface Team {
   name: string;
   task_id?: string;
   repo_id?: string;
-  /** Further repositories the team works in (its SMEs). */
+  /** Further repositories the team works in (its builders). */
   repos?: string[];
   harness: string;
   /** The team's job; it evolves, edited in place (a direction change). */
@@ -142,7 +142,7 @@ export interface FormationChange {
   /** add: the agent to run it on, and its model; empty: the defaults. */
   harness?: string;
   model?: string;
-  /** add, a specialist: the member it goes under; empty: the main member. */
+  /** add, a helper: the member it goes under; empty: the main member. */
   parent?: string;
 }
 

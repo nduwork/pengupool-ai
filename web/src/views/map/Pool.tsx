@@ -6,10 +6,10 @@ import { Button } from "../../components/ui/button";
 import { Tip } from "../../components/ui/controls";
 import { onMap } from "../skillgroups";
 
-// The Specialist pool drawer on the map's right edge (v1's skill-repo drawer): only the specialists
+// The Helper pool drawer on the map's right edge (v1's skill-repo drawer): only the helpers
 // the Skill library manages, never the work repos sessions run in. Drag a skill onto a card to add it
 // as a helper; onto empty canvas to start a session in the skill repo. Only installed helpers the
-// owner ticked "On the map" on the Specialists page are listed: choosing them is that page's job.
+// owner ticked "On the map" on the Helpers page are listed: choosing them is that page's job.
 
 export const DND = { session: "application/x-pp-session", skill: "application/x-pengupool-skill", repo: "application/x-pp-repo" };
 
@@ -28,7 +28,7 @@ export function AgentPool({ open, setOpen, width, setWidth, flash }: { open: boo
         aria-expanded={false}
         className="absolute right-0 top-3 z-20 rounded-l-md border border-r-0 border-border bg-raised px-1 py-3 text-caption font-medium text-muted-foreground shadow-sm [writing-mode:vertical-rl] hover:text-foreground"
       >
-        Specialist pool
+        Helper pool
       </button>
     );
   }
@@ -44,23 +44,23 @@ export function AgentPool({ open, setOpen, width, setWidth, flash }: { open: boo
     window.addEventListener("pointerup", up);
   };
   return (
-    <aside className="relative flex shrink-0 flex-col border-l border-border bg-panel" style={{ width }} aria-label="Specialist pool">
+    <aside className="relative flex shrink-0 flex-col border-l border-border bg-panel" style={{ width }} aria-label="Helper pool">
       <div
         className="absolute -left-1 bottom-0 top-0 w-2 cursor-col-resize hover:bg-primary/40"
         onPointerDown={grip}
         onDoubleClick={() => setWidth(260)}
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize Specialist pool"
+        aria-label="Resize Helper pool"
       />
       <div className="flex h-9 items-center gap-1 border-b border-border px-2">
-        <span className="px-1 text-caption font-medium">Specialists · {skills.length}</span>
-        <Button size="icon-sm" variant="ghost" className="ml-auto" onClick={() => setOpen(false)} aria-label="Collapse Specialist pool">
+        <span className="px-1 text-caption font-medium">Helpers · {skills.length}</span>
+        <Button size="icon-sm" variant="ghost" className="ml-auto" onClick={() => setOpen(false)} aria-label="Collapse Helper pool">
           <ChevronsRight />
         </Button>
       </div>
       <p className="px-3 py-2 text-caption text-muted-foreground">
-        Your specialists. Drag one onto a card to add it to that team, or onto empty canvas to start it on its own.
+        Your helpers. Drag one onto a card to add it to that team, or onto empty canvas to start it on its own.
       </p>
       <ul className="min-h-0 flex-1 space-y-1 overflow-auto px-2 pb-2">
         {skills.map((sk) => {
@@ -92,11 +92,11 @@ export function AgentPool({ open, setOpen, width, setWidth, flash }: { open: boo
             </li>
           );
         })}
-        {skills.length === 0 ? <li className="px-1 text-caption text-faint">No specialists on the map. Tick "On the map" for the ones you use in Specialists.</li> : null}
+        {skills.length === 0 ? <li className="px-1 text-caption text-faint">No helpers on the map. Tick "On the map" for the ones you use in Helpers.</li> : null}
       </ul>
       <div className="border-t border-border p-2">
         <Button size="sm" className="w-full" onClick={() => app.setNav("skills")}>
-          Manage specialists →
+          Manage helpers →
         </Button>
       </div>
     </aside>

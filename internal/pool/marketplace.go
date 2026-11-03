@@ -19,7 +19,7 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
-// The Specialist hub's catalog is PenguPool's own file, .pengupool/catalog.json: the helpers it lists
+// The Helper hub's catalog is PenguPool's own file, .pengupool/catalog.json: the helpers it lists
 // are skill repositories pinned to a commit. PenguPool keeps a clone of the hub under
 // <store>/marketplaces and installs a helper by cloning its repository at the pin (an ordinary Skill
 // library git source). The format, whole:
@@ -225,7 +225,7 @@ func (p *Pool) gitEnv(ctx context.Context, dir string, env []string, args ...str
 	return strings.TrimSpace(string(out)), nil
 }
 
-// mainMarketplace is the one catalog PenguPool reads: the Specialist hub, a private repository
+// mainMarketplace is the one catalog PenguPool reads: the Helper hub, a private repository
 // (cloned and fetched with the signed-in GitHub account, like any private one).
 const mainMarketplace = "https://github.com/nduwork/pengupool-agent-hub.git"
 
@@ -247,7 +247,7 @@ func hubAccess(err error, hub string) error {
 	m := strings.ToLower(err.Error())
 	for _, w := range []string{"repository not found", "authentication failed", "could not read username", "permission denied", "error: 403", "terminal prompts disabled"} {
 		if strings.Contains(m, w) {
-			return protocol.Errorf(protocol.CodeUnavailable, "the Specialist hub (%s) is private and GitHub refused this account: sign in with an account that has access (Settings → GitHub), then Refresh. %v", repoKey(hub), err)
+			return protocol.Errorf(protocol.CodeUnavailable, "the Helper hub (%s) is private and GitHub refused this account: sign in with an account that has access (Settings → GitHub), then Refresh. %v", repoKey(hub), err)
 		}
 	}
 	return err
@@ -433,7 +433,7 @@ func (p *Pool) pullCatalog(ctx context.Context) (string, error) {
 // refreshLibrary is the host's own Refresh, a minute after it starts and every 6 hours: pull the
 // catalog, then sync the library. A sync already running makes it a no-op; a failed pull (offline)
 // still syncs from the clone as it is. Only once the catalog has been cloned (the owner opened
-// Specialists or the marketplace): a new host installs nothing on its own.
+// Helpers or the marketplace): a new host installs nothing on its own.
 func (p *Pool) refreshLibrary(ctx context.Context) {
 	if _, err := os.Stat(p.marketDir()); err != nil {
 		return
@@ -503,7 +503,7 @@ func (p *Pool) syncLocked(ctx context.Context) map[string][]string {
 			p.logf("pool: library sync: %s: %v", e.Name, err)
 		} else {
 			out["added"] = append(out["added"], e.Name)
-			p.logf("pool: library sync: added %s from the Specialist hub", e.Name)
+			p.logf("pool: library sync: added %s from the Helper hub", e.Name)
 		}
 	}
 	p.dropOrphans(ctx)
@@ -543,7 +543,7 @@ func (p *Pool) dropOrphans(ctx context.Context) {
 				continue
 			}
 			if os.RemoveAll(sub) == nil {
-				p.logf("pool: library sync: removed %s, a clone no specialist uses", sub)
+				p.logf("pool: library sync: removed %s, a clone no helper uses", sub)
 			}
 		}
 	}
@@ -666,14 +666,14 @@ func catalogFolder(origin, sub, group, name string) error {
 		return nil
 	}
 	if group == "" {
-		return conflict("give %s a group first; the Specialist hub keeps it in agents/<group>/%s", name, name)
+		return conflict("give %s a group first; the Helper hub keeps it in agents/<group>/%s", name, name)
 	}
 	cat := slug(group)
 	if cat != strings.ToLower(group) {
-		return conflict("use a one-word group for %s (letters, digits and dashes, like %s); it names its Specialist hub folder", name, cat)
+		return conflict("use a one-word group for %s (letters, digits and dashes, like %s); it names its Helper hub folder", name, cat)
 	}
 	if want := "agents/" + cat + "/" + name; strings.TrimPrefix(sub, "/") != want {
-		return conflict("move %s to %s in the Specialist hub first", name, want)
+		return conflict("move %s to %s in the Helper hub first", name, want)
 	}
 	return nil
 }
@@ -784,7 +784,7 @@ func (p *Pool) updateHelper(ctx context.Context, e marketEntryView, cats map[str
 		_, taken := os.Lstat(dest)
 		switch {
 		case inside:
-			p.logf("pool: library sync: %s stays at %s; another specialist is in that clone", sk.Name, root)
+			p.logf("pool: library sync: %s stays at %s; another helper is in that clone", sk.Name, root)
 		case taken == nil:
 			p.logf("pool: library sync: %s stays at %s; %s already exists", sk.Name, root, dest)
 		case running(): // a session started during the fetch: nothing has changed on disk yet

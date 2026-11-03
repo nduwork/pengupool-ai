@@ -131,7 +131,7 @@ func (p *Pool) agentOptions() map[string]string {
 		}
 		d := a.Label + ": " + a.Hint
 		if a.Typed {
-			d += "; receives team messages only by paste when idle, so it suits a focused specialist more than a coordinator"
+			d += "; receives team messages only by paste when idle, so it suits a focused helper more than a coordinator"
 		}
 		out[a.ID] = d
 	}
@@ -233,11 +233,11 @@ func (p *Pool) propose(ctx context.Context, t protocol.Task, version int) (proto
 		}
 	}
 	if len(prop.Gaps) > 0 {
-		prop.Warnings = append(prop.Warnings, "optional specialist coverage is incomplete; the main worker can still start")
+		prop.Warnings = append(prop.Warnings, "optional helper coverage is incomplete; the main worker can still start")
 	}
 	if repo != nil && !repo.Git && len(members) > 1 {
 		members = members[:1]
-		prop.Warnings = append(prop.Warnings, "specialists need a Git repository for their worktrees; main-only")
+		prop.Warnings = append(prop.Warnings, "helpers need a Git repository for their worktrees; main-only")
 	}
 	prop.Members = members
 	err := p.update(func(st *store.State) error {
@@ -312,7 +312,7 @@ func (p *Pool) askTeam(ctx context.Context, prov decision.Provider, t protocol.T
 	var cs []map[string]any
 	qs := []decision.Question{{Name: "team_size", Type: decision.Choice,
 		Instructions: "How many members does this task need in total, counting the main worker? Most tasks need only the main worker.",
-		Options:      map[string]string{"1": "main worker only", "2": "one specialist", "3": "two specialists", "4": "three specialists"}}}
+		Options:      map[string]string{"1": "main worker only", "2": "one helper", "3": "two helpers", "4": "three helpers"}}}
 	agents := p.agentOptions()
 	for i, c := range cands {
 		cs = append(cs, map[string]any{"name": c.skill.Name, "capabilities": c.skill.Capabilities, "description": c.skill.Description,
@@ -360,7 +360,7 @@ func (p *Pool) proposalEdit(_ context.Context, in proposalEditIn) (any, error) {
 			if m.Role == "main" {
 				mains++
 			} else if findSkill(&st.Domain, m.SkillID) == nil {
-				return invalid("specialist %s is not among the specialists", m.Name)
+				return invalid("helper %s is not among the helpers", m.Name)
 			}
 			if m.Harness != "" && !harness.IsAgent(m.Harness) {
 				return invalid("%s: %q is not an agent (%s)", m.Name, m.Harness, agentIDs())
@@ -480,7 +480,7 @@ func (p *Pool) launchTeam(ctx context.Context, a protocol.Approval) (any, error)
 	}
 	for _, pm := range prop.Members {
 		if pm.SkillID != "" && findSkill(&d, pm.SkillID) == nil {
-			return nil, invalid("the specialist %s was deleted; propose the team again", pm.Name)
+			return nil, invalid("the helper %s was deleted; propose the team again", pm.Name)
 		}
 	}
 	for _, other := range d.Teams {
@@ -566,7 +566,7 @@ func short(s string) string {
 	return s
 }
 
-// startMember launches one member: the main worker in the repository, an SME in a fresh worktree on
+// startMember launches one member: the main worker in the repository, a builder in a fresh worktree on
 // its own branch, a helper in no worktree (it advises, it never edits).
 func (p *Pool) startMember(ctx context.Context, team *protocol.Team, repo protocol.Repo, t protocol.Task, pm protocol.ProposedMember, base string) (protocol.Member, error) {
 	id := protocol.NewID()
@@ -574,7 +574,7 @@ func (p *Pool) startMember(ctx context.Context, team *protocol.Team, repo protoc
 		Coordinator: pm.Coordinator, State: "active", BaseCommit: base, Copy: pm.Copy}
 	cwd := repo.Path
 	var readDirs []string
-	if pm.Role != "main" { // SMEs work in their own worktree, helpers in none
+	if pm.Role != "main" { // builders work in their own worktree, helpers in none
 		for _, x := range team.Members {
 			if x.Role == "main" {
 				m.Parent = x.SessionID
@@ -604,7 +604,7 @@ func (p *Pool) startMember(ctx context.Context, team *protocol.Team, repo protoc
 		}
 	} else if pm.Role != "main" {
 		if !repo.Git {
-			return m, invalid("SMEs need a Git work repository")
+			return m, invalid("builders need a Git work repository")
 		}
 		m.RepoID = repo.ID
 		m.Worktree = filepath.Join(p.st.Dir(), "worktrees", idTail(team.ID), slug(pm.Name)+"-"+idTail(id))
@@ -658,10 +658,10 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 	}
 	sk := findSkill(&d, in.SkillID)
 	if sk == nil {
-		return nil, notFound("no active specialist %s", in.SkillID)
+		return nil, notFound("no active helper %s", in.SkillID)
 	}
 	hub := teamHubSkill(*sk)
-	repo := findRepo(&d, team.RepoID) // nil for a manual group: the specialist works in a scratch folder
+	repo := findRepo(&d, team.RepoID) // nil for a manual group: the helper works in a scratch folder
 	task := protocol.Task{Title: team.Name, Objective: team.Goal}
 	if t := findTask(&d, team.TaskID); t != nil {
 		task = *t
@@ -705,8 +705,8 @@ func (p *Pool) placeHelper(ctx context.Context, in placeIn) (any, error) {
 		}
 		return nil, err
 	}
-	p.logLine(m.SessionID, "team: placed as specialist in "+team.Name)
-	p.forEachMember(team.ID, func(s string) { p.logLine(s, "team: "+m.Name+" joined as specialist") })
+	p.logLine(m.SessionID, "team: placed as helper in "+team.Name)
+	p.forEachMember(team.ID, func(s string) { p.logLine(s, "team: "+m.Name+" joined as helper") })
 	return m, nil
 }
 
@@ -760,7 +760,7 @@ func teamMemberName(t *protocol.Team, skill string, n int) string {
 // team-hub skill. It owns no repository and edits no code.
 func teamHubSkill(sk protocol.Skill) bool { return slices.Contains(sk.Capabilities, "team-hub") }
 
-// startHub starts a team-hub agent, or a specialist joining a group with no work repository, with no
+// startHub starts a team-hub agent, or a helper joining a group with no work repository, with no
 // worktree. It works in a scratch folder of its own, <store>/work/<team>/<member>, so nothing it or its
 // agent drops in its working directory lands in its skill repository; its skills load from sk.Path
 // (the context names it, Claude gets --plugin-dir).
@@ -816,7 +816,7 @@ func (p *Pool) logStrayWrite(s store.Session, pl map[string]any) {
 	path = filepath.Clean(path)
 	for _, r := range teamRepos(&d, t) {
 		if within(path, r.Path) {
-			p.logLine(s.ID, "specialist: wrote in a team repository: "+path)
+			p.logLine(s.ID, "helper: wrote in a team repository: "+path)
 			return
 		}
 	}
@@ -859,7 +859,7 @@ func (p *Pool) member(teamID, sessionID string) (protocol.Team, protocol.Member,
 	}
 	if found >= 0 {
 		m := t.Members[found]
-		if r := findRepo(&d, m.RepoID); r != nil { // an SME works in its own repository
+		if r := findRepo(&d, m.RepoID); r != nil { // a builder works in its own repository
 			repo = *r
 		}
 		return *t, m, repo, nil
@@ -947,7 +947,7 @@ func (p *Pool) closeHelperRPC(ctx context.Context, in closeIn) (any, error) {
 	return res, nil
 }
 
-// closeHelper stops the member (a helper or an SME) and removes its worktree when that loses
+// closeHelper stops the member (a helper or a builder) and removes its worktree when that loses
 // nothing. The member's own experience stays under its key; the team's roster records that it left. The registered skill source, the main session and
 // the work repository stay.
 func (p *Pool) closeHelper(ctx context.Context, in closeIn) (any, error) {
@@ -988,7 +988,7 @@ func (p *Pool) closeHelper(ctx context.Context, in closeIn) (any, error) {
 		}
 		return nil
 	})
-	p.forEachMember(t.ID, func(s string) { p.logLine(s, "team: specialist "+m.Name+" closed") })
+	p.forEachMember(t.ID, func(s string) { p.logLine(s, "team: helper "+m.Name+" closed") })
 	return result, err
 }
 

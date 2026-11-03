@@ -10,7 +10,7 @@ export function groupSkills<T>(items: T[], groupOf: (t: T) => string): Array<{ g
     .map(([group, items]) => ({ group, items }));
 }
 
-/** The map's Specialist pool: the installed helpers the owner ticked "On the map". */
+/** The map's Helper pool: the installed helpers the owner ticked "On the map". */
 export function onMap<T extends { on_map?: boolean }>(skills: T[]): T[] {
   return skills.filter((s) => s.on_map === true);
 }

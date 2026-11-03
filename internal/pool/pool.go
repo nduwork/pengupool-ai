@@ -183,7 +183,7 @@ func New(o Options) *Pool {
 		if dropped, err := db.Upgrade(p.owner()); err != nil {
 			logf("agent db: upgrade: %v", err)
 		} else if dropped != nil {
-			logf("agent db: upgraded; rows no longer kept (a specialist's notes start empty): %v; the file before the upgrade is %s",
+			logf("agent db: upgraded; rows no longer kept (a helper's notes start empty): %v; the file before the upgrade is %s",
 				dropped, agentdb.PreUpgradePath(filepath.Join(o.Store.Dir(), "agents.db")))
 		}
 		ls, _ := db.Lines(p.owner(), "", "", 0)
@@ -400,7 +400,7 @@ func (p *Pool) handlers() map[string]handler {
 		"ask.answer":            p.askAnswer,
 		"team.place_helper":     bind(p.placeHelperRPC),
 		"team.formation":        bind(p.teamFormation),
-		"team.start":            bind(p.teamStart), // Welcome's Start with a specialist
+		"team.start":            bind(p.teamStart), // Welcome's Start with a helper
 		"team.request":          bind(p.teamRequest),
 		"team.close_preview":    bind(p.closePreview),
 		"team.close_helper":     bind(p.closeHelperRPC),

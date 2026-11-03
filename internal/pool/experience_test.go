@@ -293,9 +293,9 @@ func TestExperienceImport(t *testing.T) {
 	}
 }
 
-// A SPECIALIST LEAD's natural compaction becomes its team's one project entry, under the host's
+// A HELPER LEAD's natural compaction becomes its team's one project entry, under the host's
 // facts about the team; a newer compaction replaces it, the same one is not kept twice, and another
-// team keeps its own. An SME or skill-less LEAD gets no paragraph and no entry.
+// team keeps its own. A builder or skill-less LEAD gets no paragraph and no entry.
 func TestLeadProjectEntry(t *testing.T) {
 	p, st := helperPool(t)
 	dir := t.TempDir()
@@ -311,7 +311,7 @@ func TestLeadProjectEntry(t *testing.T) {
 		for i := range s.Sessions {
 			s.Sessions[i].Harness, s.Sessions[i].Transcript = harness.Claude, tr(s.Sessions[i].ID)
 			if s.Sessions[i].ID == "leadaaaaaaaa" || s.Sessions[i].ID == "otheraaaaaaa" {
-				s.Sessions[i].SkillID = "sk-plan" // both LEADs are SPECIALISTs of the same skill
+				s.Sessions[i].SkillID = "sk-plan" // both LEADs are HELPERs of the same skill
 			}
 		}
 		s.Domain.Teams[0].Goal = "ship login"
@@ -326,7 +326,7 @@ func TestLeadProjectEntry(t *testing.T) {
 		return es
 	}
 	if !strings.Contains(p.renderContext("leadaaaaaaaa"), leadGuide) || strings.Contains(p.renderContext("planaaaaaaaa"), leadGuide) {
-		t.Fatal("the paragraph is not the SPECIALIST LEAD's alone")
+		t.Fatal("the paragraph is not the HELPER LEAD's alone")
 	}
 	// A report the agent titled like a project entry is its own, never replaced.
 	if _, err := p.db.AddExperience(agentdb.Entry{Helper: planKey, At: "2026-10-30T09:00:00Z", TeamID: "team1", Title: "Project: app", Body: "an agent's own report"}); err != nil {
@@ -358,7 +358,7 @@ func TestLeadProjectEntry(t *testing.T) {
 	if es := project("team2"); len(es) != 1 || es[0].Title != "Project: ops" {
 		t.Fatalf("team2 entries %+v", es)
 	}
-	// An SME or skill-less LEAD: no paragraph, and its compaction is no entry.
+	// A builder or skill-less LEAD: no paragraph, and its compaction is no entry.
 	_ = st.Update(func(s *store.State) error {
 		s.Sessions[sessionIndex(s, "otheraaaaaaa")].SkillID = ""
 		return nil
@@ -368,11 +368,11 @@ func TestLeadProjectEntry(t *testing.T) {
 	if es := project("team2"); len(es) != 1 || es[0].At != "2026-10-31T10:30:00Z" || strings.Contains(p.renderContext("otheraaaaaaa"), leadGuide) {
 		t.Fatalf("a skill-less LEAD: entries %+v", es)
 	}
-	// A specialist that is not the LEAD keeps no project entry from its compactions.
+	// A helper that is not the LEAD keeps no project entry from its compactions.
 	compact("planaaaaaaaa", "2026-10-31T12:30:00Z", "Summary: a helper's own")
 	p.leadCompaction("planaaaaaaaa")
 	if es := project("team1"); len(es) != 2 || es[0].At != "2026-10-31T11:00:00Z" && es[1].At != "2026-10-31T11:00:00Z" {
-		t.Fatalf("a non-lead specialist made a project entry: %+v", es)
+		t.Fatalf("a non-lead helper made a project entry: %+v", es)
 	}
 }
 

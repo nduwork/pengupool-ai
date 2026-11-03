@@ -12,13 +12,13 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
-// teamStartLead is the specialist that leads a team started from Welcome: the team-hub agent of the
-// Specialist hub, which owns no repository.
+// teamStartLead is the helper that leads a team started from Welcome: the team-hub agent of the
+// Helper hub, which owns no repository.
 const teamStartLead = "team-lead-agent"
 
 type teamStartIn struct {
 	SkillIDs []string `json:"skill_ids"`
-	Folder   string   `json:"folder,omitempty"`  // the work repository; needed when a picked specialist works in one
+	Folder   string   `json:"folder,omitempty"`  // the work repository; needed when a picked helper works in one
 	Harness  string   `json:"harness,omitempty"` // "" the lead's own choice; the whole team runs on it
 }
 
@@ -30,10 +30,10 @@ type teamStartMember struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// teamStart is Welcome's "Start with a specialist": a new team led by team-lead-agent, with the
-// picked specialists as members. Everything is checked before anything starts. If the lead does not
-// start, the team goes again and nothing is left behind; a specialist that does not start is reported
-// and the team keeps its lead. Specialists join through team.formation, under the same rules as on the map.
+// teamStart is Welcome's "Start with a helper": a new team led by team-lead-agent, with the
+// picked helpers as members. Everything is checked before anything starts. If the lead does not
+// start, the team goes again and nothing is left behind; a helper that does not start is reported
+// and the team keeps its lead. Helpers join through team.formation, under the same rules as on the map.
 func (p *Pool) teamStart(ctx context.Context, in teamStartIn) (any, error) {
 	d := p.st.State().Domain
 	var lead *protocol.Skill
@@ -43,7 +43,7 @@ func (p *Pool) teamStart(ctx context.Context, in teamStartIn) (any, error) {
 		}
 	}
 	if lead == nil {
-		return nil, notFound("%s isn't installed, so a team can't be led: install it from Specialists", teamStartLead)
+		return nil, notFound("%s isn't installed, so a team can't be led: install it from Helpers", teamStartLead)
 	}
 	opts := p.agentOptions()
 	def := "" // with no agent picked, the first installed one in the app's order (Claude Code first)
@@ -68,9 +68,9 @@ func (p *Pool) teamStart(ctx context.Context, in teamStartIn) (any, error) {
 		sk := findSkill(&d, id)
 		switch {
 		case sk == nil:
-			return nil, notFound("no specialist %s", id)
+			return nil, notFound("no helper %s", id)
 		case sk.ID == lead.ID:
-			return nil, invalid("%s leads the team; pick other specialists", teamStartLead)
+			return nil, invalid("%s leads the team; pick other helpers", teamStartLead)
 		case slices.ContainsFunc(picks, func(x protocol.Skill) bool { return x.ID == sk.ID }):
 			continue
 		}
@@ -88,7 +88,7 @@ func (p *Pool) teamStart(ctx context.Context, in teamStartIn) (any, error) {
 		}
 		repo = r
 	} else if needRepo {
-		return nil, invalid("choose a folder: the specialists you picked work in a repository")
+		return nil, invalid("choose a folder: the helpers you picked work in a repository")
 	}
 
 	names := []string{teamStartLead}

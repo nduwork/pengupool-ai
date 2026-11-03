@@ -15,7 +15,7 @@ import (
 
 // A helper gets no worktree, even in a team whose repository is not Git: it runs in the team's scratch
 // folder (a local skill) or in its installed skill clone, reads the team repositories, and closes
-// without a worktree review. An SME still gets a worktree.
+// without a worktree review. A builder still gets a worktree.
 func TestHelperHasNoWorktree(t *testing.T) {
 	agentOnPath(t)
 	st, err := store.Open(t.TempDir())
@@ -91,12 +91,12 @@ func TestHelperHasNoWorktree(t *testing.T) {
 		p.logStrayWrite(s, map[string]any{"tool_name": "Write", "tool_input": map[string]any{"file_path": path}})
 	}
 	log, _ := os.ReadFile(s.RunLog)
-	if !strings.Contains(string(log), "specialist: wrote in a team repository: "+filepath.Join(repo2, "a.go")) || strings.Contains(string(log), "tmp.txt") {
+	if !strings.Contains(string(log), "helper: wrote in a team repository: "+filepath.Join(repo2, "a.go")) || strings.Contains(string(log), "tmp.txt") {
 		t.Fatalf("log:\n%s", log)
 	}
 }
 
-// An SME (no skill, not main) still works in a worktree of its own.
+// A builder (no skill, not main) still works in a worktree of its own.
 func TestSMEKeepsWorktree(t *testing.T) {
 	st, err := store.Open(t.TempDir())
 	if err != nil {
@@ -119,7 +119,7 @@ func TestSMEKeepsWorktree(t *testing.T) {
 }
 
 // dupPool is a team with a lead and two installable skills (a git helper and a team hub), for the
-// duplicate-specialist tests. spawns records each spawn's working directory by session name.
+// duplicate-helper tests. spawns records each spawn's working directory by session name.
 func dupPool(t *testing.T) (p *Pool, st *store.Store, clone, work string, spawns map[string]string) {
 	t.Helper()
 	agentOnPath(t)

@@ -22,7 +22,7 @@ When a newer release is out, the app shows an update pill in its title bar.
 ## First launch: the Setup card and Welcome
 
 An empty Workspace shows the map, with a **Setup** card in the sidebar. It has three rows, and each
-row opens the setting that fixes it. **Welcome** adds two ways to start (*Start with a specialist*,
+row opens the setting that fixes it. **Welcome** adds two ways to start (*Start with a helper*,
 *Start in a folder*) beside the same card. It is off by default: open it from the empty map's
 *show Welcome* link or Settings → General → **Open Welcome**.
 
@@ -67,13 +67,13 @@ Details: [Agents (harnesses)](harnesses.md#agent-permissions).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/screenshots/screen-start-dark.webp">
-  <img alt="Start with a specialist: team-lead-agent leads a new team; research-agent and pr-review-agent are ticked from the suggested list" src="../assets/screenshots/screen-start-light.webp">
+  <img alt="Start with a helper: team-lead-agent leads a new team; research-agent and pr-review-agent are ticked from the suggested list" src="../assets/screenshots/screen-start-light.webp">
 </picture>
 
-- **Start with a specialist.** Starts a new team led by team-lead-agent. Tick the specialists you want
+- **Start with a helper.** Starts a new team led by team-lead-agent. Tick the helpers you want
   (seven common ones are suggested; search reaches the rest), choose the work folder they will use,
   select **Muse Code** in the agent picker (or another installed agent), and **Start team**. The lead alone needs no folder. team-lead-agent and the other
-  specialists come from the Specialist hub (the *Specialists* page).
+  helpers come from the Helper hub (the *Helpers* page).
 - **Start in a folder** (⌘N, also *New session* in the sidebar). One agent in a folder, a new worktree
   of a repository, or a fresh clone. To start with Meta's coding agent, pick **Muse Code** as the agent.
 

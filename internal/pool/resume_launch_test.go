@@ -12,7 +12,7 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
-// A restart or a restore starts a team specialist again with the model it was given and read
+// A restart or a restore starts a team helper again with the model it was given and read
 // access to the team's repositories, as its first start did.
 func TestResumeKeepsModelAndReadDirs(t *testing.T) {
 	agentOnPath(t)

@@ -133,17 +133,17 @@ func (p *Pool) newFormation(teamID string, c protocol.FormationChange, state str
 		case c.SkillID != "" && c.RepoID == "":
 			sk := findSkill(&d, c.SkillID)
 			if sk == nil {
-				return protocol.Approval{}, notFound("no active specialist %s", c.SkillID)
+				return protocol.Approval{}, notFound("no active helper %s", c.SkillID)
 			}
-			detail = "add " + sk.Name + " (specialist)"
+			detail = "add " + sk.Name + " (helper)"
 		case c.RepoID != "" && c.SkillID == "":
 			r := findRepo(&d, c.RepoID)
 			if r == nil {
 				return protocol.Approval{}, notFound("ingest the repository first")
 			}
-			detail = "add an SME for " + r.Name
+			detail = "add a builder for " + r.Name
 		default:
-			return protocol.Approval{}, invalid("add names a specialist or a repository (an SME)")
+			return protocol.Approval{}, invalid("add names a helper or a repository (a builder)")
 		}
 	case "remove":
 		m, err := findMember(t, c.SessionID)
@@ -214,7 +214,7 @@ func (p *Pool) applyFormation(ctx context.Context, a protocol.Approval) (any, er
 	return res, err
 }
 
-// addMember starts a freelancer (a skill helper) or an SME (an agent for one more repository) in its
+// addMember starts a freelancer (a skill helper) or a builder (an agent for one more repository) in its
 // own worktree.
 func (p *Pool) addMember(ctx context.Context, teamID string, c protocol.FormationChange, by string) (protocol.Member, error) {
 	if c.SkillID != "" {
@@ -234,7 +234,7 @@ func (p *Pool) addMember(ctx context.Context, teamID string, c protocol.Formatio
 		return protocol.Member{}, notFound("no repository %s", c.RepoID)
 	}
 	if !repo.Git {
-		return protocol.Member{}, invalid("an SME works in a worktree, so its repository must use Git")
+		return protocol.Member{}, invalid("a builder works in a worktree, so its repository must use Git")
 	}
 	task := protocol.Task{Title: team.Name, Objective: team.Goal}
 	if t := findTask(&d, team.TaskID); t != nil {
@@ -281,7 +281,7 @@ func leadOf(t *protocol.Team) string {
 }
 
 // teamLabel is a member's label, derived, never stored: LEAD for the root of the team's tree (with
-// a repository or without), SPECIALIST for an agent taken from the specialist pool, SME for a member the
+// a repository or without), HELPER for an agent taken from the helper pool, BUILDER for a member the
 // owner added that has a repository behind it (its worktree, or a session working in a known
 // repository), "" for any other member. web/src/views/Formation.tsx mirrors it.
 func teamLabel(st *store.State, t *protocol.Team, m protocol.Member) string {
@@ -289,14 +289,14 @@ func teamLabel(st *store.State, t *protocol.Team, m protocol.Member) string {
 	case m.SessionID == leadOf(t):
 		return "LEAD"
 	case m.SkillID != "":
-		return "SPECIALIST"
+		return "HELPER"
 	case m.RepoID != "" || m.Worktree != "":
-		return "SME"
+		return "BUILDER"
 	}
 	if i := sessionIndex(st, m.SessionID); i >= 0 && st.Sessions[i].Cwd != "" {
 		for _, r := range st.Domain.Repos {
 			if r.Path != "" && within(st.Sessions[i].Cwd, r.Path) {
-				return "SME"
+				return "BUILDER"
 			}
 		}
 	}

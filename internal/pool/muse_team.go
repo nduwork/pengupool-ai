@@ -138,8 +138,8 @@ func (p *Pool) museAction(ctx context.Context, c gateway.Caller, raw json.RawMes
 type museMemberIn struct {
 	Team       string `json:"team"`
 	Op         string `json:"op"`              // add (default) | remove
-	Skill      string `json:"skill,omitempty"` // add: a specialist, by name or id
-	Repo       string `json:"repo,omitempty"`  // add: an SME for this repository, by name or id
+	Skill      string `json:"skill,omitempty"` // add: a helper, by name or id
+	Repo       string `json:"repo,omitempty"`  // add: a builder for this repository, by name or id
 	Member     string `json:"member,omitempty"`
 	Assignment string `json:"assignment,omitempty"`
 	Reason     string `json:"reason,omitempty"`

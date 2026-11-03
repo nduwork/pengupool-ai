@@ -8,7 +8,7 @@ import { Empty, Input } from "../components/ui/controls";
 import { Sheet } from "../components/ui/dialog";
 import type { Credit } from "../protocol/domain";
 
-// The Specialist hub: a catalog of skill repositories (the hub's .pengupool/catalog.json). Install clones
+// The Helper hub: a catalog of skill repositories (the hub's .pengupool/catalog.json). Install clones
 // the helper into the Skill library, at its pinned commit or, with none, the latest of its ref.
 
 interface Entry {
@@ -83,7 +83,7 @@ export function MarketplaceSheet(): ReactElement {
     setRev((n) => n + 1);
   };
   return (
-    <Sheet title="Specialist hub" description="Specialists from the hub's catalog. Install one, then put it on a team." onClose={close} wide>
+    <Sheet title="Helper hub" description="Helpers from the hub's catalog. Install one, then put it on a team." onClose={close} wide>
       <div className="grid grid-cols-1 gap-3">
         {m === null ? <p className="text-label text-faint">Loading…</p> : null}
         {m !== null ? (
@@ -102,8 +102,8 @@ export function MarketplaceSheet(): ReactElement {
               </p>
             ) : null}
             {m.error === undefined && m.skills.length === 0 ? (
-              <Empty icon={<Store />} title="No specialists yet">
-                The Specialist hub lists none yet.
+              <Empty icon={<Store />} title="No helpers yet">
+                The Helper hub lists none yet.
               </Empty>
             ) : (
               <div className="divide-y divide-border rounded-lg border border-border bg-raised">

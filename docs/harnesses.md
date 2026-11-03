@@ -12,7 +12,7 @@ finds installed. Source of truth: the agent list in `internal/harness`.
 | **Muse Code** | A PenguPool plugin that the app installs and approves for you |
 | **pi** and **OMP** | One PenguPool extension shared by both |
 
-Through those hooks each session gets your Compass, its team, and (for a specialist) its journal,
+Through those hooks each session gets your Compass, its team, and (for a helper) its journal,
 and PenguPool sees its questions, permission prompts and turn ends. An agent PenguPool has no hooks
 for is not offered. GitHub Copilot and Gemini CLI are hidden: their old sessions still run and resume.
 
@@ -26,7 +26,7 @@ for is not offered. GitHub Copilot and Gemini CLI are hidden: their old sessions
 
 ## Muse plugin
 
-What it gives you: a Muse Code session that knows its team, your Compass and (for a specialist) its own
+What it gives you: a Muse Code session that knows its team, your Compass and (for a helper) its own
 journal, and that PenguPool can see well enough to put its questions and check-ins in front of you,
 including on your phone.
 

@@ -10,6 +10,8 @@ The map now shows a session as **? Need input** while it has a pending ask: an a
 
 A terminal glitch after a resize can no longer crash a session's worker and take its agent down. Two open panes of the same session no longer fight over its size.
 
+The team roles read **Helper** again, in place of Specialist (the Helper hub, the Helpers page, the Helper pool), and **Builder** in place of SME. This covers the app, the team context agents read, the CLI and the docs; nothing stored changes.
+
 0.11.1 was tagged but never published; this release carries its changes, described below.
 
 ## 0.11.1

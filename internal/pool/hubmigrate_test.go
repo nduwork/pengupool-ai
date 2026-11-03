@@ -51,7 +51,7 @@ func gitIn2(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// The catalog is the Specialist hub, and it is read with the account's own credentials.
+// The catalog is the Helper hub, and it is read with the account's own credentials.
 func TestHubIsTheCatalog(t *testing.T) {
 	if mainMarketplace != "https://github.com/nduwork/pengupool-agent-hub.git" || repoKey(mainMarketplace) != "github.com/nduwork/pengupool-agent-hub" {
 		t.Fatal(mainMarketplace)

@@ -67,14 +67,14 @@ export function Badge({ className, tone = "neutral", children }: { className?: s
 }
 
 /** A team member's role: derived from the team's tree (views/Formation.tsx teamLabel), never stored.
- *  "helper" is the protocol value; it reads as Specialist (SPEC on the tag). */
+ *  "sme" and "helper" are the protocol values; they read as Builder and Helper. */
 export type Role = "lead" | "sme" | "helper";
 
 // Cues, no hue, so the tag never competes with the status colours: the box, the weight and the word.
 const ROLE: Record<Role, { word: string; cls: string; tip: string }> = {
   lead: { word: "Lead", cls: "border-muted-foreground text-foreground font-semibold", tip: "Lead: the session at the root of the team's tree" },
-  sme: { word: "SME", cls: "border-border text-muted-foreground font-medium", tip: "SME: a member you added, working in its own repository" },
-  helper: { word: "SPEC", cls: "border-transparent text-muted-foreground", tip: "Specialist" },
+  sme: { word: "Builder", cls: "border-border text-muted-foreground font-medium", tip: "Builder: a member you added, working in its own repository" },
+  helper: { word: "Helper", cls: "border-transparent text-muted-foreground", tip: "Helper: an agent from the helper pool" },
 };
 
 export function RoleTag({ role, className }: { role: Role; className?: string }): React.ReactElement {

@@ -58,7 +58,7 @@ function channelFor(sessionId: string): number {
   return channel;
 }
 
-const NAV_TITLE: Record<Nav, string> = { workspace: "Workspace", skills: "Specialists", settings: "Settings" };
+const NAV_TITLE: Record<Nav, string> = { workspace: "Workspace", skills: "Helpers", settings: "Settings" };
 
 export function App(): ReactElement {
   // In the desktop app the page is loaded from the app bundle, so the host's address and token

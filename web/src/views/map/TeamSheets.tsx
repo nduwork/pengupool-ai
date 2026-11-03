@@ -92,7 +92,7 @@ export function ClosedTeamsSheet(): ReactElement {
   return (
     <Sheet
       title="Closed groups"
-      description="Deleting one drops its members' team notes and raw turns. Specialists keep their other experience; repositories and branches are untouched."
+      description="Deleting one drops its members' team notes and raw turns. Helpers keep their other experience; repositories and branches are untouched."
       onClose={() => app.showDialog(null)}
     >
       <ul className="grid gap-1 text-label">

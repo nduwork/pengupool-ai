@@ -12,7 +12,7 @@ import (
 )
 
 // A member's label is derived from the team's tree: the root leads, with a repository or without;
-// a helper-pool agent is a SPECIALIST; a member the owner added with a repository is an SME.
+// a helper-pool agent is a HELPER; a member the owner added with a repository is a builder.
 func TestTeamLabels(t *testing.T) {
 	tm := &protocol.Team{Members: []protocol.Member{
 		{SessionID: "root", Role: "main", RepoID: "r1", Worktree: "/w", State: "active"},
@@ -21,13 +21,13 @@ func TestTeamLabels(t *testing.T) {
 		{SessionID: "plain", Role: "helper", Parent: "root", State: "active"},
 		{SessionID: "gone", Role: "helper", SkillID: "k2", State: "closed"},
 	}}
-	// A session the owner grouped in that works in a known repository is an SME too.
+	// A session the owner grouped in that works in a known repository is a builder too.
 	st := &store.State{
 		Sessions: []store.Session{{ID: "inrepo", Cwd: "/src/app/sub"}, {ID: "plain", Cwd: "/tmp/x"}},
 		Domain:   protocol.Domain{Repos: []protocol.Repo{{ID: "r1", Path: "/src/app"}}},
 	}
 	tm.Members = append(tm.Members, protocol.Member{SessionID: "inrepo", Role: "helper", Parent: "root", State: "active"})
-	want := map[string]string{"root": "LEAD", "sme": "SME", "help": "SPECIALIST", "plain": "", "inrepo": "SME"}
+	want := map[string]string{"root": "LEAD", "sme": "BUILDER", "help": "HELPER", "plain": "", "inrepo": "BUILDER"}
 	for _, m := range tm.Members {
 		if m.State != "active" {
 			continue
@@ -77,7 +77,7 @@ func TestOldAnchorRecordLoads(t *testing.T) {
 	s := st.State()
 	d := s.Domain
 	tm := findTeam(&d, "team1")
-	if leadOf(tm) != "mainaaaaaaaa" || teamLabel(&s, tm, tm.Members[1]) != "SPECIALIST" {
+	if leadOf(tm) != "mainaaaaaaaa" || teamLabel(&s, tm, tm.Members[1]) != "HELPER" {
 		t.Fatalf("the stored anchor was not ignored: lead %q", leadOf(tm))
 	}
 	if _, err := p.applyFormation(context.Background(), d.Approvals[0]); err != nil {

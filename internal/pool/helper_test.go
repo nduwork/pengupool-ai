@@ -56,16 +56,16 @@ func putNotes(t *testing.T, p *Pool, agent, text string) {
 	}
 }
 
-// A skill-backed member is a SPECIALIST in its own words and in every teammate's member list.
+// A skill-backed member is a HELPER in its own words and in every teammate's member list.
 func TestContextNamesSpecialist(t *testing.T) {
 	p, _ := helperPool(t)
 	for _, id := range []string{"planaaaaaaaa", "leadaaaaaaaa"} {
 		c := p.renderContext(id)
-		if !strings.Contains(c, "- plan (session planaaaaaaaa) — SPECIALIST") || strings.Contains(c, "HELPER") {
+		if !strings.Contains(c, "- plan (session planaaaaaaaa) — HELPER") || strings.Contains(c, "SPECIALIST") {
 			t.Fatalf("%s context:\n%s", id, c)
 		}
 	}
-	if c := p.renderContext("planaaaaaaaa"); !strings.Contains(c, "You are **plan**, a SPECIALIST of team **app**.") {
+	if c := p.renderContext("planaaaaaaaa"); !strings.Contains(c, "You are **plan**, a HELPER of team **app**.") {
 		t.Fatalf("plan context:\n%s", c)
 	}
 }

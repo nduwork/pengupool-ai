@@ -79,7 +79,7 @@ type Skill struct {
 	Profiles     []string    `json:"profiles,omitempty"` // agents/*.md seeds
 	Group        string      `json:"group,omitempty"`    // the library's section: the catalog's category, or the owner's own
 	Category     string      `json:"category,omitempty"` // the catalog's category it last had: a Group equal to it came from the catalog
-	OnMap        bool        `json:"on_map,omitempty"`   // listed in the map's Specialist pool
+	OnMap        bool        `json:"on_map,omitempty"`   // listed in the map's Helper pool
 	// Credits name the public repositories a helper was adapted from. Display only: never in an
 	// agent's context.
 	Credits []Credit `json:"credits,omitempty"`
@@ -159,7 +159,7 @@ type Team struct {
 	Name    string   `json:"name"`
 	TaskID  string   `json:"task_id,omitempty"`
 	RepoID  string   `json:"repo_id,omitempty"`
-	Repos   []string `json:"repos,omitempty"` // further repositories it works in (SMEs); RepoID is the first
+	Repos   []string `json:"repos,omitempty"` // further repositories it works in (builders); RepoID is the first
 	Harness string   `json:"harness"`
 	// Goal is the team's job. The team is the unit and its goal evolves: the owner edits it in
 	// place, and each edit is a direction change on the record.
@@ -211,7 +211,7 @@ type Approval struct {
 }
 
 // FormationChange is one change to who is on a team: add a member (a skill as a freelancer, or a
-// repository as an SME) or remove one. Who leads is not a change: the LEAD is the tree's root.
+// repository as a builder) or remove one. Who leads is not a change: the LEAD is the tree's root.
 type FormationChange struct {
 	Op          string `json:"op"` // add | remove
 	SkillID     string `json:"skill_id,omitempty"`
@@ -222,7 +222,7 @@ type FormationChange struct {
 	RequestedBy string `json:"requested_by,omitempty"` // a member session id; empty: the owner
 	Harness     string `json:"harness,omitempty"`      // add: the agent to run it on; empty: the helper's default
 	Model       string `json:"model,omitempty"`        // add: the model; empty: the agent's default
-	Parent      string `json:"parent,omitempty"`       // add (specialist): the member it goes under; empty: the main member
+	Parent      string `json:"parent,omitempty"`       // add (helper): the member it goes under; empty: the main member
 }
 
 // TeamMessage is one routed message between members of one team.

@@ -100,10 +100,10 @@ export function Welcome({ onBack }: { onBack?: () => void }): ReactElement {
       ) : null}
       <Mascot className="size-16" />
       <p className="text-title font-medium">Welcome to PenguPool</p>
-      <p className="max-w-md text-label text-muted-foreground">Start a team led by team-lead-agent with the specialists you pick, or one agent in a folder.</p>
+      <p className="max-w-md text-label text-muted-foreground">Start a team led by team-lead-agent with the helpers you pick, or one agent in a folder.</p>
       <div className="grid w-full max-w-md grid-cols-2 gap-2">
         <Button size="lg" variant="default" onClick={() => app.showDialog(<StartTeamSheet onClose={() => app.showDialog(null)} onStarted={onBack} />)}>
-          <Users /> Start with a specialist
+          <Users /> Start with a helper
         </Button>
         <Button size="lg" variant="outline" onClick={() => app.showDialog(<NewSessionDialog onClose={() => app.showDialog(null)} />)}>
           <FolderOpen /> Start in a folder <Kbd>⌘N</Kbd>

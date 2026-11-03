@@ -10,7 +10,7 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
-// The Specialist hub moved from nduwork/pengupool-marketplace to nduwork/pengupool-agent-hub.
+// The Helper hub moved from nduwork/pengupool-marketplace to nduwork/pengupool-agent-hub.
 // migrateHub re-points what an existing install holds, once, on the first start after the move and
 // harmlessly again: the catalog's clone, the remote of every helper PenguPool cloned from the old
 // repository, the helpers' keys (their journals follow) and the "the owner deleted it" markers. Helper
@@ -33,18 +33,18 @@ func (p *Pool) migrateHub(ctx context.Context) {
 			if _, err := os.Stat(hubDir); err == nil {
 				_ = os.RemoveAll(old)
 			} else if _, err := p.ensureMarketFor(ctx, mainMarketplace); err != nil {
-				p.logf("pool: specialist hub: cloning the hub: %v (the old catalog clone stays until it works)", err)
+				p.logf("pool: helper hub: cloning the hub: %v (the old catalog clone stays until it works)", err)
 			} else if os.RemoveAll(old) == nil {
-				p.logf("pool: specialist hub: replaced the old catalog clone with a clone of the hub")
+				p.logf("pool: helper hub: replaced the old catalog clone with a clone of the hub")
 			}
 		}
 	}
 	if origin, err := p.gitIn(ctx, hubDir, "remote", "get-url", "origin"); err == nil && (repoKey(origin) == oldKey || p.unrelatedToOrigin(ctx, hubDir)) {
 		if os.RemoveAll(hubDir) == nil {
 			if _, err := p.ensureMarketFor(ctx, mainMarketplace); err != nil {
-				p.logf("pool: specialist hub: cloning the hub again: %v", err)
+				p.logf("pool: helper hub: cloning the hub again: %v", err)
 			} else {
-				p.logf("pool: specialist hub: the catalog clone did not follow the hub's history; cloned again")
+				p.logf("pool: helper hub: the catalog clone did not follow the hub's history; cloned again")
 			}
 		}
 	}
@@ -62,7 +62,7 @@ func (p *Pool) migrateHub(ctx context.Context) {
 				}
 				return nil
 			}); err != nil {
-				p.logf("pool: specialist hub: %s: %v", sk.Name, err)
+				p.logf("pool: helper hub: %s: %v", sk.Name, err)
 				continue
 			}
 		}
@@ -73,7 +73,7 @@ func (p *Pool) migrateHub(ctx context.Context) {
 		}
 		if rest, ok := strings.CutPrefix(key, newKey); ok && !held(oldKey+rest) {
 			if err := p.rekey(oldKey+rest, key); err != nil {
-				p.logf("pool: specialist hub: %s: journal: %v", sk.Name, err)
+				p.logf("pool: helper hub: %s: journal: %v", sk.Name, err)
 				continue
 			}
 		}
@@ -83,10 +83,10 @@ func (p *Pool) migrateHub(ctx context.Context) {
 		}
 		if top, _ := p.ownClone(ctx, sk.Path); own {
 			if _, err := p.gitIn(ctx, top, "remote", "set-url", "origin", strings.Replace(origin, "pengupool-marketplace", "pengupool-agent-hub", 1)); err != nil {
-				p.logf("pool: specialist hub: %s: %v", sk.Name, err)
+				p.logf("pool: helper hub: %s: %v", sk.Name, err)
 				continue
 			}
-			p.logf("pool: specialist hub: %s now follows %s", sk.Name, newKey)
+			p.logf("pool: helper hub: %s now follows %s", sk.Name, newKey)
 		}
 	}
 	// "The owner deleted it" markers are keyed by the helper's catalog key.

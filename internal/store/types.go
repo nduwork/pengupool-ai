@@ -141,7 +141,7 @@ type Config struct {
 	MuseDevices []MuseDevice `json:"muse_devices,omitempty"`
 	// Backup is Sync's old name: read when there is no "sync", and written beside it for one release so a downgrade keeps the settings.
 	Backup *Sync `json:"backup,omitempty"`
-	// CatalogRepo is the Specialist hub's Git URL; empty means the default hub.
+	// CatalogRepo is the Helper hub's Git URL; empty means the default hub.
 	CatalogRepo string `json:"catalog_repo,omitempty"`
 	// AgentPermissions are the agents whose own global config PenguPool wrote its team-command rules
 	// into, with the owner's consent, and exactly what it wrote; an agent missing here has none.

@@ -19,10 +19,10 @@ Four values set PenguPool apart:
    evidence, and corrections supersede. The Compass guides the team under uncertainty instead of
    pretending certainty, as honestly as a forecast band that widens rather than faking precision.
    *Others:* a memory file that treats a guess and a hard-won rule as equals.
-4. **Specialists carry experience across projects**, each with a narrow focus on its domain. The
+4. **Helpers carry experience across projects**, each with a narrow focus on its domain. The
    reviewer brings standards built on every past review into each new team; experience compounds in
-   the specialist, not inside one project's folder. Memory is scoped as section 4 describes:
-   specialist journals are private and portable, a Lead's memory is kept per team, and the Compass
+   the helper, not inside one project's folder. Memory is scoped as section 4 describes:
+   helper journals are private and portable, a Lead's memory is kept per team, and the Compass
    is the one shared store.
 
 The pains PenguPool answers:
@@ -42,18 +42,18 @@ Professional development work is a collaboration of long-lived peer agents, each
 repository. The roles:
 
 - **Lead**: plans the work and dispatches it.
-- **SME / builder**: works in its repository and changes code.
-- **PR-review specialist**: one dedicated reviewer per repository.
+- **Builder**: works in its repository and changes code.
+- **PR-review helper**: one dedicated reviewer per repository.
 - **Research agent**: works under the Lead.
 
-In PenguPool a team is a tree of sessions: the Lead is its root, an SME works in a repository, and a
-Specialist comes from the Specialist pool. Members talk with `pengupool send`, only to their parent
+In PenguPool a team is a tree of sessions: the Lead is its root, a builder works in a repository, and a
+Helper comes from the Helper pool. Members talk with `pengupool send`, only to their parent
 and children.
 
-## 2. Why a specialist reviewer
+## 2. Why a helper reviewer
 
 A spawned sub-reviewer's session closes when it finishes, and its detail becomes noise in the
-builder's context. The review specialist absorbs that noise instead:
+builder's context. The review helper absorbs that noise instead:
 
 - its own workers report to it;
 - it re-checks every blocker with a separate verifier;
@@ -64,11 +64,11 @@ keeps the builder focused on changing code.
 
 ## 3. Experience transfers across projects
 
-A specialist carries what it has learned into every team it joins. For example, once a specialist
+A helper carries what it has learned into every team it joins. For example, once a helper
 knows how the owner sets up a local GitHub runner (their preferences, where files and directories
 go), the owner never teaches it again and nobody redoes the research. That is a real saving in tokens.
 
-Skill repositories carry a `memory.md` plus per-session logs. In PenguPool each specialist also keeps
+Skill repositories carry a `memory.md` plus per-session logs. In PenguPool each helper also keeps
 a journal of its finished jobs across teams, and `pengupool experience export` / `import` move that
 experience between machines.
 
@@ -77,14 +77,14 @@ experience between machines.
 The team's memory is scoped by role at two levels, not kept in one shared store:
 
 - **The Lead** remembers what the team did: its plans, dispatches, decisions and outcomes.
-- **Each specialist** remembers what it did in the team: its own reviews, research and setups.
+- **Each helper** remembers what it did in the team: its own reviews, research and setups.
 
 The team also learns the owner's preferences and updates them from evidence over
 time. It is Bayesian in spirit: a preference is superseded, not deleted, and the owner's corrections
 are the richest signal. This is what "an agent team that grows with you" means.
 
-In PenguPool each specialist's journal is private to it, one entry per finished job. When a
-specialist leads a team, its journal also keeps one project entry for that team: the Lead's latest
+In PenguPool each helper's journal is private to it, one entry per finished job. When a
+helper leads a team, its journal also keeps one project entry for that team: the Lead's latest
 summary of the work, replaced at each capture. The owner's preferences are the one store every member
 reads: the Compass. Only the owner's own words become Compass lines, and each line carries a belief
 (a Beta estimate) that evidence moves up or down.
@@ -115,7 +115,7 @@ Every consequential act traces back: owner → gateway → Lead → member → r
 ## 7. Auditability
 
 A finished job yields two things: the product, and the record of the dialogue and logs behind it. How
-the work was done can be inspected. Specialists fact-check claims, including the gateway's own account
+the work was done can be inspected. Helpers fact-check claims, including the gateway's own account
 of what happened. In PenguPool the team's message log keeps the latest messages between members.
 
 ## 8. Notification philosophy
