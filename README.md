@@ -17,10 +17,11 @@
 
 ## At a glance
 
-**What it is.** A macOS desktop app with a Go host. The host runs coding agents (Muse Code, Claude
-Code, Codex, pi, OMP), each in its own terminal session that outlives the app, and groups them into
-teams. Every agent gets the owner's recorded preferences (the Compass) in its context. Questions that
-need the owner are collected in one place and can be answered on the Mac or from the paired Muse app.
+**What it is.** A macOS desktop app with a Go host. The host runs coding agents (Muse Code, Claude Code,
+Codex, pi, OMP), each in its own terminal session that outlives the app, and groups them into teams: a
+lead, builders that own a repository, and helpers from the Helper hub. Every agent gets the owner's
+recorded preferences (the Compass) in its context. Questions that need the owner are collected in one
+place and can be answered on the Mac or from the paired Muse app.
 
 **Run it.** macOS on Apple Silicon. Download `PenguPool-AI-<version>-mac-arm64.dmg` from the
 [latest release](https://github.com/nduwork/pengupool-ai/releases/latest), drag the app onto
@@ -46,7 +47,7 @@ Package by package: [How it fits together](CONTRIBUTING.md#how-it-fits-together)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/media/muse-loop-dark.png">
-  <img alt="Muse Code on your Mac sends hooks to the PenguPool hub (team, Compass, waiting question); the paired Muse app reads the question over Tailscale; your answer returns and the same session continues. Tool-permission prompts stay on the Mac." src="assets/media/muse-loop-light.png">
+  <img alt="How PenguPool works. On your Mac, a LEAD runs the team: a BUILDER on a Git repo project and HELPERs for research, review and UI, all reading the Compass, the shared memory weighted by evidence. The device API carries a waiting question to the Muse app and your answer back. Four values: dense AI-native communication; team-first, not task-first; Compass memory, with uncertainty; experience that travels." src="assets/media/muse-loop-light.png">
 </picture>
 
 <sub>Data flow, not push notifications: the Muse app checks PenguPool for waiting questions.</sub>
@@ -71,14 +72,15 @@ One model; the local Tev1 default is Together AI's Qwen-based model.
 - **Run agents side by side.** Claude Code, Codex, Muse Code, pi and OMP, plus Claude Code through
   Ollama, each in its own terminal session. Sessions keep running when the app or its host restarts.
 - **Start a team.** Welcome's *Start with a helper* starts a team led by team-lead-agent with the
-  helpers you pick (research, PR review, security, …), or start one agent in a folder and grow a
-  team around it on the map.
+  helpers you pick (research, PR review, security, …), or start one agent in a folder and grow a team
+  around it on the map: drop a session under it as a **Builder**, or a helper from the Helper pool.
 - **Say it once.** Tell any session how you want things ("small commits", "never touch the migrations
   folder"). It becomes a line in your **Compass**, and every agent gets your Compass in its context.
   Each helper also keeps a private **journal** of the jobs it finished and starts its next job with them.
-- **Answer what waits on you.** Questions, check-ins and permission prompts collect in *Waiting on
-  you*, with enough context to decide. With the Muse app paired, you answer team questions and
-  check-ins from your phone; permission prompts are answered in the agent's terminal.
+- **Answer what waits on you.** Questions, check-ins and permission prompts collect in *Waiting on you*,
+  with enough context to decide; the map marks that session **? Need input**. With the Muse app paired,
+  you answer team questions and check-ins from your phone; permission prompts are answered in the
+  agent's terminal.
 
 ### Also works with your existing agents
 
@@ -86,7 +88,7 @@ Claude Code, Codex, pi and OMP join the same workspace, teams and Compass as Mus
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/screen-map-dark.webp">
-  <img alt="The team map, three levels. team-lead-agent (LEAD, Muse Code) leads research-agent (Muse Code), pr-review-agent (Muse Code), dev-workflow-agent (Claude Code) and two repository builders. acme-api-muse (Muse Code) leads security-agent (Codex); acme-web-muse (Muse Code) leads frontend-ui-agent (Muse Code). Lit routes and an open ask from research-agent." src="assets/screenshots/screen-map-light.webp">
+  <img alt="The team map, three levels. team-lead-agent (LEAD, Muse Code) leads three HELPERs, research-agent and pr-review-agent (Muse Code) and dev-workflow-agent (Claude Code), and two BUILDERs. acme-api-muse (Muse Code) leads security-agent (Codex); acme-web-muse (Muse Code) leads frontend-ui-agent (Muse Code). research-agent's ask to the lead is lit, and pr-review-agent reads ? Need input." src="assets/screenshots/screen-map-light.webp">
 </picture>
 
 <sub>Illustrative UI with synthetic project data.</sub>
@@ -96,7 +98,8 @@ Claude Code, Codex, pi and OMP join the same workspace, teams and Compass as Mus
 1. Download `PenguPool-AI-<version>-mac-arm64.dmg` from the
    [latest release](https://github.com/nduwork/pengupool-ai/releases/latest). It runs on macOS on
    Apple Silicon.
-2. Open the disk image, drag **PenguPool AI.app** onto Applications, and open it.
+2. Open the disk image, drag **PenguPool AI.app** onto Applications, and open it. The app is notarized
+   by Apple, so macOS opens it with no unidentified-developer warning.
 3. For the walkthrough, install and sign in to **Muse Code**, Meta's coding agent. PenguPool also
    supports Claude Code, Codex, pi and OMP; it uses agents already installed on your Mac.
 
