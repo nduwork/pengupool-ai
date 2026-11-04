@@ -26,6 +26,21 @@ bash scripts/smoke.sh         # host smoke test: daemon, PTY session, attach, wo
 Tests never touch your real home: anything that writes an agent's settings runs on a temporary
 directory.
 
+## Releasing
+
+No CI builds or publishes releases. A maintainer (nduworker, or another account allowed to publish) builds,
+signs and notarizes each release on their own Mac, with the Developer ID identity and notary profile in that
+Mac's keychain:
+
+1. Bump `Version` in `cmd/pengupool/main.go`, add the release's entry to `CHANGELOG.md`, and merge to main.
+2. On a fresh clone of the latest main, run `make release` (it refuses another commit or uncommitted changes). It builds the disk image (`make dist`), then `make publish`
+   creates release `v<version>` at that commit (or uses it if it already exists) and attaches the image.
+   Re-running replaces the image. When the new release is the latest, older releases lose their disk images;
+   a prerelease or a backport keeps them.
+
+Pull requests and pushes to main are tested on GitHub-hosted runners (`test.yml`). Pull requests from forks
+run no CI.
+
 ## How it fits together
 
 ```
