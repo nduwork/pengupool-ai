@@ -1,0 +1,43 @@
+name: release
+
+# Builds, signs, notarizes and publishes the disk image as GitHub release v<version> (make release), from
+# main only, by hand: Actions → release → Run workflow. Signing and notarizing use the runner Mac's login
+# keychain (the Developer ID identity and the notarytool profile "pengupool"); no GitHub secret holds them.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # self-hosted: Go keeps its module and build cache on the runner
+      - name: Node from Homebrew
+        run: echo /opt/homebrew/bin >> "$GITHUB_PATH"
+      - name: Preflight
+        run: |
+          V=$(sed -n 's/^const Version = "\(.*\)"/\1/p' cmd/pengupool/main.go)
+          [ -n "$V" ] || { echo "::error::no version in cmd/pengupool/main.go"; exit 1; }
+          security find-identity -v -p codesigning | grep -q '"Developer ID Application: ' ||
+            { echo "::error::no Developer ID Application identity in the runner's keychain: the build could not be signed"; exit 1; }
+          xcrun notarytool history --keychain-profile pengupool >/dev/null 2>&1 ||
+            { echo "::error::notarytool cannot use the keychain profile \"pengupool\": the build could not be notarized"; exit 1; }
+          if gh release view "v$V" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "refs/tags/v$V" >/dev/null; then
+            echo "::error::release or tag v$V already exists: bump the version in cmd/pengupool/main.go first"; exit 1
+          fi
+          echo "releasing v$V from $(git rev-parse --short HEAD)"
+      - run: make release

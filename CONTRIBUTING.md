@@ -26,6 +26,13 @@ bash scripts/smoke.sh         # host smoke test: daemon, PTY session, attach, wo
 Tests never touch your real home: anything that writes an agent's settings runs on a temporary
 directory.
 
+## Releasing
+
+Bump `Version` in `cmd/pengupool/main.go` and add the release's entry to `CHANGELOG.md`, and merge that to
+main. Then run Actions → **release** → Run workflow (on main). It builds, signs and notarizes the disk image
+on the self-hosted Mac, with that Mac's keychain, and publishes it as release `v<version>` tagged at the
+built commit (`make release`).
+
 ## How it fits together
 
 ```
