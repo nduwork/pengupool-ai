@@ -235,6 +235,48 @@ func TestMigrateHubClonesTheCatalogAgain(t *testing.T) {
 	}
 }
 
+// Refresh after the hub was pushed again from scratch (fresh history): the catalog clone can never fast-forward,
+// so pullCatalog clones it again and the Refresh goes on, not only migrateHub at the next start. A pull that fails
+// for any other reason (here: the clone has a commit the hub lacks, and the hub moved on) still fails and keeps the clone.
+func TestRefreshClonesTheCatalogAgainWhenTheHubsHistoryWasReplaced(t *testing.T) {
+	st, _ := store.Open(t.TempDir())
+	hub, env := localHub(t, map[string]string{"README.md": "hub"})
+	p := New(Options{Store: st, Exe: "pengupool", Env: env})
+	ctx := context.Background()
+	d, err := p.pullCatalog(ctx)
+	if err != nil {
+		t.Fatalf("the first clone: %v", err)
+	}
+
+	// The hub pushed again from scratch: main is now an orphan history.
+	gitIn2(t, hub, "checkout", "-q", "--orphan", "fresh")
+	_ = os.WriteFile(filepath.Join(hub, "README.md"), []byte("fresh"), 0o644)
+	gitIn2(t, hub, "add", "-A")
+	gitIn2(t, hub, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "fresh")
+	gitIn2(t, hub, "branch", "-M", "fresh", "main")
+	want := gitIn2(t, hub, "rev-parse", "HEAD")
+	if got, err := p.pullCatalog(ctx); err != nil || got != d {
+		t.Fatalf("Refresh did not recover: %v (%s)", err, got)
+	}
+	if got := gitIn2(t, d, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("the clone is at %s, not the hub's fresh history %s", got, want)
+	}
+	if b, _ := os.ReadFile(filepath.Join(d, "README.md")); string(b) != "fresh" {
+		t.Fatalf("the clone's files: %q", b)
+	}
+
+	// Diverged but related: the pull fails as before, and the clone (with its local commit) is kept.
+	gitIn2(t, d, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "local")
+	local := gitIn2(t, d, "rev-parse", "HEAD")
+	gitIn2(t, hub, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "hub moved on")
+	if _, err := p.pullCatalog(ctx); err == nil {
+		t.Fatal("a diverged but related clone was pulled")
+	}
+	if got := gitIn2(t, d, "rev-parse", "HEAD"); got != local {
+		t.Fatal("a related clone was cloned again")
+	}
+}
+
 // A run cut short at any step is finished by the next start: a helper re-pointed before its key moved, a
 // key moved before its journal, and journal rows an un-upgraded machine wrote under the old key afterwards.
 func TestMigrateHubFinishesAnInterruptedRun(t *testing.T) {

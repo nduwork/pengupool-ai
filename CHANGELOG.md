@@ -14,6 +14,8 @@ In Settings → Decision model, the three tabs share one row of buttons (Save pr
 
 Each item under the bell's **Waiting on you** has a dismiss button (×). A dismissed item leaves the list, the bell's count, the dock badge and its macOS notification, though it still waits on you; it comes back when it changes (a new question, a new prompt) or when the app restarts. A member's unanswered ask keeps its button that closes the ask for good, now named **Close ask** (it was **Dismiss**).
 
+Refresh in the Library failed with "Not possible to fast-forward, aborting" once the Helper hub's history had been replaced (pushed again from scratch); only a restart recovered. Refresh now drops the catalog's clone, which is only a cache of the hub, and clones it again, the same way the app already did at start.
+
 ## 0.11.3
 
 A Muse Code session now shows **Muse Spark · Meta** and its model on its map card and session header, read from Muse's own status line; the session log records the model each turn. When Muse does not show its model, the label reads **Muse Code · Meta**.
