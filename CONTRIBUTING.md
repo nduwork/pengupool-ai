@@ -44,8 +44,10 @@ uncommitted changes), it builds the disk image (`make dist`), then `make publish
 at that commit (or uses it if it already exists) and attaches the image. Re-running replaces the image. When the
 new release is the latest, older releases lose their disk images; a prerelease or a backport keeps them.
 
-Pull requests and pushes to main are tested on GitHub-hosted runners (`test.yml`). Pull requests from forks
-run no CI, and no pull request reaches the release runner.
+Pull requests and pushes to main are tested on the maintainer's Mac (`test.yml`). Pull requests from forks run
+no CI: the test runner refuses them before their first step, even when a run is approved
+(`scripts/test-runner-gate.sh`, checked by `scripts/test-runner-gate_test.sh`), and no pull request reaches the
+release runner.
 
 ## How it fits together
 

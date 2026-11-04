@@ -1,7 +1,8 @@
 name: test
 
-# Pull requests and pushes run on GitHub-hosted runners. Only release.yml, started by hand, uses the
-# maintainer's Mac.
+# Pull requests and pushes to main run on the maintainer's Mac test runner. Its job-started hook
+# (scripts/test-runner-gate.sh) refuses any job that is not this workflow for a push to main or a pull request from
+# a branch of this repository, so a fork's pull request never runs there, even if its run is approved.
 on:
   pull_request:
   push:
@@ -16,7 +17,7 @@ permissions:
 
 jobs:
   go:
-    runs-on: macos-latest # the host has darwin-only code (pty, keychain, launchd)
+    runs-on: [pengupool-test]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -24,17 +25,21 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache: false # the Mac keeps its own Go caches
       - name: Git identity
-        # The tests make throwaway repositories, and git needs an identity to commit in them.
+        # The tests make throwaway repositories, and git needs an identity to commit in them. It goes in a
+        # job-only file, never the Mac user's own ~/.gitconfig.
         run: |
-          git config --global user.name "PenguPool CI"
-          git config --global user.email "ci@users.noreply.github.com"
+          echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig" >>"$GITHUB_ENV"
+          git config --file "$RUNNER_TEMP/gitconfig" user.name "PenguPool CI"
+          git config --file "$RUNNER_TEMP/gitconfig" user.email "ci@users.noreply.github.com"
       - run: go vet ./...
       - run: go test ./... -count=1
       - run: scripts/release-runner-gate_test.sh
+      - run: scripts/test-runner-gate_test.sh
 
   web:
-    runs-on: ubuntu-latest
+    runs-on: [pengupool-test]
     defaults:
       run:
         working-directory: web
@@ -44,9 +49,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+          node-version: 22 # no cache: the Mac keeps its own npm cache
       - run: npm ci
       - run: npx tsc --noEmit -p .
       - run: npx vitest run
