@@ -24,6 +24,7 @@ cat >"$T/bin/xcrun" <<'STUB'
 #!/bin/sh
 [ "$1" = notarytool ] || exit 0
 echo "$*" >>"$ARGS"
+[ -z "${ASC_KEY_P8:-}" ] || echo inherited >"$ARGS.env"
 while [ $# -gt 0 ]; do
   [ "$1" = --key ] && { echo "$2" >"$ARGS.path"; cp "$2" "$ARGS.key"; stat -f %Lp "$2" >"$ARGS.mode"; }
   shift
@@ -32,7 +33,8 @@ echo "{\"id\":\"sub-1\",\"status\":\"${STATUS:-Accepted}\"}"
 STUB
 printf '#!/bin/sh\nexit 0\n' >"$T/bin/spctl"
 chmod +x "$T/bin/"*
-run() { rm -f "$T/args"*; : >"$T/args"; ARGS="$T/args" PATH="$T/bin:$PATH" sh ./notarize.sh "$T/PenguPool AI.app" >"$T/out" 2>&1; }
+mkdir "$T/runner-temp"
+run() { rm -f "$T/args"*; : >"$T/args"; RUNNER_TEMP="$T/runner-temp" ARGS="$T/args" PATH="$T/bin:$PATH" sh ./notarize.sh "$T/PenguPool AI.app" >"$T/out" 2>&1; }
 KEY='-----BEGIN PRIVATE KEY-----
 MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgSECRETSECRETSECRET
 -----END PRIVATE KEY-----'
@@ -46,6 +48,8 @@ for k in "$KEY" "$B64"; do
   printf '%s\n' "$KEY" | cmp -s - "$T/args.key" || fail "all set: the key file does not hold the key"
   [ "$(cat "$T/args.mode")" = 600 ] || fail "the key file's mode is $(cat "$T/args.mode"), want 600"
   [ -e "$(cat "$T/args.path")" ] && fail "the key file was left behind"
+  case $(cat "$T/args.path") in "$T/runner-temp/"*) ;; *) fail "the key file is not under RUNNER_TEMP: $(cat "$T/args.path")" ;; esac
+  [ -e "$T/args.env" ] && fail "notarytool inherited ASC_KEY_P8"
   grep -q -- '--keychain-profile' "$T/args" && fail "all set: the keychain profile was used too"
   grep -q SECRET "$T/out" "$T/args" && fail "the key was printed or put on argv"
 done

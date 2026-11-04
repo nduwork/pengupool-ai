@@ -26,7 +26,7 @@ fi
 # By certificate hash, so two certificates with the same name are not ambiguous.
 ID=$(security find-identity -v -p codesigning | grep -F "\"$NAME\"" | awk '{print $2}' | head -1)
 [ -n "$ID" ] || { echo "no keychain identity for $NAME" >&2; exit 1; }
-T=$(mktemp -d) # only this user can open it
+T=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/notarize.XXXXXX") # only this user can open it; a runner clears RUNNER_TEMP even after a kill
 trap 'rm -rf "$T"' EXIT
 if [ -n "${ASC_KEY_P8:-}" ]; then
   case $ASC_KEY_P8 in
@@ -34,6 +34,7 @@ if [ -n "${ASC_KEY_P8:-}" ]; then
   *) printf '%s' "$ASC_KEY_P8" | base64 -D ;;
   esac | (umask 077 && cat >"$T/key.p8") # printf is built in, so the key is never in a process's arguments
   grep -q '^-----BEGIN PRIVATE KEY-----' "$T/key.p8" || { echo "ASC_KEY_P8 is not a .p8 key (PEM text or base64)" >&2; exit 1; }
+  unset ASC_KEY_P8 # no tool this script runs needs it now
   set -- --key "$T/key.p8" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID"
 else
   set -- --keychain-profile pengupool
