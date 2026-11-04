@@ -6,7 +6,7 @@
 VERSION          := $(shell sed -n 's/^const Version = "\(.*\)"/\1/p' cmd/pengupool/main.go)
 DIST             := build/PenguPool-AI-$(VERSION)-mac-arm64.dmg
 
-.PHONY: install install-app uninstall dist release app web build test smoke clean
+.PHONY: install install-app uninstall dist release publish app web build test smoke clean
 
 install: install-app
 
@@ -32,8 +32,14 @@ dist:
 	find build -maxdepth 1 -name 'PenguPool-AI-*-mac-arm64.dmg' ! -name '$(notdir $(DIST))' -delete # the new one replaces older images
 	@echo "built $(DIST)"
 
-# Publish the disk image as GitHub release v$(VERSION) of this repository, and delete older releases' images.
+# Build the disk image and publish it as GitHub release v$(VERSION) of this repository.
 release: dist
+	$(MAKE) publish
+
+# Publish the built disk image as release v$(VERSION), tagged at this commit, and delete older releases'
+# images. Only this step talks to GitHub: CI runs `make dist` without a token and gives it to this step alone.
+publish:
+	test -f $(DIST) || { echo "no $(DIST): run make dist first" >&2; exit 1; }
 	gh release create v$(VERSION) $(DIST) --target $$(git rev-parse HEAD) --title "PenguPool AI $(VERSION)" --notes "Open the disk image, drag PenguPool AI.app onto Applications, open it. See the README's Install section."
 	# Older releases keep their notes and tags; their disk images go, so the repository stores one.
 	gh release list --limit 200 --json tagName -q '.[].tagName | select(. != "v$(VERSION)")' | while read t; do \
