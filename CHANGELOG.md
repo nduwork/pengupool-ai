@@ -2,6 +2,14 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
+## 0.11.3
+
+A Muse Code session now shows **Muse Spark · Meta** and its model on its map card and session header, read from Muse's own status line; the session log records the model each turn. When Muse does not show its model, the label reads **Muse Code · Meta**.
+
+Muse Spark, through the Meta Model API, is the default check on tasks: when a member sends a task to one of its children, Muse Spark weighs the team's layout and picks who should do it. When it picks another child, the task goes there, marked rerouted, and the sender is told why; the sender can send it back with `pengupool send --override "<reason>"`, and the reason is recorded. Each checked task carries Muse Spark's model, pick and reasoning on the message, in both sessions' logs and as a **Muse Spark · Meta** badge in Agent messages. Set it up in Settings → Decision model → **Meta · Muse Spark** with a Meta API key; until a key is stored, nothing changes. Muse Spark answers with minimal reasoning. When it cannot be reached, the task goes as addressed, marked triage unavailable, so the team never waits on it. A `-contributor` model shows a note that Meta may train on the tasks sent.
+
+Whether a helper's finished job is kept in its Experience is now decided by the triage model; a job is skipped only on a confident no, and kept otherwise. A helper with no entries yet is told its Experience exists and how to search it.
+
 ## 0.11.2
 
 A Muse session no longer stays Active after its turn ends. Muse runs subagents, such as its memory reminder, in the session after a turn; their tool calls were taken for a new turn, so the session read Active until its next real turn and messages sent to it waited. Now the session reads Waiting when its turn ends, and messages reach it. A subagent's tool calls are still checked, as before. A Muse session stuck this way before updating recovers at its next turn.

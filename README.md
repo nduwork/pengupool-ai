@@ -64,7 +64,8 @@ your answer to the relevant session through its existing owner-input and answer 
 decisions in the loop across the Mac and Muse app. Other supported agents can join the same workspace.
 
 Coding uses the model selected by Muse Code. Memory/check-in triage uses a separately configured System
-One model; the local Tev1 default is Together AI's Qwen-based model.
+One model; the local Tev1 default is Together AI's Qwen-based model. Muse Spark is the default send-path
+triage once you add its key: it picks who gets each task a lead or builder sends, and the sender can keep its own pick with a recorded reason.
 [Model responsibilities](docs/harnesses.md#who-does-what).
 
 ## What you can do

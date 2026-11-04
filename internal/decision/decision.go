@@ -84,7 +84,7 @@ var (
 )
 
 // Thresholds are initial calibration candidates, not validated values.
-var Thresholds = map[string]float64{"route": 0.80, "model": 0.75, "skill": 0.30, "team": 0.70, "duplicate": 0.75, "agent": 0.50, "proceed": 0.80, "delegate": 0.80}
+var Thresholds = map[string]float64{"route": 0.80, "model": 0.75, "skill": 0.30, "team": 0.70, "duplicate": 0.75, "experience": 0.75, "agent": 0.50, "proceed": 0.80, "delegate": 0.80}
 
 // Formats PenguPool speaks.
 // Triage models speak System One only: online (Jev's) or local on Ollama. A general chat model

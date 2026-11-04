@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from "react";
 
 import { Unplug } from "lucide-react";
-import { harnessLabel, HOOKS_LONG, hooksAction, shownStatus, statusStyle, useApp } from "../../app/ctx";
+import { agentLabel, HOOKS_LONG, hooksAction, shownStatus, statusStyle, useApp } from "../../app/ctx";
 import type { SessionView } from "../../protocol/control";
 import { parseRunLog } from "../runlog";
 
@@ -31,7 +31,7 @@ export function SessionHover({ s }: { s: SessionView }): ReactElement {
     <div className="grid max-w-72 grid-cols-1 gap-0.5">
       <strong>{s.name}</strong>
       <span className={statusStyle(shownStatus(s, app.gates, app.domain.approvals)).text}>
-        {statusStyle(shownStatus(s, app.gates, app.domain.approvals)).label} · {harnessLabel(s.harness)}
+        {statusStyle(shownStatus(s, app.gates, app.domain.approvals)).label} · {agentLabel(s)}
       </span>
       {s.question !== undefined && s.question !== "" ? <span className="text-foreground [overflow-wrap:anywhere]">{s.question}</span> : null}
       {s.hooks_missing === true ? (

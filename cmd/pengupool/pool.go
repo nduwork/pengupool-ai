@@ -298,6 +298,7 @@ func cmdSend(args []string) error {
 	to := fs.String("to", "", "member name or session id")
 	typ := fs.String("type", "", "tell, ask, done or blocked (default: by the first line, Done:/Ask:/Blocked:, else tell)")
 	replyTo := fs.String("reply-to", "", "the id of the ask this answers")
+	override := fs.String("override", "", "keep this recipient for a task Muse Spark would reroute to another child, and say why")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -310,15 +311,19 @@ func cmdSend(args []string) error {
 	if from == "" {
 		return errors.New("send works from inside a PenguPool team session")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Past Muse Spark's 10 s task check (decision.SparkTimeout), so a slow check never reads as a failed send.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	res, err := rpc(ctx, poolStore(), "message.send", map[string]string{"from": from, "to": *to, "text": text, "type": *typ, "reply_to": *replyTo})
+	res, err := rpc(ctx, poolStore(), "message.send", map[string]string{"from": from, "to": *to, "text": text, "type": *typ, "reply_to": *replyTo, "override": *override})
 	if err != nil {
 		return err
 	}
 	var out map[string]string
 	_ = json.Unmarshal(res, &out)
 	fmt.Printf("sent to %s (delivered when it is idle)\n", out["to"])
+	if out["note"] != "" {
+		fmt.Println(out["note"])
+	}
 	return nil
 }
 

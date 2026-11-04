@@ -41,7 +41,9 @@ merging it with a line that already says it. Edit, merge or delete lines in the 
 
 ## Helpers' journals
 
-When a helper reports `Done: <title>` to its parent, that report becomes an entry in its journal.
+When a helper reports `Done: <title>` to its parent, that report becomes an entry in its journal,
+unless your triage model is sure it is trivial or a duplicate of a recent entry; each decision is on
+the helper's session log.
 The next time the helper works, it starts with the index of its past jobs and the entries that
 match the task, and reads one in full with `pengupool experience show`. Each journal is private to its
 helper. You can list, open and delete entries on the Helpers page.

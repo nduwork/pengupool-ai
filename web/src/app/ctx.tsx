@@ -263,6 +263,11 @@ export function hooksAction(h: string | undefined): string {
   return `Restart the session. If it stays, update ${harnessLabel(h)} or ${check}.`;
 }
 
+/** The session's agent as the app names it: the host's Meta label for Muse Code, else the harness's. */
+export function agentLabel(s: { harness?: string; agent?: string }): string {
+  return s.agent !== undefined && s.agent !== "" ? s.agent : harnessLabel(s.harness);
+}
+
 export function harnessLabel(h: string | undefined): string {
   return AGENTS.find((a) => a.id === h)?.label ?? { shell: "Shell", custom: "Command" }[h ?? "shell"] ?? h ?? "Shell";
 }

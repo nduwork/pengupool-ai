@@ -187,6 +187,9 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	if m, ok := pl["model"].(string); ok && m != "" && m != s.Model {
 		p.setSession(s.ID, func(x *store.Session) { x.Model = m })
 	}
+	if in.Event == "Stop" && s.Harness == harness.Muse {
+		p.museTurnModel(s)
+	}
 
 	switch in.Event {
 	case "Stop", "TurnFailed", "SessionStart", "SessionEnd": // Interrupted clears them below, past its guard
@@ -625,6 +628,14 @@ func copilotTool(pl map[string]any) {
 // PenguPool session is an in-process teammate.
 func (p *Pool) guardSendMessage(s store.Session, pl map[string]any) HookOut {
 	target, ok := p.sendTarget(pl)
+	if ok && target != "" && p.isChild(s.ID, target) && sparkOn(p) {
+		// Muse Spark checks every task a parent sends a child; a native send would pass it by.
+		return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
+			"hookEventName":            "PreToolUse",
+			"permissionDecision":       "deny",
+			"permissionDecisionReason": "PenguPool: send tasks with `" + p.cli() + " send --to <member> \"...\"` so triage can record them (Muse Spark checks who gets each task).",
+		}})
+	}
 	if ok && p.mayTalk(s.ID, target) {
 		p.mu.Lock()
 		if p.nativeTo == nil {
@@ -641,6 +652,15 @@ func (p *Pool) guardSendMessage(s store.Session, pl map[string]any) HookOut {
 		"permissionDecision":       "deny",
 		"permissionDecisionReason": "PenguPool: agents talk only to their parent and children on their team, and that session is neither, or the name is shared by more than one session. Message your parent; it passes on what others need. To reach a teammate whatever its name, run `" + p.cli() + " send --to <session id>` with the id from your Team members list. Only the owner can open a channel to another session, by typing @<session> in your prompt.",
 	}})
+}
+
+func sparkOn(p *Pool) bool { _, on := p.sparkActive(); return on }
+
+// isChild: child is an active member whose parent on the team's tree is parent.
+func (p *Pool) isChild(parent, child string) bool {
+	d := p.st.State().Domain
+	t := teamOf(&d, parent)
+	return t != nil && child != parent && treeParent(t, child) == parent
 }
 
 // sendTarget is the PenguPool session a SendMessage names, if it names one. Claude delivers a

@@ -50,6 +50,9 @@ func (p *Pool) routeTurn(s store.Session, prompt string) (who, note string) {
 	if len(strings.Fields(prompt)) < 4 || strings.HasPrefix(prompt, "[PenguPool notice") || strings.HasPrefix(prompt, "[PenguPool triage]") {
 		return "", ""
 	}
+	if _, on := p.sparkActive(); on { // Muse Spark checks each task at send time: the one recipient decider
+		return "", ""
+	}
 	d := p.st.State().Domain
 	t := teamOf(&d, s.ID)
 	if t == nil || leadOf(t) != s.ID {
@@ -260,6 +263,9 @@ func (p *Pool) guardRoute(s store.Session, pl map[string]any) (HookOut, bool) {
 	who := p.routed[s.ID]
 	p.mu.Unlock()
 	if who == "" {
+		return HookOut{}, false
+	}
+	if _, on := p.sparkActive(); on {
 		return HookOut{}, false
 	}
 	name := who

@@ -587,6 +587,44 @@ var promptMarkers = map[string]string{
 	harness.Muse:  "Voice input (⌥ + v to start)",
 }
 
+// museStatusRe is Muse's status line under its prompt (1.4.14): "<model> · <effort> · <folder> · <mode>".
+// ponytail: tied to that layout; a Muse that changes it shows "Muse Code · Meta" with no model.
+var museStatusRe = regexp.MustCompile(`(?m)^\s*(\S+) · (?:minimal|low|medium|high|xhigh|max) · `)
+
+// museModel keeps the model Muse shows on its own status line: Muse's hooks carry no model, so its
+// screen is the evidence. It returns the model, or "" when the line is not on screen. The status line
+// is under the prompt, so the last match is it: agent output above can look the same.
+func (p *Pool) museModel(id, screen string) string {
+	all := museStatusRe.FindAllStringSubmatch(screen, -1)
+	if all == nil {
+		return ""
+	}
+	m := all[len(all)-1]
+	if s, ok := p.session(id); ok && s.Model != m[1] {
+		p.setSession(id, func(x *store.Session) { x.Model = m[1] })
+	}
+	return m[1]
+}
+
+// museTurnModel logs the model a Muse turn ran on, from its status line now, else the --model it was
+// started with; the session log then says per turn what the agent ran on.
+func (p *Pool) museTurnModel(s store.Session) {
+	text := ""
+	if p.testScreen != nil {
+		text, _ = p.testScreen(s.ID)
+	} else if p.hub != nil {
+		text, _ = p.hub.ScreenText(s.ID)
+	}
+	switch m := p.museModel(s.ID, text); {
+	case m != "":
+		p.logLine(s.ID, "turn: model "+m+" (Muse status line)")
+	case s.LaunchModel != "":
+		p.logLine(s.ID, "turn: model "+s.LaunchModel+" (--model)")
+	default:
+		p.logLine(s.ID, "turn: model not shown")
+	}
+}
+
 func (p *Pool) readyByPrompt() {
 	screen := p.hub.ScreenText
 	if p.testScreen != nil {
@@ -597,8 +635,12 @@ func (p *Pool) readyByPrompt() {
 		if !ok || s.State != "running" || s.Status != "starting" {
 			continue
 		}
-		if text, ok := screen(s.ID); !ok || !strings.Contains(text, marker) {
+		text, ok := screen(s.ID)
+		if !ok || !strings.Contains(text, marker) {
 			continue
+		}
+		if s.Harness == harness.Muse {
+			p.museModel(s.ID, text) // its label shows the model before its first turn
 		}
 		changed := false
 		p.setSession(s.ID, func(x *store.Session) {

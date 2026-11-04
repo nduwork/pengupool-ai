@@ -3,12 +3,12 @@ import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
-import { URGENCY, ctxClass, harnessLabel, isShell, shownStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
+import { URGENCY, agentLabel, ctxClass, isShell, shownStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
 import { Button } from "../../components/ui/button";
 import { Badge, Empty, RoleTag, Select, Tip, type Role } from "../../components/ui/controls";
 import { cn } from "../../lib/utils";
 import type { SessionView } from "../../protocol/control";
-import type { Team, TeamMessage } from "../../protocol/domain";
+import type { Team, TeamMessage, Triage } from "../../protocol/domain";
 import { ProposalSheet } from "../Approvals";
 import { FormationSheet, leadOf, roleOf } from "../Formation";
 import { SessionHover, UnreadDot } from "./SessionBits";
@@ -285,8 +285,8 @@ export function TeamMap(): ReactElement {
               <UnreadDot id={s.id} />
             </span>
             <span className="line-clamp-2 pr-8 text-[12px] font-semibold text-foreground [overflow-wrap:anywhere]">{s.name}</span>
-            <span className={cn("truncate text-muted-foreground", mine.length > 1 ? "pr-[4.5rem]" : mine.length > 0 && "pr-10")}>
-              {harnessLabel(s.harness)}
+            <span className={cn("truncate text-muted-foreground", mine.length > 1 ? "pr-[4.5rem]" : mine.length > 0 && "pr-10")} title={agentLabel(s)}>
+              {agentLabel(s)}
               {s.hooks_missing === true ? (
                 <span className="ml-1 inline-flex items-center gap-0.5 align-bottom text-foreground">
                   <Unplug className="size-2.5 shrink-0" aria-hidden />
@@ -623,6 +623,17 @@ function Legend({ color, thick, children }: { color: string; thick?: boolean; ch
   );
 }
 
+/** The badge's tooltip: Muse Spark's pick and reasoning, or why it could not check the task. */
+function sparkTitle(t: Triage): string {
+  const what =
+    t.outcome === "unavailable"
+      ? `could not check this task (${t.cause ?? "no answer"}); sent as addressed`
+      : t.outcome === "rerouted"
+        ? `sent this to ${t.pick ?? ""} instead of ${t.named ?? ""}: ${t.reasoning ?? ""}`
+        : `picked ${t.pick ?? ""}: ${t.reasoning ?? ""}${t.override !== undefined ? ` · the sender kept its own pick: ${t.override}` : ""}`;
+  return `Muse Spark ${what} · ${t.model ?? ""} · ${t.latency_ms} ms`;
+}
+
 /** Agent messages: every routed team message, grouped by team (the team with the newest message first),
  *  coloured by its edge (as v1's Log); click a team to fold it, a message to read it whole. */
 export function MessageLog(): ReactElement {
@@ -697,6 +708,13 @@ export function MessageLog(): ReactElement {
                 >
                   {name(m.from)} → {name(m.to)}
                 </span>
+                {m.triage !== undefined ? (
+                  <span className="shrink-0" title={sparkTitle(m.triage)}>
+                    <Badge tone={m.triage.outcome === "agreed" ? "info" : m.triage.outcome === "overridden" || m.triage.outcome === "rerouted" ? "warning" : "neutral"}>
+                      Muse Spark · Meta{m.triage.outcome === "agreed" ? "" : ` · ${m.triage.outcome}`}
+                    </Badge>
+                  </span>
+                ) : null}
                 <span
                   className={cn(
                     "min-w-0 flex-1 text-muted-foreground",
