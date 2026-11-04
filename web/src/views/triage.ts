@@ -48,3 +48,8 @@ export function watchTriage(read: () => Promise<TriageStatus | null>, set: (t: T
   const t = setInterval(load, intervalMs);
   return () => clearInterval(t);
 }
+
+/** The Spark tab's note for a Meta -contributor model id, whose prompts and answers Meta may train on; null otherwise. */
+export function contributorNote(model: string | undefined): string | null {
+  return model?.trim().endsWith("-contributor") === true ? "Contributor mode: Meta may train on the tasks sent for triage." : null;
+}

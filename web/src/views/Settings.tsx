@@ -14,7 +14,7 @@ import { GitHubAccount } from "./GitHub";
 import { UpdateSheet } from "./Update";
 import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
-import { formatName, type RemovedModel } from "./triage";
+import { contributorNote, formatName, type RemovedModel } from "./triage";
 
 // Settings, one subpanel per topic: General (the host, updates, terminal history, the daily backup),
 // Agents (which are installed, Claude Code on Ollama), Decision model, GitHub (the account and sync),
@@ -192,6 +192,7 @@ function SparkPane({ onSaved }: { onSaved: () => void }): ReactElement {
         Model
         <Input value={draft.model ?? ""} onChange={(e) => set("model", e.target.value)} className="font-mono" placeholder="muse-spark-1.3" />
       </Label>
+      {contributorNote(draft.model) !== null ? <p className="text-caption text-warning">{contributorNote(draft.model)}</p> : null}
       <div className="flex flex-wrap gap-2">
         <Button variant={unchanged ? "secondary" : "default"} onClick={() => void save(draft)}>
           Save

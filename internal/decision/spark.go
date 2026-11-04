@@ -81,11 +81,19 @@ func Spark(ctx context.Context, c store.SparkConfig, sender, task string, childr
 	p := &httpProvider{cfg: store.ProviderConfig{Type: "meta", Address: strings.TrimRight(c.Address, "/") + "/chat/completions", Model: c.Model},
 		client: &http.Client{Timeout: 30 * time.Second}}
 	user, _ := json.Marshal(map[string]any{"sender": sender, "task": Redact(task), "members": children})
+	names := make([]string, len(children))
+	for i, m := range children {
+		names[i] = m.Name
+	}
+	// Structured output (dev.meta.ai/docs/structured-output): the answer is this schema's JSON as the
+	// message text. extractJSON still reads a reply that wrapped it, and anything else fails open.
+	schema := map[string]any{"type": "object", "required": []string{"recipient", "reasoning"}, "additionalProperties": false,
+		"properties": map[string]any{"recipient": map[string]any{"type": "string", "enum": names}, "reasoning": map[string]any{"type": "string"}}}
 	start := time.Now()
 	raw, err := p.post(ctx, key, map[string]any{"model": c.Model, "messages": []any{
 		map[string]string{"role": "system", "content": sparkSystem},
 		map[string]string{"role": "user", "content": string(user)},
-	}}, nil)
+	}, "response_format": map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "task_pick", "schema": schema}}}, nil)
 	var text, model string
 	if err == nil {
 		text, model, err = chatText(raw)

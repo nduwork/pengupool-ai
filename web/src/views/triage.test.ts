@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { type TriageStatus, triagePrompt, watchTriage } from "./triage";
+import { contributorNote, type TriageStatus, triagePrompt, watchTriage } from "./triage";
 
 describe("triagePrompt", () => {
   it("asks for a triage model while it is missing or not answering, and is quiet once it works", () => {
@@ -30,5 +30,13 @@ describe("watchTriage", () => {
     expect(shown).toContain("not answering (connection refused)");
     stop();
     vi.useRealTimers();
+  });
+});
+
+describe("contributorNote", () => {
+  it("notes a -contributor model only", () => {
+    expect(contributorNote("muse-spark-1.3-contributor")).toBe("Contributor mode: Meta may train on the tasks sent for triage.");
+    expect(contributorNote("muse-spark-1.3")).toBeNull();
+    expect(contributorNote(undefined)).toBeNull();
   });
 });

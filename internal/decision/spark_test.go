@@ -38,8 +38,22 @@ func chatReply(w http.ResponseWriter, content string) {
 
 func TestSpark(t *testing.T) {
 	var got struct {
-		Model    string `json:"model"`
-		Messages []struct{ Content string }
+		Model          string `json:"model"`
+		Messages       []struct{ Content string }
+		ResponseFormat struct {
+			Type       string `json:"type"`
+			JSONSchema struct {
+				Name   string `json:"name"`
+				Schema struct {
+					Required   []string `json:"required"`
+					Properties struct {
+						Recipient struct {
+							Enum []string `json:"enum"`
+						} `json:"recipient"`
+					} `json:"properties"`
+				} `json:"schema"`
+			} `json:"json_schema"`
+		} `json:"response_format"`
 	}
 	var path, auth string
 	reply := "Sure.\n```json\n{\"recipient\": \"API-builder\", \"reasoning\": \"It owns\\nthe API.\"}\n```"
@@ -61,6 +75,11 @@ func TestSpark(t *testing.T) {
 	}
 	if path != "/v1/chat/completions" || auth != "Bearer k-test" || got.Model != "muse-spark-1.3" || len(got.Messages) != 2 {
 		t.Fatalf("request: %s %q %+v", path, auth, got)
+	}
+	// Structured output: a json_schema whose recipient is one of the sender's children's names.
+	if rf := got.ResponseFormat; rf.Type != "json_schema" || rf.JSONSchema.Name == "" || strings.Join(rf.JSONSchema.Schema.Required, ",") != "recipient,reasoning" ||
+		strings.Join(rf.JSONSchema.Schema.Properties.Recipient.Enum, ",") != "api-builder,ui-helper" {
+		t.Fatalf("response_format %+v", rf)
 	}
 	if user := got.Messages[1].Content; strings.Contains(user, "AKIA") || !strings.Contains(user, "ui-helper") || !strings.Contains(user, `"busy":true`) {
 		t.Fatalf("the task was not redacted, or the team not sent: %s", user)

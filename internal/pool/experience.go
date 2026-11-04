@@ -13,12 +13,13 @@ import (
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/agentdb"
+	"github.com/nduwork/pengupool-ai/internal/decision"
 	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
-// A helper's experience is a journal: an entry per finished job, its title and the helper's own Done
+// A helper's experience is a journal: an entry per finished job worth keeping (keepReport), its title and the helper's own Done
 // report, kept whole, as the body (docs/specs/2026-10-25-experience-journal-design.md). A helper's
 // message to its parent that starts "Done:" is the report; the agents' context says how to write it
 // (reportHow): one task, its result and evidence.
@@ -49,7 +50,41 @@ func (p *Pool) doneReport(m protocol.TeamMessage) {
 	if title == "" {
 		title = "Done"
 	}
-	p.addEntry(agentOf(*sk), t.ID, time.Now(), title, m.Text)
+	helper, at := agentOf(*sk), time.Now()
+	prov := p.decider()
+	if prov == nil {
+		p.addEntry(helper, t.ID, at, title, m.Text)
+		p.logLine(m.From, fmt.Sprintf("experience: kept %q provider=none", title))
+		return
+	}
+	go p.keepReport(prov, m.From, helper, t.ID, at, title, m.Text) // off the send path
+}
+
+// keepReport asks the triage model whether a finished job is worth keeping in the helper's
+// Experience, and keeps it unless the answer is a calibrated no at the "experience" threshold: an
+// unsure answer, an error or a timeout keeps it, so nothing is lost.
+func (p *Pool) keepReport(prov decision.Provider, session, helper, team string, at time.Time, title, body string) {
+	var recent []string
+	if es, err := p.db.ListExperience(helper); err == nil {
+		for _, e := range es[:min(5, len(es))] {
+			recent = append(recent, e.Title)
+		}
+	}
+	res, err := p.ask(prov, map[string]any{"title": title, "report": clip(redactSecrets(body), 3000), "newest_entries": recent},
+		[]decision.Question{{Name: "keep", Type: decision.Predicate, Instructions: "Is this finished job worth keeping in the helper's Experience: a result or lesson the helper could reuse later, not a trivial job and not a duplicate of one of its newest entries?" + asData}})
+	if err != nil {
+		p.addEntry(helper, team, at, title, body)
+		p.logLine(session, fmt.Sprintf("experience: kept %q provider=%s error=%q", title, prov.Name(), oneLine(err.Error())))
+		return
+	}
+	a := res.Answers["keep"]
+	verdict := "kept"
+	if res.Calibrated && a.Yes < 0.5 && a.Confidence >= decision.Thresholds["experience"] {
+		verdict = "skipped"
+	} else {
+		p.addEntry(helper, team, at, title, body)
+	}
+	p.logLine(session, fmt.Sprintf("experience: %s %q p=%.2f provider=%s model=%s", verdict, title, a.Yes, res.Provider, res.Model))
 }
 
 // reportsTo is the member a helper reports to: its parent on the team's tree, or the LEAD when it
@@ -84,14 +119,17 @@ func clipBytes(s string, n int) string {
 // journalLines is a helper's context lines for a task: the entries that best match its words (common
 // words left out), "[id] date · title", whole rows only, at most journalIndex and journalIndexBytes,
 // then how many more there are. With no match the newest are listed under a heading that says so.
-// "" when the helper has no entries.
+// A helper with no entries gets one line saying its journal exists and how it fills.
 func (p *Pool) journalLines(helper, team, task string) string {
 	if p.db == nil {
 		return ""
 	}
 	es, total, matched, err := p.db.SearchExperience(helper, team, strings.Join(words(task), " "), journalIndex)
-	if err != nil || len(es) == 0 {
+	if err != nil {
 		return ""
+	}
+	if len(es) == 0 {
+		return "\n## Your Experience (empty so far)\nYou have an Experience journal. Finished jobs you report to your parent with `Done:` are kept there when worth keeping. Search it with `" + p.cli() + " experience search <words>`.\n"
 	}
 	var b strings.Builder
 	if matched {

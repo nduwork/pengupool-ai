@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/agentdb"
+	"github.com/nduwork/pengupool-ai/internal/decision"
 	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
@@ -395,5 +397,71 @@ func TestLastCompaction(t *testing.T) {
 	}
 	if _, s := lastCompaction(harness.Claude, path); s != "" {
 		t.Fatalf("claude read a pi record: %q", s)
+	}
+}
+
+// keepDecider answers the "keep" question with yes, calibrated or not, or fails.
+type keepDecider struct {
+	yes, conf  float64
+	calibrated bool
+	err        error
+	asked      chan decision.Request
+}
+
+func (d *keepDecider) Name() string { return "fake-s1" }
+func (d *keepDecider) Decide(_ context.Context, req decision.Request) (decision.Response, error) {
+	d.asked <- req
+	return decision.Response{Provider: "fake-s1", Model: "s1-test", Calibrated: d.calibrated,
+		Answers: map[string]decision.Answer{"keep": {Type: decision.Predicate, Yes: d.yes, Confidence: d.conf}}}, d.err
+}
+
+// A Done: report is kept unless triage gives a calibrated no at the threshold: an unsure or
+// uncalibrated answer and a failed call keep it. Each decision is a line on the helper's log.
+func TestExperienceSaveIsTriageDecided(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		d    keepDecider
+		want string
+	}{
+		{"kept", keepDecider{yes: 0.9, conf: 0.9, calibrated: true}, `experience: kept "fixed the cache" p=0.90 provider=fake-s1 model=s1-test`},
+		{"skipped", keepDecider{yes: 0.1, conf: 0.9, calibrated: true}, `experience: skipped "fixed the cache" p=0.10 provider=fake-s1 model=s1-test`},
+		{"unsure keeps", keepDecider{yes: 0.4, conf: 0.6, calibrated: true}, `experience: kept "fixed the cache" p=0.40`},
+		{"uncalibrated no keeps", keepDecider{yes: 0.1, conf: 0.9}, `experience: kept "fixed the cache" p=0.10`},
+		{"error keeps", keepDecider{err: decision.ErrTimeout}, `experience: kept "fixed the cache" provider=fake-s1 error="provider_timeout"`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			p, _, _ := journalSetup(t, harness.Claude)
+			runLog := filepath.Join(t.TempDir(), "plan.log")
+			_ = p.st.Update(func(s *store.State) error { s.Sessions[sessionIndex(s, plan)].RunLog = runLog; return nil })
+			_, _ = p.db.AddExperience(agentdb.Entry{Helper: planKey, At: "2026-10-01T10:00:00Z", Title: "an older job", Body: "b"})
+			d := c.d
+			d.asked = make(chan decision.Request, 1)
+			p.testDecider = &d
+			p.doneReport(done("Done: fixed the cache\nkey sk-ant-abcdefghijklmnopqrstuvwxyz0123 and evidence"))
+			req := <-d.asked
+			if st, _ := json.Marshal(req.State); !strings.Contains(string(st), "an older job") || strings.Contains(string(st), "sk-ant-") {
+				t.Fatalf("state %s", st)
+			}
+			var logged string
+			for i := 0; i < 400 && !strings.Contains(logged, "experience:"); i++ {
+				time.Sleep(5 * time.Millisecond)
+				b, _ := os.ReadFile(runLog)
+				logged = string(b)
+			}
+			if !strings.Contains(logged, c.want) {
+				t.Fatalf("log %q, want %q", logged, c.want)
+			}
+			if n := len(entries(t, p)); n != map[bool]int{true: 1, false: 2}[c.name == "skipped"] {
+				t.Fatalf("%d entries", n)
+			}
+		})
+	}
+}
+
+// A helper with no entries is still told its Experience exists, how it fills and how to search it.
+func TestEmptyJournalLine(t *testing.T) {
+	p, _, _ := journalSetup(t, harness.Claude)
+	if out := p.journalLines(planKey, "", "anything"); !strings.Contains(out, "You have an Experience journal") || !strings.Contains(out, "`Done:`") || !strings.Contains(out, "experience search <words>") {
+		t.Fatalf("empty journal: %q", out)
 	}
 }

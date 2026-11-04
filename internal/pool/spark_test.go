@@ -18,7 +18,7 @@ import (
 
 // sparkTeam is twoTeams with web and plan under lead on the tree (Claude Code sessions), and a fake
 // Meta Model API answering reply (a status, or a chat completion's text). Spark is set up only with key.
-func sparkTeam(t *testing.T, key bool, reply *string) (*Pool, *atomic.Int32) {
+func sparkTeam(t *testing.T, key bool, reply *atomic.Pointer[string]) (*Pool, *atomic.Int32) {
 	t.Helper()
 	p, st := twoTeams(t)
 	_ = st.Update(func(s *store.State) error {
@@ -35,13 +35,13 @@ func sparkTeam(t *testing.T, key bool, reply *string) (*Pool, *atomic.Int32) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		switch *reply {
+		switch r := *reply.Load(); r {
 		case "500":
 			http.Error(w, "overloaded", 500)
 		case "slow":
 			time.Sleep(300 * time.Millisecond)
 		default:
-			_ = json.NewEncoder(w).Encode(map[string]any{"model": "muse-spark-1.3", "choices": []any{map[string]any{"message": map[string]string{"content": *reply}}}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"model": "muse-spark-1.3", "choices": []any{map[string]any{"message": map[string]string{"content": r}}}})
 		}
 	}))
 	t.Cleanup(srv.Close)
@@ -55,6 +55,8 @@ func sparkTeam(t *testing.T, key bool, reply *string) (*Pool, *atomic.Int32) {
 	return p, &calls
 }
 
+func ptr(s string) *string { return &s }
+
 const pickWeb = `{"recipient":"web","reasoning":"web owns the UI"}`
 
 // Spark not active (the default before a key, or a key that does not resolve, or turned off): a send
@@ -66,7 +68,8 @@ func TestSparkInactiveChangesNothing(t *testing.T) {
 		"off":                 func(c *store.SparkConfig) { c.Off = true },
 	} {
 		t.Run(name, func(t *testing.T) {
-			reply := pickWeb
+			var reply atomic.Pointer[string]
+			reply.Store(ptr(pickWeb))
 			p, calls := sparkTeam(t, name == "off", &reply)
 			_ = p.st.UpdateConfig(func(c *store.Config) error { set(&c.Decision.Spark); return nil })
 			res, err := p.messageSend(context.Background(), sendIn{From: "leadaaaaaaaa", To: "plan", Text: "Plan the release"})
@@ -87,7 +90,8 @@ func TestSparkOutcomes(t *testing.T) {
 	defer func(d time.Duration) { decision.SparkTimeout = d }(decision.SparkTimeout)
 	decision.SparkTimeout = 50 * time.Millisecond
 	ctx := context.Background()
-	reply := pickWeb
+	var reply atomic.Pointer[string]
+	reply.Store(ptr(pickWeb))
 	p, _ := sparkTeam(t, true, &reply)
 	sent := func(in sendIn) protocol.TeamMessage {
 		t.Helper()
@@ -124,7 +128,7 @@ func TestSparkOutcomes(t *testing.T) {
 
 	// Unavailable: delivered as addressed, marked, with the cause on the record.
 	for _, r := range []string{"500", "slow", "not json at all", `{"recipient":"other","reasoning":"x"}`} {
-		reply = r
+		reply.Store(&r)
 		m = sent(sendIn{From: "leadaaaaaaaa", To: "plan", Text: "Plan the release"})
 		if tr := m.Triage; m.To != "planaaaaaaaa" || tr == nil || tr.Outcome != "unavailable" || tr.Cause == "" ||
 			m.Text != "[Triage · Muse Spark (Meta) · muse-spark-1.3] triage unavailable; sent as addressed\nPlan the release" {
@@ -135,7 +139,8 @@ func TestSparkOutcomes(t *testing.T) {
 
 // Only a tell from a parent to its child is checked: upward sends, asks, done and replies are not.
 func TestSparkChecksOnlyParentToChildTells(t *testing.T) {
-	reply := pickWeb
+	var reply atomic.Pointer[string]
+	reply.Store(ptr(pickWeb))
 	p, calls := sparkTeam(t, true, &reply)
 	ctx := context.Background()
 	res, err := p.messageSend(ctx, sendIn{From: "webaaaaaaaaa", To: "lead", Text: "Ask: which port?"})
@@ -165,7 +170,8 @@ func TestSparkChecksOnlyParentToChildTells(t *testing.T) {
 // With Spark active, a Claude SendMessage from a parent to its child is refused (it would pass the
 // check by), and System One's route hold is off; neither changes while Spark is not active.
 func TestSparkNativeSendAndRouteHold(t *testing.T) {
-	reply := pickWeb
+	var reply atomic.Pointer[string]
+	reply.Store(ptr(pickWeb))
 	p, _ := sparkTeam(t, false, &reply)
 	lead, _ := p.session("leadaaaaaaaa")
 	web, _ := p.session("webaaaaaaaaa")
