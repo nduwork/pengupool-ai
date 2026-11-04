@@ -220,10 +220,12 @@ export interface TeamMessage {
 export interface Triage {
   provider: string;
   model?: string;
+  /** The recipient the sender named. */
+  named?: string;
   /** The member Spark picked. */
   pick?: string;
   reasoning?: string;
-  /** agreed | overridden (the sender kept its own pick) | unavailable (no answer: sent as addressed) */
+  /** agreed | rerouted (delivered to Spark's pick) | overridden (the sender kept its own pick) | unavailable (no usable answer: sent as addressed) */
   outcome: string;
   override?: string;
   cause?: string;

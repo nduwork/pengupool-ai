@@ -258,7 +258,8 @@ type TeamMessage struct {
 type Triage struct {
 	Provider  string `json:"provider"` // meta
 	Model     string `json:"model,omitempty"`
-	Pick      string `json:"pick,omitempty"` // the member's name
+	Named     string `json:"named,omitempty"` // the recipient the sender named
+	Pick      string `json:"pick,omitempty"`  // the member Spark picked, by name
 	Reasoning string `json:"reasoning,omitempty"`
 	Outcome   string `json:"outcome"`
 	Override  string `json:"override,omitempty"`

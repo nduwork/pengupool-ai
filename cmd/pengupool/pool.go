@@ -298,7 +298,7 @@ func cmdSend(args []string) error {
 	to := fs.String("to", "", "member name or session id")
 	typ := fs.String("type", "", "tell, ask, done or blocked (default: by the first line, Done:/Ask:/Blocked:, else tell)")
 	replyTo := fs.String("reply-to", "", "the id of the ask this answers")
-	override := fs.String("override", "", "keep this recipient for a task Muse Spark would give another child, and say why")
+	override := fs.String("override", "", "keep this recipient for a task Muse Spark would reroute to another child, and say why")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -321,6 +321,9 @@ func cmdSend(args []string) error {
 	var out map[string]string
 	_ = json.Unmarshal(res, &out)
 	fmt.Printf("sent to %s (delivered when it is idle)\n", out["to"])
+	if out["note"] != "" {
+		fmt.Println(out["note"])
+	}
 	return nil
 }
 

@@ -109,14 +109,22 @@ func TestSparkOutcomes(t *testing.T) {
 		t.Fatalf("agreed: %+v %+v", m, m.Triage)
 	}
 
-	// Disagreed: refused, naming Spark's pick and why; nothing is sent.
-	before := len(p.st.State().Domain.Messages)
-	_, err := p.messageSend(ctx, sendIn{From: "leadaaaaaaaa", To: "plan", Text: "Build the cart page"})
-	if protocol.CodeOf(err) != protocol.CodeConflict || !strings.Contains(err.Error(), "to web, not plan (web owns the UI)") || !strings.Contains(err.Error(), "--override") {
-		t.Fatalf("disagreed: %v", err)
+	// Rerouted: Spark picked another running child, so the task goes there; the record names both,
+	// and the sender is told how to keep its own pick.
+	res, err := p.messageSend(ctx, sendIn{From: "leadaaaaaaaa", To: "plan", Text: "Build the cart page"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(p.st.State().Domain.Messages) != before {
-		t.Fatal("a refused task was put on the record")
+	out := res.(map[string]string)
+	m = message(p, out["id"])
+	ws, _ := p.session("webaaaaaaaaa")
+	webName := ws.Name
+	if tr := m.Triage; m.To != "webaaaaaaaaa" || out["to"] != webName || tr == nil || tr.Outcome != "rerouted" || tr.Named != "plan" || tr.Pick != "web" || tr.Reasoning != "web owns the UI" ||
+		m.Text != "[Triage · Muse Spark (Meta) · muse-spark-1.3] rerouted from plan to web: web owns the UI\nBuild the cart page" {
+		t.Fatalf("rerouted: %+v %+v", m, m.Triage)
+	}
+	if want := `Muse Spark delivered this to web instead of plan: web owns the UI. To have plan do it, resend to plan with --override "<reason>" and tell web to drop it.`; out["note"] != want {
+		t.Fatalf("note %q", out["note"])
 	}
 
 	// Overridden: the sender's own pick, delivered, with Spark's pick and the reason recorded.
@@ -124,6 +132,39 @@ func TestSparkOutcomes(t *testing.T) {
 	if tr := m.Triage; m.To != "planaaaaaaaa" || tr == nil || tr.Outcome != "overridden" || tr.Pick != "web" || tr.Override != "plan wrote the cart spec" ||
 		!strings.HasPrefix(m.Text, "[Triage · Muse Spark (Meta) · muse-spark-1.3] picked web: web owns the UI; the sender kept its own pick: plan wrote the cart spec\n") {
 		t.Fatalf("overridden: %+v %+v", m, m.Triage)
+	}
+
+	// A child that is not running is not offered: Spark naming it anyway is no usable answer, so the
+	// task goes as addressed, marked unavailable with the cause.
+	webState := func(state string) {
+		_ = p.st.Update(func(st *store.State) error { st.Sessions[sessionIndex(st, "webaaaaaaaaa")].State = state; return nil })
+	}
+	webState("stopped")
+	m = sent(sendIn{From: "leadaaaaaaaa", To: "plan", Text: "Build the cart page"})
+	if tr := m.Triage; m.To != "planaaaaaaaa" || tr == nil || tr.Outcome != "unavailable" || !strings.Contains(tr.Cause, "not one of the sender's children") {
+		t.Fatalf("pick not running: %+v %+v", m, m.Triage)
+	}
+	webState("running")
+
+	// Spark's pick stops while the check runs: checked again under the lock, so as addressed, unavailable.
+	addr := p.st.Config().Decision.Spark.Address
+	stopper := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		webState("stopped")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": pickWeb}}}})
+	}))
+	defer stopper.Close()
+	_ = p.st.UpdateConfig(func(c *store.Config) error { c.Decision.Spark.Address = stopper.URL; return nil })
+	m = sent(sendIn{From: "leadaaaaaaaa", To: "plan", Text: "Build the cart page"})
+	if tr := m.Triage; m.To != "planaaaaaaaa" || tr == nil || tr.Outcome != "unavailable" || !strings.Contains(tr.Cause, "no longer a running member") {
+		t.Fatalf("pick stopped during the check: %+v %+v", m, m.Triage)
+	}
+	webState("running")
+	_ = p.st.UpdateConfig(func(c *store.Config) error { c.Decision.Spark.Address = addr; return nil })
+
+	// A task at the size limit still fits with the record's line on it.
+	m = sent(sendIn{From: "leadaaaaaaaa", To: "web", Text: strings.Repeat("x", maxMessage-20)})
+	if m.Triage == nil || len(m.Text) > maxMessage || !strings.HasPrefix(m.Text, "[Triage") {
+		t.Fatalf("at the limit: %d bytes, %+v", len(m.Text), m.Triage)
 	}
 
 	// Unavailable: delivered as addressed, marked, with the cause on the record.

@@ -628,7 +628,9 @@ function sparkTitle(t: Triage): string {
   const what =
     t.outcome === "unavailable"
       ? `could not check this task (${t.cause ?? "no answer"}); sent as addressed`
-      : `picked ${t.pick ?? ""}: ${t.reasoning ?? ""}${t.override !== undefined ? ` · the sender kept its own pick: ${t.override}` : ""}`;
+      : t.outcome === "rerouted"
+        ? `sent this to ${t.pick ?? ""} instead of ${t.named ?? ""}: ${t.reasoning ?? ""}`
+        : `picked ${t.pick ?? ""}: ${t.reasoning ?? ""}${t.override !== undefined ? ` · the sender kept its own pick: ${t.override}` : ""}`;
   return `Muse Spark ${what} · ${t.model ?? ""} · ${t.latency_ms} ms`;
 }
 
@@ -708,7 +710,7 @@ export function MessageLog(): ReactElement {
                 </span>
                 {m.triage !== undefined ? (
                   <span className="shrink-0" title={sparkTitle(m.triage)}>
-                    <Badge tone={m.triage.outcome === "agreed" ? "info" : m.triage.outcome === "overridden" ? "warning" : "neutral"}>
+                    <Badge tone={m.triage.outcome === "agreed" ? "info" : m.triage.outcome === "overridden" || m.triage.outcome === "rerouted" ? "warning" : "neutral"}>
                       Muse Spark · Meta{m.triage.outcome === "agreed" ? "" : ` · ${m.triage.outcome}`}
                     </Badge>
                   </span>

@@ -16,8 +16,8 @@ import (
 
 // Muse Spark's task check: when a parent sends a child a task, the host asks Muse Spark (the Meta
 // Model API's OpenAI-compatible chat completions) which of the sender's children should get it. Its
-// answer is a record and a second opinion, never a route: Spark gives no calibrated confidence, so the
-// host delivers only where the sender said (pool.sparkCheck).
+// pick governs delivery: a task it would give another of the sender's children goes there, unless the
+// sender overrides with a reason (pool.sparkCheck).
 
 // SparkTimeout bounds one task check; past it the task goes on unchecked.
 var SparkTimeout = 10 * time.Second

@@ -164,9 +164,9 @@ function SparkPane({ onSaved }: { onSaved: () => void }): ReactElement {
   return (
     <div className="grid grid-cols-1 gap-4">
       <p className="rounded-md bg-warning/10 p-3 text-caption text-warning">
-        <strong>Uncalibrated: suggests only, never acts on its own.</strong> Muse Spark is the default send-path triage: when a lead or builder sends one of its members a
-        task, PenguPool asks Muse Spark which member should get it and puts the pick and its reasoning on the message. The task only ever goes where the sender said: if Spark would pick another member, the sender
-        resends there or keeps its own pick with a reason, which is recorded. If Spark does not answer in 10 s, the task goes as addressed. Each task (redacted) and the
+        <strong>Uncalibrated: its pick decides who gets each task.</strong> Muse Spark is the default send-path triage: when a lead or builder sends one of its members a
+        task, PenguPool asks Muse Spark which member should get it and puts the pick and its reasoning on the message. If Spark picks another running member, the task
+        goes there instead and the sender is told; the sender can keep its own pick by resending with a reason, which is recorded. If Spark does not answer in 10 s, the task goes as addressed. Each task (redacted) and the
         member list are sent to Meta. Until Spark is set up (a model and an API key), tasks go unchecked and your System One model&apos;s per-turn route hint applies, as
         before. Everything else triage does stays on System One.
       </p>
