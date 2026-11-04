@@ -167,7 +167,7 @@ function SparkPane({ onSaved }: { onSaved: () => void }): ReactElement {
   const next = !unchanged ? "save" : failed ? "check" : off ? "use" : "";
   return (
     <div className="grid grid-cols-1 gap-4">
-      <Label hint="The Meta Model API. PenguPool calls its chat completions, /chat/completions.">
+      <Label hint="The Meta Model API. PenguPool calls its chat completions, /chat/completions. Each task (redacted) and the member list go to Meta.">
         Address
         <Input value={draft.address} onChange={(e) => set("address", e.target.value)} className="font-mono" />
       </Label>
@@ -510,7 +510,7 @@ function Providers(): ReactElement {
             onChange={(m) => set("model", m)}
             capability="decision"
             noun="decision models"
-            quietError={data.active === "ollama" || check !== null ? undefined : "Ollama isn't running on this Mac."}
+            quietError={data.active === "ollama" || check !== null ? undefined : "Ollama isn't reachable at this address."}
             hint="Ollama lists no model that declares the decision capability. Pull a System One decision model, then reload."
           />
         ) : (
