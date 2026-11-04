@@ -339,7 +339,7 @@ function AskRow({ n }: { n: Need }): ReactElement | null {
           Reply
         </Button>
         <Button size="sm" variant="ghost" onClick={() => settle("dismiss")}>
-          Dismiss
+          Close ask
         </Button>
       </Actions>
     </WaitRow>
