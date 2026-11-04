@@ -623,15 +623,21 @@ function Legend({ color, thick, children }: { color: string; thick?: boolean; ch
   );
 }
 
-/** The badge's tooltip: Muse Spark's pick and reasoning, or why it could not check the task. */
-function sparkTitle(t: Triage): string {
+/** The triage model's name on the badge: "Muse Spark · Meta", "Jev" or "Ollama". */
+export function triageName(provider: string): string {
+  return ({ meta: "Muse Spark · Meta", jev: "Jev", ollama: "Ollama" } as Record<string, string>)[provider] ?? provider;
+}
+
+/** The badge's tooltip: the triage model's pick and its reasoning or probability, or why it could not check the task. */
+function triageTitle(t: Triage): string {
+  const why = t.reasoning ?? (t.probability !== undefined ? `p=${t.probability.toFixed(2)}` : "");
   const what =
     t.outcome === "unavailable"
       ? `could not check this task (${t.cause ?? "no answer"}); sent as addressed`
       : t.outcome === "rerouted"
-        ? `sent this to ${t.pick ?? ""} instead of ${t.named ?? ""}: ${t.reasoning ?? ""}`
-        : `picked ${t.pick ?? ""}: ${t.reasoning ?? ""}${t.override !== undefined ? ` · the sender kept its own pick: ${t.override}` : ""}`;
-  return `Muse Spark ${what} · ${t.model ?? ""} · ${t.latency_ms} ms`;
+        ? `sent this to ${t.pick ?? ""} instead of ${t.named ?? ""}: ${why}`
+        : `picked ${t.pick ?? ""}: ${why}${t.override !== undefined ? ` · the sender kept its own pick: ${t.override}` : ""}`;
+  return `Triage (${triageName(t.provider)}) ${what} · ${t.model ?? ""} · ${t.latency_ms} ms`;
 }
 
 /** Agent messages: every routed team message, grouped by team (the team with the newest message first),
@@ -709,9 +715,10 @@ export function MessageLog(): ReactElement {
                   {name(m.from)} → {name(m.to)}
                 </span>
                 {m.triage !== undefined ? (
-                  <span className="shrink-0" title={sparkTitle(m.triage)}>
+                  <span className="shrink-0" title={triageTitle(m.triage)}>
                     <Badge tone={m.triage.outcome === "agreed" ? "info" : m.triage.outcome === "overridden" || m.triage.outcome === "rerouted" ? "warning" : "neutral"}>
-                      Muse Spark · Meta{m.triage.outcome === "agreed" ? "" : ` · ${m.triage.outcome}`}
+                      Triage · {triageName(m.triage.provider)}
+                      {m.triage.outcome === "agreed" ? "" : ` · ${m.triage.outcome}`}
                     </Badge>
                   </span>
                 ) : null}

@@ -256,19 +256,14 @@ func (p *Pool) matchLines(sig agentdb.Signal, offered, line string, mk bool) str
 			if !ok {
 				continue
 			}
-			var sup, con float64
-			if res.Calibrated {
-				if a.Probabilities["unrelated"] >= 0.5 {
-					continue
-				}
-				sup, con = a.Probabilities["supports"], a.Probabilities["contradicts"]
-				if max(sup, con) < 0.5 { // a diffuse answer is noise, not evidence
-					continue
-				}
-			} else if a.Choice == "supports" {
-				sup = 1
-			} else if a.Choice == "contradicts" {
-				con = 1
+			// An uncalibrated answer moves no line: the signal goes on as one that touched none
+			// (the owner's own agent words a new line, which guides only once confirmed).
+			if !res.Calibrated || a.Probabilities["unrelated"] >= 0.5 {
+				continue
+			}
+			sup, con := a.Probabilities["supports"], a.Probabilities["contradicts"]
+			if max(sup, con) < 0.5 { // a diffuse answer is noise, not evidence
+				continue
 			}
 			if sup > 0 || con > 0 {
 				on = append(on, effectOn{l.UID, sup, con})
@@ -352,6 +347,9 @@ func (p *Pool) mergeSame(prov decision.Provider, session, uid string) string {
 	res, err := p.ask(prov, map[string]any{}, qs)
 	if err != nil {
 		p.logf("pool: comparing the new line with its neighbours: %v", err)
+		return uid
+	}
+	if !res.Calibrated { // merging is automatic: an uncalibrated answer merges nothing
 		return uid
 	}
 	for i, n := range ns {

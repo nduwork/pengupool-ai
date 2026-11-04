@@ -296,9 +296,9 @@ func contextPercent(raw []byte) (float64, bool) {
 func cmdSend(args []string) error {
 	fs := flag.NewFlagSet("send", flag.ContinueOnError)
 	to := fs.String("to", "", "member name or session id")
-	typ := fs.String("type", "", "tell, ask, done or blocked (default: by the first line, Done:/Ask:/Blocked:, else tell)")
+	typ := fs.String("type", "", "tell, task, ask, done or blocked (default: by the first line, Task:/Done:/Ask:/Blocked:, else tell)")
 	replyTo := fs.String("reply-to", "", "the id of the ask this answers")
-	override := fs.String("override", "", "keep this recipient for a task Muse Spark would reroute to another child, and say why")
+	override := fs.String("override", "", "keep this recipient for a task triage would reroute to another child, and say why")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -311,7 +311,7 @@ func cmdSend(args []string) error {
 	if from == "" {
 		return errors.New("send works from inside a PenguPool team session")
 	}
-	// Past Muse Spark's 10 s task check (decision.SparkTimeout), so a slow check never reads as a failed send.
+	// Past triage's 10 s task check (pool.taskTimeout), so a slow check never reads as a failed send.
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	res, err := rpc(ctx, poolStore(), "message.send", map[string]string{"from": from, "to": *to, "text": text, "type": *typ, "reply_to": *replyTo, "override": *override})

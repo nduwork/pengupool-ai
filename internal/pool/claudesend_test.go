@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -210,9 +209,7 @@ func TestDeliveredAt(t *testing.T) {
 
 // A native SendMessage longer than a team message may be is kept clipped, "…" included, within maxMessage.
 func TestNativeSendClippedWithinLimit(t *testing.T) {
-	var reply atomic.Pointer[string]
-	reply.Store(ptr(pickWeb))
-	p, _ := sparkTeam(t, false, &reply)
+	p := taskTeam(t, "", nil)
 	web, _ := p.session("webaaaaaaaaa")
 	p.sendMessageRan(web, map[string]any{"tool_name": "SendMessage", "tool_input": map[string]any{"to": "leadaaaaaaaa", "message": strings.Repeat("y", maxMessage+100)}})
 	for _, m := range p.st.State().Domain.Messages {

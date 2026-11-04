@@ -24,6 +24,7 @@ export function askPill(asks: TeamMessage[], now: number): { text: string; escal
 /** A message's type as a glyph and a word; no type reads as tell. */
 export const TYPE_CHIP: Record<string, { text: string; className: string }> = {
   tell: { text: "· tell", className: "text-muted-foreground" },
+  task: { text: "→ task", className: "text-foreground" },
   ask: { text: "? ask", className: "font-semibold text-foreground" },
   done: { text: "✓ done", className: "text-success" },
   blocked: { text: "■ blocked", className: "text-danger" },

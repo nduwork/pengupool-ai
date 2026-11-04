@@ -66,9 +66,11 @@ type Response struct {
 	Provider   string            `json:"provider"`
 	Model      string            `json:"model"`
 	Calibrated bool              `json:"calibrated"`
-	Latency    time.Duration     `json:"latency"`
-	TokensIn   int               `json:"tokens_in,omitempty"`
-	TokensOut  int               `json:"tokens_out,omitempty"`
+	// Reasoning is an uncalibrated model's one sentence on its answers; a System One model gives none.
+	Reasoning string        `json:"reasoning,omitempty"`
+	Latency   time.Duration `json:"latency"`
+	TokensIn  int           `json:"tokens_in,omitempty"`
+	TokensOut int           `json:"tokens_out,omitempty"`
 }
 
 // Provider is the internal decision interface.
@@ -86,10 +88,9 @@ var (
 // Thresholds are initial calibration candidates, not validated values.
 var Thresholds = map[string]float64{"route": 0.80, "model": 0.75, "skill": 0.30, "team": 0.70, "duplicate": 0.75, "experience": 0.75, "agent": 0.50, "proceed": 0.80, "delegate": 0.80}
 
-// Formats PenguPool speaks.
-// Triage models speak System One only: online (Jev's) or local on Ollama. A general chat model
-// gives no calibrated confidence, so PenguPool does not use one.
-var Formats = []string{"systemone", "ollama-systemone"}
+// Formats PenguPool speaks: System One, online (Jev's) or local on Ollama, which is calibrated; and the
+// Meta Model API's chat completions (Muse Spark), which is not, so no automatic action rests on it.
+var Formats = []string{"systemone", "ollama-systemone", MetaFormat}
 
 // FromConfig returns the active provider, or nil when only rules are configured.
 func FromConfig(c store.DecisionConfig, logf func(string, ...any)) Provider {
@@ -112,6 +113,9 @@ func FromConfig(c store.DecisionConfig, logf func(string, ...any)) Provider {
 func New(pc store.ProviderConfig) (Provider, error) {
 	if err := Validate(pc); err != nil {
 		return nil, err
+	}
+	if pc.Format == MetaFormat {
+		return &metaProvider{cfg: pc, client: &http.Client{Timeout: 30 * time.Second}}, nil
 	}
 	return &httpProvider{cfg: pc, client: &http.Client{Timeout: 30 * time.Second}}, nil
 }
@@ -140,7 +144,12 @@ func Validate(pc store.ProviderConfig) error {
 	if pc.KeyRef != "" && !strings.HasPrefix(pc.KeyRef, "keychain:") && !strings.HasPrefix(pc.KeyRef, "env:") {
 		return fmt.Errorf("key reference must be keychain:<name> or env:<VAR>")
 	}
-	if pc.Type == "jev" && pc.KeyRef == "" {
+	if pc.Format == MetaFormat {
+		if err := metaAddress(pc.Address); err != nil {
+			return err
+		}
+	}
+	if (pc.Type == "jev" || pc.Format == MetaFormat) && pc.KeyRef == "" {
 		return fmt.Errorf("this provider needs an API key")
 	}
 	return nil

@@ -63,9 +63,11 @@ your answer to the relevant session through its existing owner-input and answer 
 **The contribution is the connection:** a coding-agent workspace that keeps the owner's context and
 decisions in the loop across the Mac and Muse app. Other supported agents can join the same workspace.
 
-Coding uses the model selected by Muse Code. Memory/check-in triage uses a separately configured System
-One model; the local Tev1 default is Together AI's Qwen-based model. Muse Spark is the default send-path
-triage once you add its key: it picks who gets each task a lead or builder sends, and the sender can keep its own pick with a recorded reason.
+Coding uses the model selected by Muse Code. Triage uses one decision model you choose: a System One
+model (the local Tev1 default is Together AI's Qwen-based model, or Jev online) or Muse Spark on the Meta
+Model API. Whichever it is, it checks each task a lead or builder hands a member and picks who does it; the
+sender can keep its own pick with a recorded reason. Muse Spark is uncalibrated, so with it nothing else
+acts on its own: check-ins and Compass changes wait for you.
 [Model responsibilities](docs/harnesses.md#who-does-what).
 
 ## What you can do

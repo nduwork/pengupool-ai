@@ -2,6 +2,12 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
+## Unreleased
+
+Muse Spark is now an ordinary decision model. In Settings → Decision model, Local hosted, Online / cloud and **Meta · Muse Spark** are three choices for one slot; each is saved, checked and chosen with **Use for triage**. An earlier Muse Spark setup becomes a saved Meta model, and the triage model in use stays as it is. Muse Spark is uncalibrated, so when it is the triage model nothing acts on its answers alone: check-ins go to you, the Compass asks, every Done report is kept, and team proposals keep each helper's own agent.
+
+The task check now runs with whichever decision model is in use. When a member hands one of its children work, marked `Task:` or sent with `--type task`, the model picks who should do it, and the pick governs delivery as before (`--override` keeps the sender's pick). Plain notes are not checked, so a message about a member's work no longer goes to that member. The per-turn hint and tool hold for the Lead are gone; the task check replaces them.
+
 ## 0.11.3
 
 A Muse Code session now shows **Muse Spark · Meta** and its model on its map card and session header, read from Muse's own status line; the session log records the model each turn. When Muse does not show its model, the label reads **Muse Code · Meta**.

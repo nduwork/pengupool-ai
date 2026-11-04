@@ -84,7 +84,6 @@ type Pool struct {
 	promptAt          map[string]time.Time         // session id → the owner's first prompt in its launch (under mu)
 	hookSeq           uint64                       // arrival order of hook events, taken at hookEventFrom entry (under mu)
 	lastEnd           map[string]uint64            // session id → arrival seqno of its latest processed turn/session end (under mu; hooks.go)
-	routed            map[string]string            // LEAD session id → the teammate triage named for this turn (under mu)
 	answering         map[int64]time.Time          // check-ins being answered by the owner, so a double click types once (under mu)
 	requireOwnerInput bool
 	pending           map[string][]protocol.TeamMessage
@@ -106,9 +105,6 @@ type Pool struct {
 	// clock replaces the wall clock for Compass signals and beliefs: the offline evaluation replays
 	// the owner's time (eval.go). Nil: the wall clock.
 	clock func() time.Time
-	// sparkKey remembers a Muse Spark key reference: zero when it resolved, else when it last failed
-	// (sparkActive); saving clears it.
-	sparkKey map[string]time.Time
 	// testDecider stands in for the configured decision provider in tests.
 	testDecider decision.Provider
 	triageErr   string                          // the triage model's last call failed with this; "" after one that answered; triageUnchecked at start (guarded by mu)
@@ -176,6 +172,7 @@ func New(o Options) *Pool {
 	p.expireStaleApprovals()
 	// Off the start path: a slow `muse plugins install` must not hold the daemon up.
 	go harness.EnsureMusePlugin(o.Store.Dir(), o.Exe, env, logf)
+	p.migrateSpark()
 	p.dropRetiredProviders()
 	p.refreshAgentPermissions()
 	if db, err := agentdb.Open(filepath.Join(o.Store.Dir(), "agents.db")); err != nil {
@@ -419,9 +416,6 @@ func (p *Pool) handlers() map[string]handler {
 		"provider.check":        bind(p.providerCheck),
 		"provider.models":       bind(p.providerModels),
 		"provider.activate":     bind(p.providerActivate),
-		"spark.get":             bind(p.sparkGet),
-		"spark.save":            bind(p.sparkSave),
-		"spark.check":           bind(p.sparkCheckRPC),
 		"settings.tailscale":    bind(p.settingsTailscale),
 		"settings.get":          bind(p.settingsGet),
 		"triage.status":         bind(p.triageStatus),

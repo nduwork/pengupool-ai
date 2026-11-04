@@ -100,157 +100,13 @@ interface ProvidersResp {
   defaults: Record<string, ProviderCfg>;
 }
 
-// Two kinds of decision model: local hosted (Ollama) and online (Jev, in the cloud). The third tab is
-// Muse Spark's task check (SparkPane), never the triage model.
+// Three kinds of decision model, one slot: local hosted (Ollama) and online (Jev), which are calibrated,
+// and Muse Spark on the Meta Model API, which is not. Any one of them is chosen with Use for triage.
 const TYPES = [
   { id: "ollama", label: "Local hosted" },
   { id: "jev", label: "Online / cloud" },
   { id: "meta", label: "Meta · Muse Spark" },
 ];
-
-interface SparkCfg {
-  /** Spark is on unless the owner turns it off. */
-  off?: boolean;
-  address: string;
-  model?: string;
-  key_ref?: string;
-}
-
-interface SparkCheck {
-  ok: boolean;
-  error?: string;
-  model?: string;
-  pick?: string;
-  reasoning?: string;
-  latency_ms?: number;
-}
-
-/** spark.get and spark.save: the settings, and whether Spark is active (on and set up). */
-interface SparkResp {
-  spark: SparkCfg;
-  active: boolean;
-}
-
-/** The Meta · Muse Spark tab: the Meta Model API's settings, with the same buttons as the triage tabs; Use turns its task check on. */
-function SparkPane({ onSaved }: { onSaved: () => void }): ReactElement {
-  const app = useApp();
-  const [saved, setSaved] = useState<SparkCfg | null>(null);
-  const [draft, setDraft] = useState<SparkCfg | null>(null);
-  const [active, setActive] = useState(false);
-  const [key, setKey] = useState("");
-  const [check, setCheck] = useState<SparkCheck | "running" | null>(null);
-  useEffect(() => {
-    void app.call<SparkResp>("spark.get").then((r) => {
-      if (r === undefined) return;
-      setSaved(r.spark);
-      setDraft(r.spark);
-      setActive(r.active);
-    });
-  }, []);
-  if (draft === null || saved === null) return <p className="text-label text-faint">Loading…</p>;
-  const set = (k: keyof SparkCfg, v: string): void => setDraft({ ...draft, [k]: v });
-  const save = async (next: SparkCfg): Promise<void> => {
-    const r = await app.call<SparkResp>("spark.save", { spark: next, key: key === "" ? undefined : key });
-    if (r === undefined) return;
-    setKey("");
-    setSaved(r.spark);
-    setDraft(r.spark);
-    setActive(r.active);
-    setCheck(null);
-    onSaved();
-    toast.success("Saved.");
-  };
-  const unchanged = JSON.stringify(draft) === JSON.stringify(saved) && key === "";
-  const off = saved.off === true;
-  // The same steps as the triage tabs: Save → Check connection → Use; none while in use.
-  const failed = check !== null && check !== "running" && !check.ok;
-  const next = !unchanged ? "save" : failed ? "check" : off ? "use" : "";
-  return (
-    <div className="grid grid-cols-1 gap-4">
-      <Label hint="The Meta Model API. PenguPool calls its chat completions, /chat/completions. Each task (redacted) and the member list go to Meta.">
-        Address
-        <Input value={draft.address} onChange={(e) => set("address", e.target.value)} className="font-mono" />
-      </Label>
-      <div className="grid grid-cols-2 gap-3">
-        <Label hint={saved.key_ref?.startsWith("keychain:") === true ? "A key is saved in the macOS Keychain." : "Required. Stored in the macOS Keychain, never in settings."}>
-          API key
-          <Input type="password" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" />
-        </Label>
-        <Label hint="Or reference an environment variable of the host.">
-          Key reference
-          <Input value={draft.key_ref?.startsWith("env:") === true ? draft.key_ref : ""} onChange={(e) => set("key_ref", e.target.value)} placeholder="env:META_API_KEY" className="font-mono" />
-        </Label>
-      </div>
-      <Label hint="Required: the Meta Model API's model string. Reasoning effort: minimal (fixed for triage).">
-        Model
-        <Input value={draft.model ?? ""} onChange={(e) => set("model", e.target.value)} className="font-mono" placeholder="muse-spark-1.3" />
-      </Label>
-      {contributorNote(draft.model) !== null ? <p className="text-caption text-warning">{contributorNote(draft.model)}</p> : null}
-      <div className="flex flex-wrap gap-2">
-        <Button variant={next === "save" ? "default" : "secondary"} onClick={() => void save(draft)}>
-          Save provider
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={() => {
-            setDraft(saved);
-            setKey("");
-          }}
-        >
-          Discard changes
-        </Button>
-        <Button
-          variant={next === "check" ? "default" : "secondary"}
-          disabled={!unchanged || (saved.model ?? "") === "" || check === "running"}
-          title="Asks the saved model who should get a sample task"
-          onClick={async () => {
-            setCheck("running");
-            setCheck((await app.call<SparkCheck>("spark.check")) ?? null);
-          }}
-        >
-          {check === "running" ? (
-            <>
-              <Loader2 className="size-3.5 animate-spin" />
-              Checking…
-            </>
-          ) : (
-            "Check connection"
-          )}
-        </Button>
-        <Button variant={next === "use" ? "default" : "secondary"} disabled={!off || !unchanged} onClick={() => void save({ ...saved, off: false })}>
-          Use for send-path triage
-        </Button>
-        {!off ? (
-          <Button variant="ghost" disabled={!unchanged} onClick={() => void save({ ...saved, off: true })}>
-            Stop using
-          </Button>
-        ) : null}
-      </div>
-      <p role="status" className={cn("text-caption", failed ? "text-danger" : "text-muted-foreground")}>
-        {!unchanged
-          ? "Unsaved changes. Save them, or Discard changes to go back to the saved settings."
-          : failed
-            ? "The check failed. Fix the settings, save, and check again."
-            : off
-              ? "Not in use: tasks go as addressed, unchecked; System One's per-turn route hint applies."
-              : active
-                ? "In use for send-path triage: Muse Spark picks who gets each task a lead or builder sends."
-                : "In use once set up: add the model and an API key. Until then tasks go unchecked and System One's per-turn route hint applies."}
-      </p>
-      {check !== null && check !== "running" ? (
-        <Card className={cn("p-3 text-label", check.ok ? "border-success/40" : "border-danger/40")}>
-          {check.ok ? (
-            <span className="text-success">
-              Answered · {check.model ?? ""} · {check.latency_ms ?? 0} ms: picked {check.pick} for a sample task. {check.reasoning}
-            </span>
-          ) : (
-            <span className="text-danger">{check.error}</span>
-          )}
-        </Card>
-      ) : null}
-    </div>
-  );
-}
 
 /** The provider's models, listed by the provider itself (with the typed or saved key). With a capability,
  * only the Ollama models that declare it (Ollama's own /api/show), and only those can be picked. */
@@ -390,7 +246,6 @@ function Providers(): ReactElement {
   const [key, setKey] = useState("");
   const [check, setCheck] = useState<CheckResp | "running" | null>(null);
   const [n, setN] = useState(0);
-  const [sparkOn, setSparkOn] = useState(false);
   useEffect(() => {
     void app.call<ProvidersResp>("decision.providers").then((r) => {
       if (r === undefined) return;
@@ -399,7 +254,6 @@ function Providers(): ReactElement {
       for (const t of TYPES) d[t.id] = r.providers?.[t.id] ?? r.defaults[t.id];
       setDrafts(d);
     });
-    void app.call<SparkResp>("spark.get").then((r) => setSparkOn(r?.active === true));
   }, [n]);
   if (data === null) return <p className="text-label text-faint">Loading…</p>;
   const draft = drafts[type];
@@ -471,15 +325,20 @@ function Providers(): ReactElement {
             className={cn("h-7 flex-1 whitespace-nowrap rounded-md px-2", type === t.id ? "bg-panel font-medium shadow-sm" : "text-muted-foreground")}
           >
             {t.label}
-            {data.active === t.id || (t.id === "meta" && sparkOn) ? " ✓" : ""}
+            {data.active === t.id ? " ✓" : ""}
           </button>
         ))}
       </div>
-      {type === "meta" ? (
-        <SparkPane onSaved={() => setN(n + 1)} />
-      ) : (
       <div className="grid grid-cols-1 gap-4">
-        <Label hint={type === "ollama" ? "The Ollama address. PenguPool calls its System One endpoint, /v1/systemone." : "The full endpoint URL."}>
+        <Label
+          hint={
+            type === "ollama"
+              ? "The Ollama address. PenguPool calls its System One endpoint, /v1/systemone."
+              : type === "meta"
+                ? "The Meta Model API. PenguPool calls its chat completions, /chat/completions. The questions and their state (redacted) go to Meta."
+                : "The full endpoint URL."
+          }
+        >
           Address
           <Input value={draft.address} onChange={(e) => set("address", e.target.value)} className="font-mono" />
         </Label>
@@ -514,11 +373,17 @@ function Providers(): ReactElement {
             hint="Ollama lists no model that declares the decision capability. Pull a System One decision model, then reload."
           />
         ) : (
-          <Label hint="Any model string.">
+          <Label hint={type === "meta" ? "The Meta Model API's model string. Reasoning effort: minimal (fixed for triage)." : "Any model string."}>
             Model
-            <Input value={draft.model ?? ""} onChange={(e) => set("model", e.target.value)} className="font-mono" />
+            <Input value={draft.model ?? ""} onChange={(e) => set("model", e.target.value)} className="font-mono" placeholder={type === "meta" ? "muse-spark-1.3" : undefined} />
           </Label>
         )}
+        {type === "meta" ? (
+          <p className="text-caption text-warning">
+            Uncalibrated: as the triage model, Muse Spark&apos;s answers never act on their own; check-ins and Compass changes wait for you. Only its pick at a task send governs delivery.
+            {contributorNote(draft.model) !== null ? ` ${contributorNote(draft.model)}` : ""}
+          </p>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           <Button
             variant={next === "save" ? "default" : "secondary"}
@@ -576,11 +441,10 @@ function Providers(): ReactElement {
         </p>
         <CheckResult
           r={unchanged && check !== "running" ? check : null}
-          ok={check !== null && check !== "running" ? `Fit to decide · ${check.model ?? ""} · ${check.latency_ms ?? 0} ms` : ""}
+          ok={check !== null && check !== "running" ? `Fit to decide · ${check.model ?? ""} · ${check.latency_ms ?? 0} ms${check.calibrated === false ? " · uncalibrated" : ""}` : ""}
         />
         <p className="text-caption text-faint">PenguPool never installs Ollama or pulls weights. Thresholds are calibration candidates, not validated values.</p>
       </div>
-      )}
     </div>
   );
 }

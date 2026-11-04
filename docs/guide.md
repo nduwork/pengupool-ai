@@ -29,6 +29,12 @@ member onto another member on the map, and it moves there with everything under 
 `pengupool send`, only to their parent and children on the tree; every message is recorded on the
 team's message log.
 
+When a member hands one of its children work (`Task:`, or `--type task`), your decision model checks
+who should do it, whichever model it is. If it picks another running child, the task goes there and
+the sender is told; the sender can send it back with `--override "<reason>"`, and the reason is
+recorded. The pick, with the model's probability or reasoning, is on the message. A message that
+hands over no work, such as a note or a cancel, is not checked.
+
 ## The Compass
 
 Your Compass is your preferences and restrictions, learned from your own words. When you tell any
@@ -42,7 +48,7 @@ merging it with a line that already says it. Edit, merge or delete lines in the 
 ## Helpers' journals
 
 When a helper reports `Done: <title>` to its parent, that report becomes an entry in its journal,
-unless your triage model is sure it is trivial or a duplicate of a recent entry; each decision is on
+unless your triage model is sure it is trivial or a duplicate of a recent entry (only a calibrated System One model can be sure); each decision is on
 the helper's session log.
 The next time the helper works, it starts with the index of its past jobs and the entries that
 match the task, and reads one in full with `pengupool experience show`. Each journal is private to its

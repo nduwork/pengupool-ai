@@ -1613,3 +1613,19 @@ func TestOpenGatesShowTheQuestionOfALongCheckin(t *testing.T) {
 		t.Fatalf("open = %+v", got)
 	}
 }
+
+// An uncalibrated model (Muse Spark) places the owner's reply on the check-in, but its read of
+// whether the owner let the agent proceed is not taken: that stays unknown, and the owner's agent
+// words the line.
+func TestOwnerAnswerUncalibrated(t *testing.T) {
+	p, dec, _ := gateTeam(t)
+	dec.do(func(x *gateDecider) { x.calibrated = false })
+	dec.set("owner_proceed", yes(0.9))
+	const id = "planaaaaaaaa"
+	endTurn(p, id, "I sketched the epic. Shall I add the test plan too?")
+	ownerSays(t, p, id, "yes, always add a test plan")
+	wordRule(t, p, id, "The owner lets the planner add tests without asking.")
+	if g := waitGate(t, p, id, func(g agentdb.Gate) bool { return g.LineUID != "" }); g.Outcome != "owner" || g.OwnerProceed != nil {
+		t.Fatalf("gate = %+v", g)
+	}
+}

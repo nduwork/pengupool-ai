@@ -183,9 +183,9 @@ func (p *Pool) propose(ctx context.Context, t protocol.Task, version int) (proto
 			var hits []hit
 			for i, c := range cands {
 				if a := res.Answers[fmt.Sprintf("helps_%d", i)]; a.Yes >= 0.5 {
-					// The provider may move a helper to another installed agent; an unsure answer
-					// (calibrated below the threshold) keeps the skill's own preference.
-					if ag, ok := res.Answers[fmt.Sprintf("agent_%d", i)]; ok && ag.Choice != "" && (!res.Calibrated || ag.Confidence >= decision.Thresholds["agent"]) {
+					// The provider may move a helper to another installed agent; an unsure or
+					// uncalibrated answer keeps the skill's own preference.
+					if ag, ok := res.Answers[fmt.Sprintf("agent_%d", i)]; ok && ag.Choice != "" && res.Calibrated && ag.Confidence >= decision.Thresholds["agent"] {
 						c.harness = ag.Choice
 					}
 					hits = append(hits, hit{c, a.Yes})

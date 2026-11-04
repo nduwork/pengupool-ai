@@ -197,7 +197,6 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		// flag must not outlive the turn or the session (ownerinput.go).
 		p.mu.Lock()
 		delete(p.askingOwner, s.ID)
-		delete(p.routed, s.ID)
 		p.mu.Unlock()
 	}
 	// The pending question lasts until the agent got its answer: a hook for that same tool call, or
@@ -275,7 +274,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		if _, statusOnly := pl["status_only"]; statusOnly {
 			return HookOut{}, nil
 		}
-		return p.contextOut(s.ID, "UserPromptSubmit", p.journalForPrompt(s, t.Prompt), p.nextStepNote(s, t.Prompt), p.subagentPlan(s, t.Prompt), p.wordingNote(s.ID)), nil
+		return p.contextOut(s.ID, "UserPromptSubmit", p.journalForPrompt(s, t.Prompt), p.subagentPlan(s, t.Prompt), p.wordingNote(s.ID)), nil
 	case "PreToolUse":
 		if in.Harness == harness.Muse {
 			if _, ok := pl["tool_name"].(string); !ok {
@@ -349,7 +348,6 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			}
 			p.mu.Lock()
 			delete(p.askingOwner, s.ID)
-			delete(p.routed, s.ID)
 			p.mu.Unlock()
 		}
 		p.noteTurnEnd(s.ID, seq)
@@ -628,12 +626,12 @@ func copilotTool(pl map[string]any) {
 // PenguPool session is an in-process teammate.
 func (p *Pool) guardSendMessage(s store.Session, pl map[string]any) HookOut {
 	target, ok := p.sendTarget(pl)
-	if ok && target != "" && p.isChild(s.ID, target) && sparkOn(p) {
-		// Muse Spark checks every task a parent sends a child; a native send would pass it by.
+	if ok && target != "" && p.isChild(s.ID, target) && p.decider() != nil {
+		// Triage checks each task a parent hands a child; a native send would pass it by.
 		return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 			"hookEventName":            "PreToolUse",
 			"permissionDecision":       "deny",
-			"permissionDecisionReason": "PenguPool: send tasks with `" + p.cli() + " send --to <member> \"...\"` so triage can record them (Muse Spark checks who gets each task).",
+			"permissionDecisionReason": "PenguPool: message your children with `" + p.cli() + " send --to <member> \"...\"`, and hand one work with `--type task` (or a first line starting Task:), so triage can check who should do it and record it.",
 		}})
 	}
 	if ok && p.mayTalk(s.ID, target) {
@@ -653,8 +651,6 @@ func (p *Pool) guardSendMessage(s store.Session, pl map[string]any) HookOut {
 		"permissionDecisionReason": "PenguPool: agents talk only to their parent and children on their team, and that session is neither, or the name is shared by more than one session. Message your parent; it passes on what others need. To reach a teammate whatever its name, run `" + p.cli() + " send --to <session id>` with the id from your Team members list. Only the owner can open a channel to another session, by typing @<session> in your prompt.",
 	}})
 }
-
-func sparkOn(p *Pool) bool { _, on := p.sparkActive(); return on }
 
 // isChild: child is an active member whose parent on the team's tree is parent.
 func (p *Pool) isChild(parent, child string) bool {
@@ -748,9 +744,6 @@ func (p *Pool) addCost(s store.Session, cost float64) {
 // toolGuards are the checks on a tool call before it runs: done with the answer to give, or false to let
 // it run as the agent's own permissions say.
 func (p *Pool) toolGuards(s store.Session, payload []byte, pl map[string]any) (HookOut, bool) {
-	if out, deny := p.guardRoute(s, pl); deny {
-		return out, true
-	}
 	if name, _ := pl["tool_name"].(string); name == "SendMessage" {
 		return p.guardSendMessage(s, pl), true
 	}
