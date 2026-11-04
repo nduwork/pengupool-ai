@@ -2,8 +2,7 @@
 
 The UI for answering an agent's question from the owner's phone. Two
 surfaces, each with one job: the **context card** renders nicely, the
-**choice card** takes the tap. Early design mocks live in
-`out/design-*.html`; the flow below is the settled one.
+**choice card** takes the tap. The flow below is the settled one.
 
 ## Surfaces
 

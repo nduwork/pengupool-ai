@@ -116,10 +116,10 @@ From a clone of the pengupool-ai repo:
 tools/muse/companion/install.sh
 ```
 
-This installs `pp.py`/`detect.py`/`gadget.py` to
-`~/workspace/pengupool-agent/`, the CLI to `~/workspace/companion/`,
-seeds `config.json` (enabled, every 1m), and installs the hook
-wrapper. Export `PENGUPOOL_HOST=<workstation tailnet name or IP>` for
+This installs `pp.py`, `detect.py`, `gadget.py`, `tracker.py`,
+`askcard.py` and `collect_status.py` to `~/workspace/pengupool-agent/`,
+the CLI to `~/workspace/companion/`, seeds `config.json` (enabled,
+every 1m) and `tracker.json`, and installs the hook wrapper. Export `PENGUPOOL_HOST=<workstation tailnet name or IP>` for
 the hook's environment (required: calls fail fast without it). When it
 is an IP, also export `PENGUPOOL_HOST_HEADER=<workstation tailnet
 name>` — the header defaults from the host and drives the TLS SNI and
@@ -140,7 +140,7 @@ companion config set interval 1h && python3 ~/workspace/pengupool-agent/detect.p
                         # → {"decision": "silent", "reason": "not due ..."}
 companion config set interval 1m   # restore the owner's cadence
 companion gadget        # renders the team card (tree + PenguPool's indicators)
-companion tracker       # renders the work-tracker card
+companion tracker       # prints the agents' workflow chains as text
 companion ask <spec>    # renders a question's context card (ANSWER-CARDS.md)
 ```
 
@@ -169,9 +169,10 @@ and that routine polls stay silent.
   when the ask has options, a choice tap files immediately, and a
   "send it" confirmation only for free text you formulated that is not
   the owner's own words.
-- The owner answers an ask — you file it through the ask's own answer
-  path (the device API answer endpoint for host asks; the session's
-  channel for agent questions) and show the closed card.
+- The owner answers an ask — you file it on the device API answer
+  endpoint with the card's `ask_id` and `payload_hash` (host approvals,
+  an agent's own question `ask:…`, a member's ask left to the owner
+  `teamask:…`) and show the closed card.
 
 ## 7. Optional: the mobile mini site (agent, on the PenguPool machine)
 

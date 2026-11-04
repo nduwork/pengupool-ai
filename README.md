@@ -120,8 +120,9 @@ source instead, see [CONTRIBUTING.md](CONTRIBUTING.md).
 1. **Open the app.** The empty Workspace shows the map, with a short Setup card in the sidebar.
    **Welcome** (above) is off by default: open it from the empty map's *show Welcome* link or
    Settings → General → **Open Welcome**.
-2. **Set a decision model.** PenguPool needs a System One triage model, local (Ollama) or online. In
-   Settings → Decision model: pick it, **Save**, **Check connection**, then **Use for triage**.
+2. **Set a decision model.** PenguPool needs a triage model: System One, local (Ollama) or online, or
+   Muse Spark on the Meta Model API. In Settings → Decision model: pick it, **Save provider**,
+   **Check connection**, then **Use for triage**.
 3. **Decide agent permissions.** Settings → Agents → Agent permissions lets agents run PenguPool's
    team commands without a prompt, or keep asking. Either choice is fine.
 4. **Start with Muse Code.** Choose *Start in a folder*, select a small demo repository and pick Muse

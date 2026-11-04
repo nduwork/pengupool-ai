@@ -28,8 +28,8 @@ directory.
 
 ## Releasing
 
-Releases are built, signed and notarized on the maintainer's Mac, with the Developer ID identity and notary
-profile in that Mac's keychain, and published by nduworker:
+Releases are built, signed and notarized on the maintainer's Mac, with the Developer ID identity in that Mac's
+keychain, and published by nduworker:
 
 1. Bump `Version` in `cmd/pengupool/main.go`, add the release's entry to `CHANGELOG.md`, and merge to main.
 2. In the Actions tab, open **release** and choose **Run workflow** on main. On the maintainer's Mac runner the
@@ -43,7 +43,7 @@ profile in that Mac's keychain, and published by nduworker:
    can use that environment, and only the job's build step gets them.
 
 `make release` still works by hand, notarizing with the keychain profile `pengupool` unless all three
-`ASC_*` variables are set: on a fresh clone of the latest main (it refuses another commit or
+`ASC_*` variables are set: on a clean checkout of the latest main (it refuses another commit or
 uncommitted changes), it builds the disk image (`make dist`), then `make publish` creates release `v<version>`
 at that commit (or uses it if it already exists) and attaches the image. Re-running replaces the image. When the
 new release is the latest, older releases lose their disk images; a prerelease or a backport keeps them.
