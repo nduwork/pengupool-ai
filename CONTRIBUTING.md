@@ -33,7 +33,7 @@ signs and notarizes each release on their own Mac, with the Developer ID identit
 Mac's keychain:
 
 1. Bump `Version` in `cmd/pengupool/main.go`, add the release's entry to `CHANGELOG.md`, and merge to main.
-2. On an up-to-date main, run `make release`. It builds the disk image (`make dist`), then `make publish`
+2. On a clean checkout of the latest main (it refuses anything else), run `make release`. It builds the disk image (`make dist`), then `make publish`
    creates release `v<version>` at that commit (or uses it if it already exists) and attaches the image.
    Re-running replaces the image. When the new release is the latest, older releases lose their disk images;
    a prerelease or a backport keeps them.
