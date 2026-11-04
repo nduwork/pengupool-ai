@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/nduwork/pengupool-ai/internal/decision"
 	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
@@ -51,9 +52,12 @@ type sendIn struct {
 	Text    string `json:"text"`
 	Type    string `json:"type,omitempty"`     // tell | ask | done | blocked; empty: by its first line
 	ReplyTo string `json:"reply_to,omitempty"` // the id of an ask sent to the sender
+	// Override keeps the sender's own recipient for a task Muse Spark would give another child: the
+	// reason goes on the record (sparkCheck).
+	Override string `json:"override,omitempty"`
 }
 
-func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
+func (p *Pool) messageSend(ctx context.Context, in sendIn) (any, error) {
 	text := cleanText(in.Text)
 	if text == "" {
 		return nil, invalid("empty message")
@@ -71,6 +75,11 @@ func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
 	channel := ""
 	if x, ok := sessionNamed(p.st.State(), in.To); ok && p.crossTeamOpen(in.From, x.ID) {
 		channel = x.ID
+	}
+	// Muse Spark checks a task a parent sends a child, outside the state lock; nil when off or not one.
+	tri, err := p.sparkCheck(ctx, in, typ, text, channel)
+	if err != nil {
+		return nil, err
 	}
 	err = p.update(func(st *store.State) error {
 		if in.ReplyTo != "" {
@@ -127,6 +136,9 @@ func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
 			ID: protocol.NewID(), TeamID: teamID, From: in.From, To: hits[0].SessionID,
 			Text: text, State: "queued", At: now(), Via: via, Type: typ, ReplyTo: in.ReplyTo,
 		}
+		if tri != nil {
+			msg.Triage, msg.Text = tri, sparkLine(tri)+"\n"+text
+		}
 		addMessage(st, msg)
 		return nil
 	})
@@ -137,6 +149,17 @@ func (p *Pool) messageSend(_ context.Context, in sendIn) (any, error) {
 	line := fmt.Sprintf("%s → %s: %s", from.Name, toSession.Name, text)
 	p.logLine(in.From, line)
 	p.logLine(toSession.ID, line)
+	if tri != nil {
+		l := fmt.Sprintf("triage: provider=%s model=%s pick=%s outcome=%s latency=%dms reasoning=%q", tri.Provider, tri.Model, firstNonEmpty(tri.Pick, "-"), tri.Outcome, tri.LatencyMS, tri.Reasoning)
+		if tri.Override != "" {
+			l += fmt.Sprintf(" override=%q", tri.Override)
+		}
+		if tri.Cause != "" {
+			l += " cause=" + tri.Cause
+		}
+		p.logLine(in.From, l)
+		p.logLine(toSession.ID, l)
+	}
 	p.doneReport(msg) // a done report is kept as the helper's journal entry
 	switch {
 	case toSession.Status == "idle":
@@ -370,4 +393,94 @@ func (p *Pool) setMessage(id, state, reason string) {
 		}
 		return nil
 	})
+}
+
+// sparkCheck is Muse Spark's check of a task: a tell from a parent to one of its children, while
+// Spark is active (sparkActive). It asks Spark which child should get the task and
+// returns the record for the message; nil for any other send, or with it off. Spark never routes:
+// it agrees (delivered), or it would pick another child, which refuses the send until the sender
+// resends to that child or keeps its own with an override reason (delivered, recorded). With no
+// answer (no key, a timeout, an HTTP error, an answer naming no child) the task goes as addressed,
+// marked unavailable.
+func (p *Pool) sparkCheck(ctx context.Context, in sendIn, typ, text, channel string) (*protocol.Triage, error) {
+	if typ != "tell" || in.ReplyTo != "" || channel != "" {
+		return nil, nil
+	}
+	c, active := p.sparkActive()
+	if !active {
+		return nil, nil
+	}
+	st := p.st.State()
+	t := teamOf(&st.Domain, in.From)
+	if t == nil {
+		return nil, nil
+	}
+	hits := memberHits(t, in.To)
+	if len(hits) != 1 || hits[0].SessionID == in.From || treeParent(t, hits[0].SessionID) != in.From {
+		return nil, nil // not to a child: messageSend's own checks answer it
+	}
+	var kids []decision.SparkMember
+	for _, m := range t.Members {
+		if m.State != "active" || m.SessionID == in.From || treeParent(t, m.SessionID) != in.From {
+			continue
+		}
+		s, _ := p.session(m.SessionID)
+		kids = append(kids, decision.SparkMember{Name: m.Name, Role: teamLabel(&st, t, m), Description: redactSecrets(p.routingDesc(&st.Domain, m)), Busy: s.Status == "working"})
+	}
+	from, _ := p.session(in.From)
+	start := time.Now()
+	pick, err := decision.Spark(ctx, c, from.Name, text, kids)
+	tri := &protocol.Triage{Provider: "meta", Model: firstNonEmpty(pick.Model, c.Model), Pick: pick.Recipient, Reasoning: pick.Reasoning, LatencyMS: time.Since(start).Milliseconds()}
+	reason := oneLine(clip(in.Override, 300))
+	switch {
+	case err != nil:
+		tri.Outcome, tri.Cause = "unavailable", oneLine(clip(err.Error(), 300))
+	case strings.EqualFold(pick.Recipient, hits[0].Name):
+		tri.Outcome = "agreed"
+	case reason != "":
+		tri.Outcome, tri.Override = "overridden", reason
+	default:
+		p.logLine(in.From, fmt.Sprintf("triage: provider=meta model=%s pick=%s outcome=disagreed latency=%dms reasoning=%q (not sent to %s)", tri.Model, tri.Pick, tri.LatencyMS, tri.Reasoning, hits[0].Name))
+		return nil, protocol.Errorf(protocol.CodeConflict, "not sent: Muse Spark would give this task to %s, not %s (%s). Send it to %s, or keep %s with --override \"<your reason>\"",
+			tri.Pick, hits[0].Name, tri.Reasoning, tri.Pick, hits[0].Name)
+	}
+	return tri, nil
+}
+
+// sparkActive is Muse Spark's settings and whether it checks tasks: on (the default) and set up, with an
+// address, a model and a key that resolves. Until then nothing changes: sends go unchecked, System
+// One's route hint and hold work as before, and a native SendMessage to a child is allowed.
+// ponytail: a key that resolved is remembered until the tab is saved again, so the hooks that ask
+// here never run the Keychain per call; a key deleted from the Keychain since shows as "unavailable".
+func (p *Pool) sparkActive() (store.SparkConfig, bool) {
+	c := p.st.Config().Decision.Spark
+	if c.Off || decision.ValidateSpark(c) != nil {
+		return c, false
+	}
+	p.mu.Lock()
+	ok, known := p.sparkKey[c.KeyRef]
+	p.mu.Unlock()
+	if !known {
+		_, err := decision.ResolveKey(c.KeyRef)
+		ok = err == nil
+		p.mu.Lock()
+		if p.sparkKey == nil {
+			p.sparkKey = map[string]bool{}
+		}
+		p.sparkKey[c.KeyRef] = ok
+		p.mu.Unlock()
+	}
+	return c, ok
+}
+
+// sparkLine is the record's first line on a delivered task.
+func sparkLine(t *protocol.Triage) string {
+	head := "[Triage · Muse Spark (Meta) · " + t.Model + "]"
+	switch t.Outcome {
+	case "unavailable":
+		return head + " triage unavailable; sent as addressed"
+	case "overridden":
+		return fmt.Sprintf("%s picked %s: %s; the sender kept its own pick: %s", head, t.Pick, strings.TrimRight(t.Reasoning, "."), t.Override)
+	}
+	return fmt.Sprintf("%s picked %s: %s", head, t.Pick, t.Reasoning)
 }

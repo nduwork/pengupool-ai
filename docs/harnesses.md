@@ -22,6 +22,7 @@ for is not offered. GitHub Copilot and Gemini CLI are hidden: their old sessions
 | --- | --- | --- |
 | Coding | The agent you pick: Muse Code (Meta's coding agent), Claude Code, Codex, pi or OMP | Each agent chooses its own model; PenguPool passes a model only when you set one, and pins none |
 | Triage: where a preference belongs, whether a check-in can go on | Your System One decision model | Required. Local default: Together AI's Tev1, a Qwen fine-tune, through Ollama (not a Meta model); or an online System One endpoint |
+| Send-path triage: who gets a task a lead or builder sends one of its members | Muse Spark on the Meta Model API | The default once set up (Settings → Decision model → Meta · Muse Spark: a model and an API key). Uncalibrated: it suggests and the message records its pick and reasoning; it never redirects a task by itself. Not set up, or turned off: tasks go unchecked and System One's per-turn route hint applies |
 | Answering from your phone | The Muse app, paired over Tailscale Serve | Supported team requests only; see [Phone access](phone.md) |
 
 ## Muse plugin

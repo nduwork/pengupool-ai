@@ -247,6 +247,23 @@ type TeamMessage struct {
 	SettledAt   string `json:"settled_at,omitempty"`
 
 	DeliveredAt string `json:"delivered_at,omitempty"` // when it reached the recipient; older records have none
+
+	// Triage is Muse Spark's check of a task a parent sent a child, when the owner turned it on.
+	Triage *Triage `json:"triage,omitempty"`
+}
+
+// Triage is the record of Muse Spark's pick for one task send. Outcome is agreed (its pick is the
+// named recipient), overridden (the sender kept its own pick, with Override as the reason) or
+// unavailable (no answer: Cause says why, and the task went to the named recipient).
+type Triage struct {
+	Provider  string `json:"provider"` // meta
+	Model     string `json:"model,omitempty"`
+	Pick      string `json:"pick,omitempty"` // the member's name
+	Reasoning string `json:"reasoning,omitempty"`
+	Outcome   string `json:"outcome"`
+	Override  string `json:"override,omitempty"`
+	Cause     string `json:"cause,omitempty"`
+	LatencyMS int64  `json:"latency_ms"`
 }
 
 // NodeView is a worker host as clients see it.

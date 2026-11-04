@@ -106,6 +106,8 @@ type Pool struct {
 	// clock replaces the wall clock for Compass signals and beliefs: the offline evaluation replays
 	// the owner's time (eval.go). Nil: the wall clock.
 	clock func() time.Time
+	// sparkKey remembers whether a Muse Spark key reference resolved (sparkActive); saving clears it.
+	sparkKey map[string]bool
 	// testDecider stands in for the configured decision provider in tests.
 	testDecider decision.Provider
 	triageErr   string                          // the triage model's last call failed with this; "" after one that answered; triageUnchecked at start (guarded by mu)
@@ -416,6 +418,9 @@ func (p *Pool) handlers() map[string]handler {
 		"provider.check":        bind(p.providerCheck),
 		"provider.models":       bind(p.providerModels),
 		"provider.activate":     bind(p.providerActivate),
+		"spark.get":             bind(p.sparkGet),
+		"spark.save":            bind(p.sparkSave),
+		"spark.check":           bind(p.sparkCheckRPC),
 		"settings.tailscale":    bind(p.settingsTailscale),
 		"settings.get":          bind(p.settingsGet),
 		"triage.status":         bind(p.triageStatus),

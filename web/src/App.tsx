@@ -4,7 +4,7 @@ import { Group, Panel, useDefaultLayout, usePanelRef } from "react-resizable-pan
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Toaster, toast } from "sonner";
 
-import { Ctx, harnessLabel, HOOKS_LONG, hooksAction, isAgent, useApp, usePersisted, type AppCtx, type EditorTab, type Nav, type SpotCheck } from "./app/ctx";
+import { Ctx, agentLabel, HOOKS_LONG, hooksAction, isAgent, useApp, usePersisted, type AppCtx, type EditorTab, type Nav, type SpotCheck } from "./app/ctx";
 import { desktop, onSSHHost } from "./app/desktop";
 import { AttachSession, type AttachState } from "./client/attach";
 import { Connection, type ConnectionInfo } from "./client/connection";
@@ -371,7 +371,7 @@ export function App(): ReactElement {
                 <span className="text-label font-semibold">{NAV_TITLE[nav]}</span>
                 {nav === "workspace" && selectedView !== undefined ? (
                   <span className="truncate text-label text-muted-foreground">
-                    › {selectedView.name} <SessionRole id={selectedView.id} /> <span className="text-faint">· {harnessLabel(selectedView.harness)}</span>
+                    › {selectedView.name} <SessionRole id={selectedView.id} /> <span className="text-faint">· {agentLabel(selectedView)}</span>
                   </span>
                 ) : null}
                 {nav === "workspace" && selectedView?.hooks_missing === true ? (
@@ -495,7 +495,7 @@ function TerminalHeader(): ReactElement {
       <span className="text-label font-semibold">{s.name}</span>
       <SessionRole id={s.id} className="dark" />
       <span className="font-mono text-micro text-[#8b949e]">
-        {harnessLabel(s.harness)} · {s.cols}×{s.rows}
+        {agentLabel(s)} · {s.cols}×{s.rows}
         {s.context_pct !== undefined ? ` · ${s.context_pct}% context` : ""}
       </span>
       {s.hooks_missing === true ? (

@@ -6,8 +6,10 @@
 package store
 
 import (
+	"cmp"
 	"encoding/json"
 	"maps"
+	"strings"
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/protocol"
@@ -200,6 +202,19 @@ type DecisionConfig struct {
 	// Removed lists saved models PenguPool removed because it no longer speaks their kind or format,
 	// so the app can say so; saving a model of that type clears its entry.
 	Removed []RemovedProvider `json:"removed,omitempty"`
+	// Spark is Muse Spark's check of who gets each task; it is never the triage model.
+	Spark SparkConfig `json:"spark,omitzero"`
+}
+
+// SparkConfig is Muse Spark on the Meta Model API (OpenAI-compatible chat completions at Address):
+// the default check of who gets each task a parent sends a child. It is on unless the owner turns it
+// Off, and active only once it is set up (pool.sparkActive); the host records its answer on the
+// message and never routes on it.
+type SparkConfig struct {
+	Off     bool   `json:"off,omitempty"`
+	Address string `json:"address,omitempty"`
+	Model   string `json:"model,omitempty"`
+	KeyRef  string `json:"key_ref,omitempty"` // keychain:<account> or env:<VAR>; never the key
 }
 
 // RemovedProvider is one saved triage model PenguPool removed, and whether it was the active one.
@@ -276,10 +291,28 @@ func (s Session) View() protocol.SessionView {
 		Summary:    s.Summary,
 	}
 	v.HooksMissing = s.HooksMissing
+	v.Model = cmp.Or(s.Model, s.LaunchModel)
+	v.Agent = AgentLabel(s.Harness, v.Model)
 	if s.State == "running" { // a session that ended or was lost asks nothing, whatever its last hook said
 		v.Question = s.Question
 	}
 	return v
+}
+
+// AgentLabel names a Muse Code session by the Meta model it runs: "Muse Spark · Meta · <model>" for
+// a muse-spark model, "Muse Code · Meta · <model>" for another, and "Muse Code · Meta" when the model
+// is not known (never a guess). "" for any other harness.
+func AgentLabel(harness, model string) string {
+	if harness != "muse" {
+		return ""
+	}
+	if model == "" {
+		return "Muse Code · Meta"
+	}
+	if strings.HasPrefix(model, "muse-spark") {
+		return "Muse Spark · Meta · " + model
+	}
+	return "Muse Code · Meta · " + model
 }
 
 // RFC3339 formats a timestamp in the UTC RFC 3339 form used across PenguPool AI.

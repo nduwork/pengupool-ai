@@ -212,6 +212,22 @@ export interface TeamMessage {
   settled_at?: string;
   /** When it reached the recipient; records from before 0.9.23 have none. */
   delivered_at?: string;
+  /** Muse Spark's check of a task a parent sent a child (the owner turned it on). */
+  triage?: Triage;
+}
+
+/** The record of Muse Spark's pick for one task send. */
+export interface Triage {
+  provider: string;
+  model?: string;
+  /** The member Spark picked. */
+  pick?: string;
+  reasoning?: string;
+  /** agreed | overridden (the sender kept its own pick) | unavailable (no answer: sent as addressed) */
+  outcome: string;
+  override?: string;
+  cause?: string;
+  latency_ms: number;
 }
 
 export interface NodeView {
