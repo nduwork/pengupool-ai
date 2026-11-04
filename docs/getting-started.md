@@ -47,7 +47,8 @@ Settings → **Decision model**:
 
 1. Pick **Local hosted** (a System One decision model served by Ollama), **Online / cloud** (a System
    One endpoint) or **Meta · Muse Spark** (the Meta Model API). Muse Spark is uncalibrated, so with it
-   nothing acts on its answers alone: check-ins and Compass changes wait for you.
+   nothing else acts on its own: it still picks who does a task, but check-ins and Compass changes
+   wait for you.
 2. Fill in the address and model (and the API key for an online or Meta model), then **Save provider**.
 3. **Check connection.** PenguPool asks the model a yes/no, a pick-one and a score question with
    plain answers, and shows how it did.

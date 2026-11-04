@@ -163,7 +163,7 @@ Installs into the layout the code's paths assume:
 
 ```
 ~/workspace/pengupool-agent/   pp.py detect.py gadget.py tracker.py askcard.py collect_status.py (+ tokens, below)
-~/workspace/companion/         companion.py, companion symlink, config.json
+~/workspace/companion/         companion.py, companion symlink, config.json, tracker.json
 ~/hooks/scripts/               pengupool-status.sh
 ```
 
