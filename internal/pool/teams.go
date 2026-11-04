@@ -548,7 +548,6 @@ func (p *Pool) launchTeam(ctx context.Context, a protocol.Approval) (any, error)
 	return team, nil
 }
 
-// clip cuts s to at most n bytes on a rune boundary, marking the cut.
 // clip is s cut to n bytes on a rune boundary, plus "…" when cut; "" for a width of 0 or less.
 func clip(s string, n int) string {
 	if len(s) <= n {
