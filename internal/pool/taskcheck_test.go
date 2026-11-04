@@ -314,8 +314,9 @@ func TestTaskCheckQuestion(t *testing.T) {
 	}
 }
 
-// The per-turn route is gone: a lead's prompt gets no triage note and its tools are never held;
-// the native SendMessage from a parent to its child is refused whenever a triage model is set.
+// The per-turn route to a member is gone: a lead's prompt asks no model which member should do it
+// (only whether to hand off at all, handoff_test), and a model that gives no hand-off answer holds
+// nothing; the native SendMessage from a parent to its child is refused whenever a triage model is set.
 func TestNoPerTurnRoute(t *testing.T) {
 	p := taskTeam(t, "", nil)
 	lead, _ := p.session("leadaaaaaaaa")

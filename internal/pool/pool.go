@@ -76,6 +76,7 @@ type Pool struct {
 	lastInput         map[string]time.Time         // session id → last desktop input (unused by native paths)
 	ownerEnter        map[string][]credit          // session id → the prompts the owner submitted in it, not yet matched (under mu)
 	askingOwner       map[string]bool              // sessions with a question or plan tool open (under mu)
+	handOff           map[string]bool              // LEADs whose working tools are held until they send a child a task (under mu)
 	questionUse       map[string]string            // the tool_use_id a session's pending question is about (under mu)
 	askWaitedAt       map[string]time.Time         // when an agent last waited on its ask (under mu)
 	answersLater      map[string][]laterAnswer     // owner answers a busy member gets typed at its next Stop (under mu)

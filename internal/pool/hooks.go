@@ -197,6 +197,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		// flag must not outlive the turn or the session (ownerinput.go).
 		p.mu.Lock()
 		delete(p.askingOwner, s.ID)
+		delete(p.handOff, s.ID)
 		p.mu.Unlock()
 	}
 	// The pending question lasts until the agent got its answer: a hook for that same tool call, or
@@ -274,7 +275,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		if _, statusOnly := pl["status_only"]; statusOnly {
 			return HookOut{}, nil
 		}
-		return p.contextOut(s.ID, "UserPromptSubmit", p.journalForPrompt(s, t.Prompt), p.subagentPlan(s, t.Prompt), p.wordingNote(s.ID)), nil
+		return p.contextOut(s.ID, "UserPromptSubmit", p.journalForPrompt(s, t.Prompt), p.handOffNote(s, t.Prompt), p.subagentPlan(s, t.Prompt), p.wordingNote(s.ID)), nil
 	case "PreToolUse":
 		if in.Harness == harness.Muse {
 			if _, ok := pl["tool_name"].(string); !ok {
@@ -348,6 +349,7 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 			}
 			p.mu.Lock()
 			delete(p.askingOwner, s.ID)
+			delete(p.handOff, s.ID)
 			p.mu.Unlock()
 		}
 		p.noteTurnEnd(s.ID, seq)
@@ -751,6 +753,9 @@ func (p *Pool) toolGuards(s store.Session, payload []byte, pl map[string]any) (H
 		return out, true
 	}
 	if out, deny := p.guardSkill(s, pl); deny {
+		return out, true
+	}
+	if out, deny := p.guardHandOff(s, pl); deny {
 		return out, true
 	}
 	p.logStrayWrite(s, pl)

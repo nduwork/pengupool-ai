@@ -187,6 +187,9 @@ func (p *Pool) messageSend(ctx context.Context, in sendIn) (any, error) {
 		p.pending[toSession.ID] = append(p.pending[toSession.ID], msg)
 		p.mu.Unlock()
 	}
+	if typ == "task" && p.isChild(in.From, toSession.ID) {
+		p.handedOff(in.From, toSession.Name) // a task to any child lifts the hand-off hold
+	}
 	out := map[string]string{"id": msg.ID, "to": toSession.Name}
 	if tri != nil && tri.Outcome == "rerouted" {
 		why := cmp.Or(strings.TrimRight(tri.Reasoning, "."), fmt.Sprintf("p=%.2f", tri.Probability))
