@@ -978,3 +978,34 @@ func TestSettingsSaveServeSwitchCancelled(t *testing.T) {
 		})
 	}
 }
+
+// The app bundle's binary is the app unless told to be the CLI: from the host, which has no TERM,
+// it printed "The Tailscale GUI failed to start" and exited 0, and Settings showed the JSON
+// decoder's "invalid character 'T'". The fake below acts the same way.
+func TestTailscaleStatusRunsTheBundleAsCLI(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "Tailscale")
+	script := "#!/bin/sh\n" +
+		"if [ -z \"$TAILSCALE_BE_CLI\" ]; then echo 'The Tailscale GUI failed to start: (Tailscale.CLIError error 3.)'; exit 0; fi\n" +
+		"echo '" + tailscaleStatusNoCerts + "'\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TERM", "")
+	st, err := runTailscaleStatus(context.Background(), bin)
+	if err != nil {
+		t.Fatalf("runTailscaleStatus: %v", err)
+	}
+	if st.BackendState != "Running" {
+		t.Fatalf("BackendState = %q, want Running", st.BackendState)
+	}
+}
+
+// Output that is not JSON reaches the Logged in row in the CLI's own words.
+func TestTailscaleStatusNotJSONShowsTheCLIText(t *testing.T) {
+	stubTailscale(t, "The Tailscale GUI failed to start\n", tailscaleServeJSON(""))
+	p := testPool(t)
+	c := checkByID(t, p.tailscaleChecks(), "login")
+	if c.OK || c.Detail != "The Tailscale GUI failed to start" {
+		t.Fatalf("login check = %+v, want the CLI's text", c)
+	}
+}
