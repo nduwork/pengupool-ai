@@ -32,6 +32,9 @@ export interface AppCtx {
   gates: OpenGate[];
   /** The go-aheads triage picked for the owner to check (compass.spot_checks), read every 30 s and after each action. */
   spots: SpotCheck[];
+  /** What the owner dismissed from the bell (inbox.dismissKey): hidden until it changes or the app restarts. */
+  dismissed: ReadonlySet<string>;
+  dismiss: (key: string) => void;
   select: (id: string | null) => void;
   nav: Nav;
   setNav: (n: Nav) => void;
