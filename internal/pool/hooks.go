@@ -803,11 +803,17 @@ func (p *Pool) guardSkill(s store.Session, pl map[string]any) (HookOut, bool) {
 	if _, err := p.gitIn(ctx, sk.Path, "ls-files", "--error-unmatch", "--", path); err != nil {
 		return HookOut{}, false // untracked: the helper's own
 	}
+	tmp := ""
+	if t := teamOf(&d, s.ID); t != nil {
+		if dir, _ := ensureTemp(t.ID, s.ID); dir != "" {
+			tmp = "; put temporary files in " + dir
+		}
+	}
 	return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 		"hookEventName":      "PreToolUse",
 		"permissionDecision": "deny",
-		"permissionDecisionReason": fmt.Sprintf("PenguPool: %s's installed skill files are read-only; put temporary files in %s. The record is PenguPool's: search it with `%s search`.",
-			sk.Name, sessionTemp(s.ID), p.cli()),
+		"permissionDecisionReason": fmt.Sprintf("PenguPool: %s's installed skill files are read-only%s. The record is PenguPool's: search it with `%s search`.",
+			sk.Name, tmp, p.cli()),
 	}}), true
 }
 

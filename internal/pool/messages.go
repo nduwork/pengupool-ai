@@ -494,6 +494,8 @@ func (p *Pool) taskCheck(ctx context.Context, in sendIn, typ, text, channel stri
 		tri.Outcome, tri.Cause = "unavailable", fmt.Sprintf("triage picked %q, which is not one of the sender's running children", a.Choice)
 	case picked == hits[0].SessionID:
 		tri.Outcome = "agreed"
+	case res.Calibrated && tri.Probability < decision.Thresholds["route"]:
+		tri.Outcome = "unsure" // a calibrated model reroutes only when it is sure; Muse Spark's pick always governs
 	case reason != "":
 		tri.Outcome, tri.Override = "overridden", reason
 	default:
@@ -518,6 +520,8 @@ func triageLine(t *protocol.Triage) string {
 	switch t.Outcome {
 	case "unavailable":
 		return head + " triage unavailable; sent as addressed"
+	case "unsure":
+		return fmt.Sprintf("%s picked %s: %s; not sure enough to reroute, sent as addressed", head, t.Pick, why)
 	case "overridden":
 		return fmt.Sprintf("%s picked %s: %s; the sender kept its own pick: %s", head, t.Pick, strings.TrimRight(why, "."), t.Override)
 	case "rerouted":

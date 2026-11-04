@@ -636,7 +636,9 @@ function triageTitle(t: Triage): string {
       ? `could not check this task (${t.cause ?? "no answer"}); sent as addressed`
       : t.outcome === "rerouted"
         ? `sent this to ${t.pick ?? ""} instead of ${t.named ?? ""}: ${why}`
-        : `picked ${t.pick ?? ""}: ${why}${t.override !== undefined ? ` · the sender kept its own pick: ${t.override}` : ""}`;
+        : t.outcome === "unsure"
+          ? `picked ${t.pick ?? ""} (${why}), not sure enough to reroute; sent as addressed`
+          : `picked ${t.pick ?? ""}: ${why}${t.override !== undefined ? ` · the sender kept its own pick: ${t.override}` : ""}`;
   return `Triage (${triageName(t.provider)}) ${what} · ${t.model ?? ""} · ${t.latency_ms} ms`;
 }
 

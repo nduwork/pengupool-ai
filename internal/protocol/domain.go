@@ -253,7 +253,8 @@ type TeamMessage struct {
 }
 
 // Triage is the record of the triage model's pick for one task send. Outcome is agreed (its pick is
-// the named recipient), rerouted (the task went to its pick), overridden (the sender kept its own
+// the named recipient), rerouted (the task went to its pick), unsure (a calibrated pick below the
+// route threshold: the task went to the named recipient), overridden (the sender kept its own
 // pick, with Override as the reason) or unavailable (no usable answer: Cause says why, and the task
 // went to the named recipient).
 type Triage struct {

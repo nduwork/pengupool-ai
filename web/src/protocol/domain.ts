@@ -228,7 +228,7 @@ export interface Triage {
   /** A calibrated model's probability for its pick. */
   probability?: number;
   reasoning?: string;
-  /** agreed | rerouted (delivered to Spark's pick) | overridden (the sender kept its own pick) | unavailable (no usable answer: sent as addressed) */
+  /** agreed | rerouted (delivered to triage's pick) | unsure (a calibrated pick below the route threshold: sent as addressed) | overridden (the sender kept its own pick) | unavailable (no usable answer: sent as addressed) */
   outcome: string;
   override?: string;
   cause?: string;

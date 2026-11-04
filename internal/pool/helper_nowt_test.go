@@ -18,7 +18,6 @@ import (
 // without a worktree review. A builder still gets a worktree.
 func TestHelperHasNoWorktree(t *testing.T) {
 	agentOnPath(t)
-	t.Setenv("TMPDIR", t.TempDir()) // os.TempDir: the sessions' temp folders go under the test's
 	st, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -68,11 +67,11 @@ func TestHelperHasNoWorktree(t *testing.T) {
 			t.Fatalf("%s runs in %q, want %q", c.skill, s.Cwd, c.cwd)
 		}
 		// Its own temp folder, made at launch and named in its context; no other place for temp files.
-		tmp := filepath.Join(os.TempDir(), "pengupool", m.SessionID)
+		tmp := filepath.Join(tempRoot, "team1111", m.SessionID)
 		if fi, err := os.Stat(tmp); err != nil || !fi.IsDir() {
 			t.Fatalf("%s: no temp folder %s: %v", c.skill, tmp, err)
 		}
-		if ctx := p.buildContext(m.SessionID); !strings.Contains(ctx, "Put temporary files (reports, notes, scratch work) in "+tmp+", not in your working directory or a repository; send your parent the path of anything it should read.") ||
+		if ctx := p.buildContext(m.SessionID); !strings.Contains(ctx, "Put temporary files (reports, notes, scratch work) in "+tmp+", not in your working directory or a repository; send your parent the path of anything it should read. Anything that must outlive this session goes in the message itself or your Done report") ||
 			strings.Contains(ctx, "Put your temporary files in your working directory") || strings.Contains(ctx, "Temp files and folders of your own") {
 			t.Fatalf("%s context:\n%s", c.skill, ctx)
 		}

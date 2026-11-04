@@ -278,6 +278,7 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("HOME", home)
 	os.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	tempRoot = filepath.Join(home, "tmp-pengupool") // the sessions' temp folders go under it, and with it
 	code := m.Run()
 	os.RemoveAll(home)
 	os.Exit(code)

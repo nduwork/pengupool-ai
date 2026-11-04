@@ -1,9 +1,12 @@
 package pool
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +23,7 @@ type pickDecider struct {
 	mu         sync.Mutex
 	pick       string
 	calibrated bool
+	p          float64 // a calibrated pick's probability; 0.91 when unset
 	err        error
 	during     func()
 	asked      []decision.Request
@@ -29,7 +33,7 @@ func (d *pickDecider) Name() string { return "pick" }
 func (d *pickDecider) Decide(_ context.Context, req decision.Request) (decision.Response, error) {
 	d.mu.Lock()
 	d.asked = append(d.asked, req)
-	pick, cal, err, during := d.pick, d.calibrated, d.err, d.during
+	pick, cal, err, during, pr := d.pick, d.calibrated, d.err, d.during, cmp.Or(d.p, 0.91)
 	d.mu.Unlock()
 	if during != nil {
 		during()
@@ -39,7 +43,7 @@ func (d *pickDecider) Decide(_ context.Context, req decision.Request) (decision.
 	}
 	res := decision.Response{Calibrated: cal, Model: "m-1", Answers: map[string]decision.Answer{"recipient": {Type: decision.Choice, Choice: pick}}}
 	if cal {
-		res.Answers["recipient"] = decision.Answer{Type: decision.Choice, Choice: pick, Probabilities: map[string]float64{pick: 0.91}}
+		res.Answers["recipient"] = decision.Answer{Type: decision.Choice, Choice: pick, Probabilities: map[string]float64{pick: pr}}
 	} else {
 		res.Reasoning = pick + " owns it"
 	}
@@ -146,6 +150,78 @@ func TestTaskCheckOutcomes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A calibrated model reroutes only when it is sure (p >= the route threshold, 0.80); an unsure pick
+// leaves the task as addressed, with the pick and p on the record. Muse Spark's pick always governs.
+func TestTaskCheckUnsure(t *testing.T) {
+	d := &pickDecider{pick: "web", calibrated: true, p: 0.35}
+	p := taskTeam(t, "jev", d)
+	m, out := sendTask(t, p, sendIn{To: "plan", Text: "Task: build the cart page"})
+	if tr := m.Triage; m.To != "planaaaaaaaa" || tr == nil || tr.Outcome != "unsure" || tr.Pick != "web" || tr.Probability != 0.35 || out["note"] != "" ||
+		m.Text != "[Triage · Jev · m-1] picked web: p=0.35; not sure enough to reroute, sent as addressed\nTask: build the cart page" {
+		t.Fatalf("p=0.35: %q %+v %v", m.Text, m.Triage, out)
+	}
+	d.mu.Lock()
+	d.p = 0.80
+	d.mu.Unlock()
+	if m, _ = sendTask(t, p, sendIn{To: "plan", Text: "Task: build the cart page"}); m.To != "webaaaaaaaaa" || m.Triage.Outcome != "rerouted" {
+		t.Fatalf("p=0.80: %+v %+v", m, m.Triage)
+	}
+	d.mu.Lock()
+	d.p, d.calibrated = 0.35, false // Spark-like: no probability, its pick governs
+	d.mu.Unlock()
+	if m, _ = sendTask(t, p, sendIn{To: "plan", Text: "Task: build the cart page"}); m.To != "webaaaaaaaaa" || m.Triage.Outcome != "rerouted" {
+		t.Fatalf("uncalibrated: %+v %+v", m, m.Triage)
+	}
+}
+
+// A team session's temp folder is /tmp/pengupool/<team>/<session>, 0700 at each level, and used only
+// when each level is a real folder of this user that no one else can write: a symlink, or a folder
+// others can write, gets no folder and no context line.
+func TestTempFolderRefusedWhenUnsafe(t *testing.T) {
+	defer func(r string) { tempRoot = r }(tempRoot)
+	p, _ := twoTeams(t)
+	line := func() bool { return strings.Contains(p.buildContext("webaaaaaaaaa"), "Put temporary files") }
+	base, elsewhere := t.TempDir(), t.TempDir()
+	tempRoot = filepath.Join(base, "pengupool")
+	if !line() {
+		t.Fatal("no context line for a safe folder")
+	}
+	for _, d := range []string{tempRoot, filepath.Join(tempRoot, "team1"), sessionTemp("team1", "webaaaaaaaaa")} {
+		if fi, err := os.Lstat(d); err != nil || fi.Mode().Perm() != 0o700 {
+			t.Fatalf("%s: %v %v", d, fi.Mode(), err)
+		}
+	}
+	if dir, err := ensureTemp("", "webaaaaaaaaa"); dir != "" || err != nil {
+		t.Fatalf("a session in no team: %q %v", dir, err)
+	}
+	for name, set := range map[string]func(){
+		"root a symlink": func() {
+			tempRoot = filepath.Join(base, "link")
+			_ = os.Symlink(filepath.Join(base, "pengupool"), tempRoot)
+		},
+		"team folder a symlink": func() {
+			tempRoot = filepath.Join(base, "root2")
+			_ = os.MkdirAll(tempRoot, 0o700)
+			_ = os.Symlink(elsewhere, filepath.Join(tempRoot, "team1"))
+		},
+		"session folder a symlink": func() {
+			tempRoot = filepath.Join(base, "root3")
+			_ = os.MkdirAll(filepath.Join(tempRoot, "team1"), 0o700)
+			_ = os.Symlink(elsewhere, sessionTemp("team1", "webaaaaaaaaa"))
+		},
+		"others can write": func() {
+			tempRoot = filepath.Join(base, "root4")
+			_ = os.MkdirAll(sessionTemp("team1", "webaaaaaaaaa"), 0o700)
+			_ = os.Chmod(filepath.Join(tempRoot, "team1"), 0o777)
+		},
+	} {
+		set()
+		if dir, err := ensureTemp("team1", "webaaaaaaaaa"); dir != "" || err == nil || line() {
+			t.Fatalf("%s: used %q (%v)", name, dir, err)
+		}
 	}
 }
 

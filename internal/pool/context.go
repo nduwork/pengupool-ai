@@ -69,7 +69,9 @@ func (p *Pool) buildContextCap(id string, compassCap int) string {
 			}
 		}
 	}
-	fmt.Fprintf(&b, "\nPut temporary files (reports, notes, scratch work) in %s, not in your working directory or a repository; send your parent the path of anything it should read.", sessionTemp(id))
+	if dir, _ := ensureTemp(t.ID, id); dir != "" { // made here too for a session that joined the team after it started; none when unsafe (spawn logs why)
+		fmt.Fprintf(&b, "\nPut temporary files (reports, notes, scratch work) in %s, not in your working directory or a repository; send your parent the path of anything it should read. Anything that must outlive this session goes in the message itself or your Done report, not only as a file path: the folder is cleared when the Mac restarts.", dir)
+	}
 	b.WriteString(p.autonomySection())
 	// A display name changes on a rename; a session id does not. Agents keep teammates by id and
 	// read this roster for the current name, which is the only one the owner hears.

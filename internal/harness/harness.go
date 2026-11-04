@@ -129,8 +129,9 @@ type Params struct {
 	// outside their working directory are given read access to it (Claude and Copilot --add-dir,
 	// Gemini --include-directories); Codex, OMP and pi read anywhere.
 	SkillRepo string
-	// ReadDirs are folders a helper may read outside its working directory (the team's repositories),
-	// given where a clean flag exists: Claude and Copilot --add-dir, Gemini --include-directories.
+	// ReadDirs are folders an agent may use outside its working directory (a helper's team
+	// repositories to read, and a team session's own temp folder to write), given where a clean flag
+	// exists: Claude and Copilot --add-dir, Gemini --include-directories.
 	// ponytail: Codex, OMP and pi read anywhere already.
 	ReadDirs []string
 	// Effort is "" or a level the agent takes; Claude, Codex, omp and pi take it,

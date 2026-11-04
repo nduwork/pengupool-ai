@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/harness"
@@ -127,6 +128,7 @@ type spawnReq struct {
 	TrustFrom                             string // the repository a worktree Cwd was made from (see pretrustFolder)
 	Command                               []string
 	ReadDirs                              []string // a helper may read these outside its Cwd (see harness.Params)
+	TeamID                                string   // a team member's team: it gets a temp folder (ensureTemp)
 	Cols, Rows                            int
 	Decorate                              func(*store.Session)
 }
@@ -154,9 +156,9 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 	}
 	tmp := ""
 	if r.Harness != harness.Shell {
-		tmp = sessionTemp(r.ID)
-		if err := os.MkdirAll(tmp, 0o700); err != nil {
-			p.logf("pool: temp folder for %s: %v", r.Name, err)
+		var err error
+		if tmp, err = ensureTemp(r.TeamID, r.ID); err != nil {
+			p.logf("pool: no temp folder for %s: %v", r.Name, err)
 		}
 	}
 	if p.testSpawn != nil {
@@ -407,7 +409,7 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	p.expireAsks(s.ID) // what it asked before it stopped has no one waiting: it asks again if it still needs to
 	ns, err := p.spawn(ctx, spawnReq{
 		ID: s.ID, Name: s.Name, Harness: s.Harness, Cwd: s.Cwd, Resume: resumeID, Cols: s.Cols, Rows: s.Rows, SkillID: keep.SkillID, Via: s.Via,
-		Model: keep.LaunchModel, ReadDirs: p.resumeReadDirs(keep),
+		Model: keep.LaunchModel, ReadDirs: p.resumeReadDirs(keep), TeamID: keep.TeamID,
 		Decorate: func(n *store.Session) {
 			n.TeamID, n.Role, n.SkillID, n.ConvID, n.Transcript = keep.TeamID, keep.Role, keep.SkillID, keep.ConvID, keep.Transcript
 			if keep.RunLog != "" {
@@ -663,9 +665,38 @@ func (p *Pool) readyByPrompt() {
 	}
 }
 
-// sessionTemp is a session's folder for temporary files (reports, notes, scratch work), outside every
-// working directory and repository; spawn makes it.
-func sessionTemp(id string) string { return filepath.Join(os.TempDir(), "pengupool", id) }
+// tempRoot holds the team sessions' temp folders: under /tmp, which macOS clears at restart, so
+// nothing an agent leaves there persists (the per-user $TMPDIR survives restarts). PenguPool deletes
+// nothing in it. Tests move it.
+var tempRoot = "/tmp/pengupool"
+
+// sessionTemp is a team session's folder for temporary files (reports, notes, scratch work), outside
+// every working directory and repository: one folder per team, so teams never share one.
+func sessionTemp(team, id string) string { return filepath.Join(tempRoot, team, id) }
+
+// ensureTemp makes a team session's temp folder, 0700 at each level, and returns it, or "" and why
+// when it cannot be used: /tmp is shared, so tempRoot, the team's folder and the session's must each
+// be a real folder (no symlink) of this user that no one else can write.
+func ensureTemp(team, id string) (string, error) {
+	if team == "" || id == "" {
+		return "", nil
+	}
+	dir := sessionTemp(team, id)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	for _, d := range []string{tempRoot, filepath.Dir(dir), dir} {
+		fi, err := os.Lstat(d)
+		if err != nil {
+			return "", err
+		}
+		st, ok := fi.Sys().(*syscall.Stat_t)
+		if !fi.IsDir() || fi.Mode().Perm()&0o022 != 0 || !ok || int(st.Uid) != os.Getuid() {
+			return "", fmt.Errorf("%s is not a folder only this user can write (a symlink, another user's, or open to others)", d)
+		}
+	}
+	return dir, nil
+}
 
 func appendNonEmpty(xs []string, x string) []string {
 	if x == "" {

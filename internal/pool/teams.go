@@ -622,7 +622,7 @@ func (p *Pool) startMember(ctx context.Context, team *protocol.Team, repo protoc
 		cwd = m.Worktree
 	}
 	_, err := p.spawn(ctx, spawnReq{
-		ID: id, Name: pm.Name, Harness: firstNonEmpty(pm.Harness, team.Harness), Model: pm.Model, Cwd: cwd, SkillID: pm.SkillID, ReadDirs: readDirs,
+		ID: id, Name: pm.Name, Harness: firstNonEmpty(pm.Harness, team.Harness), Model: pm.Model, Cwd: cwd, SkillID: pm.SkillID, ReadDirs: readDirs, TeamID: team.ID,
 		TrustFrom: map[bool]string{true: repo.Path}[m.Worktree != ""],
 		Decorate: func(s *store.Session) {
 			s.TeamID, s.Role, s.SkillID = team.ID, pm.Role, pm.SkillID
@@ -783,7 +783,7 @@ func (p *Pool) startHub(ctx context.Context, team *protocol.Team, sk protocol.Sk
 		}
 	}
 	_, err := p.spawn(ctx, spawnReq{
-		ID: id, Name: pm.Name, Harness: firstNonEmpty(pm.Harness, team.Harness), Model: pm.Model, Cwd: cwd, SkillID: pm.SkillID,
+		ID: id, Name: pm.Name, Harness: firstNonEmpty(pm.Harness, team.Harness), Model: pm.Model, Cwd: cwd, SkillID: pm.SkillID, TeamID: team.ID,
 		Decorate: func(s *store.Session) {
 			s.TeamID, s.Role, s.SkillID = team.ID, pm.Role, pm.SkillID
 		},

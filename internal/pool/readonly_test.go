@@ -94,7 +94,7 @@ func TestGuardSkillEdits(t *testing.T) {
 		return out.(HookOut).Stdout
 	}
 	for _, c := range []struct{ tool, path string }{{"Edit", filepath.Join(dir, "skills", "x", "SKILL.md")}, {"Write", "skills/x/SKILL.md"}, {"MultiEdit", dir + "/AGENTS.md"}, {"NotebookEdit", dir + "/n.ipynb"}} {
-		if got := edit(c.tool, c.path); !strings.Contains(got, `"deny"`) || !strings.Contains(got, "planning-agent's installed skill files are read-only") || !strings.Contains(got, "put temporary files in "+sessionTemp("planaaaaaaaa")) || !strings.Contains(got, "'pengupool' search") {
+		if got := edit(c.tool, c.path); !strings.Contains(got, `"deny"`) || !strings.Contains(got, "planning-agent's installed skill files are read-only") || !strings.Contains(got, "put temporary files in "+sessionTemp("team1", "planaaaaaaaa")) || !strings.Contains(got, "'pengupool' search") {
 			t.Errorf("%s %s: %q", c.tool, c.path, got)
 		}
 	}
