@@ -1,7 +1,7 @@
 name: test
 
-# Pull requests and pushes run on GitHub-hosted runners. No workflow uses a self-hosted runner: releases are
-# built and signed on a maintainer's Mac with `make release`.
+# Pull requests and pushes run on GitHub-hosted runners. Only release.yml, started by hand, uses the
+# maintainer's Mac.
 on:
   pull_request:
   push:
@@ -31,6 +31,7 @@ jobs:
           git config --global user.email "ci@users.noreply.github.com"
       - run: go vet ./...
       - run: go test ./... -count=1
+      - run: scripts/release-runner-gate_test.sh
 
   web:
     runs-on: ubuntu-latest

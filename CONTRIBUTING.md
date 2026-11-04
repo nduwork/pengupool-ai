@@ -28,18 +28,22 @@ directory.
 
 ## Releasing
 
-No CI builds or publishes releases. A maintainer (nduworker, or another account allowed to publish) builds,
-signs and notarizes each release on their own Mac, with the Developer ID identity and notary profile in that
-Mac's keychain:
+Releases are built, signed and notarized on the maintainer's Mac, with the Developer ID identity and notary
+profile in that Mac's keychain, and published by nduworker:
 
 1. Bump `Version` in `cmd/pengupool/main.go`, add the release's entry to `CHANGELOG.md`, and merge to main.
-2. On a fresh clone of the latest main, run `make release` (it refuses another commit or uncommitted changes). It builds the disk image (`make dist`), then `make publish`
-   creates release `v<version>` at that commit (or uses it if it already exists) and attaches the image.
-   Re-running replaces the image. When the new release is the latest, older releases lose their disk images;
-   a prerelease or a backport keeps them.
+2. In the Actions tab, open **release** and choose **Run workflow** on main. The job runs `make release` on the
+   maintainer's Mac runner, then checks that the disk image is stapled and accepted by Gatekeeper. Only
+   nduworker can start it, and only on main; the runner refuses any other job before its first step
+   (`scripts/release-runner-gate.sh`, checked by `scripts/release-runner-gate_test.sh`).
+
+`make release` still works by hand: on a fresh clone of the latest main (it refuses another commit or
+uncommitted changes), it builds the disk image (`make dist`), then `make publish` creates release `v<version>`
+at that commit (or uses it if it already exists) and attaches the image. Re-running replaces the image. When the
+new release is the latest, older releases lose their disk images; a prerelease or a backport keeps them.
 
 Pull requests and pushes to main are tested on GitHub-hosted runners (`test.yml`). Pull requests from forks
-run no CI.
+run no CI, and no pull request reaches the release runner.
 
 ## How it fits together
 
