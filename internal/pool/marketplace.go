@@ -414,7 +414,8 @@ func (p *Pool) marketplaceRefresh(ctx context.Context, _ struct{}) (any, error) 
 	return p.syncLocked(ctx), nil
 }
 
-// pullCatalog fast-forwards the catalog clone to its remote and logs when it moved.
+// pullCatalog fast-forwards the catalog clone to its remote and logs when it moved. When the hub's history
+// was replaced (pushed again from scratch), no fast-forward can work: the clone is cloned again instead.
 func (p *Pool) pullCatalog(ctx context.Context) (string, error) {
 	dir, err := p.ensureMarket(ctx)
 	if err != nil {
@@ -422,7 +423,13 @@ func (p *Pool) pullCatalog(ctx context.Context) (string, error) {
 	}
 	was, _ := p.gitIn(ctx, dir, "rev-parse", "HEAD")
 	if _, err := p.ghGit(ctx, dir, "pull", "--ff-only", "-q"); err != nil {
-		return "", hubAccess(err, p.catalogURL())
+		if !p.unrelatedToOrigin(ctx, dir) {
+			return "", hubAccess(err, p.catalogURL())
+		}
+		if dir, err = p.recloneCatalog(ctx, p.catalogURL()); err != nil {
+			return "", err
+		}
+		p.logf("pool: library sync: the hub's history was replaced; cloned the catalog again")
 	}
 	if now, _ := p.gitIn(ctx, dir, "rev-parse", "HEAD"); now != was {
 		p.logf("pool: library sync: catalog %s→%s", was[:min(len(was), 7)], now[:min(len(now), 7)])

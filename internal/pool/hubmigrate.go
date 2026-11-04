@@ -40,12 +40,10 @@ func (p *Pool) migrateHub(ctx context.Context) {
 		}
 	}
 	if origin, err := p.gitIn(ctx, hubDir, "remote", "get-url", "origin"); err == nil && (repoKey(origin) == oldKey || p.unrelatedToOrigin(ctx, hubDir)) {
-		if os.RemoveAll(hubDir) == nil {
-			if _, err := p.ensureMarketFor(ctx, mainMarketplace); err != nil {
-				p.logf("pool: helper hub: cloning the hub again: %v", err)
-			} else {
-				p.logf("pool: helper hub: the catalog clone did not follow the hub's history; cloned again")
-			}
+		if _, err := p.recloneCatalog(ctx, mainMarketplace); err != nil {
+			p.logf("pool: helper hub: cloning the hub again: %v", err)
+		} else {
+			p.logf("pool: helper hub: the catalog clone did not follow the hub's history; cloned again")
 		}
 	}
 	// The helpers: the key first, then the journal, the remote last. A helper that already has the hub's
@@ -98,6 +96,15 @@ func (p *Pool) migrateHub(ctx context.Context) {
 			_ = p.db.SetSetting(k, "")
 		}
 	}
+}
+
+// recloneCatalog drops the catalog clone of url and clones it again. The clone is a cache of the hub, so
+// nothing local is lost; used when its history no longer follows the hub's (moved, or pushed again from scratch).
+func (p *Pool) recloneCatalog(ctx context.Context, url string) (string, error) {
+	if err := os.RemoveAll(p.marketDirFor(url)); err != nil {
+		return "", err
+	}
+	return p.ensureMarketFor(ctx, url)
 }
 
 // unrelatedToOrigin reports whether a clone's HEAD shares no history with its origin's default branch

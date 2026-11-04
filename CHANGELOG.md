@@ -12,6 +12,8 @@ Each team session gets its own temporary folder, `/tmp/pengupool/<team id>/<sess
 
 In Settings → Decision model, the three tabs share one row of buttons (Save provider, Discard changes, Check connection, Use for triage) with the status line in one place. The Local hosted tab no longer shows "could not reach 127.0.0.1:11434 … connection refused" when Ollama is not the model in use; until it is, or until you press Check connection, it says only that Ollama isn't reachable at that address. The Meta tab's long notes are gone; its address hint says what goes to Meta.
 
+Refresh in the Library failed with "Not possible to fast-forward, aborting" once the Helper hub's history had been replaced (pushed again from scratch); only a restart recovered. Refresh now drops the catalog's clone, which is only a cache of the hub, and clones it again, the same way the app already did at start.
+
 ## 0.11.3
 
 A Muse Code session now shows **Muse Spark · Meta** and its model on its map card and session header, read from Muse's own status line; the session log records the model each turn. When Muse does not show its model, the label reads **Muse Code · Meta**.
