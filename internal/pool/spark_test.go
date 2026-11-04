@@ -161,10 +161,36 @@ func TestSparkOutcomes(t *testing.T) {
 	webState("running")
 	_ = p.st.UpdateConfig(func(c *store.Config) error { c.Decision.Spark.Address = addr; return nil })
 
-	// A task at the size limit still fits with the record's line on it.
-	m = sent(sendIn{From: "leadaaaaaaaa", To: "web", Text: strings.Repeat("x", maxMessage-20)})
-	if m.Triage == nil || len(m.Text) > maxMessage || !strings.HasPrefix(m.Text, "[Triage") {
-		t.Fatalf("at the limit: %d bytes, %+v", len(m.Text), m.Triage)
+	// Spark's pick leaves the team while the check runs (its session still running): as addressed, unavailable.
+	webMember := func(state string) {
+		_ = p.st.Update(func(st *store.State) error {
+			for i, mb := range st.Domain.Teams[0].Members {
+				if mb.SessionID == "webaaaaaaaaa" {
+					st.Domain.Teams[0].Members[i].State = state
+				}
+			}
+			return nil
+		})
+	}
+	leaver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		webMember("left")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": pickWeb}}}})
+	}))
+	defer leaver.Close()
+	_ = p.st.UpdateConfig(func(c *store.Config) error { c.Decision.Spark.Address = leaver.URL; return nil })
+	m = sent(sendIn{From: "leadaaaaaaaa", To: "plan", Text: "Build the cart page"})
+	if tr := m.Triage; m.To != "planaaaaaaaa" || tr == nil || tr.Outcome != "unavailable" || !strings.Contains(tr.Cause, "no longer a running member") {
+		t.Fatalf("pick left during the check: %+v %+v", m, m.Triage)
+	}
+	webMember("active")
+	_ = p.st.UpdateConfig(func(c *store.Config) error { c.Decision.Spark.Address = addr; return nil })
+
+	// Near the size limit the record's line is clipped, or left off, and never takes the body past it.
+	for _, n := range []int{maxMessage - 20, maxMessage - 4, maxMessage - 3, maxMessage - 2, maxMessage} {
+		m = sent(sendIn{From: "leadaaaaaaaa", To: "web", Text: strings.Repeat("x", n)})
+		if m.Triage == nil || len(m.Text) > maxMessage || n == maxMessage-20 && !strings.HasPrefix(m.Text, "[Triage") {
+			t.Fatalf("a %d-byte task: %d bytes, %+v", n, len(m.Text), m.Triage)
+		}
 	}
 
 	// Unavailable: delivered as addressed, marked, with the cause on the record.
@@ -261,5 +287,13 @@ func TestSparkKeyRetried(t *testing.T) {
 	sparkKeyRetry = 0
 	if _, on := p.sparkActive(); !on {
 		t.Fatal("the key added later was not picked up")
+	}
+}
+
+func TestClipSmallWidths(t *testing.T) {
+	for n, want := range map[int]string{-2: "", 0: "", 1: "a…", 5: "abcde"} {
+		if got := clip("abcde", n); got != want {
+			t.Errorf("clip(abcde, %d) = %q, want %q", n, got, want)
+		}
 	}
 }

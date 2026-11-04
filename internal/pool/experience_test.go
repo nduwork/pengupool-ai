@@ -471,3 +471,18 @@ func TestEmptyJournalLine(t *testing.T) {
 		t.Fatalf("empty journal: %q", out)
 	}
 }
+
+// A report that was not added (its entry is already there) is not put to triage: a skip can only ever
+// delete the row the report itself added.
+func TestExperienceNotAddedIsNotDecided(t *testing.T) {
+	p, _, _ := journalSetup(t, harness.Claude)
+	report := "Done: fixed the cache\nevidence"
+	_, _ = p.db.AddExperience(agentdb.Entry{Helper: planKey, At: "2026-10-01T10:00:00Z", Title: "fixed the cache", Body: report})
+	d := &keepDecider{yes: 0.1, conf: 0.9, calibrated: true, asked: make(chan decision.Request, 1), release: make(chan struct{})}
+	close(d.release)
+	p.testDecider = d
+	p.doneReport(done(report))
+	if len(d.asked) != 0 || len(entries(t, p)) != 1 {
+		t.Fatalf("asked %d, entries %+v", len(d.asked), entries(t, p))
+	}
+}

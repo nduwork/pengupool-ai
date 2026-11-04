@@ -100,8 +100,12 @@ func (p *Pool) messageSend(ctx context.Context, in sendIn) (any, error) {
 			hits = append(hits, protocol.Member{SessionID: channel})
 		}
 		if pick != "" { // Spark's reroute, while its pick is still a running child of the sender; else as addressed
-			if i := sessionIndex(st, pick); t != nil && i >= 0 && st.Sessions[i].State == "running" && treeParent(t, pick) == in.From {
-				hits = memberHits(t, pick)
+			var ph []protocol.Member
+			if t != nil {
+				ph = memberHits(t, pick) // active members only
+			}
+			if i := sessionIndex(st, pick); len(ph) == 1 && i >= 0 && st.Sessions[i].State == "running" && treeParent(t, pick) == in.From {
+				hits = ph
 			} else {
 				tri.Outcome, tri.Cause = "unavailable", fmt.Sprintf("Muse Spark picked %s, which is no longer a running member under the sender", tri.Pick)
 			}
@@ -141,10 +145,14 @@ func (p *Pool) messageSend(ctx context.Context, in sendIn) (any, error) {
 			ID: protocol.NewID(), TeamID: teamID, From: in.From, To: hits[0].SessionID,
 			Text: text, State: "queued", At: now(), Via: via, Type: typ, ReplyTo: in.ReplyTo,
 		}
-		if tri != nil { // the record's line, clipped so the body stays within maxMessage
+		if tri != nil { // the record's line, clipped so the body stays within maxMessage, or left off
 			msg.Triage = tri
-			if n := maxMessage - len(text) - 1; n > 0 {
-				msg.Text = clip(sparkLine(tri), n-len("…")) + "\n" + text
+			line, room := sparkLine(tri), maxMessage-len(text)-1
+			if len(line) > room {
+				line = clip(line, room-len("…"))
+			}
+			if line != "" {
+				msg.Text = line + "\n" + text
 			}
 		}
 		addMessage(st, msg)

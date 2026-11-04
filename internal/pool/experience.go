@@ -53,6 +53,9 @@ func (p *Pool) doneReport(m protocol.TeamMessage) {
 	// Kept at once, so a host that quits while triage decides loses nothing; a skip deletes it after.
 	helper, at := agentOf(*sk), time.Now()
 	uid := p.addEntry(helper, t.ID, at, title, m.Text)
+	if uid == "" {
+		return // not added (already there): nothing of this report's to decide on, or to delete
+	}
 	prov := p.decider()
 	if prov == nil {
 		p.logLine(m.From, fmt.Sprintf("experience: kept %q provider=none", title))
@@ -106,14 +109,18 @@ func reportsTo(d *protocol.Domain, t *protocol.Team, id string) string {
 	return ""
 }
 
-// addEntry keeps an entry and returns its uid.
+// addEntry keeps an entry and returns its uid; "" when it was not added: an entry with that uid
+// (same helper, second and title) or that body is already there, or it failed.
 func (p *Pool) addEntry(helper, team string, at time.Time, title, body string) string {
 	stamp := at.UTC().Format(time.RFC3339)
 	uid := agentdb.EntryUID(helper, stamp, title)
-	_, err := p.db.AddExperience(agentdb.Entry{UID: uid, Helper: helper, At: stamp, Title: title, TeamID: team,
+	added, err := p.db.AddExperience(agentdb.Entry{UID: uid, Helper: helper, At: stamp, Title: title, TeamID: team,
 		Body: clipBytes(redactSecrets(body), journalBodyMax)})
 	if err != nil {
 		p.logf("pool: journal entry of %s: %v", helper, err)
+	}
+	if !added {
+		return ""
 	}
 	return uid
 }
