@@ -592,12 +592,14 @@ var promptMarkers = map[string]string{
 var museStatusRe = regexp.MustCompile(`(?m)^\s*(\S+) · (?:minimal|low|medium|high|xhigh|max) · `)
 
 // museModel keeps the model Muse shows on its own status line: Muse's hooks carry no model, so its
-// screen is the evidence. It returns the model, or "" when the line is not on screen.
+// screen is the evidence. It returns the model, or "" when the line is not on screen. The status line
+// is under the prompt, so the last match is it: agent output above can look the same.
 func (p *Pool) museModel(id, screen string) string {
-	m := museStatusRe.FindStringSubmatch(screen)
-	if m == nil {
+	all := museStatusRe.FindAllStringSubmatch(screen, -1)
+	if all == nil {
 		return ""
 	}
+	m := all[len(all)-1]
 	if s, ok := p.session(id); ok && s.Model != m[1] {
 		p.setSession(id, func(x *store.Session) { x.Model = m[1] })
 	}

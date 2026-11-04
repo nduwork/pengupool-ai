@@ -192,6 +192,7 @@ function SparkPane({ onSaved }: { onSaved: () => void }): ReactElement {
         Model
         <Input value={draft.model ?? ""} onChange={(e) => set("model", e.target.value)} className="font-mono" placeholder="muse-spark-1.3" />
       </Label>
+      <p className="text-caption text-muted-foreground">Reasoning effort: minimal (fixed for triage)</p>
       {contributorNote(draft.model) !== null ? <p className="text-caption text-warning">{contributorNote(draft.model)}</p> : null}
       <div className="flex flex-wrap gap-2">
         <Button variant={unchanged ? "secondary" : "default"} onClick={() => void save(draft)}>

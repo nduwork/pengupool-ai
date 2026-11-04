@@ -15,7 +15,7 @@ import (
 func TestMuseModelPerTurn(t *testing.T) {
 	p, st := twoTeams(t)
 	runLog := filepath.Join(t.TempDir(), "lead.log")
-	screen := "  Muse Code 1.4.14\n── Voice input (⌥ + v to start) ────────\n❯\n────────\n  muse-spark-1.3-contributor · max · /work/repo · Auto-review"
+	screen := "  Muse Code 1.4.14\n  Plan · high · a lookalike line the agent printed\n── Voice input (⌥ + v to start) ────────\n❯\n────────\n  muse-spark-1.3-contributor · max · /work/repo · Auto-review"
 	p.testScreen = func(id string) (string, bool) { return screen, true }
 	_ = st.Update(func(s *store.State) error {
 		s.Sessions[0].Harness, s.Sessions[0].RunLog = harness.Muse, runLog

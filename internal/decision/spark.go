@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,6 +23,11 @@ import (
 // SparkTimeout bounds one task check; past it the task goes on unchecked.
 var SparkTimeout = 10 * time.Second
 
+// SparkEffort is the reasoning effort of every Spark call, fixed: a routing pick should take seconds.
+// Muse Spark refuses "none"; without the field it picks its own level. No token cap is sent: reasoning
+// counts toward it, and a low one would cut the JSON off.
+const SparkEffort = "minimal"
+
 // SparkMember is one of the sender's children, as Spark sees the team.
 type SparkMember struct {
 	Name        string `json:"name"`
@@ -38,12 +44,15 @@ type SparkPick struct {
 	Latency   time.Duration
 }
 
-// ValidateSpark checks the saved settings: an http(s) address with no credentials or query, a model
-// string, and a key reference (keychain:<name> or env:<VAR>).
+// ValidateSpark checks the saved settings: an https address (http only on loopback) with no
+// credentials or query, a model string, and a key reference (keychain:<name> or env:<VAR>).
 func ValidateSpark(c store.SparkConfig) error {
 	u, err := url.Parse(c.Address)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("address must be an http(s) URL")
+		return fmt.Errorf("address must be an https URL")
+	}
+	if ip := net.ParseIP(u.Hostname()); u.Scheme == "http" && u.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return fmt.Errorf("address must be https: the API key and the tasks go to it (http is allowed only on this Mac's loopback)")
 	}
 	if u.User != nil || u.RawQuery != "" {
 		return fmt.Errorf("address must not carry credentials or a query; keys go in the key field")
@@ -93,7 +102,7 @@ func Spark(ctx context.Context, c store.SparkConfig, sender, task string, childr
 	raw, err := p.post(ctx, key, map[string]any{"model": c.Model, "messages": []any{
 		map[string]string{"role": "system", "content": sparkSystem},
 		map[string]string{"role": "user", "content": string(user)},
-	}, "response_format": map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "task_pick", "schema": schema}}}, nil)
+	}, "reasoning_effort": SparkEffort, "response_format": map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "task_pick", "schema": schema}}}, nil)
 	var text, model string
 	if err == nil {
 		text, model, err = chatText(raw)

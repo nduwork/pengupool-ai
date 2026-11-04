@@ -243,3 +243,23 @@ func TestSparkNativeSendAndRouteHold(t *testing.T) {
 		t.Fatalf("route question while Spark is active: %q %q", who, note)
 	}
 }
+
+// A key that did not resolve is tried again after sparkKeyRetry, so one added later starts working
+// without saving the tab again.
+func TestSparkKeyRetried(t *testing.T) {
+	defer func(d time.Duration) { sparkKeyRetry = d }(sparkKeyRetry)
+	var reply atomic.Pointer[string]
+	reply.Store(ptr(pickWeb))
+	p, _ := sparkTeam(t, false, &reply)
+	if _, on := p.sparkActive(); on {
+		t.Fatal("active with no key")
+	}
+	t.Setenv("SPARK_TEST_KEY", "k-test")
+	if _, on := p.sparkActive(); on {
+		t.Fatal("a failed key was looked up again within the retry window")
+	}
+	sparkKeyRetry = 0
+	if _, on := p.sparkActive(); !on {
+		t.Fatal("the key added later was not picked up")
+	}
+}

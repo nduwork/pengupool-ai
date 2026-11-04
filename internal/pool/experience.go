@@ -50,39 +50,46 @@ func (p *Pool) doneReport(m protocol.TeamMessage) {
 	if title == "" {
 		title = "Done"
 	}
+	// Kept at once, so a host that quits while triage decides loses nothing; a skip deletes it after.
 	helper, at := agentOf(*sk), time.Now()
+	uid := p.addEntry(helper, t.ID, at, title, m.Text)
 	prov := p.decider()
 	if prov == nil {
-		p.addEntry(helper, t.ID, at, title, m.Text)
 		p.logLine(m.From, fmt.Sprintf("experience: kept %q provider=none", title))
 		return
 	}
-	go p.keepReport(prov, m.From, helper, t.ID, at, title, m.Text) // off the send path
+	go p.keepReport(prov, m.From, helper, uid, title, m.Text) // off the send path
 }
 
-// keepReport asks the triage model whether a finished job is worth keeping in the helper's
-// Experience, and keeps it unless the answer is a calibrated no at the "experience" threshold: an
-// unsure answer, an error or a timeout keeps it, so nothing is lost.
-func (p *Pool) keepReport(prov decision.Provider, session, helper, team string, at time.Time, title, body string) {
+// keepReport asks the triage model whether a finished job, just kept as entry uid, is worth keeping
+// in the helper's Experience, and deletes it only on a calibrated no at the "experience" threshold: an
+// unsure answer, an error or a timeout leaves it, so nothing is lost.
+func (p *Pool) keepReport(prov decision.Provider, session, helper, uid, title, body string) {
 	var recent []string
+	var id int64
 	if es, err := p.db.ListExperience(helper); err == nil {
-		for _, e := range es[:min(5, len(es))] {
-			recent = append(recent, e.Title)
+		for _, e := range es {
+			if e.UID == uid {
+				id = e.ID
+			} else if len(recent) < 5 {
+				recent = append(recent, e.Title)
+			}
 		}
 	}
 	res, err := p.ask(prov, map[string]any{"title": title, "report": clip(redactSecrets(body), 3000), "newest_entries": recent},
 		[]decision.Question{{Name: "keep", Type: decision.Predicate, Instructions: "Is this finished job worth keeping in the helper's Experience: a result or lesson the helper could reuse later, not a trivial job and not a duplicate of one of its newest entries?" + asData}})
 	if err != nil {
-		p.addEntry(helper, team, at, title, body)
 		p.logLine(session, fmt.Sprintf("experience: kept %q provider=%s error=%q", title, prov.Name(), oneLine(err.Error())))
 		return
 	}
 	a := res.Answers["keep"]
 	verdict := "kept"
-	if res.Calibrated && a.Yes < 0.5 && a.Confidence >= decision.Thresholds["experience"] {
-		verdict = "skipped"
-	} else {
-		p.addEntry(helper, team, at, title, body)
+	if res.Calibrated && a.Yes < 0.5 && a.Confidence >= decision.Thresholds["experience"] && id != 0 {
+		if err := p.db.DeleteExperience(id); err != nil {
+			p.logf("pool: skipping entry %d of %s: %v", id, helper, err)
+		} else {
+			verdict = "skipped"
+		}
 	}
 	p.logLine(session, fmt.Sprintf("experience: %s %q p=%.2f provider=%s model=%s", verdict, title, a.Yes, res.Provider, res.Model))
 }
@@ -99,12 +106,16 @@ func reportsTo(d *protocol.Domain, t *protocol.Team, id string) string {
 	return ""
 }
 
-func (p *Pool) addEntry(helper, team string, at time.Time, title, body string) {
-	_, err := p.db.AddExperience(agentdb.Entry{Helper: helper, At: at.UTC().Format(time.RFC3339), Title: title, TeamID: team,
+// addEntry keeps an entry and returns its uid.
+func (p *Pool) addEntry(helper, team string, at time.Time, title, body string) string {
+	stamp := at.UTC().Format(time.RFC3339)
+	uid := agentdb.EntryUID(helper, stamp, title)
+	_, err := p.db.AddExperience(agentdb.Entry{UID: uid, Helper: helper, At: stamp, Title: title, TeamID: team,
 		Body: clipBytes(redactSecrets(body), journalBodyMax)})
 	if err != nil {
 		p.logf("pool: journal entry of %s: %v", helper, err)
 	}
+	return uid
 }
 
 func clipBytes(s string, n int) string {

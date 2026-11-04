@@ -477,26 +477,35 @@ func (p *Pool) sparkCheck(ctx context.Context, in sendIn, typ, text, channel str
 // One's route hint and hold work as before, and a native SendMessage to a child is allowed.
 // ponytail: a key that resolved is remembered until the tab is saved again, so the hooks that ask
 // here never run the Keychain per call; a key deleted from the Keychain since shows as "unavailable".
+// One that did not resolve is tried again after sparkKeyRetry, so a key added later starts working.
 func (p *Pool) sparkActive() (store.SparkConfig, bool) {
 	c := p.st.Config().Decision.Spark
 	if c.Off || decision.ValidateSpark(c) != nil {
 		return c, false
 	}
 	p.mu.Lock()
-	ok, known := p.sparkKey[c.KeyRef]
+	failed, known := p.sparkKey[c.KeyRef] // zero: it resolved
 	p.mu.Unlock()
-	if !known {
-		_, err := decision.ResolveKey(c.KeyRef)
-		ok = err == nil
-		p.mu.Lock()
-		if p.sparkKey == nil {
-			p.sparkKey = map[string]bool{}
-		}
-		p.sparkKey[c.KeyRef] = ok
-		p.mu.Unlock()
+	if known && (failed.IsZero() || time.Since(failed) < sparkKeyRetry) {
+		return c, failed.IsZero()
 	}
-	return c, ok
+	_, err := decision.ResolveKey(c.KeyRef)
+	if err == nil {
+		failed = time.Time{}
+	} else {
+		failed = time.Now()
+	}
+	p.mu.Lock()
+	if p.sparkKey == nil {
+		p.sparkKey = map[string]time.Time{}
+	}
+	p.sparkKey[c.KeyRef] = failed
+	p.mu.Unlock()
+	return c, err == nil
 }
+
+// sparkKeyRetry is how long a Muse Spark key that did not resolve is taken as missing.
+var sparkKeyRetry = time.Minute
 
 // sparkLine is the record's first line on a delivered task.
 func sparkLine(t *protocol.Triage) string {

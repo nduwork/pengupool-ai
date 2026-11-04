@@ -406,11 +406,13 @@ type keepDecider struct {
 	calibrated bool
 	err        error
 	asked      chan decision.Request
+	release    chan struct{} // the answer waits for it
 }
 
 func (d *keepDecider) Name() string { return "fake-s1" }
 func (d *keepDecider) Decide(_ context.Context, req decision.Request) (decision.Response, error) {
 	d.asked <- req
+	<-d.release
 	return decision.Response{Provider: "fake-s1", Model: "s1-test", Calibrated: d.calibrated,
 		Answers: map[string]decision.Answer{"keep": {Type: decision.Predicate, Yes: d.yes, Confidence: d.conf}}}, d.err
 }
@@ -435,10 +437,14 @@ func TestExperienceSaveIsTriageDecided(t *testing.T) {
 			_ = p.st.Update(func(s *store.State) error { s.Sessions[sessionIndex(s, plan)].RunLog = runLog; return nil })
 			_, _ = p.db.AddExperience(agentdb.Entry{Helper: planKey, At: "2026-10-01T10:00:00Z", Title: "an older job", Body: "b"})
 			d := c.d
-			d.asked = make(chan decision.Request, 1)
+			d.asked, d.release = make(chan decision.Request, 1), make(chan struct{})
 			p.testDecider = &d
 			p.doneReport(done("Done: fixed the cache\nkey sk-ant-abcdefghijklmnopqrstuvwxyz0123 and evidence"))
 			req := <-d.asked
+			if n := len(entries(t, p)); n != 2 {
+				t.Fatalf("%d entries while triage decides: the report is kept before it asks", n)
+			}
+			close(d.release)
 			if st, _ := json.Marshal(req.State); !strings.Contains(string(st), "an older job") || strings.Contains(string(st), "sk-ant-") {
 				t.Fatalf("state %s", st)
 			}

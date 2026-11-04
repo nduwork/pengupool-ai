@@ -15,8 +15,10 @@ import (
 
 func TestValidateSpark(t *testing.T) {
 	ok := store.SparkConfig{Address: "https://api.meta.ai/v1", Model: "muse-spark-1.3", KeyRef: "keychain:spark-meta"}
-	if err := ValidateSpark(ok); err != nil {
-		t.Fatal(err)
+	for _, a := range []string{ok.Address, "http://127.0.0.1:8080/v1", "http://localhost:8080/v1", "http://[::1]:8080/v1"} {
+		if err := ValidateSpark(store.SparkConfig{Address: a, Model: ok.Model, KeyRef: ok.KeyRef}); err != nil {
+			t.Fatalf("%s: %v", a, err)
+		}
 	}
 	for name, c := range map[string]store.SparkConfig{
 		"no key":      {Address: ok.Address, Model: ok.Model},
@@ -24,6 +26,7 @@ func TestValidateSpark(t *testing.T) {
 		"bad address": {Address: "api.meta.ai", Model: ok.Model, KeyRef: ok.KeyRef},
 		"key in url":  {Address: "https://k:s@api.meta.ai/v1", Model: ok.Model, KeyRef: ok.KeyRef},
 		"raw key":     {Address: ok.Address, Model: ok.Model, KeyRef: "sk-123"},
+		"plain http":  {Address: "http://api.meta.ai/v1", Model: ok.Model, KeyRef: ok.KeyRef},
 	} {
 		if ValidateSpark(c) == nil {
 			t.Errorf("%s: validated", name)
@@ -38,9 +41,10 @@ func chatReply(w http.ResponseWriter, content string) {
 
 func TestSpark(t *testing.T) {
 	var got struct {
-		Model          string `json:"model"`
-		Messages       []struct{ Content string }
-		ResponseFormat struct {
+		Model           string `json:"model"`
+		ReasoningEffort string `json:"reasoning_effort"`
+		Messages        []struct{ Content string }
+		ResponseFormat  struct {
 			Type       string `json:"type"`
 			JSONSchema struct {
 				Name   string `json:"name"`
@@ -77,6 +81,9 @@ func TestSpark(t *testing.T) {
 		t.Fatalf("request: %s %q %+v", path, auth, got)
 	}
 	// Structured output: a json_schema whose recipient is one of the sender's children's names.
+	if got.ReasoningEffort != "minimal" {
+		t.Fatalf("reasoning_effort %q", got.ReasoningEffort)
+	}
 	if rf := got.ResponseFormat; rf.Type != "json_schema" || rf.JSONSchema.Name == "" || strings.Join(rf.JSONSchema.Schema.Required, ",") != "recipient,reasoning" ||
 		strings.Join(rf.JSONSchema.Schema.Properties.Recipient.Enum, ",") != "api-builder,ui-helper" {
 		t.Fatalf("response_format %+v", rf)
