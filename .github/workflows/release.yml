@@ -31,12 +31,13 @@ jobs:
           GOCACHE: ${{ runner.temp }}/gocache
           GOMODCACHE: ${{ runner.temp }}/gomod
           GOFLAGS: -modcacherw # so the runner can delete the module cache with its temp folder
-          # Notarization signs in with these (scripts/notarize.sh); only this step gets them.
-          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
-          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          # Notarization signs in with this App Store Connect API key (scripts/notarize.sh); only this step gets it.
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: | # no GitHub token: the build runs npm and electron scripts
-          [ -n "$NOTARY_APPLE_ID" ] && [ -n "$NOTARY_PASSWORD" ] ||
-            { echo "::error::set the NOTARY_APPLE_ID and NOTARY_PASSWORD secrets of the release environment"; exit 1; }
+          [ -n "$ASC_KEY_P8" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] ||
+            { echo "::error::set the ASC_KEY_P8, ASC_KEY_ID and ASC_ISSUER_ID secrets of the release environment"; exit 1; }
           make dist
       - name: Check the disk image
         run: |

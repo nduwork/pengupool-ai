@@ -1,10 +1,11 @@
 #!/bin/sh
-# Checks how notarize.sh signs in to notarytool: with NOTARY_APPLE_ID and NOTARY_PASSWORD (and the team from the
-# certificate) when both are set, with the keychain profile when neither is, and not at all when only one is. It
-# never prints the password. codesign, security, xcrun and spctl are stand-ins, so nothing is submitted.
+# Checks how notarize.sh signs in to notarytool: with the App Store Connect API key in ASC_KEY_P8 (PEM or base64),
+# ASC_KEY_ID and ASC_ISSUER_ID when all three are set, with the keychain profile when none is, and not at all when
+# only some are. The key reaches notarytool only as a file only this user can read, deleted afterwards, and is never
+# printed or put in a command's arguments. codesign, security, xcrun and spctl are stand-ins: nothing is submitted.
 #   scripts/notarize_test.sh
 set -eu
-unset NOTARY_APPLE_ID NOTARY_PASSWORD # a developer's own setting must never reach the script under test
+unset ASC_KEY_P8 ASC_KEY_ID ASC_ISSUER_ID # a developer's own setting must never reach the script under test
 cd "$(dirname "$0")"
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -18,49 +19,58 @@ cat >"$T/bin/security" <<'STUB'
 #!/bin/sh
 echo '  1) 0123456789ABCDEF "Developer ID Application: Test Person (ABCDE12345)"'
 STUB
+# xcrun records notarytool's arguments, and a copy and the mode of the key file it was given.
 cat >"$T/bin/xcrun" <<'STUB'
 #!/bin/sh
-[ "$1" = notarytool ] && echo "$*" >>"$ARGS"
-[ "$2" = submit ] && echo '{"id":"sub-1","status":"Accepted"}'
-exit 0
+[ "$1" = notarytool ] || exit 0
+echo "$*" >>"$ARGS"
+while [ $# -gt 0 ]; do
+  [ "$1" = --key ] && { echo "$2" >"$ARGS.path"; cp "$2" "$ARGS.key"; stat -f %Lp "$2" >"$ARGS.mode"; }
+  shift
+done
+echo "{\"id\":\"sub-1\",\"status\":\"${STATUS:-Accepted}\"}"
 STUB
 printf '#!/bin/sh\nexit 0\n' >"$T/bin/spctl"
 chmod +x "$T/bin/"*
-run() { ARGS="$T/notarytool.args" PATH="$T/bin:$PATH" sh ./notarize.sh "$T/PenguPool AI.app" >"$T/out" 2>&1; }
+run() { rm -f "$T/args"*; : >"$T/args"; ARGS="$T/args" PATH="$T/bin:$PATH" sh ./notarize.sh "$T/PenguPool AI.app" >"$T/out" 2>&1; }
+KEY='-----BEGIN PRIVATE KEY-----
+MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgSECRETSECRETSECRET
+-----END PRIVATE KEY-----'
+B64=$(printf '%s\n' "$KEY" | base64)
 
-# Both set: the Apple ID, the password and the certificate's team, and the password is never printed.
-: >"$T/notarytool.args"
-(NOTARY_APPLE_ID=dev@example.com NOTARY_PASSWORD=abcd-efgh-ijkl-mnop run) || fail "both set: $(cat "$T/out")" # a subshell: sh 3.2 keeps a prefix assignment after a function call
-grep -q -- '--apple-id dev@example.com --password abcd-efgh-ijkl-mnop --team-id ABCDE12345' "$T/notarytool.args" ||
-  fail "both set: notarytool got: $(cat "$T/notarytool.args")"
-grep -q -- '--keychain-profile' "$T/notarytool.args" && fail "both set: the keychain profile was used too"
-grep -q abcd-efgh "$T/out" && fail "the password was printed"
-
-# Neither set: the keychain profile, as before.
-: >"$T/notarytool.args"
-run || fail "neither set: $(cat "$T/out")"
-grep -q -- 'submit .* --keychain-profile pengupool --wait' "$T/notarytool.args" || fail "neither set: notarytool got: $(cat "$T/notarytool.args")"
-grep -q -- '--apple-id' "$T/notarytool.args" && fail "neither set: an Apple ID was passed"
-
-# Only one set: refused before anything is submitted.
-for one in NOTARY_APPLE_ID=dev@example.com NOTARY_PASSWORD=abcd-efgh-ijkl-mnop; do
-  : >"$T/notarytool.args"
-  (export "$one"; run) && fail "only $one: not refused"
-  grep -q 'set both NOTARY_APPLE_ID and NOTARY_PASSWORD' "$T/out" || fail "only $one: unclear message: $(cat "$T/out")"
-  [ -s "$T/notarytool.args" ] && fail "only $one: notarytool ran"
-  grep -q abcd-efgh "$T/out" && fail "only $one: the password was printed"
+# All three set, as PEM and as base64: the key is a file, mode 600, deleted afterwards, and never printed or on argv.
+for k in "$KEY" "$B64"; do
+  (ASC_KEY_P8=$k ASC_KEY_ID=KEYID123 ASC_ISSUER_ID=issuer-uuid run) || fail "all set: $(cat "$T/out")" # a subshell: sh 3.2 keeps a prefix assignment after a function call
+  grep -q -- "^notarytool submit .* --key $(cat "$T/args.path") --key-id KEYID123 --issuer issuer-uuid --wait" "$T/args" ||
+    fail "all set: notarytool got: $(cat "$T/args")"
+  printf '%s\n' "$KEY" | cmp -s - "$T/args.key" || fail "all set: the key file does not hold the key"
+  [ "$(cat "$T/args.mode")" = 600 ] || fail "the key file's mode is $(cat "$T/args.mode"), want 600"
+  [ -e "$(cat "$T/args.path")" ] && fail "the key file was left behind"
+  grep -q -- '--keychain-profile' "$T/args" && fail "all set: the keychain profile was used too"
+  grep -q SECRET "$T/out" "$T/args" && fail "the key was printed or put on argv"
 done
 
-# A failed submission prints notarytool's log, signed in the same way, and still not the password.
-cat >"$T/bin/xcrun" <<'STUB'
-#!/bin/sh
-[ "$1" = notarytool ] && echo "$*" >>"$ARGS"
-[ "$2" = submit ] && echo '{"id":"sub-2","status":"Invalid"}'
-exit 0
-STUB
-: >"$T/notarytool.args"
-(NOTARY_APPLE_ID=dev@example.com NOTARY_PASSWORD=abcd-efgh-ijkl-mnop run) && fail "an Invalid submission passed" # a subshell: sh 3.2 keeps a prefix assignment after a function call
-grep -q -- '^notarytool log sub-2 --apple-id dev@example.com --password abcd-efgh-ijkl-mnop --team-id ABCDE12345' "$T/notarytool.args" ||
-  fail "the log was not fetched with the same sign-in: $(cat "$T/notarytool.args")"
-grep -q abcd-efgh "$T/out" && fail "a failed submission printed the password"
+# None set: the keychain profile, as before.
+run || fail "none set: $(cat "$T/out")"
+grep -q -- '^notarytool submit .* --keychain-profile pengupool --wait' "$T/args" || fail "none set: notarytool got: $(cat "$T/args")"
+grep -q -- '--key ' "$T/args" && fail "none set: a key was passed"
+
+# Only some set: refused before anything is submitted.
+for some in 'ASC_KEY_P8=$KEY' 'ASC_KEY_ID=KEYID123' 'ASC_ISSUER_ID=issuer-uuid' 'ASC_KEY_ID=KEYID123 ASC_ISSUER_ID=issuer-uuid' \
+  'ASC_KEY_P8=$KEY ASC_ISSUER_ID=issuer-uuid'; do
+  (eval "export $some"; run) && fail "only $some: not refused"
+  grep -q 'set all of ASC_KEY_P8, ASC_KEY_ID and ASC_ISSUER_ID' "$T/out" || fail "only $some: unclear message: $(cat "$T/out")"
+  [ -s "$T/args" ] && fail "only $some: notarytool ran"
+done
+
+# A value that is not a key: refused, nothing submitted.
+(ASC_KEY_P8=not-a-key ASC_KEY_ID=KEYID123 ASC_ISSUER_ID=issuer-uuid run) && fail "a bad key was accepted"
+grep -q 'ASC_KEY_P8 is not a .p8 key' "$T/out" || fail "bad key: unclear message: $(cat "$T/out")"
+[ -s "$T/args" ] && fail "bad key: notarytool ran"
+
+# A failed submission prints notarytool's log, signed in the same way, and still not the key.
+(STATUS=Invalid ASC_KEY_P8=$KEY ASC_KEY_ID=KEYID123 ASC_ISSUER_ID=issuer-uuid run) && fail "an Invalid submission passed"
+grep -q -- '^notarytool log sub-1 --key .* --key-id KEYID123 --issuer issuer-uuid$' "$T/args" ||
+  fail "the log was not fetched with the same sign-in: $(cat "$T/args")"
+grep -q SECRET "$T/out" "$T/args" && fail "a failed submission printed the key"
 echo "notarize_test: ok"

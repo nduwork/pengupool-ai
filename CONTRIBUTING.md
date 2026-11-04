@@ -38,12 +38,12 @@ profile in that Mac's keychain, and published by nduworker:
    the runner refuses any other job before its first step (`scripts/release-runner-gate.sh`, checked by
    `scripts/release-runner-gate_test.sh`). The gate knows the account, not the person: anything holding
    nduworker's GitHub login can start a release, so an agent asks the maintainer before it does.
-   The job signs with the Developer ID identity in the runner's keychain, and notarizes with the secrets
-   `NOTARY_APPLE_ID` and `NOTARY_PASSWORD` (an app-specific password) of the `release` environment, which only
-   main can use and only the job's build step gets.
+   The job signs with the Developer ID identity in the runner's keychain, and notarizes with an App Store Connect
+   API key from the `release` environment's secrets `ASC_KEY_P8`, `ASC_KEY_ID` and `ASC_ISSUER_ID`. Only main
+   can use that environment, and only the job's build step gets them.
 
-`make release` still works by hand, notarizing with the keychain profile `pengupool` unless both
-`NOTARY_APPLE_ID` and `NOTARY_PASSWORD` are set: on a fresh clone of the latest main (it refuses another commit or
+`make release` still works by hand, notarizing with the keychain profile `pengupool` unless all three
+`ASC_*` variables are set: on a fresh clone of the latest main (it refuses another commit or
 uncommitted changes), it builds the disk image (`make dist`), then `make publish` creates release `v<version>`
 at that commit (or uses it if it already exists) and attaches the image. Re-running replaces the image. When the
 new release is the latest, older releases lose their disk images; a prerelease or a backport keeps them.
