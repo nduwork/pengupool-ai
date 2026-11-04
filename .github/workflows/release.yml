@@ -1,11 +1,13 @@
 name: release
 
-# Builds, signs, notarizes and publishes the disk image as GitHub release v<version>, from main only, by
-# hand: Actions → release → Run workflow. Signing and notarizing use the runner Mac's login keychain (the
-# Developer ID identity and the notarytool profile "pengupool"); no GitHub secret holds them. The
-# write-scoped token goes only to the steps that talk to GitHub, never to the build and its dependencies.
+# Builds, signs and notarizes the disk image for a GitHub release when someone publishes it, and attaches it
+# to that release (make dist, then make publish). Only a tag on main that matches the version is built.
+# Signing and notarizing use the runner Mac's login keychain (the Developer ID identity and the notarytool
+# profile "pengupool"); no GitHub secret holds them. The write-scoped token goes only to the steps that talk to
+# GitHub, never to the build and its dependencies. A release made with a workflow's GITHUB_TOKEN starts no run.
 on:
-  workflow_dispatch:
+  release:
+    types: [published]
 
 concurrency:
   group: release
@@ -17,13 +19,9 @@ permissions:
 jobs:
   release:
     runs-on: [self-hosted, macOS, ARM64]
+    environment: release
     timeout-minutes: 45
     steps:
-      - name: From main only
-        if: github.ref != 'refs/heads/main'
-        run: |
-          echo "::error::run the release workflow from main, not ${GITHUB_REF}"
-          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false # the token stays out of .git/config, out of the build's reach
@@ -36,27 +34,26 @@ jobs:
       - name: Preflight
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
           V=$(sed -n 's/^const Version = "\(.*\)"/\1/p' cmd/pengupool/main.go)
           [ -n "$V" ] || { echo "::error::no version in cmd/pengupool/main.go"; exit 1; }
+          [ "$TAG" = "v$V" ] || { echo "::error::release tag $TAG does not match the version v$V in cmd/pengupool/main.go"; exit 1; }
+          SHA=$(git rev-parse HEAD)
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$SHA" --jq .status) ||
+            { echo "::error::cannot compare $TAG with main (GitHub auth or network)"; exit 1; }
+          case $status in
+          identical | behind) ;;
+          *) echo "::error::$TAG ($SHA) is not on main (compare: $status): publish releases from main only"; exit 1 ;;
+          esac
           security find-identity -v -p codesigning | grep -q '"Developer ID Application: ' ||
             { echo "::error::no Developer ID Application identity in the runner's keychain: the build could not be signed"; exit 1; }
           xcrun notarytool history --keychain-profile pengupool >/dev/null 2>&1 ||
             { echo "::error::notarytool cannot use the keychain profile \"pengupool\": the build could not be notarized"; exit 1; }
-          exists="release or tag v$V already exists. A published release: bump the version in cmd/pengupool/main.go. A draft or tag left by a failed run: delete it first."
-          # Drafts included; an auth or network error stops here, not after the build.
-          tags=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name') ||
-            { echo "::error::cannot list the releases (GitHub auth or network)"; exit 1; }
-          if printf '%s\n' "$tags" | grep -qxF "v$V"; then echo "::error::$exists"; exit 1; fi
-          if out=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$V" 2>&1); then
-            echo "::error::$exists"; exit 1
-          elif ! printf '%s' "$out" | grep -q 'HTTP 404'; then
-            echo "::error::cannot check tag v$V (GitHub auth or network)"; exit 1
-          fi
-          echo "releasing v$V from $(git rev-parse --short HEAD)"
+          echo "building $TAG at $(git rev-parse --short HEAD)"
       - name: Build, sign and notarize
         run: make dist
-      - name: Publish
+      - name: Attach to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make publish

@@ -28,10 +28,13 @@ directory.
 
 ## Releasing
 
-Bump `Version` in `cmd/pengupool/main.go` and add the release's entry to `CHANGELOG.md`, and merge that to
-main. Then run Actions → **release** → Run workflow (on main). It builds, signs and notarizes the disk image
-on the self-hosted Mac, with that Mac's keychain, and publishes it as release `v<version>` tagged at the
-built commit (`make release`).
+1. Bump `Version` in `cmd/pengupool/main.go`, add the release's entry to `CHANGELOG.md`, and merge to main.
+2. Publish release `v<version>` on main: `gh release create v<version> --target main --notes "…"`, or in the
+   web UI. A person (or a personal access token) must publish it: a release made with a workflow's own
+   GITHUB_TOKEN starts no workflow.
+3. The **release** workflow then builds, signs and notarizes the disk image on the self-hosted Mac, with that
+   Mac's keychain, and attaches it to the release in about 15 minutes. It builds only a tag that is on main
+   and matches `Version`. To retry a failed build, re-run the workflow: the image is replaced.
 
 ## How it fits together
 

@@ -36,11 +36,13 @@ dist:
 release: dist
 	$(MAKE) publish
 
-# Publish the built disk image as release v$(VERSION), tagged at this commit, and delete older releases'
-# images. Only this step talks to GitHub: CI runs `make dist` without a token and gives it to this step alone.
+# Attach the built disk image to release v$(VERSION), made here at this commit when it does not exist yet (CI
+# builds for a release someone published), and delete older releases' images. Re-running replaces the image.
+# Only this step talks to GitHub: CI runs `make dist` without a token and gives it to this step alone.
 publish:
 	test -f $(DIST) || { echo "no $(DIST): run make dist first" >&2; exit 1; }
-	gh release create v$(VERSION) $(DIST) --target $$(git rev-parse HEAD) --title "PenguPool AI $(VERSION)" --notes "Open the disk image, drag PenguPool AI.app onto Applications, open it. See the README's Install section."
+	gh release view v$(VERSION) >/dev/null 2>&1 || gh release create v$(VERSION) --target $$(git rev-parse HEAD) --title "PenguPool AI $(VERSION)" --notes "Open the disk image, drag PenguPool AI.app onto Applications, open it. See the README's Install section."
+	gh release upload v$(VERSION) $(DIST) --clobber
 	# Older releases keep their notes and tags; their disk images go, so the repository stores one.
 	gh release list --limit 200 --json tagName -q '.[].tagName | select(. != "v$(VERSION)")' | while read t; do \
 		gh release view "$$t" --json assets -q '.assets[].name' | grep '\.dmg$$' | while read a; do gh release delete-asset "$$t" "$$a" --yes; done; \
