@@ -29,6 +29,7 @@ jobs:
           # Fresh Go caches, so the signed build never reuses what a test job left in the Mac's shared ones.
           GOCACHE: ${{ runner.temp }}/gocache
           GOMODCACHE: ${{ runner.temp }}/gomod
+          GOFLAGS: -modcacherw # so the runner can delete the module cache with its temp folder
         run: make dist # no token: the build runs npm and electron scripts
       - name: Check the disk image
         run: |
