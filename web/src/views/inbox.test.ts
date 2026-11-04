@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SessionView } from "../protocol/control";
 import type { Approval, TeamMessage } from "../protocol/domain";
-import { approvalTitle, askNeeds, sessionNeeds, type OpenGate, waitingOnOwner } from "./inbox";
+import { approvalTitle, askNeeds, dismissKey, sessionNeeds, type OpenGate, waitingOnOwner } from "./inbox";
 
 const s = (name: string, status: string, state = "running"): SessionView => ({ id: name, name, state, status, harness: "claude" }) as SessionView;
 
@@ -44,6 +44,24 @@ describe("waitingOnOwner", () => {
   it("counts a go-ahead to check, even when nothing else waits", () => {
     const w = waitingOnOwner([], [s("a", "idle")], [], [], [{ id: 7, agent: "a", question: "Ran the migration" }]);
     expect(w.items.map((i) => [i.key, i.title])).toEqual([["spot:7", "Was this go-ahead right?"]]);
+  });
+  it("hides a dismissed item, still waiting, until its words change; the others stay", () => {
+    const spot = { id: 7, agent: "a", question: "Ran the migration" };
+    const all = waitingOnOwner([ap("L", "launch")], [s("a", "approval")], [], [], [spot]);
+    expect(all.items.map((i) => i.key)).toEqual(["approval:L", "need:a:permission", "spot:7"]);
+    const gone = new Set(all.items.map(dismissKey));
+    const none = waitingOnOwner([ap("L", "launch")], [s("a", "approval")], [], [], [spot], gone);
+    expect([none.items, none.approvals, none.needs, none.spots]).toEqual([[], [], [], []]);
+    // One dismissed: only it goes, from the rows and from the count alike.
+    const one = waitingOnOwner([ap("L", "launch")], [s("a", "approval")], [], [], [spot], new Set([dismissKey(all.items[0]!)]));
+    expect(one.items.map((i) => i.key)).toEqual(["need:a:permission", "spot:7"]);
+    expect([one.approvals.length, one.needs.length, one.spots.length]).toEqual([0, 1, 1]);
+    // It changes: a new permission call, a new go-ahead question, the session now on a check-in. Each comes back.
+    const perm: OpenGate = { id: 1, session_id: "a", agent: "a", kind: "permission", question: "Bash: rm x", floor: false };
+    const back = waitingOnOwner([{ ...ap("L", "launch"), detail: "L, revised" }], [s("a", "approval")], [], [perm], [{ ...spot, question: "Ran it again" }], gone);
+    expect(back.items.map((i) => i.key)).toEqual(["approval:L", "need:a:permission", "spot:7"]);
+    const checkin: OpenGate = { id: 2, session_id: "a", agent: "a", kind: "checkin", question: "Go on?", floor: false };
+    expect(waitingOnOwner([], [s("a", "idle")], [], [checkin], [], gone).items.map((i) => i.key)).toEqual(["need:a:checkin"]);
   });
   it("drops an item as soon as the state says it was answered, wherever that was", () => {
     const before = waitingOnOwner([ap("Q", "ask", "pending", "b")], [s("a", "approval"), s("b", "idle")], [], []);

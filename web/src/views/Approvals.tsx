@@ -1,6 +1,6 @@
-import { Bell, MessageCircleQuestion, MessagesSquare, ShieldQuestion, Rocket, ThumbsDown, ThumbsUp, Users } from "lucide-react";
+import { Bell, MessageCircleQuestion, MessagesSquare, ShieldQuestion, Rocket, ThumbsDown, ThumbsUp, Users, X } from "lucide-react";
 import { Popover } from "radix-ui";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 
 import { AGENTS, type AppCtx, ago, harnessLabel, sessionName, skillName, type SpotCheck, teamOf, useApp } from "../app/ctx";
 import { Button } from "../components/ui/button";
@@ -10,7 +10,7 @@ import { cn } from "../lib/utils";
 import type { Approval, Member, PerCompass, Proposal, ProposedMember, Team } from "../protocol/domain";
 import { ownerViaLabel, perCompassLabel, type Line } from "./compass";
 import { FormationSheet, roleOf } from "./Formation";
-import { type Need, waitingOnOwner } from "./inbox";
+import { type Need, approvalItem, dismissKey, needItem, spotItem, waitingOnOwner } from "./inbox";
 import { age } from "./map/asks";
 
 // One surface for what waits on the owner: the bell in the title bar, its count the whole list
@@ -26,7 +26,7 @@ export const PANEL = "z-50 flex outline-none max-h-[min(36rem,var(--radix-popove
 
 export function ApprovalsBell(): ReactElement {
   const app = useApp();
-  const { items } = waitingOnOwner(app.domain.approvals, app.sessions, app.domain.messages, app.gates, app.spots);
+  const { items } = waitingOnOwner(app.domain.approvals, app.sessions, app.domain.messages, app.gates, app.spots, app.dismissed);
   const [open, setOpen] = useState(false);
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -67,8 +67,8 @@ export function ApprovalsBell(): ReactElement {
 /** The panel's list, in waitingOnOwner's order: approvals, then what sessions need, then members' asks, then go-aheads to check. */
 export function WaitingList(): ReactElement {
   const app = useApp();
-  const { approvals, needs } = waitingOnOwner(app.domain.approvals, app.sessions, app.domain.messages, app.gates, app.spots);
-  const { spots, verdict } = useSpotChecks();
+  const { approvals, needs, spots } = waitingOnOwner(app.domain.approvals, app.sessions, app.domain.messages, app.gates, app.spots, app.dismissed);
+  const { verdict } = useSpotChecks();
   const list = useRef<HTMLDivElement>(null);
   const focusedRow = useRef<number | null>(null); // the row holding focus (or last clicked), kept when its row leaves: in-panel answer or answered elsewhere
   const keys = [...approvals.map((a) => a.id), ...needs.map((n) => n.key ?? n.session), ...spots.map((g) => g.id)].join(" ");
@@ -100,20 +100,30 @@ export function WaitingList(): ReactElement {
         if (e.relatedTarget !== null) focusedRow.current = null;
       }}
     >
-      {approvals.map((a) => (a.kind === "ask" ? <AgentAskRow key={a.id} a={a} /> : a.kind === "formation" ? <FormationRow key={a.id} a={a} /> : <LaunchRow key={a.id} a={a} />))}
-      {needs.map((n) => (n.kind === "ask" ? <AskRow key={n.key} n={n} /> : <NeedRow key={n.session} n={n} />))}
+      {approvals.map((a) => (
+        <Dismiss.Provider key={a.id} value={dismissKey(approvalItem(a))}>
+          {a.kind === "ask" ? <AgentAskRow a={a} /> : a.kind === "formation" ? <FormationRow a={a} /> : <LaunchRow a={a} />}
+        </Dismiss.Provider>
+      ))}
+      {needs.map((n) => (
+        <Dismiss.Provider key={n.key ?? n.session} value={dismissKey(needItem(n))}>
+          {n.kind === "ask" ? <AskRow n={n} /> : <NeedRow n={n} />}
+        </Dismiss.Provider>
+      ))}
       {spots.map((g) => (
-        <WaitRow key={g.id} icon={<ThumbsUp className="size-4 shrink-0 text-warning" />} label={`${g.agent}: go-ahead to check`} who={<strong className="font-semibold">{g.agent}</strong>} meta={teamName(app, g.team_id)} at={g.created_at}>
-          <Clamp lines={4}>Was this go-ahead right? {g.question}</Clamp>
-          <Actions>
-            <Button size="sm" variant="default" onClick={() => verdict(g.id, true)}>
-              <ThumbsUp /> Right
-            </Button>
-            <Button size="sm" onClick={() => verdict(g.id, false)}>
-              <ThumbsDown /> Wrong
-            </Button>
-          </Actions>
-        </WaitRow>
+        <Dismiss.Provider key={g.id} value={dismissKey(spotItem(g))}>
+          <WaitRow icon={<ThumbsUp className="size-4 shrink-0 text-warning" />} label={`${g.agent}: go-ahead to check`} who={<strong className="font-semibold">{g.agent}</strong>} meta={teamName(app, g.team_id)} at={g.created_at}>
+            <Clamp lines={4}>Was this go-ahead right? {g.question}</Clamp>
+            <Actions>
+              <Button size="sm" variant="default" onClick={() => verdict(g.id, true)}>
+                <ThumbsUp /> Right
+              </Button>
+              <Button size="sm" onClick={() => verdict(g.id, false)}>
+                <ThumbsDown /> Wrong
+              </Button>
+            </Actions>
+          </WaitRow>
+        </Dismiss.Provider>
       ))}
     </div>
   );
@@ -125,8 +135,13 @@ export const refocusRow = (index: number, rows: number): number => (rows === 0 ?
 const teamName = (app: AppCtx, teamId: string | undefined, session?: string): string | undefined =>
   app.domain.teams.find((t) => t.id === teamId)?.name ?? (session !== undefined ? teamOf(app.domain, session)?.name : undefined);
 
-/** One item in the panel: icon, who (never cut), team or other meta (cut first), age and expiry at the right; then the body. */
+/** The row's dismissKey (inbox), set by WaitingList around each row: WaitRow's × hides that item until it changes. */
+const Dismiss = createContext<string | undefined>(undefined);
+
+/** One item in the panel: icon, who (never cut), team or other meta (cut first), age and expiry at the right, and ×; then the body. */
 function WaitRow({ icon, label, who, meta, at, after, children }: { icon: ReactElement; label: string; who?: ReactNode; meta?: string; at?: string; after?: string; children: ReactNode }): ReactElement {
+  const app = useApp();
+  const dismiss = useContext(Dismiss);
   return (
     <div role="listitem" aria-label={label} tabIndex={-1} className="grid min-w-0 grid-cols-1 gap-1.5 rounded-md p-2 text-label outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring">
       <div className="flex min-w-0 items-start gap-1.5">
@@ -139,6 +154,17 @@ function WaitRow({ icon, label, who, meta, at, after, children }: { icon: ReactE
           {at !== undefined && at !== "" ? age(at, Date.now()) : ""}
           {after !== undefined ? ` · ${after}` : ""}
         </span>
+        {dismiss !== undefined ? (
+          <button
+            type="button"
+            onClick={() => app.dismiss(dismiss)}
+            aria-label={`Dismiss ${label}`}
+            title="Dismiss: hidden until it changes or the app restarts; it still waits on you"
+            className="-my-0.5 shrink-0 rounded p-0.5 text-faint outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <X className="size-3.5" />
+          </button>
+        ) : null}
       </div>
       {children}
     </div>
@@ -313,7 +339,7 @@ function AskRow({ n }: { n: Need }): ReactElement | null {
           Reply
         </Button>
         <Button size="sm" variant="ghost" onClick={() => settle("dismiss")}>
-          Dismiss
+          Close ask
         </Button>
       </Actions>
     </WaitRow>

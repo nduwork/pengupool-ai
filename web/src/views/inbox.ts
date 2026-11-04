@@ -107,21 +107,32 @@ export interface Waiting {
   session?: string;
 }
 
+export const approvalItem = (a: Approval): Waiting => ({ key: `approval:${a.id}`, title: approvalTitle(a.kind), body: a.detail ?? "Review the proposal", session: a.session_id });
+const words = (n: Need): string => (n.kind === "checkin" ? `${n.name} asks: ${n.text}` : n.kind === "ask" ? `${n.name} asked ${n.toName ?? ""}: ${n.text}` : `${n.name} ${n.text}`);
+export const needItem = (n: Need): Waiting => ({ key: `need:${keyOf(n)}:${n.kind}`, title: `${n.name} needs you`, body: words(n), session: n.session });
+export const spotItem = (g: SpotCheck): Waiting => ({ key: `spot:${g.id}`, title: "Was this go-ahead right?", body: `${g.agent}: ${g.question}` });
+
+/** What the owner dismissed: the item and its words, so an item that changes comes back. */
+export const dismissKey = (w: Waiting): string => `${w.key}\n${w.body}`;
+
 /**
  * Everything waiting on the owner, the one list the badge, the bell and its panel show: pending
  * approvals (an agent's ask only while the agent runs; a permission is a need instead), then what
  * each running session needs, then the asks triage could not settle, then the go-aheads to check. An item leaves the list as soon
- * as the state says it was answered, wherever it was answered.
+ * as the state says it was answered, wherever it was answered, or while the owner has it dismissed (dismissKey).
  */
-export function waitingOnOwner(approvals: Approval[], sessions: SessionView[], messages: TeamMessage[], gates: OpenGate[], spots: SpotCheck[] = []): { approvals: Approval[]; needs: Need[]; items: Waiting[] } {
+export function waitingOnOwner(
+  approvals: Approval[],
+  sessions: SessionView[],
+  messages: TeamMessage[],
+  gates: OpenGate[],
+  spots: SpotCheck[] = [],
+  dismissed: ReadonlySet<string> = new Set(),
+): { approvals: Approval[]; needs: Need[]; spots: SpotCheck[]; items: Waiting[] } {
   const running = (id?: string): boolean => sessions.some((s) => s.id === id && s.state === "running");
-  const pending = approvals.filter((a) => a.state === "pending" && a.kind !== "permission" && (a.kind !== "ask" || running(a.session_id)));
-  const needs = [...sessionNeeds(sessions, gates), ...askNeeds(messages, sessions)];
-  const words = (n: Need): string => (n.kind === "checkin" ? `${n.name} asks: ${n.text}` : n.kind === "ask" ? `${n.name} asked ${n.toName ?? ""}: ${n.text}` : `${n.name} ${n.text}`);
-  const items: Waiting[] = [
-    ...pending.map((a) => ({ key: `approval:${a.id}`, title: approvalTitle(a.kind), body: a.detail ?? "Review the proposal", session: a.session_id })),
-    ...needs.map((n) => ({ key: `need:${keyOf(n)}:${n.kind}`, title: `${n.name} needs you`, body: words(n), session: n.session })),
-    ...spots.map((g) => ({ key: `spot:${g.id}`, title: "Was this go-ahead right?", body: `${g.agent}: ${g.question}` })),
-  ];
-  return { approvals: pending, needs, items };
+  const shown = (w: Waiting): boolean => !dismissed.has(dismissKey(w));
+  const pending = approvals.filter((a) => a.state === "pending" && a.kind !== "permission" && (a.kind !== "ask" || running(a.session_id)) && shown(approvalItem(a)));
+  const needs = [...sessionNeeds(sessions, gates), ...askNeeds(messages, sessions)].filter((n) => shown(needItem(n)));
+  const checks = spots.filter((g) => shown(spotItem(g)));
+  return { approvals: pending, needs, spots: checks, items: [...pending.map(approvalItem), ...needs.map(needItem), ...checks.map(spotItem)] };
 }
