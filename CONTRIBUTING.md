@@ -32,10 +32,12 @@ Releases are built, signed and notarized on the maintainer's Mac, with the Devel
 profile in that Mac's keychain, and published by nduworker:
 
 1. Bump `Version` in `cmd/pengupool/main.go`, add the release's entry to `CHANGELOG.md`, and merge to main.
-2. In the Actions tab, open **release** and choose **Run workflow** on main. The job runs `make release` on the
-   maintainer's Mac runner, then checks that the disk image is stapled and accepted by Gatekeeper. Only
-   nduworker can start it, and only on main; the runner refuses any other job before its first step
-   (`scripts/release-runner-gate.sh`, checked by `scripts/release-runner-gate_test.sh`).
+2. In the Actions tab, open **release** and choose **Run workflow** on main. On the maintainer's Mac runner the
+   job builds the disk image (`make dist`), checks that it is stapled and accepted by Gatekeeper, and only then
+   publishes it (`make publish`, the one step given a token). Only nduworker can start it, and only on main;
+   the runner refuses any other job before its first step (`scripts/release-runner-gate.sh`, checked by
+   `scripts/release-runner-gate_test.sh`). The gate knows the account, not the person: anything holding
+   nduworker's GitHub login can start a release, so an agent asks the maintainer before it does.
 
 `make release` still works by hand: on a fresh clone of the latest main (it refuses another commit or
 uncommitted changes), it builds the disk image (`make dist`), then `make publish` creates release `v<version>`
