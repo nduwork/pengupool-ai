@@ -43,7 +43,9 @@ publish:
 	test -f $(DIST) || { echo "no $(DIST): run make dist first" >&2; exit 1; }
 	gh release view v$(VERSION) >/dev/null 2>&1 || gh release create v$(VERSION) --target $$(git rev-parse HEAD) --title "PenguPool AI $(VERSION)" --notes "Open the disk image, drag PenguPool AI.app onto Applications, open it. See the README's Install section."
 	gh release upload v$(VERSION) $(DIST) --clobber
-	# Older releases keep their notes and tags; their disk images go, so the repository stores one.
+	# Older releases keep their notes and tags; their disk images go, so the repository stores one. A prerelease
+	# deletes none: the latest stable release (the README's download link) keeps its image.
+	[ "$$(gh release view v$(VERSION) --json isPrerelease -q .isPrerelease)" = true ] || \
 	gh release list --limit 200 --json tagName -q '.[].tagName | select(. != "v$(VERSION)")' | while read t; do \
 		gh release view "$$t" --json assets -q '.assets[].name' | grep '\.dmg$$' | while read a; do gh release delete-asset "$$t" "$$a" --yes; done; \
 	done

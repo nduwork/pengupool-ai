@@ -36,6 +36,10 @@ directory.
    Mac's keychain, and attaches it to the release in about 15 minutes. It builds only a tag that is on main
    and matches `Version`. To retry a failed build, re-run the workflow: the image is replaced.
 
+Releases go through CI. `make release` on a maintainer's Mac is the manual fallback; the release it publishes
+starts the workflow too, which rebuilds and replaces the image. Pull requests and pushes are tested on
+GitHub-hosted runners (`test.yml`); only the release workflow runs on the self-hosted Mac.
+
 ## How it fits together
 
 ```
