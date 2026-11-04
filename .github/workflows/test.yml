@@ -37,6 +37,7 @@ jobs:
       - run: go test ./... -count=1
       - run: scripts/release-runner-gate_test.sh
       - run: scripts/test-runner-gate_test.sh
+      - run: scripts/notarize_test.sh
 
   web:
     runs-on: [pengupool-test]

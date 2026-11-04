@@ -30,7 +30,13 @@ jobs:
           GOCACHE: ${{ runner.temp }}/gocache
           GOMODCACHE: ${{ runner.temp }}/gomod
           GOFLAGS: -modcacherw # so the runner can delete the module cache with its temp folder
-        run: make dist # no token: the build runs npm and electron scripts
+          # Notarization signs in with these (scripts/notarize.sh); only this step gets them.
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: | # no GitHub token: the build runs npm and electron scripts
+          [ -n "$NOTARY_APPLE_ID" ] && [ -n "$NOTARY_PASSWORD" ] ||
+            { echo "::error::set the NOTARY_APPLE_ID and NOTARY_PASSWORD repository secrets"; exit 1; }
+          make dist
       - name: Check the disk image
         run: |
           dmg=$(ls build/PenguPool-AI-*-mac-arm64.dmg)
