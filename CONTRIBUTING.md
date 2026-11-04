@@ -28,18 +28,31 @@ directory.
 
 ## Releasing
 
-No CI builds or publishes releases. A maintainer (nduworker, or another account allowed to publish) builds,
-signs and notarizes each release on their own Mac, with the Developer ID identity and notary profile in that
-Mac's keychain:
+Releases are built, signed and notarized on the maintainer's Mac, with the Developer ID identity and notary
+profile in that Mac's keychain, and published by nduworker:
 
 1. Bump `Version` in `cmd/pengupool/main.go`, add the release's entry to `CHANGELOG.md`, and merge to main.
-2. On a fresh clone of the latest main, run `make release` (it refuses another commit or uncommitted changes). It builds the disk image (`make dist`), then `make publish`
-   creates release `v<version>` at that commit (or uses it if it already exists) and attaches the image.
-   Re-running replaces the image. When the new release is the latest, older releases lose their disk images;
-   a prerelease or a backport keeps them.
+2. In the Actions tab, open **release** and choose **Run workflow** on main. On the maintainer's Mac runner the
+   job builds the disk image (`make dist`), checks that it is stapled and accepted by Gatekeeper, and only then
+   publishes it (`make publish`, the one step given a token). Only nduworker can start it, and only on main;
+   the runner refuses any other job before its first step (`scripts/release-runner-gate.sh`, checked by
+   `scripts/release-runner-gate_test.sh`). The gate knows the account, not the person: anything holding
+   nduworker's GitHub login can start a release, so an agent asks the maintainer before it does.
+   The job signs with the Developer ID identity in the runner's keychain, and notarizes with an App Store Connect
+   API key from the `release` environment's secrets `ASC_KEY_P8`, `ASC_KEY_ID` and `ASC_ISSUER_ID`. Only main
+   can use that environment, and only the job's build step gets them.
 
-Pull requests and pushes to main are tested on GitHub-hosted runners (`test.yml`). Pull requests from forks
-run no CI.
+`make release` still works by hand, notarizing with the keychain profile `pengupool` unless all three
+`ASC_*` variables are set: on a fresh clone of the latest main (it refuses another commit or
+uncommitted changes), it builds the disk image (`make dist`), then `make publish` creates release `v<version>`
+at that commit (or uses it if it already exists) and attaches the image. Re-running replaces the image. When the
+new release is the latest, older releases lose their disk images; a prerelease or a backport keeps them.
+
+Pull requests and pushes to main are tested on the maintainer's Mac (`test.yml`). Pull requests from forks run
+no CI: the test runner refuses them before their first step, even when a run is approved
+(`scripts/test-runner-gate.sh`, checked by `scripts/test-runner-gate_test.sh`), and no pull request reaches the
+release runner. To merge a fork's pull request, a maintainer reads its changes, then pushes its commits to a
+branch here, and the tests run on that branch's pull request: they run on the maintainer's Mac.
 
 ## How it fits together
 

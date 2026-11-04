@@ -23,7 +23,7 @@ uninstall:
 # identity in the keychain the app and the image are signed, notarized and stapled (scripts/notarize.sh).
 dist:
 	@test -n "$(VERSION)" || { echo "no valid Version in cmd/pengupool/main.go" >&2; exit 1; }
-	SIGN=1 scripts/build-app.sh --no-install
+	env -u ASC_KEY_P8 -u ASC_KEY_ID -u ASC_ISSUER_ID SIGN=1 scripts/build-app.sh --no-install # the npm and electron build never sees the notary key
 	scripts/notarize.sh "desktop/dist/mac-arm64/PenguPool AI.app"
 	rm -rf build/dmg $(DIST) && mkdir -p build/dmg
 	ditto "desktop/dist/mac-arm64/PenguPool AI.app" build/dmg/PenguPool\ AI.app

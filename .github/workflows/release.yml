@@ -1,0 +1,50 @@
+name: release
+
+# Builds, signs, notarizes and publishes a release (`make dist`, then `make publish`) on the maintainer's Mac. Only nduworker
+# can start it, from main, with "Run workflow". The runner also refuses, in its job-started hook, any job that
+# is not this workflow started that way (scripts/release-runner-gate.sh).
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.actor == 'nduworker' && github.triggering_actor == 'nduworker' && github.ref == 'refs/heads/main'
+    runs-on: [pengupool-release] # the runner has no default labels, so no job asking for self-hosted lands on it
+    environment: release # holds the notary secrets; only main can deploy to it
+    timeout-minutes: 60
+    permissions:
+      contents: write # create the release and attach the disk image
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Build, sign and notarize
+        env:
+          # Fresh Go caches, so the signed build never reuses what a test job left in the Mac's shared ones.
+          GOCACHE: ${{ runner.temp }}/gocache
+          GOMODCACHE: ${{ runner.temp }}/gomod
+          GOFLAGS: -modcacherw # so the runner can delete the module cache with its temp folder
+          # Notarization signs in with this App Store Connect API key (scripts/notarize.sh); only this step gets it.
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: | # no GitHub token: the build runs npm and electron scripts
+          [ -n "$ASC_KEY_P8" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] ||
+            { echo "::error::set the ASC_KEY_P8, ASC_KEY_ID and ASC_ISSUER_ID secrets of the release environment"; exit 1; }
+          make dist
+      - name: Check the disk image
+        run: |
+          dmg=$(ls build/PenguPool-AI-*-mac-arm64.dmg)
+          xcrun stapler validate "$dmg"
+          spctl -a -t open --context context:primary-signature -vv "$dmg"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make publish # refuses unless HEAD is the latest main and the tag points at it
