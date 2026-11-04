@@ -38,8 +38,9 @@ profile in that Mac's keychain, and published by nduworker:
    the runner refuses any other job before its first step (`scripts/release-runner-gate.sh`, checked by
    `scripts/release-runner-gate_test.sh`). The gate knows the account, not the person: anything holding
    nduworker's GitHub login can start a release, so an agent asks the maintainer before it does.
-   The job signs with the Developer ID identity in the runner's keychain, and notarizes with the repository
-   secrets `NOTARY_APPLE_ID` and `NOTARY_PASSWORD` (an app-specific password), which only its build step gets.
+   The job signs with the Developer ID identity in the runner's keychain, and notarizes with the secrets
+   `NOTARY_APPLE_ID` and `NOTARY_PASSWORD` (an app-specific password) of the `release` environment, which only
+   main can use and only the job's build step gets.
 
 `make release` still works by hand, notarizing with the keychain profile `pengupool` unless both
 `NOTARY_APPLE_ID` and `NOTARY_PASSWORD` are set: on a fresh clone of the latest main (it refuses another commit or

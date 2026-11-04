@@ -16,6 +16,7 @@ jobs:
   release:
     if: github.actor == 'nduworker' && github.triggering_actor == 'nduworker' && github.ref == 'refs/heads/main'
     runs-on: [pengupool-release] # the runner has no default labels, so no job asking for self-hosted lands on it
+    environment: release # holds the notary secrets; only main can deploy to it
     timeout-minutes: 60
     permissions:
       contents: write # create the release and attach the disk image
@@ -35,7 +36,7 @@ jobs:
           NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
         run: | # no GitHub token: the build runs npm and electron scripts
           [ -n "$NOTARY_APPLE_ID" ] && [ -n "$NOTARY_PASSWORD" ] ||
-            { echo "::error::set the NOTARY_APPLE_ID and NOTARY_PASSWORD repository secrets"; exit 1; }
+            { echo "::error::set the NOTARY_APPLE_ID and NOTARY_PASSWORD secrets of the release environment"; exit 1; }
           make dist
       - name: Check the disk image
         run: |
