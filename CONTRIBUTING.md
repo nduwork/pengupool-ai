@@ -47,7 +47,8 @@ new release is the latest, older releases lose their disk images; a prerelease o
 Pull requests and pushes to main are tested on the maintainer's Mac (`test.yml`). Pull requests from forks run
 no CI: the test runner refuses them before their first step, even when a run is approved
 (`scripts/test-runner-gate.sh`, checked by `scripts/test-runner-gate_test.sh`), and no pull request reaches the
-release runner.
+release runner. To merge a fork's pull request, a maintainer reads its changes, then pushes its commits to a
+branch here, and the tests run on that branch's pull request: they run on the maintainer's Mac.
 
 ## How it fits together
 
