@@ -378,12 +378,7 @@ function Providers(): ReactElement {
             <Input value={draft.model ?? ""} onChange={(e) => set("model", e.target.value)} className="font-mono" placeholder={type === "meta" ? "muse-spark-1.3" : undefined} />
           </Label>
         )}
-        {type === "meta" ? (
-          <p className="text-caption text-warning">
-            Uncalibrated: as the triage model, Muse Spark&apos;s answers never act on their own; check-ins and Compass changes wait for you. Only its pick at a task send governs delivery.
-            {contributorNote(draft.model) !== null ? ` ${contributorNote(draft.model)}` : ""}
-          </p>
-        ) : null}
+        {type === "meta" && contributorNote(draft.model) !== null ? <p className="text-caption text-warning">{contributorNote(draft.model)}</p> : null}
         <div className="flex flex-wrap gap-2">
           <Button
             variant={next === "save" ? "default" : "secondary"}
