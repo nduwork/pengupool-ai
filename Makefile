@@ -3,7 +3,8 @@
 # `make dist` builds the app once as a disk image others install without
 # Go, Node or Xcode, and `make release` publishes it. Every target is safe to re-run.
 
-VERSION          := $(shell sed -n 's/^const Version = "\(.*\)"/\1/p' cmd/pengupool/main.go)
+# Only a plain version (1.2.3, 1.2.3-rc.1) is read; anything else leaves VERSION empty and dist/publish refuse.
+VERSION          := $(shell sed -nE 's/^const Version = "([0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?)"$$/\1/p' cmd/pengupool/main.go)
 DIST             := build/PenguPool-AI-$(VERSION)-mac-arm64.dmg
 
 .PHONY: install install-app uninstall dist release publish app web build test smoke clean
@@ -21,6 +22,7 @@ uninstall:
 # The prebuilt app as a disk image: open it, drag PenguPool AI.app onto Applications. With a Developer ID
 # identity in the keychain the app and the image are signed, notarized and stapled (scripts/notarize.sh).
 dist:
+	@test -n "$(VERSION)" || { echo "no valid Version in cmd/pengupool/main.go" >&2; exit 1; }
 	SIGN=1 scripts/build-app.sh --no-install
 	scripts/notarize.sh "desktop/dist/mac-arm64/PenguPool AI.app"
 	rm -rf build/dmg $(DIST) && mkdir -p build/dmg
@@ -36,18 +38,18 @@ dist:
 release: dist
 	$(MAKE) publish
 
-# Attach the built disk image to release v$(VERSION), made here at this commit when it does not exist yet (CI
-# builds for a release someone published), and delete older releases' images. Re-running replaces the image.
-# Only this step talks to GitHub: CI runs `make dist` without a token and gives it to this step alone.
+# Attach the built disk image to release v$(VERSION), made at this commit when it does not exist yet.
+# Re-running replaces the image.
 publish:
+	@test -n "$(VERSION)" || { echo "no valid Version in cmd/pengupool/main.go" >&2; exit 1; }
 	test -f $(DIST) || { echo "no $(DIST): run make dist first" >&2; exit 1; }
 	gh release view v$(VERSION) >/dev/null 2>&1 || gh release create v$(VERSION) --target $$(git rev-parse HEAD) --title "PenguPool AI $(VERSION)" --notes "Open the disk image, drag PenguPool AI.app onto Applications, open it. See the README's Install section."
 	gh release upload v$(VERSION) $(DIST) --clobber
-	# Older releases keep their notes and tags; their disk images go, so the repository stores one. A prerelease
-	# deletes none: the latest stable release (the README's download link) keeps its image.
-	[ "$$(gh release view v$(VERSION) --json isPrerelease -q .isPrerelease)" = true ] || \
-	gh release list --limit 200 --json tagName -q '.[].tagName | select(. != "v$(VERSION)")' | while read t; do \
-		gh release view "$$t" --json assets -q '.assets[].name' | grep '\.dmg$$' | while read a; do gh release delete-asset "$$t" "$$a" --yes; done; \
+	# Older releases keep their notes and tags; their disk images go, so the repository stores one. Only when this
+	# release is the latest (never a prerelease or a backport), and only when gh can say so: otherwise none go.
+	latest=$$(gh release view --json tagName -q .tagName) && [ "$$latest" = v$(VERSION) ] || { echo "v$(VERSION) is not the latest release: older disk images kept"; exit 0; }; \
+	gh release list --limit 200 --json tagName -q '.[].tagName | select(. != "v$(VERSION)")' | while read -r t; do \
+		gh release view "$$t" --json assets -q '.assets[].name' | grep '\.dmg$$' | while read -r a; do gh release delete-asset "$$t" "$$a" --yes; done; \
 	done
 
 # Build PenguPool AI.app into desktop/dist/mac-arm64 without installing it.

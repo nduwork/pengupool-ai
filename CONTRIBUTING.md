@@ -28,17 +28,18 @@ directory.
 
 ## Releasing
 
-1. Bump `Version` in `cmd/pengupool/main.go`, add the release's entry to `CHANGELOG.md`, and merge to main.
-2. Publish release `v<version>` on main: `gh release create v<version> --target main --notes "…"`, or in the
-   web UI. A person (or a personal access token) must publish it: a release made with a workflow's own
-   GITHUB_TOKEN starts no workflow.
-3. The **release** workflow then builds, signs and notarizes the disk image on the self-hosted Mac, with that
-   Mac's keychain, and attaches it to the release in about 15 minutes. It builds only a tag that is on main
-   and matches `Version`. To retry a failed build, re-run the workflow: the image is replaced.
+No CI builds or publishes releases. A maintainer (nduworker, or another account allowed to publish) builds,
+signs and notarizes each release on their own Mac, with the Developer ID identity and notary profile in that
+Mac's keychain:
 
-Releases go through CI. `make release` on a maintainer's Mac is the manual fallback; the release it publishes
-starts the workflow too, which rebuilds and replaces the image. Pull requests and pushes are tested on
-GitHub-hosted runners (`test.yml`); only the release workflow runs on the self-hosted Mac.
+1. Bump `Version` in `cmd/pengupool/main.go`, add the release's entry to `CHANGELOG.md`, and merge to main.
+2. On an up-to-date main, run `make release`. It builds the disk image (`make dist`), then `make publish`
+   creates release `v<version>` at that commit (or uses it if it already exists) and attaches the image.
+   Re-running replaces the image. When the new release is the latest, older releases lose their disk images;
+   a prerelease or a backport keeps them.
+
+Pull requests and pushes to main are tested on GitHub-hosted runners (`test.yml`). Pull requests from forks
+run no CI.
 
 ## How it fits together
 

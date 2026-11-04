@@ -1,7 +1,7 @@
 name: test
 
-# Pull requests and pushes run on GitHub-hosted runners: no outside code runs on the owner's Mac. Only the
-# release workflow uses the self-hosted runner.
+# Pull requests and pushes run on GitHub-hosted runners. No workflow uses a self-hosted runner: releases are
+# built and signed on a maintainer's Mac with `make release`.
 on:
   pull_request:
   push:
@@ -25,7 +25,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Git identity
-        # The tests make throwaway repositories; the self-hosted Mac had an identity configured.
+        # The tests make throwaway repositories, and git needs an identity to commit in them.
         run: |
           git config --global user.name "PenguPool CI"
           git config --global user.email "ci@users.noreply.github.com"
