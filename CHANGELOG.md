@@ -10,6 +10,8 @@ Muse Spark, through the Meta Model API, is the default check on tasks: when a me
 
 Whether a helper's finished job is kept in its Experience is now decided by the triage model; a job is skipped only on a confident no, and kept otherwise. A helper with no entries yet is told its Experience exists and how to search it.
 
+With the Tailscale app installed but no `tailscale` command on PATH, Settings showed "invalid character 'T'" under Logged in. The host now runs the app's own binary as the CLI, and when it prints something other than JSON, Settings shows the CLI's own words.
+
 ## 0.11.2
 
 A Muse session no longer stays Active after its turn ends. Muse runs subagents, such as its memory reminder, in the session after a turn; their tool calls were taken for a new turn, so the session read Active until its next real turn and messages sent to it waited. Now the session reads Waiting when its turn ends, and messages reach it. A subagent's tool calls are still checked, as before. A Muse session stuck this way before updating recovers at its next turn.

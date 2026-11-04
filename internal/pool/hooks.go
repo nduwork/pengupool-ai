@@ -712,7 +712,7 @@ func (p *Pool) sendMessageRan(s store.Session, pl map[string]any) {
 	if detectSecret(text) { // checked whole, so a token cut by the clip cannot leave a fragment
 		text = leftOut
 	}
-	text = clip(text, maxMessage)
+	text = clip(text, maxMessage-len("…")) // with its "…", within maxMessage
 	typ, _ := msgType("", text)
 	m := protocol.TeamMessage{ID: protocol.NewID(), TeamID: t.ID, From: s.ID, To: target, Text: text, State: "queued", At: now(), Via: viaNative, Type: typ}
 	if err := p.update(func(st *store.State) error { addMessage(st, m); return nil }); err != nil {

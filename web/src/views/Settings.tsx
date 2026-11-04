@@ -131,7 +131,7 @@ interface SparkResp {
   active: boolean;
 }
 
-/** The Meta · Muse Spark tab: the Meta Model API's settings and the switch for its task check. */
+/** The Meta · Muse Spark tab: the Meta Model API's settings, with the same buttons as the triage tabs; Use turns its task check on. */
 function SparkPane({ onSaved }: { onSaved: () => void }): ReactElement {
   const app = useApp();
   const [saved, setSaved] = useState<SparkCfg | null>(null);
@@ -158,22 +158,15 @@ function SparkPane({ onSaved }: { onSaved: () => void }): ReactElement {
     setActive(r.active);
     setCheck(null);
     onSaved();
-    toast.success(r.active ? "Saved. Muse Spark checks who gets each task." : "Saved.");
+    toast.success("Saved.");
   };
   const unchanged = JSON.stringify(draft) === JSON.stringify(saved) && key === "";
+  const off = saved.off === true;
+  // The same steps as the triage tabs: Save → Check connection → Use; none while in use.
+  const failed = check !== null && check !== "running" && !check.ok;
+  const next = !unchanged ? "save" : failed ? "check" : off ? "use" : "";
   return (
     <div className="grid grid-cols-1 gap-4">
-      <p className="rounded-md bg-warning/10 p-3 text-caption text-warning">
-        <strong>Uncalibrated: its pick decides who gets each task.</strong> Muse Spark is the default send-path triage: when a lead or builder sends one of its members a
-        task, PenguPool asks Muse Spark which member should get it and puts the pick and its reasoning on the message. If Spark picks another running member, the task
-        goes there instead and the sender is told; the sender can keep its own pick by resending with a reason, which is recorded. If Spark does not answer in 10 s, the task goes as addressed. Each task (redacted) and the
-        member list are sent to Meta. Until Spark is set up (a model and an API key), tasks go unchecked and your System One model&apos;s per-turn route hint applies, as
-        before. Everything else triage does stays on System One.
-      </p>
-      <div className="flex items-center gap-3 text-label font-medium">
-        <Switch checked={draft.off !== true} onCheckedChange={(v) => void save({ ...draft, off: !v })} label="Muse Spark checks who gets each task" />
-        Muse Spark checks who gets each task
-      </div>
       <Label hint="The Meta Model API. PenguPool calls its chat completions, /chat/completions.">
         Address
         <Input value={draft.address} onChange={(e) => set("address", e.target.value)} className="font-mono" />
@@ -188,18 +181,26 @@ function SparkPane({ onSaved }: { onSaved: () => void }): ReactElement {
           <Input value={draft.key_ref?.startsWith("env:") === true ? draft.key_ref : ""} onChange={(e) => set("key_ref", e.target.value)} placeholder="env:META_API_KEY" className="font-mono" />
         </Label>
       </div>
-      <Label hint="Required: the Meta Model API's model string.">
+      <Label hint="Required: the Meta Model API's model string. Reasoning effort: minimal (fixed for triage).">
         Model
         <Input value={draft.model ?? ""} onChange={(e) => set("model", e.target.value)} className="font-mono" placeholder="muse-spark-1.3" />
       </Label>
-      <p className="text-caption text-muted-foreground">Reasoning effort: minimal (fixed for triage)</p>
       {contributorNote(draft.model) !== null ? <p className="text-caption text-warning">{contributorNote(draft.model)}</p> : null}
       <div className="flex flex-wrap gap-2">
-        <Button variant={unchanged ? "secondary" : "default"} onClick={() => void save(draft)}>
-          Save
+        <Button variant={next === "save" ? "default" : "secondary"} onClick={() => void save(draft)}>
+          Save provider
         </Button>
         <Button
-          variant="secondary"
+          variant="ghost"
+          onClick={() => {
+            setDraft(saved);
+            setKey("");
+          }}
+        >
+          Discard changes
+        </Button>
+        <Button
+          variant={next === "check" ? "default" : "secondary"}
           disabled={!unchanged || (saved.model ?? "") === "" || check === "running"}
           title="Asks the saved model who should get a sample task"
           onClick={async () => {
@@ -216,7 +217,26 @@ function SparkPane({ onSaved }: { onSaved: () => void }): ReactElement {
             "Check connection"
           )}
         </Button>
+        <Button variant={next === "use" ? "default" : "secondary"} disabled={!off || !unchanged} onClick={() => void save({ ...saved, off: false })}>
+          Use for send-path triage
+        </Button>
+        {!off ? (
+          <Button variant="ghost" disabled={!unchanged} onClick={() => void save({ ...saved, off: true })}>
+            Stop using
+          </Button>
+        ) : null}
       </div>
+      <p role="status" className={cn("text-caption", failed ? "text-danger" : "text-muted-foreground")}>
+        {!unchanged
+          ? "Unsaved changes. Save them, or Discard changes to go back to the saved settings."
+          : failed
+            ? "The check failed. Fix the settings, save, and check again."
+            : off
+              ? "Not in use: tasks go as addressed, unchecked; System One's per-turn route hint applies."
+              : active
+                ? "In use for send-path triage: Muse Spark picks who gets each task a lead or builder sends."
+                : "In use once set up: add the model and an API key. Until then tasks go unchecked and System One's per-turn route hint applies."}
+      </p>
       {check !== null && check !== "running" ? (
         <Card className={cn("p-3 text-label", check.ok ? "border-success/40" : "border-danger/40")}>
           {check.ok ? (
@@ -228,13 +248,6 @@ function SparkPane({ onSaved }: { onSaved: () => void }): ReactElement {
           )}
         </Card>
       ) : null}
-      <p role="status" className="text-caption text-muted-foreground">
-        {saved.off === true
-          ? "Off: tasks go as addressed, unchecked; System One's per-turn route hint applies."
-          : active
-            ? "Active: Muse Spark checks each task a lead or builder sends one of its members."
-            : "On, not set up yet: add the model and an API key. Until then tasks go unchecked and System One's per-turn route hint applies."}
-      </p>
     </div>
   );
 }
@@ -251,6 +264,7 @@ function ProviderModel({
   capability,
   noun = "models",
   hint,
+  quietError,
 }: {
   type: string;
   typedKey: string;
@@ -261,6 +275,8 @@ function ProviderModel({
   capability?: string;
   noun?: string;
   hint?: string;
+  /** Shown in place of a listing error, when this provider is neither the saved one nor just checked. */
+  quietError?: string;
 }): ReactElement {
   const app = useApp();
   const [models, setModels] = useState<string[] | null>(null);
@@ -287,7 +303,7 @@ function ProviderModel({
     <Label
       hint={
         error !== ""
-          ? error
+          ? (quietError ?? error)
           : models === null
             ? "Finding models…"
             : list.length === 0
@@ -494,6 +510,7 @@ function Providers(): ReactElement {
             onChange={(m) => set("model", m)}
             capability="decision"
             noun="decision models"
+            quietError={data.active === "ollama" || check !== null ? undefined : "Ollama isn't running on this Mac."}
             hint="Ollama lists no model that declares the decision capability. Pull a System One decision model, then reload."
           />
         ) : (

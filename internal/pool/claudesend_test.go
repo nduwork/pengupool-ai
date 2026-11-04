@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -205,4 +206,22 @@ func TestDeliveredAt(t *testing.T) {
 	if got := message(p, "m2").DeliveredAt; got != "" {
 		t.Fatalf("an old delivered record was stamped %q", got)
 	}
+}
+
+// A native SendMessage longer than a team message may be is kept clipped, "…" included, within maxMessage.
+func TestNativeSendClippedWithinLimit(t *testing.T) {
+	var reply atomic.Pointer[string]
+	reply.Store(ptr(pickWeb))
+	p, _ := sparkTeam(t, false, &reply)
+	web, _ := p.session("webaaaaaaaaa")
+	p.sendMessageRan(web, map[string]any{"tool_name": "SendMessage", "tool_input": map[string]any{"to": "leadaaaaaaaa", "message": strings.Repeat("y", maxMessage+100)}})
+	for _, m := range p.st.State().Domain.Messages {
+		if m.Via == viaNative {
+			if len(m.Text) > maxMessage || !strings.HasSuffix(m.Text, "…") {
+				t.Fatalf("%d bytes", len(m.Text))
+			}
+			return
+		}
+	}
+	t.Fatal("not on the record")
 }

@@ -208,8 +208,9 @@ type DecisionConfig struct {
 
 // SparkConfig is Muse Spark on the Meta Model API (OpenAI-compatible chat completions at Address):
 // the default check of who gets each task a parent sends a child. It is on unless the owner turns it
-// Off, and active only once it is set up (pool.sparkActive); the host records its answer on the
-// message and never routes on it.
+// Off, and active only once it is set up (pool.sparkActive). Its pick governs delivery: a task it
+// gives another running child goes there unless the sender overrides it, and its answer is recorded
+// on the message.
 type SparkConfig struct {
 	Off     bool   `json:"off,omitempty"`
 	Address string `json:"address,omitempty"`
