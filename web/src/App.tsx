@@ -186,17 +186,20 @@ export function App(): ReactElement {
   }, [connection, info.status, gatesTick]);
 
   // One list of what waits on the owner: the dock badge counts it, a native notification announces each
-  // new item, and one that leaves the list (answered anywhere) has its notification withdrawn.
+  // new item, and one that leaves the list (answered anywhere, or dismissed) has its notification withdrawn.
+  // Dismissals live in memory only: a restart shows everything again.
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
+  const dismiss = useCallback((key: string) => setDismissed((d) => new Set(d).add(key)), []);
   const notified = useRef(new Set<string>());
   useEffect(() => {
-    const { items } = waitingOnOwner(view.domain.approvals, view.sessions, view.domain.messages, gates, spots);
+    const { items } = waitingOnOwner(view.domain.approvals, view.sessions, view.domain.messages, gates, spots, dismissed);
     desktop?.setBadge(items.length);
     const now = new Set(items.map((i) => i.key));
     for (const i of items) if (!notified.current.has(i.key)) desktop?.notify(i.title, i.body, i.key);
     const gone = [...notified.current].filter((k) => !now.has(k));
     if (gone.length > 0) desktop?.unnotify?.(gone);
     notified.current = now;
-  }, [view.domain.approvals, view.domain.messages, view.sessions, gates, spots]);
+  }, [view.domain.approvals, view.domain.messages, view.sessions, gates, spots, dismissed]);
 
   // Unread dots: output since the owner last viewed a session (the selected one is always read).
   const [viewed, setViewed] = usePersisted<Viewed>("viewed", {});
@@ -282,6 +285,8 @@ export function App(): ReactElement {
       unread,
       gates,
       spots,
+      dismissed,
+      dismiss,
       select,
       nav,
       setNav,
@@ -297,7 +302,7 @@ export function App(): ReactElement {
         },
       },
     }),
-    [connection, info.status, view, selected, unread, gates, spots, select, nav, call, openTab, welcomeShow],
+    [connection, info.status, view, selected, unread, gates, spots, dismissed, dismiss, select, nav, call, openTab, welcomeShow],
   );
 
   const onAttach = useCallback((attach: AttachSession | null) => {

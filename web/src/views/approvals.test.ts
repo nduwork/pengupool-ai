@@ -6,7 +6,7 @@ import { type AppCtx, Ctx } from "../app/ctx";
 import type { SessionView } from "../protocol/control";
 import type { Approval } from "../protocol/domain";
 import { PANEL, refocusRow, WaitingList } from "./Approvals";
-import type { OpenGate } from "./inbox";
+import { dismissKey, type OpenGate } from "./inbox";
 
 // Tests run without a browser layout engine, so nothing here measures widths: they check that the
 // long text and the buttons carry the classes that wrap them inside the panel, and that none carries
@@ -16,7 +16,7 @@ const question = ("QSTART " + "which migration strategy should I use for the ord
 const options = ["OPT1", "OPT2", "OPT3"].map((o) => o + "a".repeat(76)); // 80 runes each, the host's limit
 const reply = "CSTART " + "the table refactor is done and the tests pass ".repeat(25);
 
-function render(): string {
+function render(dismissed: ReadonlySet<string> = new Set()): string {
   const session = { id: "s1", name: "api-builder", state: "running", status: "idle", harness: "claude" } as SessionView;
   // A member's ask between agents with long names: asker → recipient must wrap, not run out sideways.
   const asker = { id: "s2", name: "pengupool-agent-hub-codex", state: "running", status: "idle", harness: "claude" } as SessionView;
@@ -30,6 +30,7 @@ function render(): string {
     gates: [gate],
     spots: [{ id: 9, agent: "api-builder", question: "SSTART " + "y".repeat(500) }],
     call: async () => undefined,
+    dismissed,
   } as unknown as AppCtx;
   return renderToStaticMarkup(createElement(Ctx.Provider, { value: app }, createElement(WaitingList)));
 }
@@ -84,6 +85,20 @@ describe("Waiting on you panel", () => {
     expect(who).toContain("flex-wrap");
     expect(who).not.toContain("shrink-0");
     expect(row).not.toMatch(/\btruncate\b[^"]*"><strong/);
+  });
+
+  it("gives every row a keyboard-reachable × named for its row, and a dismissed row leaves the list", () => {
+    const rows = html.split('role="listitem"').slice(1);
+    expect(rows.length).toBe(4); // the agent's ask, the check-in, the member's ask, the go-ahead
+    for (const row of rows) {
+      const label = /^ aria-label="([^"]*)"/.exec(row)?.[1] ?? "";
+      expect(row).toContain(`<button type="button" aria-label="Dismiss ${label}"`);
+      expect(row).toMatch(/aria-label="Dismiss [^"]*"[^>]*class="[^"]*focus-visible:ring-2/);
+    }
+    const spot = dismissKey({ key: "spot:9", title: "", body: "api-builder: SSTART " + "y".repeat(500) });
+    const without = render(new Set([spot]));
+    expect(without.split('role="listitem"').length - 1).toBe(3);
+    expect(without).not.toContain("SSTART");
   });
 
   it("keeps the panel inside the window: a max width and a max height", () => {
