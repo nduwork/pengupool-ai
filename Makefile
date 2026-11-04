@@ -34,23 +34,25 @@ dist:
 	find build -maxdepth 1 -name 'PenguPool-AI-*-mac-arm64.dmg' ! -name '$(notdir $(DIST))' -delete # the new one replaces older images
 	@echo "built $(DIST)"
 
+# Releases are made from the latest main only (HEAD is origin/main after a fetch).
+ON_MAIN          = git fetch -q origin main && [ "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" ]
+
 # Build the disk image and publish it as GitHub release v$(VERSION) of this repository, from a clean checkout
-# of the latest main only.
+# of the latest main.
 release:
-	git fetch -q origin main && [ "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" ] && [ -z "$$(git status --porcelain)" ] || { echo "make release runs on a clean, up-to-date main" >&2; exit 1; }
+	$(ON_MAIN) && [ -z "$$(git status --porcelain)" ] || { echo "make release runs on a clean, up-to-date main" >&2; exit 1; }
 	$(MAKE) dist
 	$(MAKE) publish
 
-# Attach the built disk image to release v$(VERSION), made at this commit when it does not exist yet; an existing
-# release must be tagged at this commit. Re-running replaces the image.
+# Attach the built disk image to release v$(VERSION), made at this commit when it does not exist yet. The release's
+# tag must be at this commit (gh release create reuses an existing tag). Re-running replaces the image. The tree
+# isn't checked for changes here: the build rewrites internal/webapp/dist.
 publish:
 	@test -n "$(VERSION)" || { echo "no valid Version in cmd/pengupool/main.go" >&2; exit 1; }
 	test -f $(DIST) || { echo "no $(DIST): run make dist first" >&2; exit 1; }
-	if gh release view v$(VERSION) >/dev/null 2>&1; then \
-		[ "$$(gh api 'repos/{owner}/{repo}/commits/v$(VERSION)' --jq .sha)" = "$$(git rev-parse HEAD)" ] || { echo "v$(VERSION) is tagged at another commit than HEAD" >&2; exit 1; }; \
-	else \
-		gh release create v$(VERSION) --target $$(git rev-parse HEAD) --title "PenguPool AI $(VERSION)" --notes "Open the disk image, drag PenguPool AI.app onto Applications, open it. See the README's Install section."; \
-	fi
+	$(ON_MAIN) || { echo "make publish runs on the latest main" >&2; exit 1; }
+	gh release view v$(VERSION) >/dev/null 2>&1 || gh release create v$(VERSION) --target $$(git rev-parse HEAD) --title "PenguPool AI $(VERSION)" --notes "Open the disk image, drag PenguPool AI.app onto Applications, open it. See the README's Install section."
+	[ "$$(gh api 'repos/{owner}/{repo}/commits/refs/tags/v$(VERSION)' --jq .sha)" = "$$(git rev-parse HEAD)" ] || { echo "tag v$(VERSION) is not at HEAD (or gh could not say): no image attached" >&2; exit 1; }
 	gh release upload v$(VERSION) $(DIST) --clobber
 	# Older releases keep their notes and tags; their disk images go, so the repository stores one. Only when this
 	# release is the latest (never a prerelease or a backport), and only when gh can say so: otherwise none go.
