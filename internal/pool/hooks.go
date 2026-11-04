@@ -806,8 +806,8 @@ func (p *Pool) guardSkill(s store.Session, pl map[string]any) (HookOut, bool) {
 	return hookJSON(map[string]any{"hookSpecificOutput": map[string]any{
 		"hookEventName":      "PreToolUse",
 		"permissionDecision": "deny",
-		"permissionDecisionReason": fmt.Sprintf("PenguPool: %s's installed skill files are read-only; temp files and folders of your own are fine. The record is PenguPool's: search it with `%s search`.",
-			sk.Name, p.cli()),
+		"permissionDecisionReason": fmt.Sprintf("PenguPool: %s's installed skill files are read-only; put temporary files in %s. The record is PenguPool's: search it with `%s search`.",
+			sk.Name, sessionTemp(s.ID), p.cli()),
 	}}), true
 }
 

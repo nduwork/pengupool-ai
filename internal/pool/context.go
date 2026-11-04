@@ -68,8 +68,8 @@ func (p *Pool) buildContextCap(id string, compassCap int) string {
 				fmt.Fprintf(&b, "\n- %s: %s", r.Name, r.Path)
 			}
 		}
-		b.WriteString("\nPut your temporary files in your working directory.")
 	}
+	fmt.Fprintf(&b, "\nPut temporary files (reports, notes, scratch work) in %s, not in your working directory or a repository; send your parent the path of anything it should read.", sessionTemp(id))
 	b.WriteString(p.autonomySection())
 	// A display name changes on a rename; a session id does not. Agents keep teammates by id and
 	// read this roster for the current name, which is the only one the owner hears.
@@ -143,7 +143,7 @@ func (p *Pool) renderSkill(b *strings.Builder, sk *protocol.Skill) {
 	// Skills are never installed into a harness: a helper gets them here, for this session only.
 	fmt.Fprintf(b, "\n## Your skills as the %s helper\nThey are active for this team session only and are not installed in your agent. Before using one, read its SKILL.md under %s.\n", sk.Name, sk.Path)
 	if sk.Source == "git" && within(sk.Path, filepath.Join(p.st.Dir(), "skills")) {
-		fmt.Fprintf(b, "Your installed skill files in %s are read-only: never edit them. Temp files and folders of your own there are fine.\n", sk.Path)
+		fmt.Fprintf(b, "Your installed skill files in %s are read-only: never edit them.\n", sk.Path)
 	}
 	// Codex reads AGENTS.md on its own, other agents do not: every agent is told to.
 	agents := filepath.Join(sk.Path, "AGENTS.md")

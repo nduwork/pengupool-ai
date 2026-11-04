@@ -152,6 +152,13 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 			dec(s)
 		}
 	}
+	tmp := ""
+	if r.Harness != harness.Shell {
+		tmp = sessionTemp(r.ID)
+		if err := os.MkdirAll(tmp, 0o700); err != nil {
+			p.logf("pool: temp folder for %s: %v", r.Name, err)
+		}
+	}
 	if p.testSpawn != nil {
 		return p.testSpawn(r)
 	}
@@ -182,7 +189,7 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 	cmd, env, err := harness.Spec(r.Harness, harness.Params{
 		SessionID: r.ID, Name: r.Name, Cwd: r.Cwd, Exe: p.exe, StoreDir: p.st.Dir(), Wrap: wrap,
 		Model: r.Model, Effort: r.Effort, Resume: r.Resume, Command: r.Command, Env: p.env,
-		SkillRepo: p.skillRepo(r.SkillID), ReadDirs: r.ReadDirs,
+		SkillRepo: p.skillRepo(r.SkillID), ReadDirs: appendNonEmpty(slices.Clone(r.ReadDirs), tmp), // the temp folder needs no prompt to write
 	})
 	if plain {
 		env = append([]string(nil), p.env...) // a plain shell is no session: none of the session markers
@@ -654,4 +661,15 @@ func (p *Pool) readyByPrompt() {
 		p.logLine(s.ID, "session: "+s.Harness+" ready (its prompt is on screen)")
 		p.flushQueue(s.ID)
 	}
+}
+
+// sessionTemp is a session's folder for temporary files (reports, notes, scratch work), outside every
+// working directory and repository; spawn makes it.
+func sessionTemp(id string) string { return filepath.Join(os.TempDir(), "pengupool", id) }
+
+func appendNonEmpty(xs []string, x string) []string {
+	if x == "" {
+		return xs
+	}
+	return append(xs, x)
 }

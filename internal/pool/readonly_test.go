@@ -94,7 +94,7 @@ func TestGuardSkillEdits(t *testing.T) {
 		return out.(HookOut).Stdout
 	}
 	for _, c := range []struct{ tool, path string }{{"Edit", filepath.Join(dir, "skills", "x", "SKILL.md")}, {"Write", "skills/x/SKILL.md"}, {"MultiEdit", dir + "/AGENTS.md"}, {"NotebookEdit", dir + "/n.ipynb"}} {
-		if got := edit(c.tool, c.path); !strings.Contains(got, `"deny"`) || !strings.Contains(got, "planning-agent's installed skill files are read-only") || !strings.Contains(got, "temp files") || !strings.Contains(got, "'pengupool' search") {
+		if got := edit(c.tool, c.path); !strings.Contains(got, `"deny"`) || !strings.Contains(got, "planning-agent's installed skill files are read-only") || !strings.Contains(got, "put temporary files in "+sessionTemp("planaaaaaaaa")) || !strings.Contains(got, "'pengupool' search") {
 			t.Errorf("%s %s: %q", c.tool, c.path, got)
 		}
 	}
@@ -125,7 +125,7 @@ func TestSkillContextSaysReadOnly(t *testing.T) {
 	installed := filepath.Join(st.Dir(), "skills", "x")
 	var b strings.Builder
 	p.renderSkill(&b, &protocol.Skill{Name: "x", Path: installed, Source: "git"})
-	if !strings.Contains(b.String(), "Your installed skill files in "+installed+" are read-only: never edit them. Temp files and folders of your own there are fine.") {
+	if !strings.Contains(b.String(), "Your installed skill files in "+installed+" are read-only: never edit them.\n") || strings.Contains(b.String(), "Temp files") {
 		t.Fatalf("%s", b.String())
 	}
 	b.Reset()

@@ -8,6 +8,8 @@ Muse Spark is now an ordinary decision model. In Settings → Decision model, Lo
 
 The task check now runs with whichever decision model is in use. When a member hands one of its children work, marked `Task:` or sent with `--type task`, the model picks who should do it, and the pick governs delivery as before (`--override` keeps the sender's pick). Plain notes are not checked, so a message about a member's work no longer goes to that member. The per-turn hint and tool hold for the Lead are gone; the task check replaces them.
 
+Each team session gets its own temporary folder (`pengupool/<session id>` in the Mac's temp folder), made when it starts. Its context tells it to put reports, notes and scratch work there, not in its working directory or a repository, and to send its parent the path of anything it should read.
+
 ## 0.11.3
 
 A Muse Code session now shows **Muse Spark · Meta** and its model on its map card and session header, read from Muse's own status line; the session log records the model each turn. When Muse does not show its model, the label reads **Muse Code · Meta**.
