@@ -5,10 +5,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/nduwork/pengupool-ai/internal/decision"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
@@ -29,6 +33,44 @@ func TestRetiredProvidersDropAtStart(t *testing.T) {
 	New(Options{Store: st, Exe: "pengupool"})
 	if d := st.Config().Decision; d.Active != "" || len(d.Providers) != 1 || d.Providers["ollama"].Model != "m" {
 		t.Fatalf("decision = %+v", d)
+	}
+}
+
+// An earlier version's Muse Spark task check, read from config.json, becomes a saved Meta provider
+// at start and is not made active; with no key set up, or a Meta provider saved already, it is dropped.
+func TestSparkSettingsMoveToAMetaProvider(t *testing.T) {
+	for name, c := range map[string]struct {
+		spark, providers string
+		want             store.ProviderConfig
+	}{
+		"moved": {`{"off":true,"address":"https://meta.example/v1","model":"muse-spark-1.2","key_ref":"keychain:spark-meta"}`, ``,
+			store.ProviderConfig{Type: "meta", Format: decision.MetaFormat, Address: "https://meta.example/v1", Model: "muse-spark-1.2", KeyRef: "keychain:spark-meta"}},
+		"default address": {`{"model":"muse-spark-1.3","key_ref":"env:K"}`, ``,
+			store.ProviderConfig{Type: "meta", Format: decision.MetaFormat, Address: "https://api.meta.ai/v1", Model: "muse-spark-1.3", KeyRef: "env:K"}},
+		"no key": {`{"model":"muse-spark-1.3"}`, ``, store.ProviderConfig{}},
+		"meta saved": {`{"model":"old","key_ref":"env:K"}`, `,"meta":{"type":"meta","format":"meta-chat","address":"https://api.meta.ai/v1","model":"new","key_ref":"env:N"}`,
+			store.ProviderConfig{Type: "meta", Format: decision.MetaFormat, Address: "https://api.meta.ai/v1", Model: "new", KeyRef: "env:N"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			jev := `"jev":{"type":"jev","format":"systemone","address":"https://api.typesafe.ai/v1","model":"jev-1","key_ref":"env:J"}`
+			cfg := `{"version":` + strconv.Itoa(store.Version) + `,"decision":{"active":"jev","spark":` + c.spark + `,"providers":{` + jev + c.providers + `}}}`
+			if err := os.WriteFile(filepath.Join(dir, store.ConfigFile), []byte(cfg), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			st, err := store.Open(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			New(Options{Store: st, Exe: "pengupool"})
+			d := st.Config().Decision
+			if d.Spark != nil || d.Active != "jev" || d.Providers["jev"].Model != "jev-1" || d.Providers["meta"] != c.want {
+				t.Fatalf("decision = %+v", d)
+			}
+			if b, _ := os.ReadFile(filepath.Join(dir, store.ConfigFile)); strings.Contains(string(b), `"spark"`) {
+				t.Fatalf("config.json still has the old settings:\n%s", b)
+			}
+		})
 	}
 }
 
@@ -202,8 +244,5 @@ func TestContextQuotesTheCLI(t *testing.T) {
 	p.exe = "/Applications/PenguPool AI.app/Contents/Resources/bin/pengupool"
 	if c := p.renderContext("webaaaaaaaaa"); !strings.Contains(c, "`'"+p.exe+"' send --to ") {
 		t.Fatalf("context does not quote the CLI:\n%s", c)
-	}
-	if !p.sentTo("'"+p.exe+"' send --to webaaaaaaaaa hi", "leadaaaaaaaa", "webaaaaaaaaa") {
-		t.Fatal("a send in the quoted spelling is not seen as a hand-over")
 	}
 }

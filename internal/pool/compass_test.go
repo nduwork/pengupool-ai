@@ -253,11 +253,10 @@ func TestMatch(t *testing.T) {
 		t.Fatalf("a diffuse answer wrote an effect: %+v", effects(ui))
 	}
 
-	// Uncalibrated: hard counts; an unrelated answer writes nothing.
+	// Uncalibrated (Muse Spark): its answer moves no line on its own; the signal is worded or waits.
 	p.testDecider = &lineDecider{answers: []decision.Answer{{Type: decision.Choice, Choice: "contradicts"}, {Type: decision.Choice, Choice: "unrelated"}}}
-	p.match(sig, "", "")
-	if e := effects(ui); len(e) != 2 || !slices.ContainsFunc(e, func(x agentdb.Effect) bool { return x.PSup == 0 && x.PCon == 1 && x.Weight == agentdb.WeightSaid }) || len(effects(logs)) != 0 {
-		t.Fatalf("hard counts: %+v, %+v", e, effects(logs))
+	if got := p.match(sig, "", ""); got != "" || len(effects(ui)) != 1 || len(effects(logs)) != 0 {
+		t.Fatalf("an uncalibrated answer moved a line: %q, %+v, %+v", got, effects(ui), effects(logs))
 	}
 
 	// No line fits: no line, no effect; the signal's session is asked to word it. (The diffuse
@@ -356,7 +355,7 @@ func TestOwnerPromptsBecomeSignals(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	place := func(f fakeTriage, prompt string) {
+	place := func(f decision.Provider, prompt string) {
 		p.mu.Lock()
 		p.testDecider = f
 		p.mu.Unlock()
@@ -368,7 +367,7 @@ func TestOwnerPromptsBecomeSignals(t *testing.T) {
 	if kinds() != "" {
 		t.Fatalf("an instruction became a signal: %s", kinds())
 	}
-	place(fakeTriage{signal: "preference"}, "keep the UI simple, no extra panels")
+	place(uncalibrated{fakeTriage{signal: "preference"}}, "keep the UI simple, no extra panels") // Muse Spark classifies a turn too
 	word("preference :: Keep the UI simple")
 	if ls := p.lines("", 0); kinds() != "said" || len(ls) != 1 || ls[0].Origin != "stated" {
 		t.Fatalf("a preference: %s, %+v", kinds(), ls)
@@ -467,7 +466,7 @@ func TestMatchMergesTheSamePreference(t *testing.T) {
 		merged     bool
 	}{
 		{"calibrated", true, pYes(0.9), true},
-		{"uncalibrated yes", false, pYes(1), true},
+		{"uncalibrated yes", false, pYes(1), false}, // only a calibrated model merges on its own
 		{"below 0.8", true, pYes(0.79), false},
 		{"another condition", false, pYes(0), false},
 	} {
@@ -548,7 +547,7 @@ func TestOnlyTheModelReadsPreferences(t *testing.T) {
 func TestMixedMessageStatesPreference(t *testing.T) {
 	p, st := twoTeams(t)
 	lead, _ := p.session("leadaaaaaaaa")
-	place := func(f fakeTriage, prompt string) {
+	place := func(f decision.Provider, prompt string) {
 		p.mu.Lock()
 		p.testDecider = f
 		p.mu.Unlock()
@@ -1046,4 +1045,13 @@ func TestMatchChangeOfMindMakesALine(t *testing.T) {
 	if len(p.lines("", 0)) != n {
 		t.Fatal("a one-off made a line")
 	}
+}
+
+// uncalibrated is a provider's answers without its calibration, as Muse Spark gives them.
+type uncalibrated struct{ decision.Provider }
+
+func (u uncalibrated) Decide(ctx context.Context, req decision.Request) (decision.Response, error) {
+	res, err := u.Provider.Decide(ctx, req)
+	res.Calibrated = false
+	return res, err
 }

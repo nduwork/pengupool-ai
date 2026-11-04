@@ -66,6 +66,15 @@ func TestHelperHasNoWorktree(t *testing.T) {
 		if s, _ := p.session(m.SessionID); s.Cwd != c.cwd {
 			t.Fatalf("%s runs in %q, want %q", c.skill, s.Cwd, c.cwd)
 		}
+		// Its own temp folder, made at launch and named in its context; no other place for temp files.
+		tmp := filepath.Join(tempRoot, "team1111", m.SessionID)
+		if fi, err := os.Stat(tmp); err != nil || !fi.IsDir() {
+			t.Fatalf("%s: no temp folder %s: %v", c.skill, tmp, err)
+		}
+		if ctx := p.buildContext(m.SessionID); !strings.Contains(ctx, "Put temporary files (reports, notes, scratch work) in "+tmp+", not in your working directory or a repository; send your parent the path of anything it should read. Anything that must outlive this session goes in the message itself or your Done report") ||
+			strings.Contains(ctx, "Put your temporary files in your working directory") || strings.Contains(ctx, "Temp files and folders of your own") {
+			t.Fatalf("%s context:\n%s", c.skill, ctx)
+		}
 		if got := reads[len(reads)-1]; len(got) != 2 || got[0] != repo || got[1] != repo2 {
 			t.Fatalf("%s reads %v", c.skill, got)
 		}

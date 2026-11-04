@@ -482,6 +482,31 @@ func TestProposalAssignsHelperAgent(t *testing.T) {
 	if got["ci-debug"] != "claude" || got["ios"] != "pi" {
 		t.Fatalf("helpers %v, warnings %v", got, prop.Warnings)
 	}
+
+	// The same choices from an uncalibrated model (Muse Spark) move no helper: each keeps its skill's own.
+	p.testDecider = fixedDecider{decision.Response{Answers: map[string]decision.Answer{
+		"team_size": {Type: decision.Choice, Choice: "3", Confidence: 1},
+		"helps_0":   {Type: decision.Predicate, Yes: 1}, "agent_0": {Type: decision.Choice, Choice: "claude", Confidence: 1},
+		"helps_1": {Type: decision.Predicate, Yes: 1}, "agent_1": {Type: decision.Choice, Choice: "pi", Confidence: 1},
+	}}}
+	if prop, err = p.propose(context.Background(), protocol.Task{ID: "t2", Title: "fix ci", Objective: "fix ci", RepoID: "r", Harness: "claude", Capabilities: []string{"ci"}}, 1); err != nil {
+		t.Fatal(err)
+	}
+	got = map[string]string{}
+	for _, m := range prop.Members[1:] {
+		got[m.Name] = m.Harness
+	}
+	if len(got) != 2 || got["ci-debug"] != "pi" || got["ios"] == "pi" || prop.Confidence != 0 || !strings.Contains(strings.Join(prop.Warnings, "; "), "no calibrated confidence") {
+		t.Fatalf("an uncalibrated pick moved a helper: %v, confidence %v, warnings %v", got, prop.Confidence, prop.Warnings)
+	}
+}
+
+// fixedDecider gives the same response to every question.
+type fixedDecider struct{ res decision.Response }
+
+func (fixedDecider) Name() string { return "fixed" }
+func (d fixedDecider) Decide(context.Context, decision.Request) (decision.Response, error) {
+	return d.res, nil
 }
 
 func TestHelperAgentHonoursRequires(t *testing.T) {
@@ -843,7 +868,8 @@ func TestTeamCostFromStatusLine(t *testing.T) {
 	}
 }
 
-// fakeTriage answers triage; line (supports | contradicts | unrelated) answers matching's questions, uncalibrated.
+// fakeTriage answers triage, sure of each answer; line (supports | contradicts | unrelated) answers
+// matching's questions.
 type fakeTriage struct{ record, signal, changes, states, line, done, milestone string }
 
 func (f fakeTriage) Name() string { return "fake" }
@@ -851,21 +877,21 @@ func (f fakeTriage) Decide(_ context.Context, req decision.Request) (decision.Re
 	a := map[string]decision.Answer{}
 	for k, v := range map[string]string{"record": f.record, "owner_signal": f.signal, "done": f.done, "milestone": f.milestone} {
 		if v != "" {
-			a[k] = decision.Answer{Type: decision.Choice, Choice: v}
+			a[k] = decision.Answer{Type: decision.Choice, Choice: v, Confidence: 1, Probabilities: map[string]float64{v: 1}}
 		}
 	}
 	for _, q := range req.Questions {
 		if strings.HasPrefix(q.Name, "line_") && f.line != "" {
-			a[q.Name] = decision.Answer{Type: decision.Choice, Choice: f.line}
+			a[q.Name] = decision.Answer{Type: decision.Choice, Choice: f.line, Confidence: 1, Probabilities: map[string]float64{f.line: 1}}
 		}
 	}
 	if f.changes != "" {
-		a["changes_preference"] = decision.Answer{Type: decision.Predicate, Yes: map[string]float64{"yes": 1}[f.changes]}
+		a["changes_preference"] = decision.Answer{Type: decision.Predicate, Yes: map[string]float64{"yes": 1}[f.changes], Confidence: 1}
 	}
 	if f.states != "" {
-		a["states_preference"] = decision.Answer{Type: decision.Predicate, Yes: map[string]float64{"yes": 1}[f.states]}
+		a["states_preference"] = decision.Answer{Type: decision.Predicate, Yes: map[string]float64{"yes": 1}[f.states], Confidence: 1}
 	}
-	return decision.Response{Answers: a}, nil
+	return decision.Response{Answers: a, Calibrated: true}, nil
 }
 
 func TestTurnsArePlacedByTriage(t *testing.T) {

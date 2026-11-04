@@ -248,23 +248,26 @@ type TeamMessage struct {
 
 	DeliveredAt string `json:"delivered_at,omitempty"` // when it reached the recipient; older records have none
 
-	// Triage is Muse Spark's check of a task a parent sent a child, when the owner turned it on.
+	// Triage is the triage model's check of a task a parent handed a child (type task).
 	Triage *Triage `json:"triage,omitempty"`
 }
 
-// Triage is the record of Muse Spark's pick for one task send. Outcome is agreed (its pick is the
-// named recipient), overridden (the sender kept its own pick, with Override as the reason) or
-// unavailable (no answer: Cause says why, and the task went to the named recipient).
+// Triage is the record of the triage model's pick for one task send. Outcome is agreed (its pick is
+// the named recipient), rerouted (the task went to its pick), unsure (a calibrated pick below the
+// route threshold: the task went to the named recipient), overridden (the sender kept its own
+// pick, with Override as the reason) or unavailable (no usable answer: Cause says why, and the task
+// went to the named recipient).
 type Triage struct {
-	Provider  string `json:"provider"` // meta
-	Model     string `json:"model,omitempty"`
-	Named     string `json:"named,omitempty"` // the recipient the sender named
-	Pick      string `json:"pick,omitempty"`  // the member Spark picked, by name
-	Reasoning string `json:"reasoning,omitempty"`
-	Outcome   string `json:"outcome"`
-	Override  string `json:"override,omitempty"`
-	Cause     string `json:"cause,omitempty"`
-	LatencyMS int64  `json:"latency_ms"`
+	Provider    string  `json:"provider"` // the triage model's kind: meta, jev or ollama
+	Model       string  `json:"model,omitempty"`
+	Named       string  `json:"named,omitempty"`       // the recipient the sender named
+	Pick        string  `json:"pick,omitempty"`        // the member triage picked, by name
+	Probability float64 `json:"probability,omitempty"` // a calibrated model's probability for the pick
+	Reasoning   string  `json:"reasoning,omitempty"`   // an uncalibrated model's (Muse Spark's) one sentence
+	Outcome     string  `json:"outcome"`
+	Override    string  `json:"override,omitempty"`
+	Cause       string  `json:"cause,omitempty"`
+	LatencyMS   int64   `json:"latency_ms"`
 }
 
 // NodeView is a worker host as clients see it.

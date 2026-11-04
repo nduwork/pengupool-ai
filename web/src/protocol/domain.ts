@@ -216,16 +216,19 @@ export interface TeamMessage {
   triage?: Triage;
 }
 
-/** The record of Muse Spark's pick for one task send. */
+/** The record of the triage model's pick for one task send. */
 export interface Triage {
+  /** The triage model's kind: meta, jev or ollama. */
   provider: string;
   model?: string;
   /** The recipient the sender named. */
   named?: string;
-  /** The member Spark picked. */
+  /** The member triage picked. */
   pick?: string;
+  /** A calibrated model's probability for its pick. */
+  probability?: number;
   reasoning?: string;
-  /** agreed | rerouted (delivered to Spark's pick) | overridden (the sender kept its own pick) | unavailable (no usable answer: sent as addressed) */
+  /** agreed | rerouted (delivered to triage's pick) | unsure (a calibrated pick below the route threshold: sent as addressed) | overridden (the sender kept its own pick) | unavailable (no usable answer: sent as addressed) */
   outcome: string;
   override?: string;
   cause?: string;

@@ -202,19 +202,16 @@ type DecisionConfig struct {
 	// Removed lists saved models PenguPool removed because it no longer speaks their kind or format,
 	// so the app can say so; saving a model of that type clears its entry.
 	Removed []RemovedProvider `json:"removed,omitempty"`
-	// Spark is Muse Spark's check of who gets each task; it is never the triage model.
-	Spark SparkConfig `json:"spark,omitzero"`
+	// Spark is the settings of the separate Muse Spark task check an earlier version had: the host
+	// moves them to a saved "meta" provider once (pool.migrateSpark) and clears this.
+	Spark *LegacySpark `json:"spark,omitempty"`
 }
 
-// SparkConfig is Muse Spark on the Meta Model API (OpenAI-compatible chat completions at Address):
-// the default check of who gets each task a parent sends a child. It is on unless the owner turns it
-// Off, and active only once it is set up (pool.sparkActive); the host records its answer on the
-// message and never routes on it.
-type SparkConfig struct {
-	Off     bool   `json:"off,omitempty"`
+// LegacySpark is the earlier Muse Spark task check's settings, read only to move them.
+type LegacySpark struct {
 	Address string `json:"address,omitempty"`
 	Model   string `json:"model,omitempty"`
-	KeyRef  string `json:"key_ref,omitempty"` // keychain:<account> or env:<VAR>; never the key
+	KeyRef  string `json:"key_ref,omitempty"`
 }
 
 // RemovedProvider is one saved triage model PenguPool removed, and whether it was the active one.

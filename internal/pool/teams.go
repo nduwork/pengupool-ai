@@ -183,9 +183,9 @@ func (p *Pool) propose(ctx context.Context, t protocol.Task, version int) (proto
 			var hits []hit
 			for i, c := range cands {
 				if a := res.Answers[fmt.Sprintf("helps_%d", i)]; a.Yes >= 0.5 {
-					// The provider may move a helper to another installed agent; an unsure answer
-					// (calibrated below the threshold) keeps the skill's own preference.
-					if ag, ok := res.Answers[fmt.Sprintf("agent_%d", i)]; ok && ag.Choice != "" && (!res.Calibrated || ag.Confidence >= decision.Thresholds["agent"]) {
+					// The provider may move a helper to another installed agent; an unsure or
+					// uncalibrated answer keeps the skill's own preference.
+					if ag, ok := res.Answers[fmt.Sprintf("agent_%d", i)]; ok && ag.Choice != "" && res.Calibrated && ag.Confidence >= decision.Thresholds["agent"] {
 						c.harness = ag.Choice
 					}
 					hits = append(hits, hit{c, a.Yes})
@@ -622,7 +622,7 @@ func (p *Pool) startMember(ctx context.Context, team *protocol.Team, repo protoc
 		cwd = m.Worktree
 	}
 	_, err := p.spawn(ctx, spawnReq{
-		ID: id, Name: pm.Name, Harness: firstNonEmpty(pm.Harness, team.Harness), Model: pm.Model, Cwd: cwd, SkillID: pm.SkillID, ReadDirs: readDirs,
+		ID: id, Name: pm.Name, Harness: firstNonEmpty(pm.Harness, team.Harness), Model: pm.Model, Cwd: cwd, SkillID: pm.SkillID, ReadDirs: readDirs, TeamID: team.ID,
 		TrustFrom: map[bool]string{true: repo.Path}[m.Worktree != ""],
 		Decorate: func(s *store.Session) {
 			s.TeamID, s.Role, s.SkillID = team.ID, pm.Role, pm.SkillID
@@ -783,7 +783,7 @@ func (p *Pool) startHub(ctx context.Context, team *protocol.Team, sk protocol.Sk
 		}
 	}
 	_, err := p.spawn(ctx, spawnReq{
-		ID: id, Name: pm.Name, Harness: firstNonEmpty(pm.Harness, team.Harness), Model: pm.Model, Cwd: cwd, SkillID: pm.SkillID,
+		ID: id, Name: pm.Name, Harness: firstNonEmpty(pm.Harness, team.Harness), Model: pm.Model, Cwd: cwd, SkillID: pm.SkillID, TeamID: team.ID,
 		Decorate: func(s *store.Session) {
 			s.TeamID, s.Role, s.SkillID = team.ID, pm.Role, pm.SkillID
 		},

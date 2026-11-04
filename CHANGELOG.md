@@ -2,6 +2,16 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
+## 0.11.4
+
+Muse Spark is now an ordinary decision model. In Settings → Decision model, Local hosted, Online / cloud and **Meta · Muse Spark** are three choices for one slot; each is saved, checked and chosen with **Use for triage**. An earlier Muse Spark setup becomes a saved Meta model, and the triage model in use stays as it is. Muse Spark is uncalibrated, so when it is the triage model nothing acts on its answers alone: check-ins go to you, the Compass asks, every Done report is kept, and team proposals keep each helper's own agent.
+
+The task check now runs with whichever decision model is in use. When a member hands one of its children work, marked `Task:` or sent with `--type task`, the model picks who should do it, and the pick governs delivery as before (`--override` keeps the sender's pick). A calibrated model (Jev, Ollama) reroutes only when it is sure, at a probability of 0.80 or more; a less sure pick leaves the task as addressed, marked **unsure**, with the pick and its probability on the record. Plain notes are not checked, so a message about a member's work no longer goes to that member. The Lead's per-turn check no longer names a member: before its next step, the decision model answers one question, whether the Lead should hand the work off rather than do it itself. A sure yes from a calibrated model (0.80 or more) holds the Lead's working tools until it sends one of its members a task, and the task check then picks who; a less sure yes, or any yes from Muse Spark, is a note only. Short answers, notices and owner prompts that name a member or say "yourself" are not checked. While a decision model is set, a Claude Code member cannot message its children with Claude's own SendMessage (replies and notes included): it is told to use `pengupool send`, so every message to a child is on the team's record and every task goes through the task check.
+
+Each team session gets its own temporary folder, `/tmp/pengupool/<team id>/<session id>` (named by /tmp's real path, /private/tmp on macOS), made when it starts (or when it joins a team), private to you at each level; macOS clears /tmp at restart, so nothing in it persists, and PenguPool deletes nothing there. A folder on that path that is a symlink, or another user's, is not used. Its context tells it to put reports, notes and scratch work there, not in its working directory or a repository, to send its parent the path of anything it should read, and to put anything that must outlive the session in the message or its Done report. Claude Code, Copilot and Gemini get that one folder as an added directory, so writing there needs no prompt.
+
+In Settings → Decision model, the three tabs share one row of buttons (Save provider, Discard changes, Check connection, Use for triage) with the status line in one place. The Local hosted tab no longer shows "could not reach 127.0.0.1:11434 … connection refused" when Ollama is not the model in use; until it is, or until you press Check connection, it says only that Ollama isn't reachable at that address. The Meta tab's long notes are gone; its address hint says what goes to Meta.
+
 ## 0.11.3
 
 A Muse Code session now shows **Muse Spark · Meta** and its model on its map card and session header, read from Muse's own status line; the session log records the model each turn. When Muse does not show its model, the label reads **Muse Code · Meta**.
@@ -9,6 +19,8 @@ A Muse Code session now shows **Muse Spark · Meta** and its model on its map ca
 Muse Spark, through the Meta Model API, is the default check on tasks: when a member sends a task to one of its children, Muse Spark weighs the team's layout and picks who should do it. When it picks another child, the task goes there, marked rerouted, and the sender is told why; the sender can send it back with `pengupool send --override "<reason>"`, and the reason is recorded. Each checked task carries Muse Spark's model, pick and reasoning on the message, in both sessions' logs and as a **Muse Spark · Meta** badge in Agent messages. Set it up in Settings → Decision model → **Meta · Muse Spark** with a Meta API key; until a key is stored, nothing changes. Muse Spark answers with minimal reasoning. When it cannot be reached, the task goes as addressed, marked triage unavailable, so the team never waits on it. A `-contributor` model shows a note that Meta may train on the tasks sent.
 
 Whether a helper's finished job is kept in its Experience is now decided by the triage model; a job is skipped only on a confident no, and kept otherwise. A helper with no entries yet is told its Experience exists and how to search it.
+
+With the Tailscale app installed but no `tailscale` command on PATH, Settings showed "invalid character 'T'" under Logged in. The host now runs the app's own binary as the CLI, and when it prints something other than JSON, Settings shows the CLI's own words.
 
 ## 0.11.2
 

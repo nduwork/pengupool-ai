@@ -3,6 +3,7 @@ package pool
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,7 +29,38 @@ import (
 // activate it. Online is Jev (System One); local is a model Ollama serves on this machine. Keys live
 // in the macOS Keychain or behind an env: reference; config.json keeps only the reference.
 
-var providerTypes = map[string]bool{"ollama": true, "jev": true}
+var providerTypes = map[string]bool{"ollama": true, "jev": true, "meta": true}
+
+// migrateSpark moves an earlier version's Muse Spark task check settings to a saved Meta provider
+// (address, model and key reference), when one with a model and a key was set up and no Meta provider
+// is saved yet. It is not made active: the triage model in use stays as it is.
+func (p *Pool) migrateSpark() {
+	cfg := p.st.Config()
+	old := cfg.Decision.Spark
+	if old == nil {
+		return
+	}
+	cfg.Decision.Spark = nil
+	_, saved := cfg.Decision.Providers["meta"]
+	moved := !saved && old.Model != "" && old.KeyRef != ""
+	if moved {
+		if cfg.Decision.Providers == nil {
+			cfg.Decision.Providers = map[string]store.ProviderConfig{}
+		}
+		cfg.Decision.Providers["meta"] = store.ProviderConfig{Type: "meta", Format: decision.MetaFormat,
+			Address: cmp.Or(old.Address, metaDefault.Address), Model: old.Model, KeyRef: old.KeyRef}
+	}
+	if err := p.st.SaveConfig(cfg); err != nil {
+		p.logf("pool: moving the Muse Spark settings: %v", err)
+		return
+	}
+	if moved {
+		p.logf("pool: Muse Spark is now a saved decision model (Settings → Decision model → Meta · Muse Spark); choose Use for triage to make it the triage model")
+	}
+}
+
+// metaDefault is the Meta · Muse Spark tab before anything is saved.
+var metaDefault = store.ProviderConfig{Type: "meta", Format: decision.MetaFormat, Address: "https://api.meta.ai/v1", Model: "muse-spark-1.3"}
 
 // dropRetiredProviders removes saved decision models of a kind or API format PenguPool no longer
 // speaks (online chat services, the formats an earlier version had), so triage never fails on them
@@ -72,6 +104,7 @@ func (p *Pool) providers(_ context.Context, _ struct{}) (any, error) {
 	defaults := map[string]store.ProviderConfig{
 		"ollama": {Type: "ollama", Format: "ollama-systemone", Address: "http://127.0.0.1:11434", Model: "tev1:0.8b"},
 		"jev":    {Type: "jev", Format: "systemone", Address: "https://api.typesafe.ai/v1/systemone", Model: "jev-latest"},
+		"meta":   metaDefault,
 	}
 	checked := []string{}
 	p.mu.Lock()
@@ -1294,60 +1327,4 @@ func listProviderModels(ctx context.Context, typ string, pc store.ProviderConfig
 	}
 	slices.Sort(out)
 	return out, nil
-}
-
-// sparkDefault is the Muse Spark tab before anything is saved: the Meta Model API, on, not set up.
-var sparkDefault = store.SparkConfig{Address: "https://api.meta.ai/v1"}
-
-// sparkGet is the Muse Spark tab: its settings (the key's reference only; the default before any
-// save), and whether it is active: on and set up.
-func (p *Pool) sparkGet(_ context.Context, _ struct{}) (any, error) {
-	c, active := p.sparkActive()
-	if c.Address == "" {
-		c.Address = sparkDefault.Address
-	}
-	return map[string]any{"spark": c, "active": active}, nil
-}
-
-type sparkSaveIn struct {
-	Spark store.SparkConfig `json:"spark"`
-	Key   string            `json:"key,omitempty"` // new key; stored in the vault, never in config
-}
-
-// sparkSave keeps the Muse Spark tab: the Meta Model API's address, model and key, and the switch.
-// Settings that name a model or a key must validate; with neither, Spark is simply not set up.
-func (p *Pool) sparkSave(ctx context.Context, in sparkSaveIn) (any, error) {
-	c := in.Spark
-	if in.Key != "" {
-		if err := decision.StoreKey("spark-meta", in.Key); err != nil {
-			return nil, protocol.Errorf(protocol.CodeUnavailable, "%v", err)
-		}
-		c.KeyRef = "keychain:spark-meta"
-	}
-	if err := decision.ValidateSpark(c); err != nil && (c.Model != "" || c.KeyRef != "") {
-		return nil, invalid("%v", err)
-	}
-	if err := p.st.UpdateConfig(func(cfg *store.Config) error { cfg.Decision.Spark = c; return nil }); err != nil {
-		return nil, err
-	}
-	p.mu.Lock()
-	p.sparkKey = nil // a new key under the same reference resolves again
-	p.mu.Unlock()
-	out, _ := p.sparkGet(ctx, struct{}{})
-	p.logf("pool: Muse Spark task check %s, %s (model %s)", map[bool]string{true: "off", false: "on"}[c.Off],
-		map[bool]string{true: "active", false: "not set up"}[out.(map[string]any)["active"].(bool)], firstNonEmpty(c.Model, "-"))
-	return out, nil
-}
-
-// sparkCheckRPC asks the saved Muse Spark one sample task check, so the owner sees it answer.
-func (p *Pool) sparkCheckRPC(ctx context.Context, _ struct{}) (any, error) {
-	c := p.st.Config().Decision.Spark
-	pick, err := decision.Spark(ctx, c, "team-lead-agent", "Fix the failing checkout tests in the API.", []decision.SparkMember{
-		{Name: "api-builder", Role: "BUILDER", Description: "Owns the API repository: endpoints, tests and fixes."},
-		{Name: "ui-helper", Role: "HELPER", Description: "Builds and polishes UI components."},
-	})
-	if err != nil {
-		return map[string]any{"ok": false, "error": err.Error()}, nil
-	}
-	return map[string]any{"ok": true, "model": pick.Model, "pick": pick.Recipient, "reasoning": pick.Reasoning, "latency_ms": pick.Latency.Milliseconds()}, nil
 }

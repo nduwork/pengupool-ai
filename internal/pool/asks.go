@@ -30,19 +30,19 @@ const (
 // askWait is how long an ask waits for its answer.
 const askWait = 15 * time.Minute
 
-var msgTypes = map[string]bool{"tell": true, "ask": true, "done": true, "blocked": true}
+var msgTypes = map[string]bool{"tell": true, "task": true, "ask": true, "done": true, "blocked": true}
 
 // msgType is the message's type: the one given, else what its first line starts with.
 func msgType(given, text string) (string, error) {
 	if given != "" {
 		if !msgTypes[given] {
-			return "", invalid("type is tell, ask, done or blocked, not %q", given)
+			return "", invalid("type is tell, task, ask, done or blocked, not %q", given)
 		}
 		return given, nil
 	}
 	first, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
 	first = strings.ToLower(first)
-	for _, t := range []string{"done", "ask", "blocked"} {
+	for _, t := range []string{"done", "ask", "blocked", "task"} {
 		if strings.HasPrefix(first, t+":") {
 			return t, nil
 		}
