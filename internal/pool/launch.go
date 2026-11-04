@@ -668,7 +668,17 @@ func (p *Pool) readyByPrompt() {
 // tempRoot holds the team sessions' temp folders: under /tmp, which macOS clears at restart, so
 // nothing an agent leaves there persists (the per-user $TMPDIR survives restarts). PenguPool deletes
 // nothing in it. Tests move it.
-var tempRoot = "/tmp/pengupool"
+var tempRoot = defaultTempRoot()
+
+// defaultTempRoot names /tmp by its real path (/private/tmp on macOS), so the folder an agent is
+// given (--add-dir) is the path it sees when it resolves symlinks.
+func defaultTempRoot() string {
+	tmp, err := filepath.EvalSymlinks("/tmp")
+	if err != nil {
+		tmp = "/tmp"
+	}
+	return filepath.Join(tmp, "pengupool")
+}
 
 // sessionTemp is a team session's folder for temporary files (reports, notes, scratch work), outside
 // every working directory and repository: one folder per team, so teams never share one.

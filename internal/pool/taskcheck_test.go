@@ -182,6 +182,9 @@ func TestTaskCheckUnsure(t *testing.T) {
 // others can write, gets no folder and no context line.
 func TestTempFolderRefusedWhenUnsafe(t *testing.T) {
 	defer func(r string) { tempRoot = r }(tempRoot)
+	if fi, err := os.Lstat(filepath.Dir(defaultTempRoot())); err != nil || fi.Mode()&os.ModeSymlink != 0 || filepath.Base(defaultTempRoot()) != "pengupool" {
+		t.Fatalf("the default temp root %s is not under /tmp's real path: %v", defaultTempRoot(), err)
+	}
 	p, _ := twoTeams(t)
 	line := func() bool { return strings.Contains(p.buildContext("webaaaaaaaaa"), "Put temporary files") }
 	base, elsewhere := t.TempDir(), t.TempDir()
