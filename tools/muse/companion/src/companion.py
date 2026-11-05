@@ -9,7 +9,7 @@ Manages the PenguPool status monitor without code changes:
   companion check                  run one check right now
   companion log [n]                the last n poll decisions
   companion gadget [--out PATH]    render the team status card (chat widget HTML)
-  companion tracker [--out PATH]   render the work-tracker card (chat widget HTML)
+  companion tracker [--file PATH]  print the agents' workflow chains (text)
   companion ask SPEC [--answer T]  render an answer card for a pending question
 
 The every-minute hook polls the detector; the detector reads

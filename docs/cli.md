@@ -26,15 +26,18 @@ quoted.
 
 | Command | Does |
 | --- | --- |
-| `send --to MEMBER [--type tell\|ask\|done\|blocked] TEXT` | Message a teammate (parent or child on the team's tree) |
+| `send --to MEMBER [--type tell\|task\|ask\|done\|blocked] TEXT` | Message a teammate (parent or child on the team's tree) |
 | `search WORDS` | Search your Compass and the helper's own journal |
 | `experience search WORDS` / `experience show ID` | A helper's own journal entries |
 | `ask [--owner-only] [--option O]... QUESTION` | Ask you a question; waits for the answer |
+| `answer ITEM_ID` | Carry your answer, typed in this session, to a question waiting below it on the team's tree |
 | `team request add --skill S \| remove MEMBER` | Ask you to change who is on the team |
+| `compass word` | Word your last words as Compass lines, when PenguPool asks this session to |
 | `decide` | Ask your decision model typed questions (JSON in, JSON out) |
 
-Only `send`, `search`, `experience search` and `experience show` can be allowed without a prompt (see
-[Agent permissions](harnesses.md#agent-permissions)); `ask` and the rest always ask. Requests that change teams, approvals or the
-Compass come from agents only as requests you answer.
+The commands in this table can be allowed without a prompt (see
+[Agent permissions](harnesses.md#agent-permissions)); every other command still asks. The host checks
+each call either way: requests that change teams, approvals or the Compass come from agents only as
+requests you answer.
 
 For the phone and agent-client APIs, see [Phone access](phone.md).

@@ -6,8 +6,9 @@
 - At least one coding agent installed and signed in on its own. This walkthrough uses **Muse Code**,
   Meta's coding agent; PenguPool also supports Claude Code, Codex, pi and OMP. It runs the agents it
   finds on your login `PATH`; it never installs or signs in to them.
-- A decision model for triage, either local through [Ollama](https://ollama.com) or online. PenguPool
-  uses it to decide where your preferences belong and whether a check-in can go on. It is required.
+- A decision model for triage: a System One model, local through [Ollama](https://ollama.com) or
+  online, or Muse Spark on the Meta Model API. PenguPool uses it to decide where your preferences
+  belong, whether a check-in can go on and who does a task. It is required.
 
 ## Install or update
 
@@ -44,8 +45,11 @@ Workspace is empty.
 
 Settings → **Decision model**:
 
-1. Pick **Local hosted** (a System One decision model served by Ollama) or **Online / cloud**.
-2. Fill in the address and model (and the API key for an online model), then **Save provider**.
+1. Pick **Local hosted** (a System One decision model served by Ollama), **Online / cloud** (a System
+   One endpoint) or **Meta · Muse Spark** (the Meta Model API). Muse Spark is uncalibrated, so with it
+   nothing else acts on its own: it still picks who does a task, but check-ins and Compass changes
+   wait for you.
+2. Fill in the address and model (and the API key for an online or Meta model), then **Save provider**.
 3. **Check connection.** PenguPool asks the model a yes/no, a pick-one and a score question with
    plain answers, and shows how it did.
 4. When the check passes, **Use for triage**.

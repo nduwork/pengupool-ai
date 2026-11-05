@@ -22,11 +22,14 @@ Tailscale Serve.
 - Answer what it supports: an agent's question, an agent's check-in, and pending launch and team-change
   approvals, exactly as the app's button would. An item already answered elsewhere is refused.
 - Send words to a session (Chat).
+- Stop, interrupt or resume an agent session.
+- Ask for a member to join or leave a team. The request waits for your approval, like a Lead's.
 
 **Agents' tool-permission dialogs stay in the terminal.** They are listed in the app, but you answer
 them in the agent's own terminal, on your Mac.
 
-It can't change settings, teams or the Compass, and the app's own token doesn't work on the phone API.
+It can't change settings or the Compass, change a team without your approval, start new sessions or
+read a session's screen, and the app's own token doesn't work on the phone API.
 
 ## Try it
 

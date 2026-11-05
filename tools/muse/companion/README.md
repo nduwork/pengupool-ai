@@ -33,6 +33,7 @@ prove the install works.
 | `src/gadget.py` | Renders the team status card (chat-widget HTML) from live API data. |
 | `src/tracker.py` | Per-agent workflow chains (A → B → C with a status symbol per step) rendered under each agent's name in the status card, from Muse's own `tracker.json` (tracking lives outside PenguPool by the owner's rule). |
 | `src/askcard.py` | Renders the context card for a pending agent question (and its closed state). See "Answering agent questions". |
+| `src/collect_status.py` | One-shot status collector: prints one compact JSON document (the team from `/sessions`, the pending ask from `/next`) for a live-status page. |
 | `src/serve.mjs` | The optional mobile mini site (zero-dependency Node; runs on the PenguPool machine). |
 | `install-host.sh` | Installs the mini site on the PenguPool machine (launchd). |
 | `tracker.example.json` | Seed for the work tracker, copied on first install. |
@@ -161,8 +162,8 @@ the `http://<tailnet-ip>:7790/?key=...` URL it prints on the phone.
 Installs into the layout the code's paths assume:
 
 ```
-~/workspace/pengupool-agent/   pp.py detect.py gadget.py tracker.py askcard.py (+ tokens, below)
-~/workspace/companion/         companion.py, companion symlink, config.json
+~/workspace/pengupool-agent/   pp.py detect.py gadget.py tracker.py askcard.py collect_status.py (+ tokens, below)
+~/workspace/companion/         companion.py, companion symlink, config.json, tracker.json
 ~/hooks/scripts/               pengupool-status.sh
 ```
 
