@@ -9,7 +9,7 @@ image. Building from source with `make install` also links it into `~/.local/bin
 
 | Command | Does |
 | --- | --- |
-| `new [--name N] [--cwd DIR] [--harness claude\|muse\|codex\|pi\|omp] [--model M]` | Start an agent session (Claude Code by default) |
+| `new [--name N] [--cwd DIR] [--harness claude\|codex\|pi\|omp] [--model M]` | Start an agent session (Claude Code by default) |
 | `ls [--json]` | List sessions |
 | `attach <session>` | Attach this terminal to a session |
 | `kill <session>` | Stop a session |
