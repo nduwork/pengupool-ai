@@ -19,7 +19,6 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/agentdb"
 	"github.com/nduwork/pengupool-ai/internal/decision"
 	"github.com/nduwork/pengupool-ai/internal/gateway"
-	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/hub"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
@@ -83,7 +82,7 @@ type Pool struct {
 	deciding          map[string]bool              // items a Compass decision is being made on (percompass.go, under mu)
 	hookAt            map[string]time.Time         // session id → its newest hook event (under mu; hookless.go)
 	promptAt          map[string]time.Time         // session id → the owner's first prompt in its launch (under mu)
-	hookSeq           uint64                       // arrival order of hook events, taken at hookEventFrom entry (under mu)
+	hookSeq           uint64                       // arrival order of hook events, taken at hookEvent entry (under mu)
 	lastEnd           map[string]uint64            // session id → arrival seqno of its latest processed turn/session end (under mu; hooks.go)
 	answering         map[int64]time.Time          // check-ins being answered by the owner, so a double click types once (under mu)
 	requireOwnerInput bool
@@ -125,10 +124,8 @@ type Pool struct {
 	musePairBlocked time.Time                 // pairing refused until then, after too many wrong codes
 	museAnswered    map[string]museAnswerDone // device\x00key -> first answer: replays return it
 	museInflight    map[string]bool           // device\x00key -> an answer still running
-	// museToolWarned: a Muse PreToolUse without tool_name was allowed and noted (under mu).
-	museToolWarned bool
-	db             *agentdb.DB // agents.db: the Compass and logs; nil if it could not open
-	formMu         sync.Mutex  // formation changes apply one at a time
+	db              *agentdb.DB               // agents.db: the Compass and logs; nil if it could not open
+	formMu          sync.Mutex                // formation changes apply one at a time
 
 	reposCache atomic.Pointer[ghRepos] // the GitHub account's repositories
 	// syncFor is the sync repository checked this run (private, writable) and the account's
@@ -171,9 +168,6 @@ func New(o Options) *Pool {
 	}
 	p.loadInboxes()
 	p.expireStaleApprovals()
-	// Off the start path: a slow `muse plugins install` must not hold the daemon up.
-	go harness.EnsureMusePlugin(o.Store.Dir(), o.Exe, env, logf)
-	p.migrateSpark()
 	p.dropRetiredProviders()
 	p.refreshAgentPermissions()
 	if db, err := agentdb.Open(filepath.Join(o.Store.Dir(), "agents.db")); err != nil {
@@ -410,7 +404,7 @@ func (p *Pool) handlers() map[string]handler {
 		"team.policy":           bind(p.teamPolicy),
 		"message.send":          bind(p.messageSend),
 		"ask.settle":            bind(p.askSettle), // the owner's, from Needs you
-		"hook.event":            bindCaller(p.hookEventFrom),
+		"hook.event":            bind(p.hookEvent),
 		"decision.providers":    bind(p.providers),
 		"decision.ask":          bindCaller(p.decisionAsk),
 		"provider.save":         bind(p.providerSave),

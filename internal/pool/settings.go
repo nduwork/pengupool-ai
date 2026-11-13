@@ -3,7 +3,6 @@ package pool
 import (
 	"bufio"
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,38 +28,7 @@ import (
 // activate it. Online is Jev (System One); local is a model Ollama serves on this machine. Keys live
 // in the macOS Keychain or behind an env: reference; config.json keeps only the reference.
 
-var providerTypes = map[string]bool{"ollama": true, "jev": true, "meta": true}
-
-// migrateSpark moves an earlier version's Muse Spark task check settings to a saved Meta provider
-// (address, model and key reference), when one with a model and a key was set up and no Meta provider
-// is saved yet. It is not made active: the triage model in use stays as it is.
-func (p *Pool) migrateSpark() {
-	cfg := p.st.Config()
-	old := cfg.Decision.Spark
-	if old == nil {
-		return
-	}
-	cfg.Decision.Spark = nil
-	_, saved := cfg.Decision.Providers["meta"]
-	moved := !saved && old.Model != "" && old.KeyRef != ""
-	if moved {
-		if cfg.Decision.Providers == nil {
-			cfg.Decision.Providers = map[string]store.ProviderConfig{}
-		}
-		cfg.Decision.Providers["meta"] = store.ProviderConfig{Type: "meta", Format: decision.MetaFormat,
-			Address: cmp.Or(old.Address, metaDefault.Address), Model: old.Model, KeyRef: old.KeyRef}
-	}
-	if err := p.st.SaveConfig(cfg); err != nil {
-		p.logf("pool: moving the Muse Spark settings: %v", err)
-		return
-	}
-	if moved {
-		p.logf("pool: Muse Spark is now a saved decision model (Settings → Decision model → Meta · Muse Spark); choose Use for triage to make it the triage model")
-	}
-}
-
-// metaDefault is the Meta · Muse Spark tab before anything is saved.
-var metaDefault = store.ProviderConfig{Type: "meta", Format: decision.MetaFormat, Address: "https://api.meta.ai/v1", Model: "muse-spark-1.3"}
+var providerTypes = map[string]bool{"ollama": true, "jev": true}
 
 // dropRetiredProviders removes saved decision models of a kind or API format PenguPool no longer
 // speaks (online chat services, the formats an earlier version had), so triage never fails on them
@@ -78,9 +46,9 @@ func (p *Pool) dropRetiredProviders() {
 		if !providerTypes[pc.Type] || decision.Validate(pc) != nil {
 			gone = append(gone, k)
 			delete(cfg.Decision.Providers, k)
-			// The note says triage no longer speaks the format, and saving that type clears it: so only for a
-			// kind still offered (an old online kind could never be saved again to clear it).
-			if providerTypes[pc.Type] && !slices.Contains(decision.Formats, pc.Format) {
+			// The note says triage no longer speaks the format. Saving that type clears it, and for a kind no
+			// longer offered (Muse Spark, an old online kind) saving any model does.
+			if !slices.Contains(decision.Formats, pc.Format) {
 				cfg.Decision.Removed = slices.DeleteFunc(cfg.Decision.Removed, func(r store.RemovedProvider) bool { return r.Type == pc.Type })
 				cfg.Decision.Removed = append(cfg.Decision.Removed, store.RemovedProvider{Type: pc.Type, Format: pc.Format, Model: pc.Model, Active: k == cfg.Decision.Active})
 			}
@@ -104,7 +72,6 @@ func (p *Pool) providers(_ context.Context, _ struct{}) (any, error) {
 	defaults := map[string]store.ProviderConfig{
 		"ollama": {Type: "ollama", Format: "ollama-systemone", Address: "http://127.0.0.1:11434", Model: "tev1:0.8b"},
 		"jev":    {Type: "jev", Format: "systemone", Address: "https://api.typesafe.ai/v1/systemone", Model: "jev-latest"},
-		"meta":   metaDefault,
 	}
 	checked := []string{}
 	p.mu.Lock()
@@ -146,7 +113,7 @@ func (p *Pool) providerSave(ctx context.Context, in providerSaveIn) (any, error)
 		cfg.Decision.Providers = map[string]store.ProviderConfig{}
 	}
 	cfg.Decision.Providers[pc.Type] = pc
-	cfg.Decision.Removed = slices.DeleteFunc(cfg.Decision.Removed, func(r store.RemovedProvider) bool { return r.Type == pc.Type })
+	cfg.Decision.Removed = slices.DeleteFunc(cfg.Decision.Removed, func(r store.RemovedProvider) bool { return r.Type == pc.Type || !providerTypes[r.Type] })
 	if err := p.st.SaveConfig(cfg); err != nil {
 		return nil, err
 	}

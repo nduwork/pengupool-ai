@@ -66,7 +66,7 @@ func waitEntry(t *testing.T, p *Pool) agentdb.Entry {
 // A Done: report to the parent is kept at once, whole, as the helper's entry: its first line is the
 // title, the report the body. Nothing is typed into the helper. A second report is its own entry.
 func TestDoneReportIsTheEntry(t *testing.T) {
-	for _, h := range []string{harness.Claude, harness.Codex, harness.Muse} {
+	for _, h := range []string{harness.Claude, harness.Codex} {
 		t.Run(h, func(t *testing.T) {
 			p, _, typed := journalSetup(t, h)
 			report := "Done: login redirect lost the next page; fixed by keeping it in the state\n- cause: the guard dropped ?next\n- evidence: TestLoginRedirect"
@@ -86,7 +86,7 @@ func TestDoneReportIsTheEntry(t *testing.T) {
 		})
 	}
 	t.Run("secrets", func(t *testing.T) {
-		p, _, _ := journalSetup(t, harness.Muse)
+		p, _, _ := journalSetup(t, harness.Codex)
 		p.doneReport(done("Done: key sk-ant-abcdefghijklmnopqrstuvwxyz0123 rotated\nsk-ant-abcdefghijklmnopqrstuvwxyz0123"))
 		if e := waitEntry(t, p); strings.Contains(e.Title+e.Body, "sk-ant-") {
 			t.Fatalf("entry %+v", e)

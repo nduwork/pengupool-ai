@@ -216,8 +216,8 @@ func TestServeApproveURL(t *testing.T) {
 }
 
 // healHomeStore opens the owner's home store with Serve enabled, for heal tests.
-// looseHome is a temporary HOME whose cleanup tolerates late writers: New starts the Muse plugin
-// install in the background, and it may still be writing under HOME when a quick test ends.
+// looseHome is a temporary HOME whose cleanup tolerates late writers: background work New starts
+// may still be writing under HOME when a quick test ends.
 func looseHome(t *testing.T) string {
 	t.Helper()
 	home, err := os.MkdirTemp("", "pp-home-")

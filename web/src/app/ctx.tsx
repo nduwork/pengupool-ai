@@ -122,7 +122,6 @@ const STALE_MS = 10 * 60 * 1000;
  * not offered; their old sessions still run and resume. */
 export const AGENTS = [
   { id: "claude", label: "Claude Code", hint: "Anthropic's coding agent", clear: "/clear", hidden: false },
-  { id: "muse", label: "Muse Code", hint: "Meta's coding agent", clear: "", hidden: false },
   { id: "codex", label: "Codex", hint: "OpenAI's coding agent", clear: "/new", hidden: false },
   { id: "pi", label: "pi", hint: "pi coding agent", clear: "/new", hidden: false },
   { id: "omp", label: "OMP", hint: "oh-my-pi agent", clear: "/new", hidden: false },
@@ -262,13 +261,7 @@ export function ago(iso: string | undefined): string {
 /** The "no hooks" note's long text, and what the owner can do about it. */
 export const HOOKS_LONG = "PenguPool's hooks aren't reaching this agent: no Compass or team context.";
 export function hooksAction(h: string | undefined): string {
-  const check = h === "muse" ? "check that the PenguPool plugin is installed and approved" : "check its PenguPool install (Settings ▸ Agents)";
-  return `Restart the session. If it stays, update ${harnessLabel(h)} or ${check}.`;
-}
-
-/** The session's agent as the app names it: the host's Meta label for Muse Code, else the harness's. */
-export function agentLabel(s: { harness?: string; agent?: string }): string {
-  return s.agent !== undefined && s.agent !== "" ? s.agent : harnessLabel(s.harness);
+  return `Restart the session. If it stays, update ${harnessLabel(h)} or check its PenguPool install (Settings ▸ Agents).`;
 }
 
 export function harnessLabel(h: string | undefined): string {

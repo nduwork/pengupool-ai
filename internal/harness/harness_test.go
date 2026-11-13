@@ -193,7 +193,7 @@ func TestShiftEnterPerHarness(t *testing.T) {
 	// (0.84.3: ESC CR is Alt+Enter, which submits; Ctrl+J is its new line). Established: Claude Code
 	// reads ESC CR (what Option+Enter types) as a new line. The rest are not checked live.
 	want := map[string]string{
-		Claude: "\x1b\r", Muse: "\x1b\r", Codex: "\x1b\r", Pi: "\n", OMP: "\x1b\r",
+		Claude: "\x1b\r", Codex: "\x1b\r", Pi: "\n", OMP: "\x1b\r",
 		Copilot: "\x1b\r", Gemini: "\x1b\r", Shell: "\x1b\r", Custom: "\x1b\r",
 	}
 	kinds := []string{Shell, Custom}
@@ -223,11 +223,6 @@ func TestOfferedHarnessesHaveCompactAndClear(t *testing.T) {
 		if a.Compact == "" || a.Clear == "" {
 			t.Errorf("harness %q has no compact/clear commands: Compact=%q Clear=%q", a.ID, a.Compact, a.Clear)
 		}
-	}
-	// The owner's live check: both work in Muse.
-	m, ok := Find(Muse)
-	if !ok || m.Compact != "/compact" || m.Clear != "/new" {
-		t.Errorf("muse wants /compact and /new, got %+v", m)
 	}
 }
 

@@ -17,8 +17,8 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
-// pickDecider is a triage model that picks one member for a task: calibrated like Jev, or not, with
-// reasoning, like Muse Spark. during runs inside the call, to change the team while the check runs.
+// pickDecider is a triage model that picks one member for a task, calibrated like Jev or not
+// (no probability). during runs inside the call, to change the team while the check runs.
 type pickDecider struct {
 	mu         sync.Mutex
 	pick       string
@@ -44,8 +44,6 @@ func (d *pickDecider) Decide(_ context.Context, req decision.Request) (decision.
 	res := decision.Response{Calibrated: cal, Model: "m-1", Answers: map[string]decision.Answer{"recipient": {Type: decision.Choice, Choice: pick}}}
 	if cal {
 		res.Answers["recipient"] = decision.Answer{Type: decision.Choice, Choice: pick, Probabilities: map[string]float64{pick: pr}}
-	} else {
-		res.Reasoning = pick + " owns it"
 	}
 	return res, nil
 }
@@ -92,15 +90,15 @@ func sendTask(t *testing.T, p *Pool, in sendIn) (protocol.TeamMessage, map[strin
 	return message(p, out["id"]), out
 }
 
-// The pick governs delivery for every triage model, calibrated or not: agreed, rerouted,
-// overridden and unavailable, with the model's probability or its reasoning on the record.
+// The pick governs delivery for every triage model: agreed, rerouted, overridden and unavailable,
+// with the model's probability on the record.
 func TestTaskCheckOutcomes(t *testing.T) {
 	for _, c := range []struct {
 		typ, label, why string
 		calibrated      bool
 	}{
 		{"jev", "Jev", "p=0.91", true},
-		{"meta", "Muse Spark · Meta", "web owns it", false},
+		{"ollama", "Ollama", "p=0.91", true},
 	} {
 		t.Run(c.typ, func(t *testing.T) {
 			d := &pickDecider{pick: "web", calibrated: c.calibrated}
@@ -112,7 +110,7 @@ func TestTaskCheckOutcomes(t *testing.T) {
 				m.Text != head+" picked web: "+c.why+"\nBuild the cart page" {
 				t.Fatalf("agreed: %q %+v", m.Text, m.Triage)
 			}
-			if tr := m.Triage; c.calibrated && (tr.Probability != 0.91 || tr.Reasoning != "") || !c.calibrated && (tr.Probability != 0 || tr.Reasoning != "web owns it") {
+			if tr := m.Triage; tr.Probability != 0.91 {
 				t.Fatalf("record: %+v", tr)
 			}
 
@@ -154,7 +152,7 @@ func TestTaskCheckOutcomes(t *testing.T) {
 }
 
 // A calibrated model reroutes only when it is sure (p >= the route threshold, 0.80); an unsure pick
-// leaves the task as addressed, with the pick and p on the record. Muse Spark's pick always governs.
+// leaves the task as addressed, with the pick and p on the record. An uncalibrated pick always governs.
 func TestTaskCheckUnsure(t *testing.T) {
 	d := &pickDecider{pick: "web", calibrated: true, p: 0.35}
 	p := taskTeam(t, "jev", d)
@@ -170,7 +168,7 @@ func TestTaskCheckUnsure(t *testing.T) {
 		t.Fatalf("p=0.80: %+v %+v", m, m.Triage)
 	}
 	d.mu.Lock()
-	d.p, d.calibrated = 0.35, false // Spark-like: no probability, its pick governs
+	d.p, d.calibrated = 0.35, false // no probability: its pick governs
 	d.mu.Unlock()
 	if m, _ = sendTask(t, p, sendIn{To: "plan", Text: "Task: build the cart page"}); m.To != "webaaaaaaaaa" || m.Triage.Outcome != "rerouted" {
 		t.Fatalf("uncalibrated: %+v %+v", m, m.Triage)
@@ -257,7 +255,7 @@ func TestTaskCheckPickGoneDuringCheck(t *testing.T) {
 
 // Near the size limit the record's line is clipped, or left off, and never takes the body past it.
 func TestTaskCheckNearLimit(t *testing.T) {
-	p := taskTeam(t, "meta", &pickDecider{pick: "web"})
+	p := taskTeam(t, "jev", &pickDecider{pick: "web", calibrated: true})
 	for _, n := range []int{maxMessage - 20, maxMessage - 4, maxMessage - 3, maxMessage - 2, maxMessage} {
 		m, _ := sendTask(t, p, sendIn{To: "web", Text: strings.Repeat("x", n), Type: "task"})
 		if m.Triage == nil || len(m.Text) > maxMessage || n == maxMessage-20 && !strings.HasPrefix(m.Text, "[Triage") {
@@ -270,7 +268,7 @@ func TestTaskCheckNearLimit(t *testing.T) {
 // that task"), upward sends, asks, done and replies go as addressed, with no call and no record.
 func TestTaskCheckOnlyTasks(t *testing.T) {
 	d := &pickDecider{pick: "web", calibrated: false}
-	p := taskTeam(t, "meta", d)
+	p := taskTeam(t, "jev", d)
 	_, out := sendTask(t, p, sendIn{From: "webaaaaaaaaa", To: "lead", Text: "Ask: which port?"})
 	for _, in := range []sendIn{
 		{To: "plan", Text: "Please drop that task, web has it"},            // a notice

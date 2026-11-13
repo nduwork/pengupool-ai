@@ -530,8 +530,6 @@ type museSessionView struct {
 	Role       string `json:"role,omitempty"`
 	Parent     string `json:"parent,omitempty"`
 	Assignment string `json:"assignment,omitempty"`
-	// Agent names a Muse Code session by its Meta model ("Muse Spark · Meta · muse-spark-1.3").
-	Agent string `json:"agent,omitempty"`
 }
 
 func (p *Pool) museSessions(_ context.Context, c gateway.Caller, _ json.RawMessage) (any, error) {
@@ -551,7 +549,7 @@ func (p *Pool) museSessions(_ context.Context, c gateway.Caller, _ json.RawMessa
 		if !p.museVisible(s.ID) {
 			continue
 		}
-		v := museSessionView{Session: s.ID, Title: s.Name, State: string(s.State), Name: s.Name, Status: running(s.Status, string(s.State)), Waiting: waiting[s.ID], Question: s.View().Question, Agent: s.View().Agent}
+		v := museSessionView{Session: s.ID, Title: s.Name, State: string(s.State), Name: s.Name, Status: running(s.Status, string(s.State)), Waiting: waiting[s.ID], Question: s.View().Question}
 		for i := range st.Domain.Teams {
 			t := &st.Domain.Teams[i]
 			for _, m := range t.Members {

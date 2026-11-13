@@ -1614,7 +1614,7 @@ func TestOpenGatesShowTheQuestionOfALongCheckin(t *testing.T) {
 	}
 }
 
-// An uncalibrated model (Muse Spark) places the owner's reply on the check-in, but its read of
+// An uncalibrated model places the owner's reply on the check-in, but its read of
 // whether the owner let the agent proceed is not taken: that stays unknown, and the owner's agent
 // words the line.
 func TestOwnerAnswerUncalibrated(t *testing.T) {

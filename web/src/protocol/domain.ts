@@ -212,13 +212,13 @@ export interface TeamMessage {
   settled_at?: string;
   /** When it reached the recipient; records from before 0.9.23 have none. */
   delivered_at?: string;
-  /** Muse Spark's check of a task a parent sent a child (the owner turned it on). */
+  /** The triage model's check of a task a parent sent a child. */
   triage?: Triage;
 }
 
 /** The record of the triage model's pick for one task send. */
 export interface Triage {
-  /** The triage model's kind: meta, jev or ollama. */
+  /** The triage model's kind: jev or ollama. */
   provider: string;
   model?: string;
   /** The recipient the sender named. */
@@ -227,7 +227,6 @@ export interface Triage {
   pick?: string;
   /** A calibrated model's probability for its pick. */
   probability?: number;
-  reasoning?: string;
   /** agreed | rerouted (delivered to triage's pick) | unsure (a calibrated pick below the route threshold: sent as addressed) | overridden (the sender kept its own pick) | unavailable (no usable answer: sent as addressed) */
   outcome: string;
   override?: string;

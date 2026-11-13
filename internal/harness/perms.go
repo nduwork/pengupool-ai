@@ -105,9 +105,8 @@ var PermissionAgents = []string{Claude, Codex}
 
 // PermissionNotWritten says why an agent gets no rules.
 var PermissionNotWritten = map[string]string{
-	OMP:  "OMP asks nothing in its default approval mode, and its command patterns replace a user's list rather than extend it.",
-	Pi:   "pi has no permission prompts.",
-	Muse: "Muse has no documented format for a saved command rule.",
+	OMP: "OMP asks nothing in its default approval mode, and its command patterns replace a user's list rather than extend it.",
+	Pi:  "pi has no permission prompts.",
 }
 
 // ClaudeRules are Claude Code Bash rules: this executable shell-quoted exactly as agents are told to

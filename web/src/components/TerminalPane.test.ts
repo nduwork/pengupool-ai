@@ -40,7 +40,7 @@ describe("isShiftEnter", () => {
 describe("shiftEnter", () => {
   it("types Ctrl+J for pi, whose input submits on ESC CR, and ESC CR for every other harness", () => {
     expect(shiftEnter("pi")).toBe("\n");
-    for (const h of ["claude", "muse", "codex", "omp", "copilot", "gemini", "shell", "custom", undefined]) expect(shiftEnter(h)).toBe("\x1b\r");
+    for (const h of ["claude", "codex", "omp", "copilot", "gemini", "shell", "custom", undefined]) expect(shiftEnter(h)).toBe("\x1b\r");
   });
 });
 

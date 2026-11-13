@@ -91,8 +91,6 @@ export interface SessionView {
   summary?: string;
   /** The model the agent reports, or was started with. */
   model?: string;
-  /** A Meta agent named with its model: "Muse Spark · Meta · muse-spark-1.3"; absent for other agents. */
-  agent?: string;
 }
 
 /**

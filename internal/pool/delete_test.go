@@ -287,22 +287,23 @@ func TestHelperOfByCwd(t *testing.T) {
 	}
 }
 
-// A session stored on OpenCode, dropped in v0.9.44, neither resumes nor launches: the owner reads why.
-func TestOpenCodeSessionsFailClearly(t *testing.T) {
-	st, err := store.Open(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := New(Options{Store: st, Exe: "pengupool"})
-	_ = st.Update(func(s *store.State) error {
-		s.Sessions = append(s.Sessions, store.Session{ID: "ocaaaaaaaaaa", Name: "oc", State: "exited", Harness: "opencode", ConvID: "c1", Cwd: t.TempDir()})
-		return nil
-	})
-	const want = "OpenCode is no longer supported"
-	if _, err := p.resume(context.Background(), sessionIn{SessionID: "ocaaaaaaaaaa"}); codeOf(err) != protocol.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
-		t.Fatalf("resume: %v", err)
-	}
-	if _, err := p.launch(context.Background(), launchIn{Harness: "opencode"}); codeOf(err) != protocol.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
-		t.Fatalf("launch: %v", err)
+// A session stored on a dropped agent (OpenCode in v0.9.44, Muse Code in v0.12.0) neither resumes nor launches: the owner reads why.
+func TestDroppedHarnessSessionsFailClearly(t *testing.T) {
+	for kind, want := range map[string]string{"opencode": "OpenCode is no longer supported", "muse": "Muse Code is no longer supported"} {
+		st, err := store.Open(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := New(Options{Store: st, Exe: "pengupool"})
+		_ = st.Update(func(s *store.State) error {
+			s.Sessions = append(s.Sessions, store.Session{ID: "ocaaaaaaaaaa", Name: "oc", State: "exited", Harness: kind, ConvID: "c1", Cwd: t.TempDir()})
+			return nil
+		})
+		if _, err := p.resume(context.Background(), sessionIn{SessionID: "ocaaaaaaaaaa"}); codeOf(err) != protocol.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%s resume: %v", kind, err)
+		}
+		if _, err := p.launch(context.Background(), launchIn{Harness: kind}); codeOf(err) != protocol.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%s launch: %v", kind, err)
+		}
 	}
 }

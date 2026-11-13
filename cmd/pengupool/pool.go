@@ -145,26 +145,22 @@ func tooLarge(h string) string {
 // cmdHook forwards a harness hook to the daemon. A status hook never blocks agent work: when the
 // daemon does not answer it exits 0 and prints nothing, and so does a PreToolUse (hookUnjudged).
 func cmdHook(args []string) error {
-	// usage: pengupool hook [--store DIR] <harness> <event>. Muse scrubs the hook environment, so
-	// its hook command bakes --store in and the pool resolves the session from the payload.
+	// usage: pengupool hook <harness> <event>. A hook outside a PenguPool session (no session id, as
+	// from an agent plugin an earlier version installed) is a silent no-op.
 	dir := poolStore()
-	if len(args) >= 3 && args[0] == "--store" {
-		dir, args = args[1], args[2:]
-	}
 	if len(args) < 2 {
-		return errors.New("usage: pengupool hook [--store DIR] <harness> <event>")
+		return errors.New("usage: pengupool hook <harness> <event>")
 	}
 	h, event := args[0], args[1]
-	silent := h == "muse" // unknown sessions and a down daemon are silent no-ops
 	sid := os.Getenv("PENGUPOOL_SESSION_ID")
 	payload, _ := io.ReadAll(io.LimitReader(os.Stdin, 1<<20+1))
-	if sid == "" && !silent {
+	if sid == "" {
 		return nil
 	}
 	if len(payload) > 1<<20 {
 		// The size is the agent's to choose, so this is not "the daemon is down": fail closed, or an
 		// agent could pad a call past every guard.
-		if event == "PreToolUse" && !silent {
+		if event == "PreToolUse" {
 			fmt.Println(tooLarge(h))
 		}
 		return nil
@@ -173,9 +169,7 @@ func cmdHook(args []string) error {
 	defer cancel()
 	if !json.Valid(payload) {
 		if event == "PreToolUse" {
-			if !silent {
-				hookUnjudged(event, "the call could not be read")
-			}
+			hookUnjudged(event, "the call could not be read")
 			return nil
 		}
 		payload = []byte("{}")
@@ -190,9 +184,7 @@ func cmdHook(args []string) error {
 		"session_id": sid, "harness": h, "event": event, "payload": json.RawMessage(payload), "env": env,
 	})
 	if err != nil {
-		if !silent {
-			hookUnjudged(event, "the host did not answer")
-		}
+		hookUnjudged(event, "the host did not answer")
 		return nil
 	}
 	var out struct {

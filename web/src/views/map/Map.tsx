@@ -3,7 +3,7 @@ import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
-import { URGENCY, agentLabel, ctxClass, isShell, shownStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
+import { URGENCY, harnessLabel, ctxClass, isShell, shownStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
 import { Button } from "../../components/ui/button";
 import { Badge, Empty, RoleTag, Select, Tip, type Role } from "../../components/ui/controls";
 import { cn } from "../../lib/utils";
@@ -285,8 +285,8 @@ export function TeamMap(): ReactElement {
               <UnreadDot id={s.id} />
             </span>
             <span className="line-clamp-2 pr-8 text-[12px] font-semibold text-foreground [overflow-wrap:anywhere]">{s.name}</span>
-            <span className={cn("truncate text-muted-foreground", mine.length > 1 ? "pr-[4.5rem]" : mine.length > 0 && "pr-10")} title={agentLabel(s)}>
-              {agentLabel(s)}
+            <span className={cn("truncate text-muted-foreground", mine.length > 1 ? "pr-[4.5rem]" : mine.length > 0 && "pr-10")} title={harnessLabel(s.harness)}>
+              {harnessLabel(s.harness)}
               {s.hooks_missing === true ? (
                 <span className="ml-1 inline-flex items-center gap-0.5 align-bottom text-foreground">
                   <Unplug className="size-2.5 shrink-0" aria-hidden />
@@ -623,14 +623,14 @@ function Legend({ color, thick, children }: { color: string; thick?: boolean; ch
   );
 }
 
-/** The triage model's name on the badge: "Muse Spark · Meta", "Jev" or "Ollama". */
+/** The triage model's name on the badge: "Jev" or "Ollama". */
 export function triageName(provider: string): string {
-  return ({ meta: "Muse Spark · Meta", jev: "Jev", ollama: "Ollama" } as Record<string, string>)[provider] ?? provider;
+  return ({ jev: "Jev", ollama: "Ollama" } as Record<string, string>)[provider] ?? provider;
 }
 
-/** The badge's tooltip: the triage model's pick and its reasoning or probability, or why it could not check the task. */
+/** The badge's tooltip: the triage model's pick and its probability, or why it could not check the task. */
 function triageTitle(t: Triage): string {
-  const why = t.reasoning ?? (t.probability !== undefined ? `p=${t.probability.toFixed(2)}` : "");
+  const why = t.probability !== undefined ? `p=${t.probability.toFixed(2)}` : "";
   const what =
     t.outcome === "unavailable"
       ? `could not check this task (${t.cause ?? "no answer"}); sent as addressed`

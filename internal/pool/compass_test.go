@@ -253,7 +253,7 @@ func TestMatch(t *testing.T) {
 		t.Fatalf("a diffuse answer wrote an effect: %+v", effects(ui))
 	}
 
-	// Uncalibrated (Muse Spark): its answer moves no line on its own; the signal is worded or waits.
+	// Uncalibrated: its answer moves no line on its own; the signal is worded or waits.
 	p.testDecider = &lineDecider{answers: []decision.Answer{{Type: decision.Choice, Choice: "contradicts"}, {Type: decision.Choice, Choice: "unrelated"}}}
 	if got := p.match(sig, "", ""); got != "" || len(effects(ui)) != 1 || len(effects(logs)) != 0 {
 		t.Fatalf("an uncalibrated answer moved a line: %q, %+v, %+v", got, effects(ui), effects(logs))
@@ -367,7 +367,7 @@ func TestOwnerPromptsBecomeSignals(t *testing.T) {
 	if kinds() != "" {
 		t.Fatalf("an instruction became a signal: %s", kinds())
 	}
-	place(uncalibrated{fakeTriage{signal: "preference"}}, "keep the UI simple, no extra panels") // Muse Spark classifies a turn too
+	place(uncalibrated{fakeTriage{signal: "preference"}}, "keep the UI simple, no extra panels")
 	word("preference :: Keep the UI simple")
 	if ls := p.lines("", 0); kinds() != "said" || len(ls) != 1 || ls[0].Origin != "stated" {
 		t.Fatalf("a preference: %s, %+v", kinds(), ls)
@@ -1047,7 +1047,7 @@ func TestMatchChangeOfMindMakesALine(t *testing.T) {
 	}
 }
 
-// uncalibrated is a provider's answers without its calibration, as Muse Spark gives them.
+// uncalibrated is a provider's answers without its calibration, as a model without calibration gives them.
 type uncalibrated struct{ decision.Provider }
 
 func (u uncalibrated) Decide(ctx context.Context, req decision.Request) (decision.Response, error) {

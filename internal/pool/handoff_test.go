@@ -13,8 +13,8 @@ import (
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
-// handDecider answers the hand-off question: yes with probability yes, calibrated or not (Muse
-// Spark), or no answer before the deadline when slow.
+// handDecider answers the hand-off question: yes with probability yes, calibrated or not,
+// or no answer before the deadline when slow.
 type handDecider struct {
 	mu         sync.Mutex
 	yes        float64
@@ -109,7 +109,7 @@ func TestHandOffHeldUntilATask(t *testing.T) {
 	}
 }
 
-// A less sure calibrated yes, and any yes from an uncalibrated model (Muse Spark), is a hint only;
+// A less sure calibrated yes, and any yes from an uncalibrated model, is a hint only;
 // a no, an error or a timeout is nothing. None of them holds.
 func TestHandOffHintsAndNothing(t *testing.T) {
 	defer func(d time.Duration) { nextStepTimeout = d }(nextStepTimeout)

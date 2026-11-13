@@ -258,16 +258,16 @@ type TeamMessage struct {
 // pick, with Override as the reason) or unavailable (no usable answer: Cause says why, and the task
 // went to the named recipient).
 type Triage struct {
-	Provider    string  `json:"provider"` // the triage model's kind: meta, jev or ollama
+	Provider    string  `json:"provider"` // the triage model's kind: jev or ollama
 	Model       string  `json:"model,omitempty"`
 	Named       string  `json:"named,omitempty"`       // the recipient the sender named
 	Pick        string  `json:"pick,omitempty"`        // the member triage picked, by name
 	Probability float64 `json:"probability,omitempty"` // a calibrated model's probability for the pick
-	Reasoning   string  `json:"reasoning,omitempty"`   // an uncalibrated model's (Muse Spark's) one sentence
-	Outcome     string  `json:"outcome"`
-	Override    string  `json:"override,omitempty"`
-	Cause       string  `json:"cause,omitempty"`
-	LatencyMS   int64   `json:"latency_ms"`
+
+	Outcome   string `json:"outcome"`
+	Override  string `json:"override,omitempty"`
+	Cause     string `json:"cause,omitempty"`
+	LatencyMS int64  `json:"latency_ms"`
 }
 
 // NodeView is a worker host as clients see it.

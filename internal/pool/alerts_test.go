@@ -100,8 +100,8 @@ func TestCodexAndOMPRaiseNeedsInput(t *testing.T) {
 		}
 		hook("Stop", map[string]any{"last_assistant_message": "done"})
 	}
-	// A ToolFailed naming no call (Muse's): which way it went is unknown, so its prompt stays open until
-	// the turn ends. (A Muse hook resolves its session by process, so the shape is sent as OMP's.)
+	// A ToolFailed naming no call: which way it went is unknown, so its prompt stays open until the
+	// turn ends.
 	b, _ := json.Marshal(map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": "make deploy"}})
 	for _, ev := range []string{"UserPromptSubmit", "PermissionRequest", "ToolFailed"} {
 		pl := b

@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nduwork/pengupool-ai/internal/decision"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
@@ -36,41 +35,40 @@ func TestRetiredProvidersDropAtStart(t *testing.T) {
 	}
 }
 
-// An earlier version's Muse Spark task check, read from config.json, becomes a saved Meta provider
-// at start and is not made active; with no key set up, or a Meta provider saved already, it is dropped.
-func TestSparkSettingsMoveToAMetaProvider(t *testing.T) {
-	for name, c := range map[string]struct {
-		spark, providers string
-		want             store.ProviderConfig
-	}{
-		"moved": {`{"off":true,"address":"https://meta.example/v1","model":"muse-spark-1.2","key_ref":"keychain:spark-meta"}`, ``,
-			store.ProviderConfig{Type: "meta", Format: decision.MetaFormat, Address: "https://meta.example/v1", Model: "muse-spark-1.2", KeyRef: "keychain:spark-meta"}},
-		"default address": {`{"model":"muse-spark-1.3","key_ref":"env:K"}`, ``,
-			store.ProviderConfig{Type: "meta", Format: decision.MetaFormat, Address: "https://api.meta.ai/v1", Model: "muse-spark-1.3", KeyRef: "env:K"}},
-		"no key": {`{"model":"muse-spark-1.3"}`, ``, store.ProviderConfig{}},
-		"meta saved": {`{"model":"old","key_ref":"env:K"}`, `,"meta":{"type":"meta","format":"meta-chat","address":"https://api.meta.ai/v1","model":"new","key_ref":"env:N"}`,
-			store.ProviderConfig{Type: "meta", Format: decision.MetaFormat, Address: "https://api.meta.ai/v1", Model: "new", KeyRef: "env:N"}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
-			jev := `"jev":{"type":"jev","format":"systemone","address":"https://api.typesafe.ai/v1","model":"jev-1","key_ref":"env:J"}`
-			cfg := `{"version":` + strconv.Itoa(store.Version) + `,"decision":{"active":"jev","spark":` + c.spark + `,"providers":{` + jev + c.providers + `}}}`
-			if err := os.WriteFile(filepath.Join(dir, store.ConfigFile), []byte(cfg), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			st, err := store.Open(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			New(Options{Store: st, Exe: "pengupool"})
-			d := st.Config().Decision
-			if d.Spark != nil || d.Active != "jev" || d.Providers["jev"].Model != "jev-1" || d.Providers["meta"] != c.want {
-				t.Fatalf("decision = %+v", d)
-			}
-			if b, _ := os.ReadFile(filepath.Join(dir, store.ConfigFile)); strings.Contains(string(b), `"spark"`) {
-				t.Fatalf("config.json still has the old settings:\n%s", b)
-			}
-		})
+// A saved Muse Spark model (a kind no longer offered) is removed at start with a note, and saving any
+// model clears the note; an earlier version's "spark" settings are dropped from config.json.
+func TestMuseSparkRemovedWithANote(t *testing.T) {
+	dir := t.TempDir()
+	meta := `"meta":{"type":"meta","format":"meta-chat","address":"https://api.meta.ai/v1","model":"muse-spark-1.3","key_ref":"keychain:provider-meta"}`
+	cfg := `{"version":` + strconv.Itoa(store.Version) + `,"decision":{"active":"meta","spark":{"model":"m","key_ref":"env:K"},"providers":{` + meta + `}}}`
+	if err := os.WriteFile(filepath.Join(dir, store.ConfigFile), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(Options{Store: st, Exe: "pengupool"})
+	d := st.Config().Decision
+	want := store.RemovedProvider{Type: "meta", Format: "meta-chat", Model: "muse-spark-1.3", Active: true}
+	if d.Active != "" || len(d.Providers) != 0 || len(d.Removed) != 1 || d.Removed[0] != want {
+		t.Fatalf("decision = %+v", d)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, store.ConfigFile)); strings.Contains(string(b), `"spark"`) {
+		t.Fatalf("config.json still has the old settings:\n%s", b)
+	}
+	r, _ := call(t, p, true, "triage.status", map[string]any{})
+	if m := r.(map[string]any); m["status"] != "missing" || m["removed"] != want {
+		t.Fatalf("triage.status = %+v", m)
+	}
+	if _, err := p.providerSave(context.Background(), providerSaveIn{Provider: store.ProviderConfig{Type: "meta", Format: "meta-chat", Address: "https://api.meta.ai/v1", Model: "m", KeyRef: "env:K"}}); err == nil {
+		t.Fatal("a Muse Spark model was saved")
+	}
+	if _, err := p.providerSave(context.Background(), providerSaveIn{Provider: store.ProviderConfig{Type: "ollama", Format: "ollama-systemone", Address: "http://127.0.0.1:11434", Model: "m"}}); err != nil {
+		t.Fatal(err)
+	}
+	if rm := st.Config().Decision.Removed; len(rm) != 0 {
+		t.Fatalf("the note outlived a save: %+v", rm)
 	}
 }
 
@@ -113,18 +111,17 @@ func TestChatTriageModelRemovedWithANote(t *testing.T) {
 	}
 }
 
-// A saved model removed for another fault (a bad address) or of a kind no longer offered leaves no note:
-// the note claims an unsupported format, and only a save of a kind still offered can clear it.
+// A saved model removed for another fault (a bad address) leaves no note: the note claims an
+// unsupported format.
 func TestRemovedWithoutANote(t *testing.T) {
 	st, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := st.Config()
-	cfg.Decision.Active = "openrouter"
+	cfg.Decision.Active = "ollama"
 	cfg.Decision.Providers = map[string]store.ProviderConfig{
-		"ollama":     {Type: "ollama", Format: "ollama-systemone", Address: "ftp://x", Model: "m"},
-		"openrouter": {Type: "openrouter", Format: "openai-chat", Address: "https://openrouter.ai/api/v1", Model: "m", KeyRef: "env:K"},
+		"ollama": {Type: "ollama", Format: "ollama-systemone", Address: "ftp://x", Model: "m"},
 	}
 	_ = st.SaveConfig(cfg)
 	New(Options{Store: st, Exe: "pengupool"})
