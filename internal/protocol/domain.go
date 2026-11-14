@@ -263,11 +263,10 @@ type Triage struct {
 	Named       string  `json:"named,omitempty"`       // the recipient the sender named
 	Pick        string  `json:"pick,omitempty"`        // the member triage picked, by name
 	Probability float64 `json:"probability,omitempty"` // a calibrated model's probability for the pick
-
-	Outcome   string `json:"outcome"`
-	Override  string `json:"override,omitempty"`
-	Cause     string `json:"cause,omitempty"`
-	LatencyMS int64  `json:"latency_ms"`
+	Outcome     string  `json:"outcome"`
+	Override    string  `json:"override,omitempty"`
+	Cause       string  `json:"cause,omitempty"`
+	LatencyMS   int64   `json:"latency_ms"`
 }
 
 // NodeView is a worker host as clients see it.

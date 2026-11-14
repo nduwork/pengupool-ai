@@ -296,7 +296,7 @@ function Providers(): ReactElement {
       </H>
       {(data.removed ?? []).map((m) => (
         <p key={m.type} className="mb-4 rounded-md bg-warning/10 p-3 text-caption text-warning">
-          <strong>{TYPES.find((t) => t.id === m.type)?.label ?? m.type} model removed.</strong> {m.model ? `"${m.model}" used` : "It used"} the{" "}
+          <strong>{TYPES.find((t) => t.id === m.type)?.label ?? (m.type === "meta" ? "Muse Spark" : m.type)} model removed.</strong> {m.model ? `"${m.model}" used` : "It used"} the{" "}
           {formatName(m)}, which triage no longer supports.{" "}
           {m.type === "ollama" ? "Pull a System One decision model in Ollama, pick it below, save, check, and use it for triage." : "Set up a System One model below, save, check, and use it for triage."}
         </p>

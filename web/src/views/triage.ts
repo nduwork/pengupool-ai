@@ -16,6 +16,7 @@ export interface RemovedModel {
 
 /** "Ollama chat format": the format a removed model spoke, as the app names it. */
 export function formatName(r: RemovedModel): string {
+  if (r.type === "meta") return "Muse Spark API"; // retired in 0.12.0
   if (r.format !== "openai-chat") return `${r.format} format`;
   return r.type === "ollama" ? "Ollama chat format" : "chat format";
 }
