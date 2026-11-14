@@ -92,8 +92,8 @@ reads: the Compass. Only the owner's own words become Compass lines, and each li
 ## 5. The gateway model
 
 The owner talks to the Lead in natural, messy language, from the Mac or a paired phone app. The
-Lead turns it into organized prompts for the team. The Lead plans and distributes the work. Results come back compressed: one decision for
-the owner at a time.
+Lead turns it into organized prompts for the team. The Lead plans and distributes the work. Results
+come back compressed: one decision for the owner at a time.
 
 The remote agent's role shifts from solo executor to gateway between the owner and the team the owner
 built. That is what makes execution compliant rather than fully autonomous.
