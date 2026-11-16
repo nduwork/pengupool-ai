@@ -10,7 +10,7 @@ Muse Code is no longer an agent PenguPool runs. It is gone from New session, Sta
 
 Muse Spark is no longer a decision model: Settings → Decision model offers Local hosted and Online / cloud, both System One. A saved Muse Spark model is removed at start; when it was the triage model in use, PenguPool says so until you save another one. Its API key stays in your Keychain (item `provider-meta`, service `PenguPool`); delete it in Keychain Access if you no longer need it. The task record no longer carries a model's reasoning, only its probability, and a session no longer shows a "· Meta" label.
 
-The README no longer carries the hackathon banner and demo; the docs walk through Claude Code. `pengupool help` now lists `--type task` for `send`.
+The README no longer carries the hackathon banner, demo or Credits section; the docs walk through Claude Code. `pengupool help` now lists `--type task` for `send`.
 
 ## 0.11.4
 

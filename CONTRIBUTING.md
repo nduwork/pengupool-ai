@@ -97,8 +97,3 @@ branch here, and the tests run on that branch's pull request: they run on the ma
   of [CHANGELOG.md](CHANGELOG.md).
 - Keep the PR description in step with the code when you push more commits.
 - Never include API keys, tokens, customer data or private paths in code, tests, logs or screenshots.
-
-## Credits
-
-PenguPool's Compass draws on PAHF (Meta Superintelligence Labs, Princeton University, Duke University);
-the full attribution is in the [README](README.md#credits).
