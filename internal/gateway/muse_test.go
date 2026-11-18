@@ -316,3 +316,54 @@ func TestMuseNextFallsBackToATick(t *testing.T) {
 		t.Fatalf("next = %d %s", code, body)
 	}
 }
+
+// /status answers a valid token with the pool's view plus the host's epoch; a revoked token is
+// 401, a wrong Host 403, and each refusal reaches MuseRefused with its reason. Nothing secret leaks.
+func TestMuseStatusAndRefusals(t *testing.T) {
+	type refusal struct{ reason, host, hash, device string }
+	var mu sync.Mutex
+	var got []refusal
+	srv, token := museTestServerOpts(t, Options{
+		RPC: func(_ context.Context, c Caller, typ string, _ json.RawMessage) (any, error) {
+			if typ != "muse.status" || c.Device != "phone1" {
+				return nil, fmt.Errorf("unexpected %s from %q", typ, c.Device)
+			}
+			return map[string]any{"device": c.Device, "host_version": "9.9.9", "waiting": 2, "paired_at": "2026-11-18T10:00:00Z"}, nil
+		},
+		MuseRefused: func(reason, host, hash, device string) {
+			mu.Lock()
+			got = append(got, refusal{reason, host, hash, device})
+			mu.Unlock()
+		},
+	})
+	url := "http://" + srv.HTTPAddr() + "/api/muse/v1/status"
+	code, body, _ := museReq(t, http.MethodGet, url, token, "")
+	var m map[string]any
+	if code != 200 || json.Unmarshal([]byte(body), &m) != nil || m["device"] != "phone1" || m["epoch"] != srv.Epoch() || m["waiting"] != float64(2) {
+		t.Fatalf("status = %d %s", code, body)
+	}
+	if strings.Contains(body, token) || strings.Contains(body, museHash(token)) {
+		t.Fatalf("status leaks the token: %s", body)
+	}
+	if code, _, _ := museReq(t, http.MethodGet, url, "revoked-or-unknown", ""); code != http.StatusUnauthorized {
+		t.Fatalf("unknown token = %d", code)
+	}
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	_, port, _ := strings.Cut(srv.HTTPAddr(), ":")
+	req.Host = "wrong.example:" + port
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("wrong host = %d", resp.StatusCode)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 2 || got[0].reason != "unknown_token" || got[0].hash != museHash("revoked-or-unknown") ||
+		got[1].reason != "wrong_host" || got[1].device != "phone1" || got[1].hash != "" || !strings.HasPrefix(got[1].host, "wrong.example") {
+		t.Fatalf("refusals = %+v", got)
+	}
+}

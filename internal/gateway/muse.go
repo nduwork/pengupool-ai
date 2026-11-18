@@ -43,20 +43,54 @@ func museBearer(r *http.Request) string {
 
 // museAuth checks the host and, except for /pair, the device token.
 // It returns the device name, or writes the failure and reports false.
+// Each refusal is reported to MuseRefused for the owner's connection panel.
 func (s *Server) museAuth(w http.ResponseWriter, r *http.Request, needToken bool) (string, bool) {
 	if !s.phoneHost(r) {
+		name, _ := s.museDeviceName(museBearer(r))
+		s.museRefused("wrong_host", r.Host, "", name)
 		http.Error(w, "forbidden host", http.StatusForbidden)
 		return "", false
 	}
 	if !needToken {
 		return "", true
 	}
-	name, ok := s.museDevice(museBearer(r))
+	tok := museBearer(r)
+	name, ok := s.museDevice(tok)
 	if !ok {
+		hash := ""
+		if tok != "" {
+			hash = museHash(tok)
+		}
+		s.museRefused("unknown_token", r.Host, hash, "")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return "", false
 	}
 	return name, true
+}
+
+func (s *Server) museRefused(reason, host, tokenHash, device string) {
+	if s.opts.MuseRefused != nil {
+		s.opts.MuseRefused(reason, host, tokenHash, device)
+	}
+}
+
+func museHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// museDeviceName resolves a token to its device's name without counting it as seen.
+func (s *Server) museDeviceName(token string) (string, bool) {
+	if s.opts.Store == nil || token == "" {
+		return "", false
+	}
+	want := museHash(token)
+	for _, d := range s.opts.Store.Config().MuseDevices {
+		if subtle.ConstantTimeCompare([]byte(d.TokenHash), []byte(want)) == 1 {
+			return d.Name, true
+		}
+	}
+	return "", false
 }
 
 // museDevice resolves a bearer token to its device name, updating
@@ -66,8 +100,7 @@ func (s *Server) museDevice(token string) (string, bool) {
 	if s.opts.Store == nil || token == "" {
 		return "", false
 	}
-	sum := sha256.Sum256([]byte(token))
-	want := hex.EncodeToString(sum[:])
+	want := museHash(token)
 	for _, d := range s.opts.Store.Config().MuseDevices {
 		if subtle.ConstantTimeCompare([]byte(d.TokenHash), []byte(want)) != 1 {
 			continue
@@ -162,6 +195,7 @@ func writeMuseError(w http.ResponseWriter, err error) {
 func (s *Server) museRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/muse/v1/pair", s.handleMusePair)
 	mux.HandleFunc("/api/muse/v1/next", s.handleMuseNext)
+	mux.HandleFunc("/api/muse/v1/status", s.handleMuseStatus)
 	mux.HandleFunc("/api/muse/v1/asks/", s.handleMuseAsk)
 	mux.HandleFunc("/api/muse/v1/sessions/", s.handleMuseSessionSay)
 	mux.HandleFunc("/api/muse/v1/sessions", s.handleMuseSessions)
@@ -343,6 +377,33 @@ func (s *Server) handleMuseTeam(w http.ResponseWriter, r *http.Request) {
 	s.museCall(w, r, device, "muse.member", body)
 }
 
+// handleMuseStatus is the device's connection check: its name, the host's version and start
+// epoch (as /api/healthz gives it, so a restart shows), the asks it may see, and when it paired.
+func (s *Server) handleMuseStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	device, ok := s.museAuth(w, r, true)
+	if !ok {
+		return
+	}
+	res, err := s.museRPC(r, device, "muse.status", nil)
+	if err != nil {
+		writeMuseError(w, err)
+		return
+	}
+	var m map[string]any
+	if b, err := json.Marshal(res); err == nil {
+		_ = json.Unmarshal(b, &m)
+	}
+	if m == nil {
+		m = map[string]any{}
+	}
+	m["epoch"] = s.epoch
+	writeMuseJSON(w, m)
+}
+
 // handleMuseSessions lists visible sessions.
 func (s *Server) handleMuseSessions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -391,6 +452,11 @@ const museOpenAPI = `{
       "post": {
         "summary": "Exchange a one-time pairing code for a device token. Host-gated only.",
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"code": {"type": "string"}, "device_name": {"type": "string"}}, "required": ["code", "device_name"]}}}}
+      }
+    },
+    "/status": {
+      "get": {
+        "summary": "Check this device's connection: its name, the host's version and start epoch (it changes when the host restarts), how many asks it may see, and when it was paired. 401 means the token was revoked or replaced; 403 means the wrong address."
       }
     },
     "/next": {

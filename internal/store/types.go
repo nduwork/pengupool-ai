@@ -323,5 +323,7 @@ type MuseDevice struct {
 	Name      string `json:"name"`
 	TokenHash string `json:"token_hash"`
 	CreatedAt string `json:"created_at"`
-	LastSeen  string `json:"last_seen,omitempty"`
+	// RepairedAt is when the device was last re-paired: given a new token under the same name.
+	RepairedAt string `json:"repaired_at,omitempty"`
+	LastSeen   string `json:"last_seen,omitempty"`
 }

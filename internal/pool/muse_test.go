@@ -2,6 +2,8 @@ package pool
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -437,5 +439,156 @@ func TestMuseWaitWakesOnAStateChange(t *testing.T) {
 	case <-p.MuseWait():
 		t.Fatal("a fresh wait is already closed")
 	default:
+	}
+}
+
+// pairDevice pairs name and returns its token.
+func pairDevice(t *testing.T, p *Pool, name string, params any) (string, error) {
+	t.Helper()
+	code := toMap(t, museOwnerCall(t, p, "muse.pairCode", params))["code"].(string)
+	res, err := p.RPC(context.Background(), museCaller(), "muse.pair", toJSON(t, map[string]any{"code": code, "device_name": name}))
+	if err != nil {
+		return "", err
+	}
+	return res.(map[string]string)["token"], nil
+}
+
+func deviceHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func errCode(err error) string {
+	var pe *protocol.Error
+	if errors.As(err, &pe) {
+		return pe.Code
+	}
+	return ""
+}
+
+// Re-pair gives a paired device a new token under its own name; the old token is revoked.
+func TestMuseRePair(t *testing.T) {
+	p, st := musePool(t)
+	_ = st.UpdateConfig(func(cfg *store.Config) error { cfg.Network.Tailscale = "host.tail1234.ts.net"; return nil })
+	old, err := pairDevice(t, p, "phone1", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := st.Config().MuseDevices[0].CreatedAt
+
+	// A normal code still refuses a taken name.
+	if _, err := pairDevice(t, p, "phone1", map[string]any{}); errCode(err) != protocol.CodeConflict {
+		t.Fatalf("normal code on a taken name: %v", err)
+	}
+	// A re-pair code refuses any other name, and is burnt by the try.
+	code := toMap(t, museOwnerCall(t, p, "muse.pairCode", map[string]any{"replace": "phone1"}))["code"].(string)
+	if _, err := p.RPC(context.Background(), museCaller(), "muse.pair", toJSON(t, map[string]any{"code": code, "device_name": "phone2"})); errCode(err) != protocol.CodeConflict || !strings.Contains(err.Error(), "re-pairs phone1 only") {
+		t.Fatalf("re-pair code under another name: %v", err)
+	}
+	if _, err := p.RPC(context.Background(), museCaller(), "muse.pair", toJSON(t, map[string]any{"code": code, "device_name": "phone1"})); errCode(err) != protocol.CodeUnauthorized {
+		t.Fatalf("a burnt re-pair code worked: %v", err)
+	}
+	// A matching re-pair replaces the token and keeps the device's creation time.
+	tok, err := pairDevice(t, p, "phone1", map[string]any{"replace": "phone1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	devs := st.Config().MuseDevices
+	if len(devs) != 1 || devs[0].TokenHash != deviceHash(tok) || devs[0].CreatedAt != created || devs[0].RepairedAt == "" {
+		t.Fatalf("after re-pair: %+v", devs)
+	}
+	// The old token is now a revoked one, by name, in the owner's refused list.
+	p.NoteMuseRefused("unknown_token", "host.tail1234.ts.net", deviceHash(old), "")
+	if r := p.museRefused[len(p.museRefused)-1]; r.Reason != "revoked_token" || r.Device != "phone1" {
+		t.Fatalf("old token refusal = %+v", r)
+	}
+
+	// Only the owner makes a re-pair code; an unknown name is not found.
+	if _, err := p.RPC(context.Background(), museCaller(), "muse.pairCode", toJSON(t, map[string]any{"replace": "phone1"})); err == nil {
+		t.Fatal("a device made a re-pair code")
+	}
+	if _, err := p.RPC(context.Background(), gateway.Caller{Owner: true}, "muse.pairCode", toJSON(t, map[string]any{"replace": "nobody"})); errCode(err) != protocol.CodeNotFound {
+		t.Fatalf("re-pair of an unknown name: %v", err)
+	}
+	// A revoke that lands between the code and its use leaves the device revoked.
+	code = toMap(t, museOwnerCall(t, p, "muse.pairCode", map[string]any{"replace": "phone1"}))["code"].(string)
+	museOwnerCall(t, p, "muse.revoke", map[string]any{"name": "phone1"})
+	if _, err := p.RPC(context.Background(), museCaller(), "muse.pair", toJSON(t, map[string]any{"code": code, "device_name": "phone1"})); errCode(err) != protocol.CodeNotFound {
+		t.Fatalf("re-pair after revoke: %v", err)
+	}
+	if devs := st.Config().MuseDevices; len(devs) != 0 {
+		t.Fatalf("revoked device came back: %+v", devs)
+	}
+}
+
+// A device's status names it, counts only the asks it may see, and carries no secret.
+func TestMuseStatus(t *testing.T) {
+	p, st := musePool(t)
+	_ = st.UpdateConfig(func(cfg *store.Config) error {
+		cfg.MuseDevices = []store.MuseDevice{
+			{Name: "muse-test", TokenHash: "aaaa", CreatedAt: "2026-11-18T10:00:00Z"},
+			{Name: "other-phone", TokenHash: "bbbb", CreatedAt: "2026-11-18T09:00:00Z"},
+		}
+		return nil
+	})
+	_ = st.Update(func(s *store.State) error {
+		for i, a := range []struct{ id, team, session string }{{"a1", "team1", "leadaaaaaaaa"}, {"a2", "team2", "otheraaaaaaa"}} {
+			s.Domain.Approvals = append(s.Domain.Approvals, protocol.Approval{
+				ID: a.id, Kind: "formation", TeamID: a.team, SessionID: a.session, State: "pending",
+				Detail: "add helper", CreatedAt: fmt.Sprintf("2026-11-18T1%d:00:00Z", i),
+			})
+		}
+		for i := range s.Domain.Teams {
+			s.Domain.Teams[i].IOSAccess = s.Domain.Teams[i].ID == "team2"
+		}
+		return nil
+	})
+	m := toMap(t, museCall(t, p, "muse.status", nil))
+	if m["device"] != "muse-test" || m["waiting"] != float64(1) || m["paired_at"] != "2026-11-18T10:00:00Z" {
+		t.Fatalf("status = %+v", m)
+	}
+	if b, _ := json.Marshal(m); strings.Contains(string(b), "aaaa") || strings.Contains(string(b), "other-phone") {
+		t.Fatalf("status leaks a hash or another device: %s", b)
+	}
+}
+
+// The refused log keeps the last 20, tells revoked from unknown, and the owner's connection view
+// holds no token text.
+func TestMuseRefusedLog(t *testing.T) {
+	p, st := musePool(t)
+	_ = st.UpdateConfig(func(cfg *store.Config) error { cfg.Network.Tailscale = "host.tail1234.ts.net"; return nil })
+	tok, err := pairDevice(t, p, "phone1", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	museOwnerCall(t, p, "muse.revoke", map[string]any{"name": "phone1"})
+	p.NoteMuseRefused("unknown_token", "host.tail1234.ts.net", deviceHash(tok), "")
+	p.NoteMuseRefused("unknown_token", "host.tail1234.ts.net", deviceHash("never-paired"), "")
+	if r := p.museRefused; r[0].Reason != "revoked_token" || r[0].Device != "phone1" || r[1].Reason != "unknown_token" || r[1].Device != "" {
+		t.Fatalf("refused = %+v", r)
+	}
+	for range 30 {
+		p.NoteMuseRefused("wrong_host", "elsewhere.example", "", "")
+	}
+	if n := len(p.museRefused); n != museRefusedMax {
+		t.Fatalf("log holds %d, want %d", n, museRefusedMax)
+	}
+	stubTailscale(t, tailscaleStatusStopped, "")
+	b, _ := json.Marshal(museOwnerCall(t, p, "muse.connection", nil))
+	if strings.Contains(string(b), tok) || strings.Contains(string(b), deviceHash(tok)) {
+		t.Fatalf("connection view holds token text: %s", b)
+	}
+	var v struct {
+		Serve   museServeView `json:"serve"`
+		Refused []museRefusal `json:"refused"`
+		Devices []any         `json:"devices"`
+	}
+	_ = json.Unmarshal(b, &v)
+	if v.Serve.State != "problem" || v.Serve.Check != "login" || len(v.Refused) != museRefusedMax {
+		t.Fatalf("connection = %+v", v)
+	}
+	// A device cannot read the owner's view.
+	if _, err := p.RPC(context.Background(), museCaller(), "muse.connection", nil); err == nil {
+		t.Fatal("a device read muse.connection")
 	}
 }

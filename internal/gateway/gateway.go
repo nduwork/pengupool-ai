@@ -81,6 +81,10 @@ type Options struct {
 	// MuseWait is closed when the device API's waiting asks may have changed, so a waiting /next
 	// answers at once. It may be nil: /next then looks again every museNextTick.
 	MuseWait func() <-chan struct{}
+	// MuseRefused hears each refused device-API request: reason wrong_host or unknown_token, the
+	// Host asked for, the SHA-256 of the token sent (to tell a revoked one; never kept) and the
+	// device's name when the token named one.
+	MuseRefused func(reason, host, tokenHash, device string)
 	// OwnerInput, when set, is told that the owner submitted a prompt in a session: the keystrokes of
 	// the app's own connection (/ws with the host's token). Not the terminal CLI's: on one account an
 	// agent can reparent a process away from its session (( cmd & )) and run the CLI from outside every
@@ -707,6 +711,10 @@ func (s *Server) handler() http.Handler {
 func (s *Server) hostGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !hostAllowed(r, s.HTTPAddr()) && !s.phoneHost(r) && !tunneled(r) {
+			if strings.HasPrefix(path.Clean(r.URL.Path), "/api/muse/v1/") { // a device at an old or wrong address
+				name, _ := s.museDeviceName(museBearer(r))
+				s.museRefused("wrong_host", r.Host, "", name)
+			}
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
 		}

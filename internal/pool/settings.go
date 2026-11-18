@@ -882,17 +882,23 @@ func (p *Pool) HealTailscaleServe(ctx context.Context) {
 		}
 		healSleep(ctx, delay)
 	}
-	// Under the Serve lock, from a fresh read: a click during the wait may have switched the mode,
-	// and the heal must not bring the old one back.
+	_, _, _ = p.healServeOnce(ctx, bin, port)
+}
+
+// healServeOnce re-points PenguPool's own Serve routes that point elsewhere at port. It reports
+// whether a route moved, whether PenguPool owns a route at all, and the re-point's error. Under the
+// Serve lock, from a fresh read: a click meanwhile may have switched the mode, and the heal must not
+// bring the old one back. A route that is gone stays gone: the owner may have turned Serve off.
+func (p *Pool) healServeOnce(ctx context.Context, bin, port string) (changed, owned bool, err error) {
 	p.serveMu.Lock()
 	defer p.serveMu.Unlock()
 	httpsTarget, httpTarget, ok := currentServeTargets(ctx, bin)
 	if !ok {
-		return
+		return false, false, errors.New("tailscale serve status unreadable")
 	}
 	httpsTarget, httpTarget = ownServeTargets(httpsTarget, httpTarget, p.st.Config().Network.ServePort, port)
 	if httpsTarget == "" && httpTarget == "" {
-		return
+		return false, false, nil
 	}
 	want := "127.0.0.1:" + port
 	for _, mode := range []serveMode{serveHTTPS, serveHTTP} {
@@ -903,15 +909,108 @@ func (p *Pool) HealTailscaleServe(ctx context.Context) {
 		if target == "" || target == want {
 			continue
 		}
-		if out, approve, err := serveOnce(ctx, mode, port); err != nil && approve == "" {
-			p.logf("pool: tailscale serve re-point failed: %v (%s)", err, out)
+		if out, approve, serr := serveOnce(ctx, mode, port); serr != nil && approve == "" {
+			p.logf("pool: tailscale serve re-point failed: %v (%s)", serr, out)
+			err = serr
 		} else if approve != "" {
 			p.logf("pool: tailscale serve needs approval in the admin console")
+			err = errors.New("tailscale serve needs approval in the admin console")
 		} else {
 			p.recordServePort(port)
 			p.logf("pool: tailscale serve re-pointed at 127.0.0.1:%s", port)
+			changed = true
 		}
 	}
+	return changed, true, err
+}
+
+// serveWatchEvery is how often WatchTailscaleServe looks; serveWatchAfter is its timer (tests fake it).
+var (
+	serveWatchEvery = time.Minute
+	serveWatchAfter = time.After
+)
+
+// WatchTailscaleServe keeps the Muse app's address working after start-up: every serveWatchEvery,
+// and at once when Settings › Tailscale or › Muse app opens (settings.serveCheck), it re-points a
+// stale PenguPool route and follows a tailnet rename. Owner's home only, as the heal; a store with
+// no Serve name set is left alone each round. It stops when ctx ends.
+func (p *Pool) WatchTailscaleServe(ctx context.Context) {
+	if !store.IsHomeDefault(p.st.Dir()) {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-p.serveKick:
+		case <-serveWatchAfter(serveWatchEvery):
+		}
+		p.serveWatchRound(ctx)
+	}
+}
+
+// serveWatchRound is one look: is tailscaled up, re-point a stale route, follow a rename.
+func (p *Pool) serveWatchRound(ctx context.Context) {
+	saved := p.st.Config().Network.Tailscale
+	if saved == "" || ctx.Err() != nil {
+		return
+	}
+	res := serveWatchResult{At: healNow()}
+	defer func() {
+		p.serveWatchMu.Lock()
+		p.serveWatch = res
+		p.serveWatchMu.Unlock()
+	}()
+	bin, port := tailscaleBin(), boundPort()
+	if bin == "" {
+		res.Problem = "Tailscale isn't installed"
+		return
+	}
+	st, err := runTailscaleStatus(ctx, bin)
+	if err != nil || st.BackendState != "Running" {
+		res.Problem = "Tailscale isn't running"
+		return
+	}
+	if port == "" {
+		return
+	}
+	changed, owned, err := p.healServeOnce(ctx, bin, port)
+	res.Repointed = changed
+	if err != nil {
+		res.HealFailed = err.Error()
+	}
+	// Follow a machine or tailnet rename, only while a PenguPool route is served: phoneHosts reads
+	// the saved name on every request, so devices reach the new name without a restart.
+	name := strings.TrimSuffix(st.Self.DNSName, ".")
+	if !owned || name == "" {
+		return
+	}
+	_ = p.st.UpdateConfig(func(cfg *store.Config) error {
+		scheme, old := "", cfg.Network.Tailscale
+		for _, s := range []string{"https://", "http://"} {
+			if rest, ok := strings.CutPrefix(old, s); ok {
+				scheme, old = s, rest
+			}
+		}
+		if old = strings.TrimRight(old, "/"); old == "" || old == name {
+			return nil
+		}
+		cfg.Network.Tailscale = scheme + name
+		res.RenamedTo = name
+		return nil
+	})
+	if res.RenamedTo != "" {
+		p.logf("pool: tailscale name changed; Serve name saved as %s", res.RenamedTo)
+	}
+}
+
+// settingsServeCheck wakes the watchdog now: Settings › Tailscale and › Muse app call it on open.
+func (p *Pool) settingsServeCheck(_ context.Context, _ struct{}) (any, error) {
+	select {
+	case p.serveKick <- struct{}{}:
+	default: // a round is already due
+	}
+	return nil, nil
 }
 
 // Node handlers delegate to the SSH layer.

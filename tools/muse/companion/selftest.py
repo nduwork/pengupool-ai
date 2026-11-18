@@ -32,6 +32,7 @@ class H(BaseHTTPRequestHandler):
         assert self.headers["Authorization"] == "Bearer tok123", self.headers
         if self.path == "/api/muse/v1/next": return self._send(200, {"ask_id": "teamask:a1", "payload_hash": "ph", "actions": []}, chunked=True)
         if self.path == "/api/muse/v1/sessions": return self._send(200, [{"session": "s1"}], chunked=True)
+        if self.path == "/api/muse/v1/status": return self._send(200, {"device": "d1", "host_version": "0.12.0", "epoch": "e7", "waiting": 1, "paired_at": "2026-11-18T10:00:00Z"})
         self._send(404, {"error": "no"})
     def do_POST(self):
         n = int(self.headers["Content-Length"]); body = json.loads(self.rfile.read(n))
@@ -47,6 +48,9 @@ os.environ.pop("HTTPS_PROXY", None); os.environ.pop("https_proxy", None)
 sys.path.insert(0, os.environ["SRC"])
 import pp
 assert pp.healthz() == (200, {"epoch": 7})
+os.environ["PENGUPOOL_DEVICE_TOKEN"] = "tok123"
+assert pp.status() == (200, {"device": "d1", "host_version": "0.12.0", "epoch": "e7", "waiting": 1, "paired_at": "2026-11-18T10:00:00Z"})
+del os.environ["PENGUPOOL_DEVICE_TOKEN"]
 psrv = socket.socket(); psrv.bind(("127.0.0.1", 0)); psrv.listen(1)
 def fake407():
     c, _ = psrv.accept()

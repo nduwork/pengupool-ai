@@ -50,10 +50,15 @@ If the agent ends its turn with a plain paragraph instead of a question, nothing
 there is nothing to answer from the phone. A tool-permission prompt is also not on the phone; answer it
 in the terminal.
 
-## Revoke a device
+## Revoke or re-pair a device
 
 Settings → Muse app → **Muse devices** lists each device with when it was last seen. **Revoke** takes
-effect on its next request.
+effect on its next request. **Re-pair…** gives a device that lost its token a new one under the same
+name: enter the new code in the Muse app, and the old token stops working.
+
+The same page says whether devices can reach this Mac and lists the last requests it refused (a
+wrong address, a revoked device, an unknown token), so you can see why a phone isn't connecting.
+PenguPool checks Tailscale Serve every minute and fixes its own route after Tailscale restarts.
 
 ## More
 

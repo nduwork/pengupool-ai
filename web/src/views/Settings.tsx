@@ -14,7 +14,8 @@ import { GitHubAccount } from "./GitHub";
 import { UpdateSheet, updateLine } from "./Update";
 import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
-import { pairBlocker, type TailscaleCheck } from "./museReady";
+import { RefusedList } from "./MuseConnection";
+import { pairBlocker, serveLine, type MuseRefusal, type MuseServe, type TailscaleCheck } from "./museReady";
 import { RestartAllSheet } from "./RestartAllSheet";
 import { agentsRunning, busyNow, restartActive, restartLabel, restartSummary, type RestartItem } from "./restartAll";
 import { formatName, type RemovedModel } from "./triage";
@@ -520,6 +521,7 @@ const HTTP_WARNING = "Plain HTTP over the tailnet: traffic is WireGuard-encrypte
 function Tailscale(): ReactElement {
   const app = useApp();
   const [n, setN] = useState(0);
+  useEffect(() => void app.call("settings.serveCheck"), [app]); // the Serve watchdog looks now
   const [switching, setSwitching] = useState(false); // one Serve switch at a time: a second click would queue behind it and time out
   const s = useSettings(n);
   if (s === null) return <p className="text-label text-faint">Loading…</p>;
@@ -1560,19 +1562,30 @@ function Sync(): ReactElement {
   );
 }
 
-type MuseDevice = { name: string; created_at: string; last_seen?: string };
+type MuseDevice = { name: string; created_at: string; repaired_at?: string; last_seen?: string };
+type MuseConnectionView = { serve: MuseServe; checks: TailscaleCheck[]; devices: MuseDevice[]; refused: MuseRefusal[] };
 
-/** Pair Muse devices, one at a time, each with its own revocable token. */
+/** Pair Muse devices, one at a time, each with its own revocable token; see why one doesn't connect. */
 function MuseDevices({ onChanged, openTailscale }: { onChanged: () => void; openTailscale: () => void }): ReactElement {
   const app = useApp();
   const [devices, setDevices] = useState<MuseDevice[] | null>(null);
-  const [code, setCode] = useState<{ code: string; url: string } | null>(null);
+  const [code, setCode] = useState<{ code: string; url: string; repair?: string } | null>(null);
   const s = useSettings(0);
   const [checks, setChecks] = useState<TailscaleCheck[] | null>(null);
+  const [conn, setConn] = useState<MuseConnectionView | null>(null);
   useEffect(() => {
-    void app.call<MuseDevice[]>("muse.devices").then((d) => setDevices(d ?? []));
-    void app.call<TailscaleCheck[]>("settings.tailscale").then((r) => setChecks(r ?? []));
+    void app.call("settings.serveCheck"); // the Serve watchdog looks now
+    void app.call<MuseConnectionView>("muse.connection").then((c) => {
+      setConn(c ?? null);
+      setDevices(c?.devices ?? []);
+      setChecks(c?.checks ?? []);
+    });
   }, [app]);
+  const repair = async (name: string): Promise<void> => {
+    if (!window.confirm(`Make a new code for ${name}? Its current token stops working once the new one is used.`)) return;
+    const r = await app.call<{ code: string; url: string }>("muse.pairCode", { replace: name });
+    if (r !== undefined) setCode({ code: r.code, url: r.url, repair: name });
+  };
   // No code without an address a device can reach: the host refuses one until Serve is set up.
   const blocked = s === null || checks === null ? null : pairBlocker(s.network.tailscale, checks);
   return (
@@ -1580,9 +1593,29 @@ function MuseDevices({ onChanged, openTailscale }: { onChanged: () => void; open
       <div className="border-b border-border py-3">
         <p className="text-label font-medium">Muse devices</p>
         <p className="text-caption text-muted-foreground">Pair the Muse app on each device. Each device gets its own token; revoke one any time.</p>
+        {conn !== null ? (
+          <p className={cn("mt-1 min-w-0 text-caption [overflow-wrap:anywhere]", conn.serve.state === "ok" ? "text-muted-foreground" : "text-warning")}>
+            {serveLine(conn.serve)}
+            {conn.serve.state !== "ok" ? (
+              <>
+                {" "}
+                <button type="button" className="underline hover:text-foreground" onClick={openTailscale}>
+                  Open Settings › Tailscale
+                </button>
+              </>
+            ) : null}
+          </p>
+        ) : null}
       </div>
       {(devices ?? []).map((d) => (
-        <Row key={d.name} title={d.name} hint={d.last_seen !== undefined ? `Last seen ${d.last_seen}` : `Paired ${d.created_at}`}>
+        <Row
+          key={d.name}
+          title={d.name}
+          hint={d.last_seen !== undefined ? `Last seen ${d.last_seen}` : d.repaired_at !== undefined ? `Re-paired ${d.repaired_at}` : `Paired ${d.created_at}`}
+        >
+          <Button size="sm" variant="ghost" onClick={() => void repair(d.name)}>
+            Re-pair…
+          </Button>
           <Button
             size="sm"
             onClick={async () => {
@@ -1616,11 +1649,13 @@ function MuseDevices({ onChanged, openTailscale }: { onChanged: () => void; open
           </p>
         ) : null}
         {code !== null ? (
-          <p className="text-caption">
-            Enter <span className="font-mono font-semibold">{code.code}</span> in the Muse app within 5 minutes. URL: <span className="font-mono">{code.url}</span>
+          <p className="min-w-0 text-caption [overflow-wrap:anywhere]">
+            Enter <span className="font-mono font-semibold">{code.code}</span> in the Muse app within 5 minutes
+            {code.repair !== undefined ? <>, as {code.repair}</> : null}. URL: <span className="font-mono">{code.url}</span>
           </p>
         ) : null}
       </div>
+      {conn !== null ? <RefusedList refused={conn.refused} /> : null}
     </Card>
   );
 }
