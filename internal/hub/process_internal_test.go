@@ -76,19 +76,19 @@ func TestWaitHandshakeNamesTheExitCodeOfAProgramThatExitsAtOnce(t *testing.T) {
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		code := 3
-		if err := session.WriteHandshake(path, session.Handshake{SessionID: "s", ExitCode: &code}); err != nil {
+		if err := session.WriteHandshake(path, session.Handshake{SessionID: "s", Pid: 4242, ExitCode: &code}); err != nil {
 			t.Error(err)
 		}
 		exited <- nil
 	}()
-	_, err := (&Hub{}).waitHandshake(context.Background(), path, exited)
+	_, err := (&Hub{}).waitHandshake(context.Background(), path, 4242, exited)
 	if err == nil || !strings.Contains(err.Error(), "it exited right after starting (exit code 3)") {
 		t.Fatalf("waitHandshake: %v", err)
 	}
 
 	// No handshake at all, and a worker that exited cleanly: no "<nil>" in the message.
 	exited <- nil
-	_, err = (&Hub{}).waitHandshake(context.Background(), filepath.Join(t.TempDir(), "none.json"), exited)
+	_, err = (&Hub{}).waitHandshake(context.Background(), filepath.Join(t.TempDir(), "none.json"), 4242, exited)
 	if err == nil || strings.Contains(err.Error(), "<nil>") {
 		t.Fatalf("waitHandshake without a handshake: %v", err)
 	}

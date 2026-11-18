@@ -97,3 +97,17 @@ func TestSessionRestartReportsAnAgentThatExitsBeforeItsHandshake(t *testing.T) {
 		t.Fatalf("restart: %v", err)
 	}
 }
+
+// Resume conversation reads the same failure: the app shows no toast for unavailable.
+func TestResumeReportsAnAgentThatExitsBeforeItsHandshake(t *testing.T) {
+	agentOnPath(t)
+	rp := newRelaunchPool(t, nil, nil)
+	rp.testSpawn = func(spawnReq) (store.Session, error) {
+		return store.Session{}, protocol.Errorf(protocol.CodeUnavailable, "it exited right after starting (exit code 1)")
+	}
+	rp.add(t, store.Session{ID: "diesaaaaaaaa", Name: "dies", Harness: "claude", State: "exited", Status: "ended", ConvID: "c1", Cwd: t.TempDir()})
+	_, err := rp.resume(context.Background(), sessionIn{SessionID: "diesaaaaaaaa"})
+	if codeOf(err) != protocol.CodeConflict || !strings.Contains(err.Error(), "dies: it exited right after starting (exit code 1)") {
+		t.Fatalf("resume: %v", err)
+	}
+}

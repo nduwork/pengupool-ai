@@ -215,8 +215,8 @@ func (p *Pool) input(id string, chunks ...string) error {
 }
 
 // sessionRestart stops the agent and starts it again under the same session id: resumed from its
-// conversation, or fresh when it saved none. Every reason it cannot come back is checked before it is
-// stopped, and an agent that exits right after restarting fails the request.
+// conversation, or fresh when it saved none. A removed agent or a deleted helper is refused before it
+// is stopped, and an agent that exits right after restarting fails the request.
 func (p *Pool) sessionRestart(ctx context.Context, in sessionIn) (any, error) {
 	s, ok := p.session(in.SessionID)
 	if !ok {
@@ -227,16 +227,12 @@ func (p *Pool) sessionRestart(ctx context.Context, in sessionIn) (any, error) {
 	}
 	resumeID := resumeIDOf(s)
 	if err := p.stopWorker(ctx, s); err != nil {
-		return nil, err
+		return nil, ownerReads(s.Name, err)
 	}
 	if s, _ = p.session(s.ID); s.State == "running" {
 		return nil, conflict("%s was still running 5 s after it was told to stop", s.Name)
 	}
 	res, err := p.relaunch(ctx, s, resumeID)
-	if pe := (*protocol.Error)(nil); errors.As(err, &pe) && pe.Code == protocol.CodeUnavailable {
-		p.logLine(s.ID, "session: "+pe.Message)
-		return nil, conflict("%s: %s", s.Name, pe.Message) // the owner reads why: the app shows no toast for unavailable
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -245,6 +241,15 @@ func (p *Pool) sessionRestart(ctx context.Context, in sessionIn) (any, error) {
 		return nil, conflict("%s: %s", s.Name, why)
 	}
 	return res, nil
+}
+
+// ownerReads turns an unavailable error into a conflict naming the session: the app shows no toast for
+// unavailable, and these are failures the owner asked about and must read.
+func ownerReads(name string, err error) error {
+	if pe := (*protocol.Error)(nil); errors.As(err, &pe) && pe.Code == protocol.CodeUnavailable {
+		return conflict("%s: %s", name, pe.Message)
+	}
+	return err
 }
 
 // stopWorker stops a running session's worker and waits up to 5 s for it to read as stopped.

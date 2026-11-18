@@ -447,8 +447,11 @@ func (p *Pool) relaunch(ctx context.Context, s store.Session, resumeID string) (
 			}
 		},
 	})
+	if pe := (*protocol.Error)(nil); errors.As(err, &pe) && pe.Code == protocol.CodeUnavailable {
+		p.logLine(s.ID, "session: "+pe.Message) // an agent that exits before its worker's handshake
+	}
 	if err != nil {
-		return nil, err
+		return nil, ownerReads(s.Name, err)
 	}
 	if resumeID == "" {
 		p.logLine(ns.ID, "session: restarted fresh")

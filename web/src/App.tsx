@@ -77,6 +77,7 @@ export function App(): ReactElement {
   // A closed sheet hands keyboard focus back to what opened it; a sheet opened from a menu item goes back
   // to what had focus before the menu (the item is gone once the menu closes).
   const opener = useRef<HTMLElement | null>(null);
+  const restoring = useRef<HTMLElement | null>(null); // focus going back on the next frame
   const beforeMenu = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const on = (e: FocusEvent): void => {
@@ -87,13 +88,24 @@ export function App(): ReactElement {
   }, []);
   const setDialog = useCallback((d: ReactNode): void => {
     if (d !== null) {
+      if (opener.current === null && restoring.current !== null) {
+        // A sheet that replaces one closed in the same tick keeps its opener, not a control inside it.
+        opener.current = restoring.current;
+        restoring.current = null;
+      }
       const a = document.activeElement;
       const from = a instanceof HTMLElement && a.closest('[role="menu"]') !== null ? beforeMenu.current : a;
       if (opener.current === null && from instanceof HTMLElement && from !== document.body) opener.current = from;
     } else {
       const el = opener.current;
       opener.current = null;
-      if (el !== null) requestAnimationFrame(() => el.isConnected && el.focus());
+      restoring.current = el;
+      if (el !== null)
+        requestAnimationFrame(() => {
+          if (restoring.current !== el) return; // a new sheet took it over
+          restoring.current = null;
+          if (el.isConnected) el.focus();
+        });
     }
     setDialogState(d);
   }, []);
