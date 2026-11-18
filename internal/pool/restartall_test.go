@@ -418,3 +418,29 @@ func TestRestartHeldMessagesGoOutOnce(t *testing.T) {
 		t.Fatalf("delivered %d times: %s", n, b)
 	}
 }
+
+// A restart that fails before it stops the session leaves it running and idle: a message held
+// during that restart reaches it then, once.
+func TestRestartAllDeliversHeldMessagesAfterAFailedStop(t *testing.T) {
+	rp := newRelaunchPool(t, nil, nil)
+	shortRestart(t, rp.Pool, 20*time.Millisecond, 0)
+	id := "agentaaaaaaa"
+	rp.add(t, store.Session{ID: id, Name: "agent", Harness: harness.OMP, State: "running", Status: "idle", ConvID: "c", Cwd: t.TempDir()})
+	rp.add(t, store.Session{ID: "leadaaaaaaaa", Name: "lead", Harness: harness.Shell, State: "running", Status: "idle", Cwd: t.TempDir()})
+	m := protocol.TeamMessage{ID: "m1", From: "leadaaaaaaaa", To: id, Text: "your next task", State: "queued"}
+	rp.st.Update(func(x *store.State) error { x.Domain.Messages = append(x.Domain.Messages, m); return nil })
+	rp.testBeforeStop = func(string) { rp.deliver(m) }
+	rp.testKill = func(string) error { return errors.New("kill refused") }
+	ownerRPC(rp.Pool, "run.restartAll", map[string]any{})
+	waitItem(t, rp.Pool, id, "failed")
+	inbox := filepath.Join(rp.st.Dir(), store.RunDir, "inbox", id+".jsonl")
+	for end := time.Now().Add(2 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if b, _ := os.ReadFile(inbox); strings.Count(string(b), "your next task") == 1 {
+			break
+		}
+		if time.Now().After(end) {
+			b, _ := os.ReadFile(inbox)
+			t.Fatalf("the held message was not delivered once after a failed restart: %q", b)
+		}
+	}
+}

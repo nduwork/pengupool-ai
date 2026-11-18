@@ -23,9 +23,11 @@ describe("restartAll", () => {
     expect(restartSummary([])).toBe("No agent session is running.");
   });
   it("sees whether an agent session runs", () => {
-    expect(agentsRunning([], agent)).toBe(false);
-    expect(agentsRunning([{ id: "a", state: "running", harness: "shell" }, { id: "b", state: "exited", harness: "claude" }], agent)).toBe(false);
-    expect(agentsRunning([{ id: "c", state: "running", harness: "codex" }], agent)).toBe(true);
+    expect(agentsRunning([], agent, "here")).toBe(false);
+    expect(agentsRunning([{ id: "a", state: "running", harness: "shell" }, { id: "b", state: "exited", harness: "claude" }], agent, "here")).toBe(false);
+    expect(agentsRunning([{ id: "c", state: "running", harness: "codex" }], agent, "here")).toBe(true);
+    expect(agentsRunning([{ id: "c", state: "running", harness: "codex", node_id: "here" }], agent, "here")).toBe(true);
+    expect(agentsRunning([{ id: "r", state: "running", harness: "codex", node_id: "ssh-box" }], agent, "here")).toBe(false);
   });
   it("plans the running agents, marking the busy ones", () => {
     const plan = restartPlan(
@@ -36,8 +38,10 @@ describe("restartAll", () => {
         { id: "4", state: "running", harness: "omp", status: "starting" },
         { id: "5", state: "exited", harness: "claude", status: "ended" },
         { id: "6", state: "running", harness: "shell", status: "idle" },
+        { id: "7", state: "running", harness: "claude", status: "idle", node_id: "ssh-box" },
       ],
       agent,
+      "here",
     );
     expect(plan.map((e) => [e.s.id, e.waits])).toEqual([["1", false], ["2", true], ["3", true], ["4", true]]);
   });

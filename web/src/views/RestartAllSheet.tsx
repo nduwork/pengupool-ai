@@ -7,7 +7,7 @@ import { Sheet } from "../components/ui/dialog";
 import { followInSettings, restartActive, restartPlan, type RestartItem } from "./restartAll";
 
 /** Restart all's confirm sheet: what restarts, what waits for its turn, what a running restart has. */
-export function RestartAllSheet({ onStarted }: { onStarted?: (items: RestartItem[]) => void }): ReactElement {
+export function RestartAllSheet({ onStarted }: { onStarted?: (items: RestartItem[], added: number) => void }): ReactElement {
   const app = useApp();
   const [run, setRun] = useState<RestartItem[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -24,7 +24,7 @@ export function RestartAllSheet({ onStarted }: { onStarted?: (items: RestartItem
   const close = (): void => app.showDialog(null);
   const going = run !== null && restartActive(run);
   const inRun = new Set(going ? run.map((it) => it.session_id) : []);
-  const plan = restartPlan(app.sessions, isAgent);
+  const plan = restartPlan(app.sessions, isAgent, app.conn.status.nodeID);
   const fresh = plan.filter((e) => !inRun.has(e.s.id));
   const n = fresh.length;
   const waiting = fresh.filter((e) => e.waits).length;
@@ -34,7 +34,7 @@ export function RestartAllSheet({ onStarted }: { onStarted?: (items: RestartItem
     setBusy(false);
     if (r === undefined) return; // the host's toast says why
     close();
-    onStarted?.(r);
+    onStarted?.(r, n);
   };
   return (
     <Sheet
@@ -53,7 +53,7 @@ export function RestartAllSheet({ onStarted }: { onStarted?: (items: RestartItem
       }
     >
       {plan.length === 0 ? (
-        <p className="text-label text-muted-foreground">No agent session is running, so there is nothing to restart.</p>
+        <p className="text-label text-muted-foreground">No agent session is running on this Mac, so there is nothing to restart.</p>
       ) : (
         <div className="flex flex-col gap-3">
           {going ? (
@@ -90,8 +90,8 @@ export function RestartAllSheet({ onStarted }: { onStarted?: (items: RestartItem
 export function restartAllFromMap(app: ReturnType<typeof useApp>): void {
   app.showDialog(
     <RestartAllSheet
-      onStarted={(items) =>
-        toast(`Restarting ${items.length} session${items.length === 1 ? "" : "s"}`, {
+      onStarted={(_, added) =>
+        toast(`Restarting ${added} session${added === 1 ? "" : "s"}`, {
           description: "Each restarts in turn; busy ones wait for their turn to end.",
           duration: 10_000,
           action: { label: "Follow in Settings", onClick: () => followInSettings(app.setNav) },

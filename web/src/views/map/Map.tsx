@@ -373,7 +373,7 @@ export function TeamMap(): ReactElement {
         </Tip>
         <div className="mx-1 h-4 w-px bg-border" />
         <Tip label="Restart all sessions, after you update an agent">
-          <Button size="sm" variant="ghost" aria-label="Restart all sessions" disabled={!agentsRunning(app.sessions, isAgent)} onClick={() => restartAllFromMap(app)}>
+          <Button size="sm" variant="ghost" aria-label="Restart all sessions" disabled={!agentsRunning(app.sessions, isAgent, app.conn.status.nodeID)} onClick={() => restartAllFromMap(app)}>
             <RotateCw /> <span className="hidden @[620px]:inline">Restart all</span>
           </Button>
         </Tip>
@@ -552,7 +552,7 @@ export function TeamMap(): ReactElement {
               Resume previous sessions…
             </Item>
             <Sep />
-            <Item icon={<RotateCw />} disabled={!agentsRunning(app.sessions, isAgent)} onSelect={() => restartAllFromMap(app)}>
+            <Item icon={<RotateCw />} disabled={!agentsRunning(app.sessions, isAgent, app.conn.status.nodeID)} onSelect={() => restartAllFromMap(app)}>
               Restart all sessions…
             </Item>
             <Sep />

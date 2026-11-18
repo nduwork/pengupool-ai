@@ -232,11 +232,10 @@ func (p *Pool) claimed(id string) bool {
 
 // restartOne stops and starts one claimed session. It answers the item's new state and reason.
 func (p *Pool) restartOne(id string) (state, reason string) {
-	relaunched := false
-	defer func() { p.releaseRestart(id, relaunched) }()
+	defer func() { p.releaseRestart(id, state != "queued") }() // a requeued session's messages wait for its restart
 	s, ok := p.session(id)
 	if !ok {
-		return "failed", "the session is gone"
+		return "cancelled", "it was closed"
 	}
 	if s.State != "running" {
 		return "cancelled", "it stopped before its turn came"
@@ -265,7 +264,6 @@ func (p *Pool) restartOne(id string) (state, reason string) {
 	if _, err := p.relaunch(ctx, cur, resumeID); err != nil {
 		return "failed", errText(err)
 	}
-	relaunched = true
 	if why := p.watchRelaunch(id); why != "" {
 		return "failed", why
 	}
@@ -294,12 +292,13 @@ func (p *Pool) takeHeld(id string) bool {
 	return true
 }
 
-// releaseRestart ends the claim. A relaunched session that is already idle gets its held messages now.
-func (p *Pool) releaseRestart(id string, relaunched bool) {
+// releaseRestart ends the claim. Once the restart is over (done), a session that is running and idle
+// gets its held messages now: relaunched, or left running by a restart that failed before the stop.
+func (p *Pool) releaseRestart(id string, done bool) {
 	p.mu.Lock()
 	delete(p.restartClaim, id)
 	p.mu.Unlock()
-	if s, ok := p.session(id); relaunched && ok && s.State == "running" && s.Status == "idle" && p.takeHeld(id) {
+	if s, ok := p.session(id); done && ok && s.State == "running" && s.Status == "idle" && p.takeHeld(id) {
 		if p.testBeforeFlush != nil {
 			p.testBeforeFlush(id)
 		}

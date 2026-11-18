@@ -1062,7 +1062,7 @@ function RestartAll(): ReactElement {
       clearInterval(t);
     };
   }, [app, active]);
-  const running = agentsRunning(app.sessions, isAgent);
+  const running = agentsRunning(app.sessions, isAgent, app.conn.status.nodeID);
   const cancel = (id?: string): void => void app.call<RestartItem[]>("run.restartCancel", id === undefined ? {} : { session_id: id }).then((r) => r !== undefined && setItems(r));
   return (
     <Card className="mb-4 px-4">
@@ -1117,7 +1117,7 @@ function RestartAll(): ReactElement {
                   </div>
                   <Badge tone={l.tone}>{l.label}</Badge>
                   {it.state === "queued" ? (
-                    <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => cancel(it.session_id)}>
+                    <Button size="sm" variant="ghost" className="h-6 px-2" aria-label={`Cancel the restart of ${it.name}`} onClick={() => cancel(it.session_id)}>
                       Cancel
                     </Button>
                   ) : null}
@@ -1284,7 +1284,7 @@ function ShutDown(): ReactElement | null {
   const [down, setDown] = useState(false);
   if (desktop !== undefined && localDesktop?.shutdown === undefined) return null; // an SSH host, or an app too old
   const go = async (): Promise<void> => {
-    if (!window.confirm("Shut down PenguPool? Every agent session stops, then the host and this window. A stopped session can be resumed later from its transcript.")) return;
+    if (!window.confirm("Shut down PenguPool? Every session on this Mac stops, then the host and this window. A stopped session can be resumed later from its transcript.")) return;
     if ((await app.call("host.shutdown")) === undefined) return; // refused: the host's toast says why
     if (localDesktop?.shutdown !== undefined) return localDesktop.shutdown();
     setDown(true);
@@ -1293,7 +1293,7 @@ function ShutDown(): ReactElement | null {
     <>
       <Row
         title="Shut down"
-        hint={localDesktop !== undefined ? "Stop every session and the host, and quit the app. Closing or quitting the app leaves them running." : "Stop every session and the host. Start it again with: pengupool daemon"}
+        hint={localDesktop !== undefined ? "Stop this Mac's sessions and the host, and quit the app. Closing or quitting the app leaves them running." : "Stop this Mac's sessions and the host. Start it again with: pengupool daemon"}
       >
         <Button size="sm" onClick={() => void go()}>
           Shut down
@@ -1302,7 +1302,7 @@ function ShutDown(): ReactElement | null {
       {down ? (
         <div role="alert" className="fixed inset-0 z-[1000] flex flex-col items-center justify-center gap-2 bg-background p-6 text-center">
           <p className="text-title font-medium">PenguPool has shut down.</p>
-          <p className="max-w-md text-label text-muted-foreground">Its agent sessions are stopped. Start it again with pengupool daemon, then open the link pengupool web prints.</p>
+          <p className="max-w-md text-label text-muted-foreground">The sessions on this Mac are stopped. Start it again with pengupool daemon, then open the link pengupool web prints.</p>
         </div>
       ) : null}
     </>

@@ -200,7 +200,7 @@ func cmdDaemon(args []string) error {
 	select {
 	case <-ctx.Done():
 		if shutDown.Load() {
-			logf("shut down by the owner; every session is stopped")
+			logf("shut down by the owner; this host's sessions are stopped")
 		} else {
 			logf("shutting down; sessions keep running")
 		}

@@ -251,6 +251,7 @@ function ipc(): void {
     app.quit();
   });
   ipcMain.handle("host:restart", async () => {
+    if (shuttingDown) return null;
     await host.restart();
     current = await connect();
     win?.webContents.reload();

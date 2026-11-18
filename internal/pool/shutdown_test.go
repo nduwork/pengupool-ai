@@ -51,7 +51,8 @@ func TestHostShutdownNeedsAStop(t *testing.T) {
 	}
 }
 
-// Every running session is stopped, and only then the host.
+// Every session running on this Mac is stopped, and only then the host. A session on another
+// machine is that machine's host's to stop.
 func TestHostShutdownStopsSessionsBeforeTheHost(t *testing.T) {
 	p := testPool(t)
 	var mu sync.Mutex
@@ -73,7 +74,9 @@ func TestHostShutdownStopsSessionsBeforeTheHost(t *testing.T) {
 		x.Sessions = append(x.Sessions,
 			store.Session{ID: "aaaaaaaaaaaa", Harness: harness.Claude, State: "running"},
 			store.Session{ID: "bbbbbbbbbbbb", Harness: harness.Shell, State: "running"},
-			store.Session{ID: "cccccccccccc", Harness: harness.Claude, State: "exited"})
+			store.Session{ID: "cccccccccccc", Harness: harness.Claude, State: "exited"},
+			store.Session{ID: "dddddddddddd", Harness: harness.Claude, State: "running", NodeID: "remote1"})
+		x.Nodes = append(x.Nodes, store.Node{ID: "remote1", Name: "build box", Kind: "ssh"})
 		return nil
 	})
 	if _, err := p.RPC(context.Background(), gateway.Caller{Owner: true}, "host.shutdown", nil); err != nil {

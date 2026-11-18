@@ -31,7 +31,7 @@ func (p *Pool) shutDown() {
 	}
 	var ids []string
 	for _, s := range p.st.State().Sessions {
-		if s.State == "running" {
+		if s.State == "running" && p.onThisHost(s.NodeID) { // another machine's sessions are its host's to stop
 			ids = append(ids, s.ID)
 		}
 	}
