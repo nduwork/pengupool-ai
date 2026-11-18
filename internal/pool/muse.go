@@ -679,7 +679,7 @@ func (p *Pool) musePairCode(_ context.Context, c gateway.Caller, raw json.RawMes
 	p.museCodes[code] = &musePairCode{code: code, expires: time.Now().Add(5 * time.Minute), replace: in.Replace}
 	p.museMu.Unlock()
 	if in.Replace != "" {
-		p.logf("muse re-pairing code made for %s", in.Replace)
+		p.logf("muse re-pairing code made for %q", in.Replace)
 	} else {
 		p.logf("muse pairing code made")
 	}
@@ -783,7 +783,7 @@ func (p *Pool) musePair(_ context.Context, _ gateway.Caller, raw json.RawMessage
 		p.noteRevokedLocked(old, name)
 		delete(p.lastNext, name)
 		p.museMu.Unlock()
-		p.logf("muse device re-paired: %s", name)
+		p.logf("muse device re-paired: %q", name)
 		return map[string]string{"token": token}, nil
 	}
 	err := p.st.UpdateConfig(func(cfg *store.Config) error {
@@ -802,7 +802,7 @@ func (p *Pool) musePair(_ context.Context, _ gateway.Caller, raw json.RawMessage
 	if err != nil {
 		return nil, err
 	}
-	p.logf("muse device paired: %s", name)
+	p.logf("muse device paired: %q", name)
 	return map[string]string{"token": token}, nil
 }
 
@@ -833,7 +833,7 @@ func (p *Pool) museRevoke(_ context.Context, _ gateway.Caller, raw json.RawMessa
 	p.noteRevokedLocked(old, in.Name)
 	delete(p.lastNext, in.Name)
 	p.museMu.Unlock()
-	p.logf("muse device revoked: %s", in.Name)
+	p.logf("muse device revoked: %q", in.Name)
 	return map[string]string{"revoked": in.Name}, nil
 }
 

@@ -896,11 +896,17 @@ func (p *Pool) healServeOnce(ctx context.Context, bin, port string) (changed, ow
 	if !ok {
 		return false, false, errors.New("tailscale serve status unreadable")
 	}
-	httpsTarget, httpTarget = ownServeTargets(httpsTarget, httpTarget, p.st.Config().Network.ServePort, port)
+	servePort := p.st.Config().Network.ServePort
+	httpsTarget, httpTarget = ownServeTargets(httpsTarget, httpTarget, servePort, port)
 	if httpsTarget == "" && httpTarget == "" {
 		return false, false, nil
 	}
 	want := "127.0.0.1:" + port
+	if servePort == "" && (httpsTarget == want || httpTarget == want) {
+		// A setup older than the record: the route already points here, so remember it, and from
+		// now on only that port counts as PenguPool's, never any other local app's.
+		p.recordServePort(port)
+	}
 	for _, mode := range []serveMode{serveHTTPS, serveHTTP} {
 		target := httpsTarget
 		if mode == serveHTTP {

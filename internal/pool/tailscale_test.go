@@ -1056,6 +1056,25 @@ func TestServeWatchLeavesAnotherAppsRoute(t *testing.T) {
 	}
 }
 
+// A store from before the ServePort record whose route already points here records it on the first
+// round, so a route the owner later points at another local app is left alone.
+func TestServeWatchRecordsALegacyRoute(t *testing.T) {
+	st := watchStore(t, "https://probe-machine.tailnet.ts.net")
+	setServePort(t, st, "")
+	f := &fakeServe{routes: map[string]string{"443": "http://127.0.0.1:7787"}}
+	f.install(t)
+	p := New(Options{Store: st, Exe: "pengupool"})
+	p.serveWatchRound(context.Background())
+	if got := st.Config().Network.ServePort; got != "7787" {
+		t.Fatalf("ServePort = %q, want 7787 recorded", got)
+	}
+	f.routes["443"] = "http://127.0.0.1:3000"
+	p.serveWatchRound(context.Background())
+	if f.routes["443"] != "http://127.0.0.1:3000" {
+		t.Fatalf("routes = %v: another app's route was taken back", f.routes)
+	}
+}
+
 // A Settings switch to HTTP made during a round wins: the round re-reads Serve under the lock.
 func TestServeWatchAfterSwitchDuringRound(t *testing.T) {
 	st := watchStore(t, "https://probe-machine.tailnet.ts.net")
