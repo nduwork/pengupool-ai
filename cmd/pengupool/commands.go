@@ -167,6 +167,7 @@ func cmdDaemon(args []string) error {
 		Static:     staticFS(),
 		Logf:       logf,
 		RPC:        pl.RPC,
+		MuseWait:   pl.MuseWait,
 		OwnerInput: pl.OwnerInput,
 		InSession:  pl.InAgentSession,
 		PhoneHosts: func() []string { return phoneHosts(st.Config().Network.Tailscale) },

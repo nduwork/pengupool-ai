@@ -22,6 +22,7 @@ const (
 	CodeLowConfidence       = "low_confidence"
 	CodeNoDecider           = "no_decider" // no decision model is set
 	CodeOwnerWork           = "owner_work" // a folder about to be deleted holds the owner's work
+	CodeInternal            = "internal"   // a fault on the host's side that the caller cannot fix
 
 	CodeTruncatedFrame   = "protocol.truncated_frame"
 	CodeFrameTooLarge    = "protocol.frame_too_large"
@@ -35,6 +36,9 @@ const (
 type Error struct {
 	Code    string
 	Message string
+	// RetryAfter (seconds, 0 for none) is when the call may succeed if tried again. It is not part of
+	// the wire frame: only the device API's gateway reads it, for a Retry-After header.
+	RetryAfter int
 }
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }

@@ -139,6 +139,7 @@ func (p *Pool) addGate(g agentdb.Gate) int64 {
 	if err != nil {
 		p.logf("pool: record %s's %s: %v", g.Agent, g.Kind, err)
 	}
+	p.museChanged() // a check-in is a card for a waiting /next
 	return id
 }
 
@@ -1488,7 +1489,7 @@ func (p *Pool) checkinAnswer(_ context.Context, in answerIn) (any, error) {
 	}
 	// One answer per check-in: a second click while the first is typing would type it twice.
 	if !p.claimAnswer(in.GateID) {
-		return nil, conflict("check-in %d is already being answered", in.GateID)
+		return nil, &protocol.Error{Code: protocol.CodeConflict, Message: fmt.Sprintf("check-in %d is already being answered", in.GateID), RetryAfter: 1}
 	}
 	// The owner's own call (the app, by the gate), so it is the owner typing.
 	if err := p.typeOwnerPrompt(s.ID, text, "checkin"); err != nil {

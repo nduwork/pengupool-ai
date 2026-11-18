@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +26,9 @@ import (
 
 // museRPCTimeout bounds one pool call from the HTTP layer.
 const museRPCTimeout = 30 * time.Second
+
+// museNextTick is how often a waiting /next looks again when no change woke it.
+var museNextTick = 15 * time.Second
 
 func museBearer(r *http.Request) string {
 	h := r.Header.Get("Authorization")
@@ -84,32 +88,30 @@ func (s *Server) museDevice(token string) (string, bool) {
 	return "", false
 }
 
-// museRPC forwards one request to the pool as the device's call.
+// museRPC forwards one request to the pool as the device's call. Its errors are *protocol.Error.
 func (s *Server) museRPC(r *http.Request, device, typ string, params any) (any, error) {
 	if s.opts.RPC == nil {
-		return nil, fmt.Errorf("no host")
+		return nil, protocol.Errorf(protocol.CodeUnavailable, "no host")
 	}
 	raw, err := json.Marshal(params)
 	if err != nil {
-		return nil, fmt.Errorf("bad params: %v", err)
+		return nil, protocol.Errorf(protocol.CodeInvalidArgument, "bad params: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), museRPCTimeout)
 	defer cancel()
 	return s.opts.RPC(ctx, Caller{Phone: true, Device: device}, typ, raw)
 }
 
-// museCall forwards one request and writes its result.
-func (s *Server) museCall(w http.ResponseWriter, r *http.Request, device, typ string, params any) {
+// museCall forwards one request and writes its result. It reports whether the call succeeded, and
+// the error's code when it did not.
+func (s *Server) museCall(w http.ResponseWriter, r *http.Request, device, typ string, params any) (bool, string) {
 	res, err := s.museRPC(r, device, typ, params)
 	if err != nil {
-		if err.Error() == "no host" {
-			http.Error(w, "no host", http.StatusServiceUnavailable)
-			return
-		}
 		writeMuseError(w, err)
-		return
+		return false, museCode(err)
 	}
 	writeMuseJSON(w, res)
+	return true, ""
 }
 
 func writeMuseJSON(w http.ResponseWriter, v any) {
@@ -121,50 +123,39 @@ func writeMuseJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// writeMuseError maps pool errors onto the Muse API's small surface: a
-// changed or expired ask is 409, a missing one 404.
-func writeMuseError(w http.ResponseWriter, err error) {
-	msg := err.Error()
-	// A tap that raced another in flight is not a conflict: the device
-	// retries once after a second. A changed or consumed ask is final.
-	if strings.Contains(msg, "already being answered") {
-		w.Header().Set("Retry-After", "1")
-		http.Error(w, msg, http.StatusServiceUnavailable)
-		return
-	}
-	// Guessing too fast throttles pairing for a minute.
-	if strings.Contains(msg, "try again later") {
-		w.Header().Set("Retry-After", "60")
-		http.Error(w, msg, http.StatusServiceUnavailable)
-		return
-	}
-	code := http.StatusBadGateway
-	switch {
-	// First: a device revoked mid-call is "unauthorized: no device", a 401 like any revoked token.
-	case strings.Contains(msg, "unauthorized"):
-		code = http.StatusUnauthorized
-	case strings.Contains(msg, "no ask"), strings.Contains(msg, "no session"), strings.Contains(msg, "no device"), strings.Contains(msg, "not found"):
-		code = http.StatusNotFound
-	case strings.Contains(msg, "changed or expired"), strings.Contains(msg, "no longer pending"), strings.Contains(msg, "is not idle"), strings.Contains(msg, "not running"):
-		code = http.StatusConflict
-	case strings.Contains(msg, "params:"), strings.Contains(msg, "an idempotency key"), strings.Contains(msg, "action is"), strings.Contains(msg, "no words"):
-		code = http.StatusBadRequest
-	case strings.Contains(msg, "forbidden"), strings.Contains(msg, "not an agent"):
-		code = http.StatusForbidden
-	}
-	// Anything else the caller can fix (a duplicate or missing device name) is not a server fault.
+// museStatus is the device API's status for each error code; any other code, or an error with none,
+// is the host's fault: 502.
+var museStatus = map[string]int{
+	protocol.CodeInvalidArgument: http.StatusBadRequest,
+	protocol.CodeUnauthorized:    http.StatusUnauthorized,
+	protocol.CodeForbidden:       http.StatusForbidden,
+	protocol.CodeNotFound:        http.StatusNotFound,
+	protocol.CodeConflict:        http.StatusConflict,
+	protocol.CodeUnavailable:     http.StatusServiceUnavailable,
+}
+
+func museCode(err error) string {
 	var pe *protocol.Error
-	if code == http.StatusBadGateway && errors.As(err, &pe) {
-		switch pe.Code {
-		case protocol.CodeConflict:
-			code = http.StatusConflict
-		case protocol.CodeNotFound:
-			code = http.StatusNotFound
-		case protocol.CodeInvalidArgument:
-			code = http.StatusBadRequest
+	if errors.As(err, &pe) {
+		return pe.Code
+	}
+	return "uncoded"
+}
+
+// writeMuseError writes a pool error with the status its code gives. The body is the message text.
+// An unavailable call that may succeed later (a tap still running, pairing paused) says when.
+func writeMuseError(w http.ResponseWriter, err error) {
+	code := http.StatusBadGateway
+	var pe *protocol.Error
+	if errors.As(err, &pe) {
+		if c, ok := museStatus[pe.Code]; ok {
+			code = c
+		}
+		if pe.Code == protocol.CodeUnavailable && pe.RetryAfter > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(pe.RetryAfter))
 		}
 	}
-	http.Error(w, msg, code)
+	http.Error(w, err.Error(), code)
 }
 
 // museRoutes serves /api/muse/v1/*.
@@ -230,8 +221,14 @@ func (s *Server) handleMuseNext(w http.ResponseWriter, r *http.Request) {
 			wait = 60
 		}
 	}
-	deadline := time.Now().Add(time.Duration(wait) * time.Second)
+	deadline := time.NewTimer(time.Duration(wait) * time.Second)
+	defer deadline.Stop()
 	for {
+		// The wake channel is taken before the pool is asked, so a change in between still wakes us.
+		var wake <-chan struct{}
+		if s.opts.MuseWait != nil {
+			wake = s.opts.MuseWait()
+		}
 		res, err := s.museRPC(r, device, "muse.next", nil)
 		if err != nil {
 			writeMuseError(w, err)
@@ -241,14 +238,18 @@ func (s *Server) handleMuseNext(w http.ResponseWriter, r *http.Request) {
 			writeMuseJSON(w, res)
 			return
 		}
-		if time.Until(deadline) <= 0 {
+		if wait == 0 {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		select {
 		case <-r.Context().Done():
 			return
-		case <-time.After(2 * time.Second):
+		case <-deadline.C:
+			w.WriteHeader(http.StatusNoContent)
+			return
+		case <-wake:
+		case <-time.After(museNextTick): // a missed signal costs at most this
 		}
 	}
 }
@@ -275,8 +276,11 @@ func (s *Server) handleMuseAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body["ask_id"] = id
-	s.museCall(w, r, device, "muse.answer", body)
-	s.logf("owner via %s: answered %s", device, id)
+	if ok, code := s.museCall(w, r, device, "muse.answer", body); ok {
+		s.logf("owner via %s: answered %s", device, id)
+	} else {
+		s.logf("owner via %s: answer %s refused: %s", device, id, code)
+	}
 }
 
 // handleMuseSessionSay sends the owner's words to one session (/api/muse/v1/sessions/{id}/say),
@@ -307,8 +311,11 @@ func (s *Server) handleMuseSessionSay(w http.ResponseWriter, r *http.Request) {
 		s.museCall(w, r, device, "muse.action", body)
 		return
 	}
-	s.museCall(w, r, device, "muse.say", body)
-	s.logf("owner via %s: said to %s", device, id)
+	if ok, code := s.museCall(w, r, device, "muse.say", body); ok {
+		s.logf("owner via %s: said to %s", device, id)
+	} else {
+		s.logf("owner via %s: say to %s refused: %s", device, id, code)
+	}
 }
 
 // handleMuseTeam asks for a change to who is on a team: /api/muse/v1/teams/{id}/members.

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -240,6 +241,47 @@ func (p *Pool) museCard(a museAsk) *museCard {
 	}
 }
 
+// museBoundary makes every error a Muse call returns a *protocol.Error, so the device API's status
+// comes from its code alone: an error from a call shared with the app that already asks for a retry
+// (a check-in being answered) is unavailable with that Retry-After; any other uncoded error is internal.
+func museBoundary(h handler) handler {
+	return func(ctx context.Context, c gateway.Caller, raw json.RawMessage) (any, error) {
+		res, err := h(ctx, c, raw)
+		if err == nil {
+			return res, nil
+		}
+		var pe *protocol.Error
+		if !errors.As(err, &pe) {
+			return nil, protocol.Errorf(protocol.CodeInternal, "%v", err)
+		}
+		if pe.RetryAfter > 0 && pe.Code != protocol.CodeUnavailable {
+			return nil, &protocol.Error{Code: protocol.CodeUnavailable, Message: pe.Message, RetryAfter: pe.RetryAfter}
+		}
+		return nil, pe
+	}
+}
+
+// museChanged wakes every /next waiting on museWait: the set museAsks reads may have changed.
+func (p *Pool) museChanged() {
+	p.museMu.Lock()
+	if p.museWake != nil {
+		close(p.museWake)
+	}
+	p.museWake = make(chan struct{})
+	p.museMu.Unlock()
+}
+
+// MuseWait is closed at the next museChanged. A waiter takes it before it looks, so a change made
+// between its look and its wait still wakes it.
+func (p *Pool) MuseWait() <-chan struct{} {
+	p.museMu.Lock()
+	defer p.museMu.Unlock()
+	if p.museWake == nil {
+		p.museWake = make(chan struct{})
+	}
+	return p.museWake
+}
+
 func (p *Pool) museNext(_ context.Context, c gateway.Caller, _ json.RawMessage) (any, error) {
 	if c.Device == "" {
 		return nil, protocol.Errorf(protocol.CodeUnauthorized, "no device")
@@ -250,7 +292,16 @@ func (p *Pool) museNext(_ context.Context, c gateway.Caller, _ json.RawMessage) 
 			continue
 		}
 		if card := p.museCard(a); card != nil {
-			p.logf("owner via %s: next -> %s", c.Device, card.AskID)
+			p.museMu.Lock()
+			if p.lastNext == nil {
+				p.lastNext = map[string]string{}
+			}
+			changed := p.lastNext[c.Device] != card.AskID
+			p.lastNext[c.Device] = card.AskID
+			p.museMu.Unlock()
+			if changed { // a device polling the same card logs it once
+				p.logf("owner via %s: next -> %s", c.Device, card.AskID)
+			}
 			return card, nil
 		}
 	}
@@ -295,7 +346,7 @@ func (p *Pool) museAnswer(ctx context.Context, c gateway.Caller, raw json.RawMes
 	}
 	if p.museInflight[key] {
 		p.museMu.Unlock()
-		return nil, protocol.Errorf(protocol.CodeUnavailable, "the ask is already being answered")
+		return nil, &protocol.Error{Code: protocol.CodeUnavailable, Message: "the ask is already being answered", RetryAfter: 1}
 	}
 	p.museInflight[key] = true
 	p.museMu.Unlock()
@@ -493,7 +544,7 @@ func (p *Pool) museSay(_ context.Context, c gateway.Caller, raw json.RawMessage)
 		return nil, notFound("no session %s", in.Session)
 	}
 	if _, ok := harness.Find(s.Harness); !ok {
-		return nil, invalid("%s is not an agent session", s.Name)
+		return nil, protocol.Errorf(protocol.CodeForbidden, "%s is not an agent session", s.Name)
 	}
 	if !p.museVisible(s.ID) {
 		return nil, notFound("no session %s", in.Session)
@@ -595,6 +646,9 @@ func (p *Pool) musePairCode(_ context.Context, c gateway.Caller, _ json.RawMessa
 	if c.Device != "" {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "devices cannot pair")
 	}
+	if p.st.Config().Network.Tailscale == "" { // the code would point at a placeholder no device can reach
+		return nil, conflict("Tailscale Serve isn't set up: finish Settings › Tailscale first")
+	}
 	var digits [6]byte
 	if _, err := rand.Read(digits[:]); err != nil {
 		return nil, err
@@ -660,7 +714,7 @@ func (p *Pool) musePair(_ context.Context, _ gateway.Caller, raw json.RawMessage
 	// names a live code, so counting per code would count nothing.
 	if time.Now().Before(p.musePairBlocked) {
 		p.museMu.Unlock()
-		return nil, protocol.Errorf(protocol.CodeUnavailable, "too many wrong codes, try again later")
+		return nil, &protocol.Error{Code: protocol.CodeUnavailable, Message: "too many wrong codes, try again later", RetryAfter: 60}
 	}
 	code := strings.TrimSpace(in.Code)
 	pc, ok := p.museCodes[code]
@@ -727,6 +781,9 @@ func (p *Pool) museRevoke(_ context.Context, _ gateway.Caller, raw json.RawMessa
 	if err != nil {
 		return nil, err
 	}
+	p.museMu.Lock()
+	delete(p.lastNext, in.Name)
+	p.museMu.Unlock()
 	p.logf("muse device revoked: %s", in.Name)
 	return map[string]string{"revoked": in.Name}, nil
 }

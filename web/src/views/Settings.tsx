@@ -14,6 +14,7 @@ import { GitHubAccount } from "./GitHub";
 import { UpdateSheet } from "./Update";
 import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
+import { pairBlocker, type TailscaleCheck } from "./museReady";
 import { formatName, type RemovedModel } from "./triage";
 
 // Settings, one subpanel per topic: General (the host, updates, terminal history, the daily backup),
@@ -63,7 +64,7 @@ export function Settings(): ReactElement {
             {section === "models" ? <Providers /> : null}
             {section === "github" ? <GitHub /> : null}
             {section === "tailscale" ? <Tailscale /> : null}
-            {section === "muse" ? <MuseApp /> : null}
+            {section === "muse" ? <MuseApp openTailscale={() => setSection("tailscale")} /> : null}
             {section === "nodes" ? <Nodes /> : null}
           </div>
         </div>
@@ -560,14 +561,14 @@ function Tailscale(): ReactElement {
 }
 
 /** The Muse app: the devices paired to answer waiting sessions. */
-function MuseApp(): ReactElement {
+function MuseApp({ openTailscale }: { openTailscale: () => void }): ReactElement {
   const [n, setN] = useState(0);
   return (
     <div>
       <H title="Muse app">
         Pair a phone running the Muse app; it walks waiting sessions one card at a time. Each device has its own token, revocable here. The phone reaches this machine over your tailnet through Tailscale Serve; the pairing shows the URL to use.
       </H>
-      <MuseDevices key={n} onChanged={() => setN(n + 1)} />
+      <MuseDevices key={n} onChanged={() => setN(n + 1)} openTailscale={openTailscale} />
     </div>
   );
 }
@@ -1443,13 +1444,18 @@ function Sync(): ReactElement {
 type MuseDevice = { name: string; created_at: string; last_seen?: string };
 
 /** Pair Muse devices, one at a time, each with its own revocable token. */
-function MuseDevices({ onChanged }: { onChanged: () => void }): ReactElement {
+function MuseDevices({ onChanged, openTailscale }: { onChanged: () => void; openTailscale: () => void }): ReactElement {
   const app = useApp();
   const [devices, setDevices] = useState<MuseDevice[] | null>(null);
   const [code, setCode] = useState<{ code: string; url: string } | null>(null);
+  const s = useSettings(0);
+  const [checks, setChecks] = useState<TailscaleCheck[] | null>(null);
   useEffect(() => {
     void app.call<MuseDevice[]>("muse.devices").then((d) => setDevices(d ?? []));
+    void app.call<TailscaleCheck[]>("settings.tailscale").then((r) => setChecks(r ?? []));
   }, [app]);
+  // No code without an address a device can reach: the host refuses one until Serve is set up.
+  const blocked = s === null || checks === null ? null : pairBlocker(s.network.tailscale, checks);
   return (
     <Card className="mb-4 px-4">
       <div className="border-b border-border py-3">
@@ -1474,6 +1480,7 @@ function MuseDevices({ onChanged }: { onChanged: () => void }): ReactElement {
       <div className="flex flex-wrap items-center gap-2 py-3">
         <Button
           size="sm"
+          disabled={s === null || checks === null || blocked !== null}
           onClick={async () => {
             const r = await app.call<{ code: string; url: string }>("muse.pairCode", {});
             if (r !== undefined) setCode({ code: r.code, url: r.url });
@@ -1481,6 +1488,14 @@ function MuseDevices({ onChanged }: { onChanged: () => void }): ReactElement {
         >
           Pair a Muse device
         </Button>
+        {blocked !== null ? (
+          <p className="min-w-0 text-caption text-muted-foreground [overflow-wrap:anywhere]">
+            Set up Tailscale Serve first. {blocked}.{" "}
+            <button type="button" className="underline hover:text-foreground" onClick={openTailscale}>
+              Open Settings › Tailscale
+            </button>
+          </p>
+        ) : null}
         {code !== null ? (
           <p className="text-caption">
             Enter <span className="font-mono font-semibold">{code.code}</span> in the Muse app within 5 minutes. URL: <span className="font-mono">{code.url}</span>
@@ -1491,7 +1506,6 @@ function MuseDevices({ onChanged }: { onChanged: () => void }): ReactElement {
   );
 }
 
-type TailscaleCheck = { id: string; label: string; ok: boolean; detail: string; fix?: { kind: "link" | "button"; label: string; url?: string; action?: string } };
 
 function TailscaleChecklist({ rev, onChanged }: { rev: number; onChanged: () => void }): ReactElement {
   const app = useApp();

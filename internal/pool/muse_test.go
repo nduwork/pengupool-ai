@@ -3,9 +3,12 @@ package pool
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -82,7 +85,8 @@ func TestMuseDeviceGate(t *testing.T) {
 
 // Pairing: one use, expiry, brute-force burn, revoke.
 func TestMusePairing(t *testing.T) {
-	p, _ := musePool(t)
+	p, st := musePool(t)
+	_ = st.UpdateConfig(func(cfg *store.Config) error { cfg.Network.Tailscale = "host.tail1234.ts.net"; return nil })
 	mk := func() map[string]string {
 		m := toMap(t, museOwnerCall(t, p, "muse.pairCode", map[string]any{}))
 		out := map[string]string{"code": m["code"].(string), "url": m["url"].(string)}
@@ -343,5 +347,94 @@ func TestMuseBaseURL(t *testing.T) {
 	}
 	if got := p.museBaseURL(); got != "https://mac.tail1.ts.net" {
 		t.Errorf("Serve: %q", got)
+	}
+}
+
+// Pairing needs Tailscale Serve: without it the code would point the phone at nothing.
+func TestMusePairCodeNeedsServe(t *testing.T) {
+	p, _ := musePool(t)
+	_, err := p.RPC(context.Background(), gateway.Caller{Owner: true}, "muse.pairCode", toJSON(t, map[string]any{}))
+	if codeOf(err) != protocol.CodeConflict || !strings.Contains(err.Error(), "Settings › Tailscale") {
+		t.Fatalf("pair code without Serve: %v", err)
+	}
+}
+
+// Every failure a device can reach carries a code, so the gateway never guesses a status from words.
+func TestMuseErrorsCarryACode(t *testing.T) {
+	p, _ := musePool(t)
+	for typ := range museAllowed {
+		for _, raw := range []string{`{`, `{}`, `{"session":"nope","ask_id":"approval:nope","action":"x","team":"nope","name":"x","code":"000000"}`} {
+			_, err := p.RPC(context.Background(), museCaller(), typ, json.RawMessage(raw))
+			if err == nil {
+				continue
+			}
+			if pe := (*protocol.Error)(nil); !errors.As(err, &pe) || pe.Code == "" {
+				t.Errorf("%s %s: uncoded %v", typ, raw, err)
+			}
+		}
+	}
+}
+
+// A device polling the same card logs it once; a new card logs again.
+func TestMuseNextLogsEachCardOnce(t *testing.T) {
+	p, st := musePool(t)
+	var mu sync.Mutex
+	var logs []string
+	p.logf = func(f string, a ...any) { mu.Lock(); logs = append(logs, fmt.Sprintf(f, a...)); mu.Unlock() }
+	add := func(id string) {
+		_ = st.Update(func(s *store.State) error {
+			s.Domain.Approvals = append(s.Domain.Approvals, protocol.Approval{ID: id, Kind: "formation", TeamID: "team1",
+				SessionID: "leadaaaaaaaa", State: "pending", Detail: "add " + id, CreatedAt: "2026-10-27T10:00:00Z"})
+			return nil
+		})
+	}
+	add("a1")
+	for range 10 {
+		museCall(t, p, "muse.next", map[string]any{})
+	}
+	count := func(id string) (n int) {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, l := range logs {
+			if strings.Contains(l, "next -> approval:"+id) {
+				n++
+			}
+		}
+		return n
+	}
+	if n := count("a1"); n != 1 {
+		t.Fatalf("10 polls of one card logged %d lines: %q", n, logs)
+	}
+	_ = st.Update(func(s *store.State) error { s.Domain.Approvals = nil; return nil })
+	add("a2")
+	museCall(t, p, "muse.next", map[string]any{})
+	if n := count("a2"); n != 1 {
+		t.Fatalf("a new card logged %d lines: %q", n, logs)
+	}
+}
+
+// A state change wakes a waiting /next; a wait taken after the change waits for the next one.
+func TestMuseWaitWakesOnAStateChange(t *testing.T) {
+	p, st := musePool(t)
+	w := p.MuseWait()
+	select {
+	case <-w:
+		t.Fatal("woken before any change")
+	default:
+	}
+	_ = st.Update(func(s *store.State) error {
+		s.Domain.Approvals = append(s.Domain.Approvals, protocol.Approval{ID: "a1", Kind: "formation", TeamID: "team1",
+			SessionID: "leadaaaaaaaa", State: "pending", Detail: "add", CreatedAt: "2026-10-27T10:00:00Z"})
+		return nil
+	})
+	select {
+	case <-w:
+	default:
+		t.Fatal("a new approval did not wake the waiter")
+	}
+	select {
+	case <-p.MuseWait():
+		t.Fatal("a fresh wait is already closed")
+	default:
 	}
 }

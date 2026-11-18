@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nduwork/pengupool-ai/internal/protocol"
@@ -53,6 +54,17 @@ type Store struct {
 	mu    sync.Mutex
 	state State
 	cfg   Config
+
+	onChange atomic.Pointer[func()] // called after each committed state change, outside the lock
+}
+
+// OnChange sets f to be called after every committed Update, outside the store lock. Nil clears it.
+func (s *Store) OnChange(f func()) {
+	if f == nil {
+		s.onChange.Store(nil)
+		return
+	}
+	s.onChange.Store(&f)
 }
 
 // Open reads (or creates) the store in dir. It returns *ErrCorrupt when state.json exists but does
@@ -202,6 +214,16 @@ func (s *Store) Config() Config {
 // Update applies fn to the state under the store lock and, on success, writes it atomically with a
 // bumped revision. If fn returns an error nothing is written and the in-memory state is restored.
 func (s *Store) Update(fn func(*State) error) error {
+	if err := s.update(fn); err != nil {
+		return err
+	}
+	if f := s.onChange.Load(); f != nil {
+		(*f)()
+	}
+	return nil
+}
+
+func (s *Store) update(fn func(*State) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

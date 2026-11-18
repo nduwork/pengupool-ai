@@ -51,6 +51,7 @@ import os
 import socket
 import ssl
 import sys
+import time
 import uuid
 from urllib.parse import quote, urlparse
 
@@ -241,9 +242,23 @@ def connect():
     return tunnel()
 
 
+class DeviceRefused(RuntimeError):
+    """The host refused this device in a way no retry fixes (401 or 403)."""
+
+
+class _NotSent(OSError):
+    """The connection failed before any byte of the request went out."""
+
+
 def _request(method, path, body=None, auth=True):
-    """One HTTP request to the daemon over the tunnel. Returns (status, body bytes)."""
-    sk = tunnel()
+    """One HTTP request to the daemon over the tunnel. Returns (status, body bytes, headers),
+    headers lower-cased."""
+    try:
+        sk = tunnel()
+    except ssl.SSLCertVerificationError:
+        raise
+    except (OSError, EOFError) as e:
+        raise _NotSent(str(e)) from e
     payload = b""
     host_header = _bracket(HOST_HEADER) if TRANSPORT in ("serve", "serve-http") else f"{_bracket(HOST_HEADER)}:{PORT}"
     headers = [f"Host: {host_header}", "Connection: close"]
@@ -272,19 +287,64 @@ def _request(method, path, body=None, auth=True):
                 break
             out += sk.read_exact(n)
             sk.read_until(b"\r\n")
-        return status, bytes(out)
+        return status, bytes(out), hdrs
     n = int(hdrs.get("content-length", "0"))
-    return status, sk.read_exact(n) if n else b""
+    return status, sk.read_exact(n) if n else b"", hdrs
+
+
+_sleep = time.sleep  # tests replace it
+
+
+def _retry_wait(hdrs, tried):
+    """Seconds before the next try: the host's Retry-After (at most 60), else 1, 2, 4."""
+    try:
+        return min(60, max(0, int(hdrs.get("retry-after", ""))))
+    except ValueError:
+        return 2 ** tried
+
+
+def request_with_retry(method, path, body=None, auth=True, attempts=4):
+    """_request with retries. A GET and an answer (it carries an idempotency key) are tried again on a
+    connection error, 502 or 503; anything else (say, action, pair) only when the connection failed
+    before the request went out, so it is never sent twice. 400, 401, 403, 404 and 409 are final, and
+    a refused device token or a wrong address raises DeviceRefused. Returns (status, body, headers)."""
+    safe = method == "GET" or path.endswith("/answer")
+    for tried in range(attempts):
+        last = tried == attempts - 1
+        try:
+            status, out, hdrs = _request(method, path, body=body, auth=auth)
+        except ssl.SSLCertVerificationError:
+            raise  # the wrong certificate stays wrong
+        except _NotSent:
+            if last:
+                raise
+            _sleep(2 ** tried)
+            continue
+        except (OSError, EOFError):
+            if last or not safe:
+                raise
+            _sleep(2 ** tried)
+            continue
+        if auth and status == 401:
+            raise DeviceRefused("the device token was refused: pair this device again")
+        if status == 403:
+            raise DeviceRefused("wrong address: use the URL that Pair a Muse device shows")
+        if status in (502, 503) and safe and not last:
+            _sleep(_retry_wait(hdrs, tried))
+            continue
+        return status, out, hdrs
 
 
 def device_get(path):
     """GET /api/muse/v1<path> with the device token. Returns (status, body)."""
-    return _request("GET", API + path)
+    status, out, _ = request_with_retry("GET", API + path)
+    return status, out
 
 
 def device_post(path, body):
     """POST /api/muse/v1<path> with a JSON body. Returns (status, body)."""
-    return _request("POST", API + path, body=body)
+    status, out, _ = request_with_retry("POST", API + path, body=body)
+    return status, out
 
 
 def healthz():
@@ -294,7 +354,7 @@ def healthz():
     changes at every daemon start and is how the companion notices a
     restart now that settings.get is local-only.
     """
-    status, body = _request("GET", "/api/healthz", auth=False)
+    status, body, _ = request_with_retry("GET", "/api/healthz", auth=False)
     try:
         return status, json.loads(body)
     except Exception:
@@ -303,7 +363,7 @@ def healthz():
 
 def api(method, path, body=None):
     """One call on the device API. Returns (status, parsed JSON or None)."""
-    status, raw = _request(method, API + path, body=body)
+    status, raw, _ = request_with_retry(method, API + path, body=body)
     try:
         return status, json.loads(raw) if raw else None
     except ValueError:
@@ -397,4 +457,7 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except DeviceRefused as e:
+        raise SystemExit(f"pp: {e}")

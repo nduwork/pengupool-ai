@@ -78,7 +78,7 @@ the agent is asking in its terminal right now (a permission, a question with its
 to approve). It is answered in the terminal, not here; it goes away once the agent moves on.
 
 **Get the next waiting ask.** It returns one card, for the oldest ask. `wait` (0–60 seconds) holds
-the call open until an ask arrives. `204 No Content` means nothing is waiting.
+the call open and answers as soon as an ask arrives. `204 No Content` means nothing is waiting.
 
 ```bash
 curl -s "$API/next?wait=60" -H "$AUTH"
@@ -286,7 +286,7 @@ const typeLine = async (text) => {
 | --- | --- | --- |
 | `403 forbidden host` | The URL's host is not the Serve name: an IP, a different name, a typo. | Use the URL that Pair a Muse device shows. `tailscale status` on the PenguPool machine shows its name. |
 | Connection refused or times out on port 7787 | The host listens on loopback only; port 7787 is not for other devices. | Set up Serve (step 1) and use its HTTPS URL. |
-| Pair a Muse device shows `https://<tailnet-name>` | Serve is not set up, or Tailscale is not running here. | Step 1, check `tailscale status`, then make a new code. |
+| Pair a Muse device is greyed out ("Set up Tailscale Serve first") | Serve is not set up, or Tailscale is not running here. | Step 1 (Settings › Tailscale), check `tailscale status`, then make a new code. |
 | `401 unauthorized` | Token missing, mistyped, or revoked; for `/pair`, a wrong or expired code. | Check the `Authorization: Bearer` header. Pair again for a revoked device, or make a new code. |
 | `409` on pairing | A device with that name is already paired. | Make a new code, and pair under another name or revoke the old one first. |
 | `409` on an answer | The ask changed or was already answered. | Read `/next` again. |

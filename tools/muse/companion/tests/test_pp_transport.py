@@ -59,6 +59,25 @@ def socketpair_tunnel(response, captured):
     return lambda: pp.Sock(client_end)
 
 
+def scripted_tunnel(script):
+    """Stub pp.tunnel with one scripted connection per try: a response (bytes), None (read the request,
+    then close without answering), or an exception the tunnel raises. Returns (requests, sleeps)."""
+    calls, sleeps = [], []
+    pp._sleep = sleeps.append
+    it = iter(script)
+
+    def tunnel():
+        step = next(it)
+        if isinstance(step, Exception):
+            calls.append("refused")
+            raise step
+        captured = {}
+        calls.append(captured)
+        return socketpair_tunnel(step if step is not None else b"", captured)()
+    pp.tunnel = tunnel
+    return calls, sleeps
+
+
 class HttpLayerTests(unittest.TestCase):
     def setUp(self):
         pp.load_device_token = lambda: TOKEN
@@ -109,20 +128,60 @@ class HttpLayerTests(unittest.TestCase):
         body = b'{"token": "abc"}'
         resp = b"HTTP/1.1 200 OK\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
         pp.tunnel = socketpair_tunnel(resp, captured)
-        status, out = pp._request("POST", pp.API + "/pair",
+        status, out, _ = pp._request("POST", pp.API + "/pair",
                                   body={"code": "123456", "device_name": "Muse (agent)"},
                                   auth=False)
         self.assertEqual(status, 200)
         self.assertNotIn("Authorization", captured["request"])
         self.assertEqual(json.loads(captured["body"])["code"], "123456")
 
-    def test_status_passthrough_401(self):
+    def test_refused_token_raises_at_once(self):
         pp.TRANSPORT = "serve"
-        captured = {}
-        resp = b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n"
-        pp.tunnel = socketpair_tunnel(resp, captured)
-        status, _ = pp.device_get("/sessions")
-        self.assertEqual(status, 401)
+        calls, sleeps = scripted_tunnel([b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n"] * 4)
+        with self.assertRaisesRegex(pp.DeviceRefused, "pair this device again"):
+            pp.device_get("/sessions")
+        self.assertEqual((len(calls), sleeps), (1, []))
+
+    def test_wrong_address_raises(self):
+        pp.TRANSPORT = "serve"
+        calls, _ = scripted_tunnel([b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"] * 4)
+        with self.assertRaisesRegex(pp.DeviceRefused, "Pair a Muse device shows"):
+            pp.device_get("/next")
+        self.assertEqual(len(calls), 1)
+
+    def test_503_then_200_waits_once(self):
+        pp.TRANSPORT = "serve"
+        calls, sleeps = scripted_tunnel([b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n",
+                                         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n[]"])
+        status, out = pp.device_get("/sessions")
+        self.assertEqual((status, out, len(calls), sleeps), (200, b"[]", 2, [1]))
+
+    def test_retry_after_is_honoured(self):
+        pp.TRANSPORT = "serve"
+        calls, sleeps = scripted_tunnel([b"HTTP/1.1 503 Service Unavailable\r\nRetry-After: 2\r\nContent-Length: 0\r\n\r\n",
+                                         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"])
+        status, _ = pp.device_post("/asks/ask:1/answer", {"action": "allow", "idempotency_key": "k"})
+        self.assertEqual((status, sleeps), (200, [2]))
+
+    def test_final_statuses_are_not_retried(self):
+        pp.TRANSPORT = "serve"
+        for code in (400, 404, 409):
+            calls, sleeps = scripted_tunnel([f"HTTP/1.1 {code} X\r\nContent-Length: 0\r\n\r\n".encode()] * 4)
+            status, _ = pp.device_get("/next")
+            self.assertEqual((status, len(calls), sleeps), (code, 1, []))
+
+    def test_say_that_failed_after_sending_is_not_retried(self):
+        pp.TRANSPORT = "serve"
+        calls, sleeps = scripted_tunnel([None, b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"])
+        with self.assertRaises(EOFError):
+            pp.device_post("/sessions/s1/say", {"words": "hi"})
+        self.assertEqual((len(calls), sleeps), (1, []))
+
+    def test_say_retries_a_connection_that_never_opened(self):
+        pp.TRANSPORT = "serve"
+        calls, sleeps = scripted_tunnel([OSError("connection refused"), b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"])
+        status, _ = pp.device_post("/sessions/s1/say", {"words": "hi"})
+        self.assertEqual((status, len(calls), sleeps), (200, 2, [1]))
 
 
 class ApiCompatTests(unittest.TestCase):
