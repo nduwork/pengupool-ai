@@ -126,6 +126,8 @@ type Pool struct {
 	musePairBlocked time.Time                 // pairing refused until then, after too many wrong codes
 	museAnswered    map[string]museAnswerDone // device\x00key -> first answer: replays return it
 	museInflight    map[string]bool           // device\x00key -> an answer still running
+	museWake        chan struct{}             // closed when the set of waiting asks may have changed (museChanged)
+	lastNext        map[string]string         // device -> the card museNext last logged for it
 	db              *agentdb.DB               // agents.db: the Compass and logs; nil if it could not open
 	formMu          sync.Mutex                // formation changes apply one at a time
 
@@ -186,6 +188,7 @@ func New(o Options) *Pool {
 		ls, _ := db.Lines(p.owner(), "", "", 0)
 		p.sweepDropped(ls) // lines dropped before the Compass stopped keeping them
 	}
+	p.st.OnChange(p.museChanged) // approvals, asks, team asks and sessions all live in state
 	return p
 }
 
@@ -422,14 +425,14 @@ func (p *Pool) handlers() map[string]handler {
 		"sync.now":              bind(p.syncNow),
 		"sync.repos":            bind(p.syncRepos),
 		"sync.compact":          bind(p.syncCompact),
-		"muse.next":             p.museNext,
-		"muse.answer":           p.museAnswer,
-		"muse.say":              p.museSay,
-		"muse.sessions":         p.museSessions,
-		"muse.compass":          p.museCompass,
-		"muse.action":           p.museAction,
-		"muse.member":           p.museMember,
-		"muse.pair":             p.musePair,
+		"muse.next":             museBoundary(p.museNext),
+		"muse.answer":           museBoundary(p.museAnswer),
+		"muse.say":              museBoundary(p.museSay),
+		"muse.sessions":         museBoundary(p.museSessions),
+		"muse.compass":          museBoundary(p.museCompass),
+		"muse.action":           museBoundary(p.museAction),
+		"muse.member":           museBoundary(p.museMember),
+		"muse.pair":             museBoundary(p.musePair),
 		"muse.pairCode":         p.musePairCode,
 		"muse.devices":          p.museDevices,
 		"muse.revoke":           p.museRevoke,

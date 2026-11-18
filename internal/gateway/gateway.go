@@ -78,6 +78,9 @@ type Options struct {
 	Logf func(string, ...any)
 	// RPC answers every pool request type the gateway does not handle itself. It may be nil.
 	RPC func(ctx context.Context, c Caller, typ string, params json.RawMessage) (any, error)
+	// MuseWait is closed when the device API's waiting asks may have changed, so a waiting /next
+	// answers at once. It may be nil: /next then looks again every museNextTick.
+	MuseWait func() <-chan struct{}
 	// OwnerInput, when set, is told that the owner submitted a prompt in a session: the keystrokes of
 	// the app's own connection (/ws with the host's token). Not the terminal CLI's: on one account an
 	// agent can reparent a process away from its session (( cmd & )) and run the CLI from outside every
