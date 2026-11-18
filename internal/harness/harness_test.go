@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAgentSpecsWireHooksPerLaunch(t *testing.T) {
@@ -250,5 +251,26 @@ func TestNeedsInputEventsAreWired(t *testing.T) {
 		if !strings.Contains(src, want) {
 			t.Errorf("omp extension: no %s", want)
 		}
+	}
+}
+
+// A --version that hangs is cut off at probeTimeout with a plain error, even when it leaves a
+// child holding its output open, and never brings the host down.
+func TestProbeTimesOut(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nsleep 30 &\nsleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := probeTimeout
+	probeTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { probeTimeout = old })
+	start := time.Now()
+	_, err := Probe(Claude, []string{"PATH=" + dir + ":/usr/bin:/bin", "HOME=" + dir})
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("the probe took %v", d)
 	}
 }

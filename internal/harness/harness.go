@@ -8,6 +8,7 @@
 package harness
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -482,21 +483,24 @@ func LookupOllama(env []string) (string, error) {
 	return "", fmt.Errorf("harness_unavailable: Claude Code (Ollama) needs the ollama CLI (https://ollama.com/download)")
 }
 
-// Probe reports the harness version, or why it is unavailable.
+// probeTimeout bounds one agent's --version (tests shorten it).
+var probeTimeout = 10 * time.Second
+
+// Probe reports the harness version, or why it is unavailable. A --version that has not even
+// started in time (macOS scanning a new binary) is killed by its context: there is no process
+// handle to race for.
 func Probe(kind string, env []string) (string, error) {
 	bin, err := Lookup(kind, env)
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.Command(bin, "--version")
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "--version")
 	cmd.Env = env
-	done := make(chan struct{})
-	var out []byte
-	go func() { out, err = cmd.Output(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		_ = cmd.Process.Kill()
+	cmd.WaitDelay = time.Second // a child that keeps stdout open cannot hold the probe
+	out, err := cmd.Output()
+	if ctx.Err() != nil {
 		return "", fmt.Errorf("%s --version timed out", kind)
 	}
 	if err != nil {
