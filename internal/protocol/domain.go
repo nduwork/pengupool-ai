@@ -20,7 +20,8 @@ type Domain struct {
 }
 
 // Update is the answer of the host's update check (update.check): the newest release of PenguPool
-// on GitHub and whether it is newer than the running host. Error says why the check could not run.
+// on GitHub and whether it is newer than the running host. Error says why the check could not run,
+// or why a newer release cannot be installed.
 type Update struct {
 	Current string `json:"current"`
 	Latest  string `json:"latest,omitempty"` // version, without the tag's v

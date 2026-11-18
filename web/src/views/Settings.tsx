@@ -11,7 +11,7 @@ import { Sheet } from "../components/ui/dialog";
 import type { NodeView, Update } from "../protocol/domain";
 import { cn, shortTime } from "../lib/utils";
 import { GitHubAccount } from "./GitHub";
-import { UpdateSheet } from "./Update";
+import { UpdateSheet, updateLine } from "./Update";
 import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
 import { pairBlocker, type TailscaleCheck } from "./museReady";
@@ -1199,8 +1199,7 @@ function About({ version }: { version?: string }): ReactElement {
     setU((await app.call<Update>("update.check", { refresh: true })) ?? null);
     setBusy(false);
   };
-  const result =
-    u === null ? "" : u.error !== undefined ? u.error : u.newer ? `PenguPool ${u.latest ?? ""} is available.` : "This is the newest version.";
+  const result = updateLine(u);
   return (
     <Row title="About PenguPool" hint={`Version ${version ?? "?"}${result !== "" ? `. ${result}` : ""}`}>
       {u?.newer === true ? (

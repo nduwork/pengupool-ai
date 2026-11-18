@@ -23,8 +23,9 @@ if [ -x "$CLI" ] && "$CLI" ls --json 2>/dev/null | grep -q '"state": "running"';
 fi
 
 osascript -e 'tell application id "com.nduwork.pengupool-ai" to quit' >/dev/null 2>&1 || true
-OLD=$(pgrep -f "PenguPool AI.app/Contents/Resources/bin/pengupool daemon|\.local/bin/pengupool-ai daemon" || true)
-[ -n "$OLD" ] && kill $OLD 2>/dev/null || true
+# Only this store's host; another store's keeps running.
+. "$(dirname "$0")/lib/stop-host.sh"
+stop_store_host "$DATA" || kill -KILL "$HOST_PID" 2>/dev/null || true
 
 [ -d "$APP" ] && rm -rf "$APP" && echo "removed $APP"
 [ -L "$LINK" ] && rm "$LINK" && echo "removed $LINK"

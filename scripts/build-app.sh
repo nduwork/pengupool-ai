@@ -84,27 +84,17 @@ pgrep -f "PenguPool AI.app/Contents/MacOS/PenguPool AI" >/dev/null && APP_WAS_OP
 osascript -e 'tell application id "com.nduwork.pengupool-ai" to quit' >/dev/null 2>&1 || true
 sleep 1
 # The running host keeps serving from the old binary; stop it so the new one takes over. Its
-# sessions keep running and are adopted by the new host. The lock file names the host that owns
-# the store however it was started; pgrep also finds one started through the CLI link.
-OLD=$(pgrep -f "PenguPool AI.app/Contents/Resources/bin/pengupool daemon|\.local/bin/pengupool-ai daemon" || true)
-LOCKED=$(cat "$STORE/daemon.lock" 2>/dev/null || true)
-if [ -n "$LOCKED" ] && ps -o command= -p "$LOCKED" 2>/dev/null | grep -q "pengupool.* daemon"; then
-  OLD="$OLD $LOCKED"
+# sessions keep running and are adopted by the new host. Only this store's host: another store's
+# (a throwaway one, a test) is left alone.
+. scripts/lib/stop-host.sh
+# The readiness check below must never take the old host for the new one: its pid, from the lock
+# itself, so even a host store_host did not recognise is excluded.
+WAS=$(head -n 1 "$STORE/daemon.lock" 2>/dev/null | tr -cd '0-9' || true)
+if ! stop_store_host "$STORE"; then
+  echo "the running host (pid $HOST_PID) did not stop; nothing was installed. Stop it ('kill $HOST_PID') and run make install again." >&2
+  exit 1
 fi
-OLD=$(echo $OLD | tr ' ' '\n' | sort -u | tr '\n' ' ')
-if [ -n "${OLD% }" ]; then
-  echo "stopping host: pid $OLD"
-  kill $OLD
-  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-    LEFT=; for p in $OLD; do kill -0 "$p" 2>/dev/null && LEFT="$LEFT $p"; done
-    [ -z "$LEFT" ] && break
-    sleep 0.5
-  done
-  if [ -n "$LEFT" ]; then
-    echo "the running host (pid$LEFT) did not stop; nothing was installed. Stop it ('kill$LEFT') and run make install again." >&2
-    exit 1
-  fi
-fi
+[ -z "$HOST_PID" ] || echo "stopped host: pid $HOST_PID"
 rm -rf "$DEST"
 ditto "$APP" "$DEST"
 ln -sfn "$CLI" "$HOME/.local/bin/pengupool-ai"
@@ -123,7 +113,7 @@ env -i $BASE PATH="$USERPATH" nohup "$CLI" daemon --store "$STORE" >>"$STORE/log
 NEW=
 for _ in $(seq 1 40); do
   NEW=$(cat "$STORE/daemon.lock" 2>/dev/null || true)
-  [ -n "$NEW" ] && ps -o command= -p "$NEW" 2>/dev/null | grep -q "^$CLI daemon" && "$CLI" web --store "$STORE" >/dev/null 2>&1 && break
+  [ -n "$NEW" ] && [ "$NEW" != "$WAS" ] && ps -o command= -p "$NEW" 2>/dev/null | grep -q "^$CLI daemon" && "$CLI" web --store "$STORE" >/dev/null 2>&1 && break
   NEW=
   sleep 0.5
 done

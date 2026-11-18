@@ -18,6 +18,12 @@ Restarting or resuming a session that never got a prompt no longer fails: an age
 
 A worktree reached through a symlink (`/tmp` and `/var` on macOS) is now seen as in use by the session running there, so it can't be removed under that session, and the worktree list names it the way the session does. Closing a sheet puts keyboard focus back on what opened it (for a sheet opened from a menu, the card or row the menu was for). A new session stays selected even when its first update arrives after the launch answer. The environment switcher's accessible name now starts with the host name it shows, and the Setup card's rows wrap instead of overflowing a narrow Sidebar.
 
+Updating, `make install` and `scripts/uninstall.sh` now stop only the host of their own store: a second host on another store (a throwaway one, a test) keeps running. The host is found through the store's lock, and only when it really holds it, so a stale lock never stops another program.
+
+An in-app update leaves nothing behind: once the new app is in place, the downloaded disk image, the old app and the updater's temporary folders are removed (your data and `backups/` are never touched). A failed update keeps the download so you can try again, and the app reopens however the update ends (short of the Mac losing power), including a failed swap, where the earlier app is put back. A host also removes, at start, any download that is not newer than itself, so an update installed by dragging the disk image is tidied too. The update log and the download are readable by you only.
+
+About no longer says "This is the newest version." when a newer release is still being published without a disk image: it says the release is out and when to try again. When GitHub can't be reached it says so, after at most 20 seconds instead of two minutes.
+
 ## 0.11.4
 
 Muse Spark is now an ordinary decision model. In Settings → Decision model, Local hosted, Online / cloud and **Meta · Muse Spark** are three choices for one slot; each is saved, checked and chosen with **Use for triage**. An earlier Muse Spark setup becomes a saved Meta model, and the triage model in use stays as it is. Muse Spark is uncalibrated, so when it is the triage model nothing acts on its answers alone: check-ins go to you, the Compass asks, every Done report is kept, and team proposals keep each helper's own agent.

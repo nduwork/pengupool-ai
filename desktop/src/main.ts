@@ -317,7 +317,7 @@ function installUpdate(dmg: string): void {
   }
   const dir = mkdtempSync(join(tmpdir(), "pengupool-update-"));
   const script = join(dir, "update.sh");
-  writeFileSync(script, installScript({ pid: process.pid, bundle, dmg, log: join(storeDir(), "logs", "update.log"), dir }), { mode: 0o700 });
+  writeFileSync(script, installScript({ pid: process.pid, bundle, dmg, log: join(storeDir(), "logs", "update.log"), dir, store: storeDir() }), { mode: 0o700 });
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   spawn("/bin/sh", [script], { detached: true, stdio: "ignore", env }).unref();

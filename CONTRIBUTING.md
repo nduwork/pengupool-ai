@@ -21,6 +21,8 @@ make uninstall  # remove the app and the CLI link; your data in ~/.pengupool-ai 
 go test ./...                 # the Go suite (make test adds -race)
 cd web && npx vitest run      # the web app's unit tests
 bash scripts/smoke.sh         # host smoke test: daemon, PTY session, attach, worker adoption
+make test-scripts             # the install, uninstall and release scripts' own tests
+cd desktop && npm test        # the desktop app's tests; on a Mac they also run the update script
 ```
 
 Tests never touch your real home: anything that writes an agent's settings runs on a temporary

@@ -7,7 +7,7 @@
 VERSION          := $(shell sed -nE 's/^const Version = "([0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?)"$$/\1/p' cmd/pengupool/main.go)
 DIST             := build/PenguPool-AI-$(VERSION)-mac-arm64.dmg
 
-.PHONY: install install-app uninstall dist release publish app web build test smoke clean
+.PHONY: install install-app uninstall dist release publish app web build test test-scripts smoke clean
 
 install: install-app
 
@@ -74,6 +74,10 @@ build:
 
 test:
 	go test ./... -race
+
+# The shell scripts' own tests (scripts/*_test.sh); local, not in CI yet.
+test-scripts:
+	@for t in scripts/*_test.sh; do sh "$$t" || exit 1; done
 
 smoke:
 	scripts/smoke.sh
