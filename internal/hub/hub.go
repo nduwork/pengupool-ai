@@ -112,6 +112,8 @@ type Hub struct {
 	mu         sync.Mutex
 	started    bool
 	closed     bool
+	noSpawn    bool           // Shut down: Spawn refuses (StopSpawning)
+	spawning   sync.WaitGroup // Spawns under way, for StopSpawning
 	supervised map[string]bool
 	// screens follows each supervised session's visible screen from the supervision stream, so the
 	// pool can see what an agent shows (a dialog, a ready prompt) without attaching.
@@ -180,6 +182,15 @@ func (h *Hub) Start(ctx context.Context) error {
 	return nil
 }
 
+// StopSpawning refuses every later Spawn and waits for those under way, so a list of running
+// sessions taken after it is complete: nothing (a restore, Restart all, a launch) starts behind it.
+func (h *Hub) StopSpawning() {
+	h.mu.Lock()
+	h.noSpawn = true
+	h.mu.Unlock()
+	h.spawning.Wait()
+}
+
 // Spawn starts one worker and records it. It returns as soon as the worker's handshake file is
 // there, i.e. once its PTY is live, or an error if that did not happen within five seconds.
 func (h *Hub) Spawn(ctx context.Context, spec SpawnSpec) (store.Session, error) {
@@ -188,11 +199,18 @@ func (h *Hub) Spawn(ctx context.Context, spec SpawnSpec) (store.Session, error) 
 		return zero, protocol.Errorf(protocol.CodeInvalidArgument, "spawn: command is required")
 	}
 	h.mu.Lock()
-	closed := h.closed
+	closed, stopped := h.closed, h.noSpawn
+	if !closed && !stopped {
+		h.spawning.Add(1) // counted under the lock, so StopSpawning's Wait cannot miss it
+	}
 	h.mu.Unlock()
 	if closed {
 		return zero, protocol.Errorf(protocol.CodeUnavailable, "hub is closed")
 	}
+	if stopped {
+		return zero, protocol.Errorf(protocol.CodeUnavailable, "PenguPool is shutting down")
+	}
+	defer h.spawning.Done()
 
 	id := spec.ID
 	if id == "" {

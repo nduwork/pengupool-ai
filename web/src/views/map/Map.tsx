@@ -1,9 +1,11 @@
-import { Archive, BookOpen, FoldVertical, History, UnfoldVertical, Layers, ListTree, Minus, Pencil, Plus, RefreshCw, Rocket, Scan, Settings2, Unplug, Users, X } from "lucide-react";
+import { Archive, BookOpen, FoldVertical, History, UnfoldVertical, Layers, ListTree, Minus, Pencil, Plus, RefreshCw, Rocket, RotateCw, Scan, Settings2, Unplug, Users, X } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
-import { URGENCY, harnessLabel, ctxClass, isShell, shownStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
+import { URGENCY, harnessLabel, ctxClass, isAgent, isShell, shownStatus, skillName, statusStyle, teamOf, useApp, usePersisted } from "../../app/ctx";
+import { restartAllFromMap } from "../RestartAllSheet";
+import { agentsRunning } from "../restartAll";
 import { Button } from "../../components/ui/button";
 import { Badge, Empty, RoleTag, Select, Tip, type Role } from "../../components/ui/controls";
 import { cn } from "../../lib/utils";
@@ -369,6 +371,12 @@ export function TeamMap(): ReactElement {
             <RefreshCw />
           </Button>
         </Tip>
+        <div className="mx-1 h-4 w-px bg-border" />
+        <Tip label="Restart all sessions, after you update an agent">
+          <Button size="sm" variant="ghost" aria-label="Restart all sessions" disabled={!agentsRunning(app.sessions, isAgent, app.conn.status.nodeID)} onClick={() => restartAllFromMap(app)}>
+            <RotateCw /> <span className="hidden @[620px]:inline">Restart all</span>
+          </Button>
+        </Tip>
       </div>
 
       {pendingLaunch.length > 0 ? (
@@ -542,6 +550,10 @@ export function TeamMap(): ReactElement {
             </Item>
             <Item icon={<History />} onSelect={() => app.showDialog(<PreviousSheet />)}>
               Resume previous sessions…
+            </Item>
+            <Sep />
+            <Item icon={<RotateCw />} disabled={!agentsRunning(app.sessions, isAgent, app.conn.status.nodeID)} onSelect={() => restartAllFromMap(app)}>
+              Restart all sessions…
             </Item>
             <Sep />
             <Item icon={anyUnfolded ? <FoldVertical /> : <UnfoldVertical />} disabled={allFoldable.length === 0} onSelect={() => setFoldedState(anyUnfolded ? allFoldable : [])}>

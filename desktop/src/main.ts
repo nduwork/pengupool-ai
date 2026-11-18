@@ -232,8 +232,11 @@ function serveRenderer(): void {
 
 // ---- IPC bridge ---------------------------------------------------------------------------------
 
+let shuttingDown = false; // after the owner's Shut down: never start a host again before quitting
+
 function ipc(): void {
   ipcMain.handle("host:connection", async () => {
+    if (shuttingDown) return null;
     try {
       current = await connect();
     } catch (e) {
@@ -242,7 +245,13 @@ function ipc(): void {
     }
     return current;
   });
+  ipcMain.handle("host:shutdown", async () => {
+    shuttingDown = true;
+    await host.shutdown();
+    app.quit();
+  });
   ipcMain.handle("host:restart", async () => {
+    if (shuttingDown) return null;
     await host.restart();
     current = await connect();
     win?.webContents.reload();

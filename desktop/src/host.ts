@@ -218,6 +218,14 @@ export class Host {
     await this.waitDown();
     return this.ensure();
   }
+
+  /** Finishes the owner's Shut down: host.shutdown has stopped every session and is stopping the host.
+   * Waits for it to go (300 probes, 100 ms apart), then stops whatever is left. */
+  async shutdown(): Promise<void> {
+    for (let i = 0; i < 300 && (await this.probe()) !== null; i++) await new Promise((r) => setTimeout(r, 100));
+    await this.stop();
+    await this.waitDown();
+  }
 }
 
 /** Sends sig to pid (0 only tests it is alive); false when there is no such process. */

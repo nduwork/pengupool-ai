@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -139,6 +140,7 @@ func cmdDaemon(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	var shutDown atomic.Bool // set by the owner's Shut down, which has already stopped every session
 
 	// The sessions running when the host last stopped: any whose worker is gone now (a reboot, a
 	// crash) are offered to the owner to restore once the host is up.
@@ -155,7 +157,7 @@ func cmdDaemon(args []string) error {
 
 	nodes := node.New(st, selfPath(), logf)
 	nodes.Version = versionLine()
-	pl := pool.New(pool.Options{Store: st, Hub: h, Exe: selfPath(), Logf: logf, Nodes: nodes, Version: Version, RequireOwnerInput: true})
+	pl := pool.New(pool.Options{Store: st, Hub: h, Exe: selfPath(), Logf: logf, Nodes: nodes, Version: Version, RequireOwnerInput: true, Shutdown: func() { shutDown.Store(true); stop() }})
 	pl.MigrateAgentModels()
 	pl.MarkLost(wasRunning)
 	go pl.Run(ctx)
@@ -197,7 +199,11 @@ func cmdDaemon(args []string) error {
 
 	select {
 	case <-ctx.Done():
-		logf("shutting down; sessions keep running")
+		if shutDown.Load() {
+			logf("shut down by the owner; this host's sessions are stopped")
+		} else {
+			logf("shutting down; sessions keep running")
+		}
 		return nil
 	case err := <-serveErr:
 		return err

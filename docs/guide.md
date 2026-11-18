@@ -66,4 +66,11 @@ merges, deletions, releases and similar) still comes to you.
 ## Restart and quit
 
 Quitting the app leaves the host and its sessions running. Settings → General → **Restart host**
-restarts the host; every session keeps running.
+restarts the host; every session keeps running. **Shut down**, in the same place, stops every
+session on this Mac, then the host, then the app (sessions on an SSH host keep running); a stopped session can be resumed later from its transcript.
+
+After you update an agent (Claude Code, Codex, pi or OMP), **Restart all** (Settings → Agents, or
+the map's toolbar) restarts every agent session running on this Mac on the new version, one at a time, in its
+team and folder. A session mid-turn or waiting on you restarts only once its turn ends, and a
+message sent to a session while it restarts reaches the restarted session. **Restart & resume** on
+a busy session asks whether to cut its turn off now or wait for it to end.

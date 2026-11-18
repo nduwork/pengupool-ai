@@ -1,8 +1,8 @@
-import { Bot, Check, GitBranch, KeyRound, Loader2, Lock, MonitorUp, RefreshCw, Server, Settings2, Smartphone, Sparkles, Terminal, Waypoints, X } from "lucide-react";
+import { Bot, Check, GitBranch, KeyRound, Loader2, Lock, MonitorUp, RefreshCw, RotateCw, Server, Settings2, Smartphone, Sparkles, Terminal, Waypoints, X } from "lucide-react";
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { toast } from "sonner";
 
-import { AGENTS, useApp, usePersisted, type Found } from "../app/ctx";
+import { AGENTS, harnessLabel, isAgent, useApp, usePersisted, type Found } from "../app/ctx";
 import { desktop, localDesktop } from "../app/desktop";
 import { Button } from "../components/ui/button";
 import { SCROLLBACK_DEFAULT, clampScrollback } from "../components/termCache";
@@ -15,6 +15,8 @@ import { UpdateSheet, updateLine } from "./Update";
 import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
 import { pairBlocker, type TailscaleCheck } from "./museReady";
+import { RestartAllSheet } from "./RestartAllSheet";
+import { agentsRunning, busyNow, restartActive, restartLabel, restartSummary, type RestartItem } from "./restartAll";
 import { formatName, type RemovedModel } from "./triage";
 
 // Settings, one subpanel per topic: General (the host, updates, terminal history, the daily backup),
@@ -953,6 +955,7 @@ function General(): ReactElement {
               Restart host
             </Button>
           </Row>
+          <ShutDown />
           <About version={s.version} />
         </Card>
       ) : null}
@@ -1037,8 +1040,94 @@ function Agents(): ReactElement {
           </Button>
         </div>
       </Card>
+      <RestartAll />
       <AgentPermissions />
     </div>
+  );
+}
+
+/** Restart and resume all sessions (run.restartAll), and the run's outcome as it goes. */
+function RestartAll(): ReactElement {
+  const app = useApp();
+  const [items, setItems] = useState<RestartItem[]>([]);
+  const active = restartActive(items);
+  useEffect(() => {
+    let live = true;
+    const read = (): void => void app.call<RestartItem[]>("run.restartStatus").then((r) => live && r !== undefined && setItems(r));
+    read();
+    if (!active) return () => void (live = false);
+    const t = setInterval(read, 2000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [app, active]);
+  const running = agentsRunning(app.sessions, isAgent, app.conn.status.nodeID);
+  const cancel = (id?: string): void => void app.call<RestartItem[]>("run.restartCancel", id === undefined ? {} : { session_id: id }).then((r) => r !== undefined && setItems(r));
+  return (
+    <Card className="mb-4 px-4">
+      <Row
+        title="Restart and resume all sessions"
+        hint={
+          running
+            ? "After you update an agent (Claude Code, Codex, pi or OMP): every running agent session restarts on the new version and resumes its conversation, in its team and folder. A busy session waits until its turn ends."
+            : "No agent session is running, so there is nothing to restart."
+        }
+      >
+        <Button size="sm" disabled={active || !running} onClick={() => app.showDialog(<RestartAllSheet onStarted={setItems} />)}>
+          <RotateCw /> Restart all
+        </Button>
+      </Row>
+      {items.length > 0 ? (
+        <div className="py-3">
+          <div className="mb-2 flex items-center gap-2">
+            <p className="min-w-0 flex-1 text-label text-muted-foreground">{restartSummary(items)}</p>
+            {items.some((it) => it.state === "queued") ? (
+              <Button size="sm" variant="ghost" onClick={() => cancel()}>
+                Cancel queued
+              </Button>
+            ) : null}
+          </div>
+          <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+            {items.map((it) => {
+              const s = app.sessions.find((x) => x.id === it.session_id);
+              const l = restartLabel(it.state, s !== undefined && busyNow(s));
+              return (
+                <li key={it.session_id} className="flex min-w-0 items-start gap-2 px-3 py-1.5 text-label">
+                  <div className="min-w-0 flex-1">
+                    <p className="flex min-w-0 gap-1">
+                      {s !== undefined ? (
+                        <button
+                          type="button"
+                          className="min-w-0 truncate hover:underline"
+                          title={`Open ${it.name}`}
+                          onClick={() => {
+                            app.select(it.session_id);
+                            app.setNav("workspace");
+                          }}
+                        >
+                          {it.name}
+                        </button>
+                      ) : (
+                        <span className="min-w-0 truncate">{it.name}</span>
+                      )}
+                      <span className="shrink-0 text-muted-foreground">· {harnessLabel(it.harness)}</span>
+                    </p>
+                    {it.reason !== undefined && it.reason !== "" ? <p className="text-caption text-muted-foreground [overflow-wrap:anywhere]">{it.reason}</p> : null}
+                  </div>
+                  <Badge tone={l.tone}>{l.label}</Badge>
+                  {it.state === "queued" ? (
+                    <Button size="sm" variant="ghost" className="h-6 px-2" aria-label={`Cancel the restart of ${it.name}`} onClick={() => cancel(it.session_id)}>
+                      Cancel
+                    </Button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+    </Card>
   );
 }
 
@@ -1186,6 +1275,37 @@ function Cmd({ text }: { text: string }): ReactElement {
         Copy
       </Button>
     </span>
+  );
+}
+
+/** Shut down: every session, then the host, then (in the desktop app) the app. */
+function ShutDown(): ReactElement | null {
+  const app = useApp();
+  const [down, setDown] = useState(false);
+  if (desktop !== undefined && localDesktop?.shutdown === undefined) return null; // an SSH host, or an app too old
+  const go = async (): Promise<void> => {
+    if (!window.confirm("Shut down PenguPool? Every session on this Mac stops, then the host and this window. A stopped session can be resumed later from its transcript.")) return;
+    if ((await app.call("host.shutdown")) === undefined) return; // refused: the host's toast says why
+    if (localDesktop?.shutdown !== undefined) return localDesktop.shutdown();
+    setDown(true);
+  };
+  return (
+    <>
+      <Row
+        title="Shut down"
+        hint={localDesktop !== undefined ? "Stop this Mac's sessions and the host, and quit the app. Closing or quitting the app leaves them running." : "Stop this Mac's sessions and the host. Start it again with: pengupool daemon"}
+      >
+        <Button size="sm" onClick={() => void go()}>
+          Shut down
+        </Button>
+      </Row>
+      {down ? (
+        <div role="alert" className="fixed inset-0 z-[1000] flex flex-col items-center justify-center gap-2 bg-background p-6 text-center">
+          <p className="text-title font-medium">PenguPool has shut down.</p>
+          <p className="max-w-md text-label text-muted-foreground">The sessions on this Mac are stopped. Start it again with pengupool daemon, then open the link pengupool web prints.</p>
+        </div>
+      ) : null}
+    </>
   );
 }
 

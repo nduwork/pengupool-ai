@@ -12,6 +12,7 @@ import type { SessionView } from "../../protocol/control";
 import type { Team } from "../../protocol/domain";
 import { cn } from "../../lib/utils";
 import { NewSessionDialog } from "../NewSession";
+import { busyNow, followInSettings } from "../restartAll";
 
 // The session actions v1 offered on a card's right-click menu, and the background menu.
 
@@ -41,6 +42,50 @@ export function Sep(): ReactElement {
 }
 
 /** The card menu: v1's session commands, mapped onto the host's actions. */
+function restartNow(app: ReturnType<typeof useApp>, s: SessionView): void {
+  void app.call<{ fresh?: boolean }>("session.restart", { session_id: s.id }).then((r) => {
+    if (r?.fresh === true) toast(`${s.name} had no saved conversation, so it started fresh in the same place.`);
+  });
+}
+
+/** Restart & resume on a busy session: cut its turn off now, or restart it once the turn ends. */
+function RestartSessionSheet({ s }: { s: SessionView }): ReactElement {
+  const app = useApp();
+  const close = (): void => app.showDialog(null);
+  const wait = async (): Promise<void> => {
+    close();
+    if ((await app.call("run.restartAll", { session_id: s.id })) === undefined) return;
+    toast(`${s.name} restarts once its turn ends`, { action: { label: "Follow in Settings", onClick: () => followInSettings(app.setNav) } });
+  };
+  return (
+    <Sheet
+      title={`Restart ${s.name}?`}
+      description={`${s.name} is mid-turn or waiting on you. Restarting now cuts that turn off.`}
+      onClose={close}
+      footer={
+        <>
+          <Button variant="ghost" onClick={close}>
+            Not now
+          </Button>
+          <Button
+            onClick={() => {
+              close();
+              restartNow(app, s);
+            }}
+          >
+            Restart now
+          </Button>
+          <Button variant="default" onClick={() => void wait()}>
+            Wait for its turn to end
+          </Button>
+        </>
+      }
+    >
+      {null}
+    </Sheet>
+  );
+}
+
 export function SessionMenu({ s, folded, canFold, onFold }: { s: SessionView; folded: boolean; canFold: boolean; onFold: (v: boolean) => void }): ReactElement {
   const app = useApp();
   const agent = isAgent(s);
@@ -94,11 +139,7 @@ export function SessionMenu({ s, folded, canFold, onFold }: { s: SessionView; fo
       <Item disabled={!agent || !running} onSelect={() => void app.call("session.slash", { session_id: s.id, command: "clear" })} icon={<Eraser />}>
         Fresh context ({AGENTS.find((a) => a.id === s.harness)?.clear ?? "/clear"})
       </Item>
-      <Item icon={<RotateCcw />} disabled={!agent} onSelect={() =>
-          void app.call<{ fresh?: boolean }>("session.restart", { session_id: s.id }).then((r) => {
-            if (r?.fresh === true) toast(`${s.name} had no saved conversation, so it started fresh in the same place.`);
-          })
-        }>
+      <Item icon={<RotateCcw />} disabled={!agent} onSelect={() => (running && busyNow(s) ? show(<RestartSessionSheet s={s} />) : restartNow(app, s))}>
         Restart & resume
       </Item>
       <Sep />

@@ -229,6 +229,11 @@ func cleanText(s string) string {
 // the session's next turn instead (takeNotices).
 func (p *Pool) flushQueue(id string) {
 	p.mu.Lock()
+	if _, claimed := p.restartClaim[id]; claimed { // being restarted: the queue waits for its restarted self
+		p.mu.Unlock()
+		return
+	}
+	delete(p.restartHeld, id)
 	q := p.pending[id]
 	delete(p.pending, id)
 	p.mu.Unlock()
@@ -253,6 +258,16 @@ func contains(q []protocol.TeamMessage, id string) bool {
 }
 
 func (p *Pool) deliver(m protocol.TeamMessage) {
+	if !p.workArrives(m.To) { // being restarted: the message waits for the restarted session
+		p.mu.Lock()
+		p.pending[m.To] = append(p.pending[m.To], m)
+		if p.restartHeld == nil {
+			p.restartHeld = map[string]bool{}
+		}
+		p.restartHeld[m.To] = true
+		p.mu.Unlock()
+		return
+	}
 	for _, x := range p.st.State().Domain.Messages {
 		if x.ID == m.ID && x.State != "queued" {
 			return // expired meanwhile (dialogs.go): its sender was told; or delivered already

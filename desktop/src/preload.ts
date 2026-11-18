@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("pengupool", {
   environment: ipcRenderer.sendSync("env:current") as { id: string; name: string } | null,
   connection: () => ipcRenderer.invoke("host:connection"),
   restartHost: () => ipcRenderer.invoke("host:restart"),
+  shutdown: () => ipcRenderer.invoke("host:shutdown"),
   environments: () => ipcRenderer.invoke("env:list"),
   switchEnvironment: (id: string | null, name?: string) => ipcRenderer.invoke("env:switch", id, name),
   pickFolder: () => ipcRenderer.invoke("dialog:pickFolder"),

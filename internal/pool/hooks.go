@@ -119,6 +119,9 @@ func (p *Pool) hookEvent(ctx context.Context, in hookIn) (any, error) {
 		p.mu.Lock()
 		delete(p.injected, s.ID)
 		p.mu.Unlock()
+		if cur, _ := p.session(s.ID); cur.Status == "idle" && p.takeHeld(s.ID) { // messages held during Restart all
+			p.flushQueue(s.ID)
+		}
 		return p.contextOut(s.ID, "SessionStart", p.journalAtStart(s)), nil
 	case "UserPromptSubmit":
 		if out, blocked := p.blockOutside(s, str("prompt")); blocked {

@@ -40,6 +40,8 @@ type Options struct {
 	// through the app or the owner's terminal (the gateway's OwnerInput). Set by the daemon; tests and
 	// the offline evaluation, which have no gateway, leave it off.
 	RequireOwnerInput bool
+	// Shutdown stops the host (the daemon's own stop); nil: host.shutdown is refused.
+	Shutdown func()
 }
 
 // NodeManager is the SSH node layer as the pool sees it.
@@ -114,6 +116,18 @@ type Pool struct {
 	testSpawn func(spawnReq) (store.Session, error)
 	// testKill stands in for stopping a worker in tests (killWorker).
 	testKill func(id string) error
+	// testBeforeStop runs in restartOne after the claim, before the last check; testBeforeFlush in
+	// releaseRestart between deciding to flush and flushing (restartall.go).
+	testBeforeStop  func(id string)
+	testBeforeFlush func(id string)
+	shutdown        func()     // Options.Shutdown
+	shutOnce        sync.Once  // one shut down however many requests arrive
+	restartMu       sync.Mutex // guards restartQ and restartRunning
+	restartQ        []*restartItem
+	restartRunning  bool                 // the loop goroutine is alive
+	restartClaim    map[string]bool      // sessions being restarted; true: the owner typed into it, the claim is void (under mu)
+	lastWork        map[string]time.Time // when each session last got a team message or the owner's input (under mu)
+	restartHeld     map[string]bool      // sessions with team messages held for their restarted selves (under mu)
 	// testScreen stands in for the hub's followed screens in tests.
 	testScreen func(id string) (string, bool)
 	// testSend stands in for delivering text to a session in tests, testKeys for typing into one.
@@ -164,7 +178,7 @@ func New(o Options) *Pool {
 	}
 	p := &Pool{
 		triageErr: triageUnchecked,
-		st:        o.Store, hub: o.Hub, exe: o.Exe, env: env, logf: logf, nodes: o.Nodes, version: o.Version,
+		st:        o.Store, hub: o.Hub, exe: o.Exe, env: env, logf: logf, nodes: o.Nodes, version: o.Version, shutdown: o.Shutdown,
 		msgSock: map[string]claudeInbox{}, crossOK: map[sessionPair]time.Time{}, injected: map[string]map[string]string{},
 		lastInput: map[string]time.Time{}, pending: map[string][]protocol.TeamMessage{},
 		ownerEnter: map[string][]credit{}, requireOwnerInput: o.RequireOwnerInput,
@@ -337,6 +351,10 @@ func (p *Pool) handlers() map[string]handler {
 		"session.steps":         bind(p.sessionSteps),
 		"session.slash":         bind(p.sessionSlash),
 		"session.restart":       bind(p.sessionRestart),
+		"run.restartAll":        bind(p.runRestartAll),
+		"run.restartStatus":     bind(p.runRestartStatus),
+		"run.restartCancel":     bind(p.runRestartCancel),
+		"host.shutdown":         bind(p.hostShutdown),
 		"session.close":         bind(p.sessionClose),
 		"session.previous":      bind(p.sessionPrevious),
 		"session.adopt":         bind(p.sessionAdopt),
