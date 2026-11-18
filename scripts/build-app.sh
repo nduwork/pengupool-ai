@@ -87,6 +87,8 @@ sleep 1
 # sessions keep running and are adopted by the new host. Only this store's host: another store's
 # (a throwaway one, a test) is left alone.
 . scripts/lib/stop-host.sh
+store_host "$STORE"
+WAS=$HOST_PID # the readiness check below must never take this old host for the new one
 if ! stop_store_host "$STORE"; then
   echo "the running host (pid $HOST_PID) did not stop; nothing was installed. Stop it ('kill $HOST_PID') and run make install again." >&2
   exit 1
@@ -110,7 +112,7 @@ env -i $BASE PATH="$USERPATH" nohup "$CLI" daemon --store "$STORE" >>"$STORE/log
 NEW=
 for _ in $(seq 1 40); do
   NEW=$(cat "$STORE/daemon.lock" 2>/dev/null || true)
-  [ -n "$NEW" ] && ps -o command= -p "$NEW" 2>/dev/null | grep -q "^$CLI daemon" && "$CLI" web --store "$STORE" >/dev/null 2>&1 && break
+  [ -n "$NEW" ] && [ "$NEW" != "$WAS" ] && ps -o command= -p "$NEW" 2>/dev/null | grep -q "^$CLI daemon" && "$CLI" web --store "$STORE" >/dev/null 2>&1 && break
   NEW=
   sleep 0.5
 done

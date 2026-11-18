@@ -73,7 +73,7 @@ test("installScript names every path, quoted", () => {
   assert.ok(s.indexOf("codesign --verify") < s.indexOf("ditto"));
   // The installed app is moved aside only after the copy, and put back if the new one can't move in.
   assert.ok(s.indexOf("ditto") < s.indexOf(`mv "$BUNDLE" "$OLD"`));
-  assert.ok(s.includes(`find "$NEW" -xattrname com.apple.quarantine -exec xattr -d -s com.apple.quarantine {} \;`));
+  assert.ok(s.includes(`find "$NEW" -xattrname com.apple.quarantine -exec xattr -d -s com.apple.quarantine {} \\;`));
   // One way out: finish() reopens and cleans up; fail() only logs and exits.
   assert.ok(s.includes("trap finish EXIT"));
   assert.ok(s.includes(`fail() { log "failed: $*"; exit 1; }`));
@@ -104,6 +104,7 @@ function fixture() {
   put(join(bundle, "v"), "old");
   mkdirSync(`${bundle}.old`, { recursive: true }); // a stale one an earlier update left
   put(join(t, "newapp", "PenguPool AI.app", "v"), "new");
+  spawnSync("/usr/bin/xattr", ["-w", "com.apple.quarantine", "0081;00000000;test;", join(t, "newapp", "PenguPool AI.app", "v")]);
   put(join(store, "keep.json"), "keep");
   put(join(store, "backups", "b.json"), "backup");
   const dmg = join(store, "updates", "v9.9.9", "PenguPool-AI-9.9.9-mac-arm64.dmg");
@@ -155,6 +156,7 @@ test("a good update leaves the new app, opened once, and nothing of the updater'
   const r = spawnSync("/bin/sh", [f.script()]);
   assert.equal(r.status, 0, readFileSync(join(f.store, "logs", "update.log"), "utf8"));
   assert.equal(f.v(), "new");
+  assert.notEqual(spawnSync("/usr/bin/xattr", ["-p", "com.apple.quarantine", join(f.bundle, "v")]).status, 0, "the new app is still quarantined");
   assert.deepEqual(f.opened(), [f.bundle]);
   assert.ok(!existsSync(`${f.bundle}.old`) && !existsSync(`${f.bundle}.new`));
   assert.ok(!existsSync(f.dir) && !existsSync(join(f.t, "tmp", "pengupool-update-stale")));

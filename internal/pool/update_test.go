@@ -232,3 +232,17 @@ func TestUpdateDownload(t *testing.T) {
 		t.Fatal("the bad image stayed")
 	}
 }
+
+// A symlinked updates/ is never followed: its target's files stay.
+func TestPruneLeavesASymlinkedUpdatesFolder(t *testing.T) {
+	target := t.TempDir()
+	os.MkdirAll(filepath.Join(target, "v0.1.0"), 0o700)
+	os.WriteFile(filepath.Join(target, "keep.json"), nil, 0o600)
+	root := filepath.Join(t.TempDir(), "updates")
+	os.Symlink(target, root)
+	pruneUpdates(root, "v9.9.9")
+	pruneInstalled(root, "1.0.0")
+	if es, _ := os.ReadDir(target); len(es) != 2 {
+		t.Fatalf("the link's target lost files: %v", es)
+	}
+}

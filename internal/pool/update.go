@@ -208,6 +208,9 @@ func (p *Pool) updateDownload(ctx context.Context, in updateDownloadIn) (any, er
 // pruneUpdates removes every entry of updates/ but keep, whatever its name. RemoveAll unlinks a
 // symlink entry and never follows it.
 func pruneUpdates(root, keep string) {
+	if fi, err := os.Lstat(root); err != nil || !fi.IsDir() {
+		return // a symlinked updates/ is never followed
+	}
 	entries, _ := os.ReadDir(root)
 	for _, e := range entries {
 		if e.Name() != keep {
@@ -220,6 +223,9 @@ func pruneUpdates(root, keep string) {
 // release newer than the running version. An owner who installs by dragging the disk image never
 // runs the app's install script, so this is the only clean-up then. A still-newer download stays.
 func pruneInstalled(root, version string) {
+	if fi, err := os.Lstat(root); err != nil || !fi.IsDir() {
+		return // a symlinked updates/ is never followed
+	}
 	entries, _ := os.ReadDir(root)
 	for _, e := range entries {
 		if !releaseTagRe.MatchString(e.Name()) || compareVersions(e.Name(), version) <= 0 {

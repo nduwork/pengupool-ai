@@ -41,8 +41,8 @@ export interface InstallPlan {
 }
 
 /**
- * The install script. Every step is logged, and every way out (success, a failure, a signal) ends
- * in finish(): it puts the installed app back if the swap failed, reopens whichever app is there, and
+ * The install script. Every step is logged, and every way out the shell can trap (success, a
+ * failure, HUP, INT or TERM; not SIGKILL or a power cut) ends in finish(): it puts the installed app back if the swap failed, reopens whichever app is there, and
  * removes what the updater left. After a good install nothing of the updater's remains; after a failed
  * one the download stays so the owner can try again.
  */
@@ -121,7 +121,7 @@ fi
 rm -rf "$NEW"
 [ -e "$NEW" ] && fail "could not remove $NEW"
 ditto "$MNT/PenguPool AI.app" "$NEW" >> "$LOG" 2>&1 || fail "could not copy the new app"
-find "$NEW" -xattrname com.apple.quarantine -exec xattr -d -s com.apple.quarantine {} \; 2>/dev/null # macOS xattr has no -r
+find "$NEW" -xattrname com.apple.quarantine -exec xattr -d -s com.apple.quarantine {} \\; 2>/dev/null # macOS xattr has no -r
 log "copied the new app"
 detach
 # The old host would answer the new app; sessions keep running without it. Only this store's host.
