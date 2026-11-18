@@ -225,6 +225,9 @@ func (p *Pool) sessionRestart(ctx context.Context, in sessionIn) (any, error) {
 	if err := p.canRelaunch(s); err != nil {
 		return nil, err
 	}
+	if err := p.restartByHand(s); err != nil {
+		return nil, err
+	}
 	resumeID := resumeIDOf(s)
 	if err := p.stopWorker(ctx, s); err != nil {
 		return nil, ownerReads(s.Name, err)

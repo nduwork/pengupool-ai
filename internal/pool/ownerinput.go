@@ -55,6 +55,7 @@ func squash(s string) string {
 func (p *Pool) OwnerInput(sessionID, text string) { p.ownerInputAs(sessionID, text, "") }
 
 func (p *Pool) ownerInputAs(sessionID, text, delivered string) {
+	p.ownerWorkArrived(sessionID) // a claimed session is not restarted under the owner's prompt
 	s, ok := p.session(sessionID)
 	if ok && s.Waiting == "" && squash(text) != "" {
 		p.promptTyped(s) // counted while starting too: an agent with no hooks never leaves it

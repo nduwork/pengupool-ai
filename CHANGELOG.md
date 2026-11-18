@@ -24,6 +24,10 @@ An in-app update leaves nothing behind: once the new app is in place, the downlo
 
 About no longer says "This is the newest version." when a newer release is still being published without a disk image: it says the release is out and when to try again. When GitHub can't be reached it says so, after at most 20 seconds instead of two minutes.
 
+**Restart all** restarts every running agent session after you update an agent, in Settings → Agents, on the map's toolbar and in its menu. Each session restarts in turn, resumes its conversation in its team and folder, and is never cut off: a busy session waits for its turn to end, one you type into just before its restart is left running, and a team message sent to it meanwhile reaches the restarted session once. Settings → Agents follows the run and can cancel a waiting session. **Restart & resume** on a busy session now asks whether to restart it now or once its turn ends.
+
+**Shut down** (Settings → General) stops every session, then the host and, in the desktop app, the app. Closing or quitting the app still leaves everything running. No session can start while the host shuts down, and a paired phone keeps its pairing for the next start.
+
 ## 0.11.4
 
 Muse Spark is now an ordinary decision model. In Settings → Decision model, Local hosted, Online / cloud and **Meta · Muse Spark** are three choices for one slot; each is saved, checked and chosen with **Use for triage**. An earlier Muse Spark setup becomes a saved Meta model, and the triage model in use stays as it is. Muse Spark is uncalibrated, so when it is the triage model nothing acts on its answers alone: check-ins go to you, the Compass asks, every Done report is kept, and team proposals keep each helper's own agent.

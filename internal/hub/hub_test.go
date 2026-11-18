@@ -1686,3 +1686,44 @@ func TestRespawnUnderTheSameIDIgnoresTheOldHandshake(t *testing.T) {
 		t.Fatalf("after 1.5 s: state %s pid %d, want running pid %d", s.State, s.Pid, again.Pid)
 	}
 }
+
+// StopSpawning waits for a spawn under way, so the session it starts is on the record when it
+// returns; every later spawn is refused.
+func TestStopSpawningRefusesLaterSpawns(t *testing.T) {
+	h, st := newHub(t)
+	spec := sleepSpec(t)
+	spec.ID = protocol.NewID()
+	type res struct {
+		s   store.Session
+		err error
+	}
+	done := make(chan res, 1)
+	go func() {
+		s, err := h.Spawn(context.Background(), spec)
+		done <- res{s, err}
+	}()
+	for end := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if out, _ := exec.Command("pgrep", "-f", "worker --session-id "+spec.ID).Output(); len(out) > 0 {
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatal("the worker never started")
+		}
+	}
+	h.StopSpawning()
+	if s := stored(t, st, spec.ID); s.State != "running" {
+		t.Fatalf("StopSpawning returned before the spawn under way was recorded: %s", s.State)
+	}
+	r := <-done
+	if r.err != nil || r.s.ID != spec.ID {
+		t.Fatalf("the spawn under way: %+v %v", r.s, r.err)
+	}
+	_ = h.Kill(context.Background(), spec.ID)
+	if _, err := h.Spawn(context.Background(), sleepSpec(t)); err == nil || !strings.Contains(err.Error(), "shutting down") {
+		t.Fatalf("a spawn after StopSpawning: %v", err)
+	}
+	var pe *protocol.Error
+	if _, err := h.Spawn(context.Background(), sleepSpec(t)); !errors.As(err, &pe) || pe.Code != protocol.CodeUnavailable {
+		t.Fatalf("code: %v", err)
+	}
+}

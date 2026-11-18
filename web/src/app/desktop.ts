@@ -21,6 +21,8 @@ export interface DesktopBridge {
   /** Replaces this app with a disk image the host downloaded under <store>/updates, then restarts into it. */
   installUpdate(path: string): Promise<void>;
   restartHost(): Promise<void>;
+  /** After host.shutdown: waits for this machine's host to stop (or stops it), then quits the app; older apps lack it. */
+  shutdown?(): Promise<void>;
   /** This machine and the SSH hosts set up in Settings; current is the SSH host in use, or null. */
   environments(): Promise<{ current: string | null; items: Environment[] }>;
   /** Works in another environment (null: this machine); the window reloads connected to it. */
