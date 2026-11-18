@@ -37,101 +37,8 @@ type HookOut struct {
 	Exit   int    `json:"exit"`
 }
 
-// resolveMuseSession maps a Muse hook to its pool session. Muse scrubs the hook environment, so the
-// hook names no session. When the calling process is known, the session is the live Muse session whose
-// process it runs under: nothing else, so an agent in another session cannot speak as it, and two Muse
-// sessions in one folder (or the owner's own Muse, outside PenguPool) never take each other's identity.
-// Without a process to go by (a platform with no readable process tree, tests), a live Muse session
-// whose ConvID is the payload's session id wins, else the newest live, unbound Muse session in the same
-// folder is bound. Anything else resolves to nothing: the hook is a silent, fast no-op.
-// A subagent runs under its session's process with a session id of its own and fires only tool hooks,
-// so only the conversation's turn events (or a session not bound yet) rebind ConvID; hookEventFrom keeps a
-// subagent's hooks after the turn off the session. After a resume or clear, the new conversation binds at
-// its first turn event; a tool hook before it counts as a subagent's.
-func (p *Pool) resolveMuseSession(c gateway.Caller, event string, pl map[string]any) (store.Session, bool) {
-	msid, _ := pl["session_id"].(string)
-	st := p.st.State()
-	if c.PeerPID > 0 && procTreeReadable {
-		for _, s := range st.Sessions {
-			if s.Harness != harness.Muse || !museLive(s) || s.Pid <= 0 || !p.onThisHost(s.NodeID) {
-				continue
-			}
-			if yes, _ := descendsFrom(c.PeerPID, s.Pid); yes {
-				if msid != "" && s.ConvID != msid && (s.ConvID == "" || museTurnEvent(event)) {
-					p.setSession(s.ID, func(x *store.Session) { x.ConvID = msid })
-					s, _ = p.session(s.ID)
-				}
-				return s, true
-			}
-		}
-		return store.Session{}, false
-	}
-	cwd, _ := pl["cwd"].(string)
-	if msid == "" {
-		return store.Session{}, false
-	}
-	for _, s := range st.Sessions {
-		if s.Harness == harness.Muse && s.ConvID == msid && museLive(s) {
-			return s, true
-		}
-	}
-	if cwd == "" {
-		return store.Session{}, false
-	}
-	var best *store.Session
-	for i, s := range st.Sessions {
-		if s.Harness != harness.Muse || s.ConvID != "" || !museLive(s) || !sameDir(s.Cwd, cwd) {
-			continue
-		}
-		if best == nil || s.StartedAt.After(best.StartedAt) {
-			best = &st.Sessions[i]
-		}
-	}
-	if best == nil {
-		return store.Session{}, false
-	}
-	p.setSession(best.ID, func(x *store.Session) { x.ConvID = msid })
-	if s, ok := p.session(best.ID); ok {
-		return s, true
-	}
-	return store.Session{}, false
-}
-
-// museTurnEvent is a hook only the conversation itself fires, never a subagent: it may rebind ConvID
-// (a new or resumed conversation in the same process).
-func museTurnEvent(event string) bool {
-	switch event {
-	case "SessionStart", "UserPromptSubmit", "Stop", "TurnFailed", "Interrupted", "SessionEnd":
-		return true
-	}
-	return false
-}
-
-// museLive reports whether a pool session may take a Muse hook: still
-// running and not marked ended or unsupported. An exited session never
-// binds again.
-func museLive(s store.Session) bool {
-	return s.State != "exited" && s.Status != "ended" && s.Status != "harness no longer supported"
-}
-
-// sameDir reports whether two working directories are the same folder,
-// through symlinks (/tmp vs /private/tmp) as well as literally.
-func sameDir(a, b string) bool {
-	if a == b {
-		return true
-	}
-	ra, errA := filepath.EvalSymlinks(a)
-	rb, errB := filepath.EvalSymlinks(b)
-	return errA == nil && errB == nil && ra == rb
-}
-
-// hookEvent is a hook with no known calling process (tests): see hookEventFrom.
+// hookEvent is hook.event.
 func (p *Pool) hookEvent(ctx context.Context, in hookIn) (any, error) {
-	return p.hookEventFrom(ctx, gateway.Caller{}, in)
-}
-
-// hookEventFrom is hook.event, with the calling process that resolves a Muse hook's session.
-func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (any, error) {
 	entered := time.Now() // a Stop's whole answer is due by entered + StopDeadline
 	p.mu.Lock()
 	p.hookSeq++
@@ -139,28 +46,6 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	p.mu.Unlock()
 	var pl map[string]any
 	_ = json.Unmarshal(in.Payload, &pl)
-	if in.Harness == harness.Muse {
-		// Muse scrubs the hook environment, so the session is resolved for every event, in this
-		// one place.
-		s, ok := p.resolveMuseSession(c, in.Event, pl)
-		if !ok {
-			return HookOut{}, nil // outside PenguPool, or the daemon just started: untouched
-		}
-		in.SessionID = s.ID
-		if msid, _ := pl["session_id"].(string); msid != "" && msid != s.ConvID && s.Status == "idle" {
-			// A subagent working on after its session's turn ended (Muse fires no Stop for it): its tool
-			// calls are still guarded, but it does not reopen the turn or hold the session's queue.
-			// ponytail: its permission prompt is dropped too, not shown as approval: that status would
-			// let its next hooks through and leave the session working again. Track subagents (Muse's
-			// subagentStart/subagentStop hooks) if they turn out to prompt.
-			if _, named := pl["tool_name"].(string); named && in.Event == "PreToolUse" {
-				if out, done := p.toolGuards(s, in.Payload, pl); done {
-					return out, nil
-				}
-			}
-			return HookOut{}, nil
-		}
-	}
 	s, ok := p.session(in.SessionID)
 	if !ok {
 		return HookOut{}, nil // not a pool session: say nothing
@@ -187,12 +72,8 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 	if m, ok := pl["model"].(string); ok && m != "" && m != s.Model {
 		p.setSession(s.ID, func(x *store.Session) { x.Model = m })
 	}
-	if in.Event == "Stop" && s.Harness == harness.Muse {
-		p.museTurnModel(s)
-	}
-
 	switch in.Event {
-	case "Stop", "TurnFailed", "SessionStart", "SessionEnd": // Interrupted clears them below, past its guard
+	case "Stop", "SessionStart", "SessionEnd": // Interrupted clears them below, past its guard
 		// A question or plan tool that was denied or interrupted never reports PostToolUse: its
 		// flag must not outlive the turn or the session (ownerinput.go).
 		p.mu.Lock()
@@ -277,24 +158,8 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 		}
 		return p.contextOut(s.ID, "UserPromptSubmit", p.journalForPrompt(s, t.Prompt), p.handOffNote(s, t.Prompt), p.subagentPlan(s, t.Prompt), p.wordingNote(s.ID)), nil
 	case "PreToolUse":
-		if in.Harness == harness.Muse {
-			if _, ok := pl["tool_name"].(string); !ok {
-				// A Muse tool call without a name is a shape this version does not know: never
-				// block on it, allow and note it once. Named calls enforce below, with the
-				// harness read set (Muse names its tools snake_case: read_file, search, ...).
-				p.mu.Lock()
-				warned := p.museToolWarned
-				p.museToolWarned = true
-				p.mu.Unlock()
-				if !warned {
-					p.logf("pool: muse PreToolUse without tool_name; allowed")
-				}
-				return HookOut{}, nil
-			}
-		}
-		// Muse asks its permission before PreToolUse: the call waits on the owner until it runs or fails.
-		// Another call's prompt still waiting keeps the session waiting too (an unrelated parallel tool).
-		if (in.Harness != harness.Muse || s.Status != "approval") && !p.waitingOn(s.ID, str("tool_use_id")) {
+		// Another call's prompt still waiting keeps the session waiting (an unrelated parallel tool).
+		if !p.waitingOn(s.ID, str("tool_use_id")) {
 			p.setStatus(s.ID, "working")
 		}
 		p.turnOpen(s.ID, "")
@@ -331,33 +196,20 @@ func (p *Pool) hookEventFrom(ctx context.Context, c gateway.Caller, in hookIn) (
 					"hookEventName": "PostToolUse", "additionalContext": note}}), nil
 			}
 		}
-	case "ToolFailed": // Muse, and an OMP approval denied: a tool failed or was denied; the turn goes on.
-		// OMP names the denied call, whose prompt is settled as refused. Muse names none, so which way is
-		// unknown: a permission prompt it answered stays open until the turn ends and expires it.
+	case "ToolFailed": // an OMP approval denied: the tool was denied; the turn goes on.
+		// OMP names the denied call, whose prompt is settled as refused.
 		p.permissionDenied(s, str("tool_use_id"))
 		p.setStatus(s.ID, "working")
 		p.asking(s.ID, str("tool_name"), false)
 		p.turnTool(s.ID)
-	case "TurnFailed", "Interrupted": // Muse, Codex: the turn ended in an error or an interrupt, with no Stop
-		// Muse's Interrupt is async: one landing after the owner's next prompt must not close that new turn.
-		// ponytail: it still reads idle until that turn's next hook, and meanwhile a message may be
-		// typed into the busy session; the window is the hook's spawn delay. A turn interrupted in
-		// its first second reads working until its next hook. Codex's Interrupt runs before the abort.
-		if in.Event == "Interrupted" {
-			if in.Harness == harness.Muse && p.turnSince(s.ID, entered.Add(-time.Second)) {
-				break
-			}
-			p.mu.Lock()
-			delete(p.askingOwner, s.ID)
-			delete(p.handOff, s.ID)
-			p.mu.Unlock()
-		}
+	case "Interrupted": // Codex: the turn ended in an interrupt, with no Stop. Its Interrupt runs before the abort.
+		p.mu.Lock()
+		delete(p.askingOwner, s.ID)
+		delete(p.handOff, s.ID)
+		p.mu.Unlock()
 		p.noteTurnEnd(s.ID, seq)
 		p.setStatus(s.ID, "idle")
 		p.turnBroke(s)
-		if in.Event == "TurnFailed" {
-			p.flushQueue(s.ID) // an unattended agent's queue goes on; after an interrupt the owner is at the prompt
-		}
 	case "PermissionRequest":
 		// A shell command the owner answered before is answered the same way for them on an autonomous
 		// team (autoAnswer). Otherwise no decision: the harness shows its own dialog in the terminal;
@@ -863,9 +715,6 @@ func (p *Pool) contextOut(id, event string, extra ...string) HookOut {
 	}
 	text += decision.SecretRe.ReplaceAllString(p.takeNotices(id), "[left out: looked like a secret]")
 	text += strings.Join(extra, "") // what this task adds: the journal entries that fit it
-	if limit := p.hookOutCap(id); limit > 0 && len(text) > limit {
-		text = p.fitContext(id, extra, limit)
-	}
 	if text == "" {
 		return HookOut{}
 	}
@@ -944,16 +793,4 @@ func (p *Pool) loadInboxes() {
 			p.msgSock[id] = ib
 		}
 	}
-}
-
-// hookOutCap is the hook answer budget for id's harness in bytes, 0 for uncapped.
-func (p *Pool) hookOutCap(id string) int {
-	s, ok := p.session(id)
-	if !ok {
-		return 0
-	}
-	if a, ok := harness.Find(s.Harness); ok {
-		return a.HookOutCap
-	}
-	return 0
 }

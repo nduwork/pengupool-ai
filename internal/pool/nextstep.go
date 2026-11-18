@@ -11,7 +11,6 @@ import (
 	"unicode"
 
 	"github.com/nduwork/pengupool-ai/internal/decision"
-	"github.com/nduwork/pengupool-ai/internal/harness"
 	"github.com/nduwork/pengupool-ai/internal/protocol"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
@@ -58,7 +57,7 @@ const handOffQuestion = "Should the LEAD hand this work to one of its members ra
 // handOffNote is triage before the LEAD's next step: one yes/no question, whether a member should do
 // the work this turn asks for. A sure yes (calibrated, p >= the delegate threshold) is a note and a
 // hold: guardHandOff refuses the LEAD's working tools until it sends one of its children a task. A
-// less sure yes, or any yes from an uncalibrated model (Muse Spark), is a note only; no, no answer or
+// less sure yes, or any yes from an uncalibrated model, is a note only; no, no answer or
 // a timeout is nothing. Each prompt decides again, so the owner's next words can lift the hold.
 func (p *Pool) handOffNote(s store.Session, prompt string) string {
 	held, note := p.handOffCheck(s, prompt)
@@ -215,7 +214,7 @@ func (p *Pool) guardHandOff(s store.Session, pl map[string]any) (HookOut, bool) 
 	tool, _ := pl["tool_name"].(string)
 	in, _ := pl["tool_input"].(map[string]any)
 	cmd, _ := in["command"].(string)
-	if lookTools[tool] || harness.ReadTool(s.Harness, tool) || readOnlyCmd(cmd) || p.cliCmd(cmd) {
+	if lookTools[tool] || readOnlyCmd(cmd) || p.cliCmd(cmd) {
 		return HookOut{}, false
 	}
 	p.logLine(s.ID, "triage: held "+tool)

@@ -107,10 +107,8 @@ type SessionView struct {
 
 	HooksMissing bool `json:"hooks_missing,omitempty"` // prompted 2+ min ago, and no hook since launch
 
-	// Model is the model the agent reports (or was started with); Agent names a Meta agent with it:
-	// "Muse Spark · Meta · muse-spark-1.3". Empty Agent: the app shows the harness's own label.
+	// Model is the model the agent reports (or was started with).
 	Model string `json:"model,omitempty"`
-	Agent string `json:"agent,omitempty"`
 }
 
 // Message is one control message. Every message carries ID and Type; the remaining fields are

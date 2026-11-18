@@ -1,25 +1,20 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/banner-dark.png">
-  <img alt="PenguPool AI: Muse Code at work, with you in the loop from the Muse app" src="assets/screenshots/banner-light.png">
-</picture>
+<p align="center"><img src="assets/logo.svg" width="96" alt="PenguPool AI"></p>
 
-<p align="center">PenguPool brings your coding-agent team, your preferences and its waiting questions into one workspace. Run Muse Code on your Mac, follow the team from the Muse app, and send your answer back to the session that needs it.</p>
+<p align="center">PenguPool brings your coding-agent team, your preferences and its waiting questions into one workspace. Run the agents you already use on your Mac as a team, say how you work once, and answer what waits on you from the Mac or your phone.</p>
 
 <p align="center">
   <a href="https://github.com/nduwork/pengupool-ai/releases/latest">Download</a> ·
-  <a href="#muse-in-the-loop">See the Muse workflow</a> ·
   <a href="docs/getting-started.md">Get started</a> ·
-  <a href="docs/phone.md">Muse setup</a> ·
+  <a href="docs/guide.md">Guide</a> ·
+  <a href="docs/phone.md">Phone access</a> ·
   <a href="docs/design.md">Design</a>
 </p>
 
-<p align="center"><sub>Built for the Meta Global AI Developer Hackathon · Build for Your World</sub></p>
-
 ## At a glance
 
-**What it is.** A macOS desktop app with a Go host. The host runs coding agents (Muse Code, Claude Code,
-Codex, pi, OMP), each in its own terminal session that outlives the app, and groups them into teams: a
-lead, builders that own a repository, and helpers from the Helper hub. Every agent gets the owner's
+**What it is.** A macOS desktop app with a Go host. The host runs coding agents (Claude Code, Codex, pi,
+OMP), each in its own terminal session that outlives the app, and groups them into teams: a lead,
+builders that own a repository, and helpers from the Helper hub. Every agent gets the owner's
 recorded preferences (the Compass) in its context. Questions that need the owner are collected in one
 place and can be answered on the Mac or from the paired Muse app.
 
@@ -43,36 +38,25 @@ Applications and open it. Details are in [Install](#install); building from sour
 
 Package by package: [How it fits together](CONTRIBUTING.md#how-it-fits-together).
 
-## Muse in the loop
+## How it works
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/media/muse-loop-dark.png">
-  <img alt="How PenguPool works. On your Mac, a LEAD runs the team: a BUILDER on a Git repo project and HELPERs for research, review and UI, all reading the Compass, the shared memory weighted by evidence. The device API carries a waiting question to the Muse app and your answer back. Four values: dense AI-native communication; team-first, not task-first; Compass memory, with uncertainty; experience that travels." src="assets/media/muse-loop-light.png">
-</picture>
+**On your Mac, every agent works with your team's context.** PenguPool's hooks connect each agent's
+session start, prompts and turn events to the team's context, your Compass and a helper's own journal,
+so the agents work within the preferences you have already recorded.
 
-<sub>Data flow, not push notifications: the Muse app checks PenguPool for waiting questions.</sub>
+**On your phone, the question comes back to you.** Pair the Muse app and it can read the team's
+waiting requests, send your instructions and answer supported questions and check-ins. PenguPool
+returns your answer to the session that asked through its existing owner-input and answer paths.
+Pairing is optional.
 
-**On your Mac, Muse Code works with your team's context.** PenguPool's Muse plugin connects session
-start, prompts and turn events to the team's context, your Compass and a helper's own journal. That
-lets the coding agent work within the preferences you have already recorded.
-
-**On your phone, Muse brings the question back to you.** A paired Muse device can read the team's
-waiting requests, send your instructions and answer supported questions and check-ins. PenguPool returns
-your answer to the relevant session through its existing owner-input and answer paths.
-
-**The contribution is the connection:** a coding-agent workspace that keeps the owner's context and
-decisions in the loop across the Mac and Muse app. Other supported agents can join the same workspace.
-
-Coding uses the model selected by Muse Code. Triage uses one decision model you choose: a System One
-model (the local Tev1 default is Together AI's Qwen-based model, or Jev online) or Muse Spark on the Meta
-Model API. Whichever it is, it checks each task a lead or builder hands a member and picks who does it; the
-sender can keep its own pick with a recorded reason. Muse Spark is uncalibrated, so with it nothing else
-acts on its own: check-ins and Compass changes wait for you.
+Coding uses each agent's own model. Triage uses one System One decision model you choose (the local
+Tev1 default is Together AI's Qwen-based model, or Jev online). It checks each task a lead or builder
+hands a member and picks who does it; the sender can keep its own pick with a recorded reason.
 [Model responsibilities](docs/harnesses.md#who-does-what).
 
 ## What you can do
 
-- **Run agents side by side.** Claude Code, Codex, Muse Code, pi and OMP, plus Claude Code through
+- **Run agents side by side.** Claude Code, Codex, pi and OMP, plus Claude Code through
   Ollama, each in its own terminal session. Sessions keep running when the app or its host restarts.
 - **Start a team.** Welcome's *Start with a helper* starts a team led by team-lead-agent with the
   helpers you pick (research, PR review, security, …), or start one agent in a folder and grow a team
@@ -85,17 +69,6 @@ acts on its own: check-ins and Compass changes wait for you.
   you answer team questions and check-ins from your phone; permission prompts are answered in the
   agent's terminal.
 
-### Also works with your existing agents
-
-Claude Code, Codex, pi and OMP join the same workspace, teams and Compass as Muse Code.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/screen-map-dark.webp">
-  <img alt="The team map, three levels. team-lead-agent (LEAD, Muse Code) leads three HELPERs, research-agent and pr-review-agent (Muse Code) and dev-workflow-agent (Claude Code), and two BUILDERs. acme-api-muse (Muse Code) leads security-agent (Codex); acme-web-muse (Muse Code) leads frontend-ui-agent (Muse Code). research-agent reads ? Need input: its question waits for you. The route from acme-api-muse to security-agent is lit with a reply." src="assets/screenshots/screen-map-light.webp">
-</picture>
-
-<sub>Illustrative UI with synthetic project data.</sub>
-
 ## Install
 
 1. Download `PenguPool-AI-<version>-mac-arm64.dmg` from the
@@ -104,8 +77,8 @@ Claude Code, Codex, pi and OMP join the same workspace, teams and Compass as Mus
 2. Open the disk image, drag **PenguPool AI.app** onto Applications, and open it. The app is notarized
    by Apple, so macOS opens it after its usual confirmation for downloaded apps, with no
    unidentified-developer warning.
-3. For the walkthrough, install and sign in to **Muse Code**, Meta's coding agent. PenguPool also
-   supports Claude Code, Codex, pi and OMP; it uses agents already installed on your Mac.
+3. Install and sign in to at least one coding agent: Claude Code, Codex, pi or OMP. PenguPool uses
+   agents already installed on your Mac; this walkthrough uses Claude Code.
 
 The app starts its host in the background and keeps its data in `~/.pengupool-ai/v2`. To build from
 source instead, see [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -120,39 +93,20 @@ source instead, see [CONTRIBUTING.md](CONTRIBUTING.md).
 1. **Open the app.** The empty Workspace shows the map, with a short Setup card in the sidebar.
    **Welcome** (above) is off by default: open it from the empty map's *show Welcome* link or
    Settings → General → **Open Welcome**.
-2. **Set a decision model.** PenguPool needs a triage model: System One, local (Ollama) or online, or
-   Muse Spark on the Meta Model API. In Settings → Decision model: pick it, **Save provider**,
-   **Check connection**, then **Use for triage**.
+2. **Set a decision model.** PenguPool needs a triage model: System One, local (Ollama) or online.
+   In Settings → Decision model: pick it, **Save provider**, **Check connection**, then **Use for triage**.
 3. **Decide agent permissions.** Settings → Agents → Agent permissions lets agents run PenguPool's
    team commands without a prompt, or keep asking. Either choice is fine.
-4. **Start with Muse Code.** Choose *Start in a folder*, select a small demo repository and pick Muse
-   Code. Ask it to inspect the project and propose one small improvement, with a clear question for you
-   before changing it. (For a team, *Start with a helper* and select Muse Code in the agent picker.)
-5. **Try the phone loop.** Follow [Muse setup](docs/phone.md), open the team's supported pending
-   question in Muse, and reply. The session gets your answer from its waiting ask, or as a notice if it
-   had stopped waiting ([details](docs/phone.md#try-it)). You can keep using
-   PenguPool from the Mac without pairing a phone; what needs you also appears in *Waiting on you* (the
-   bell) and as a notification.
+4. **Start with Claude Code.** Choose *Start in a folder*, select a small demo repository and pick
+   Claude Code. Ask it to inspect the project and propose one small improvement, with a clear question
+   for you before changing it. (For a team, *Start with a helper* and pick the agent in the agent picker.)
+5. **Try the phone loop (optional).** Follow [Phone access](docs/phone.md), open the team's supported
+   pending question in the Muse app, and reply. The session gets your answer from its waiting ask, or
+   as a notice if it had stopped waiting ([details](docs/phone.md#try-it)). You can keep using
+   PenguPool from the Mac without pairing a phone; what needs you also appears in *Waiting on you*
+   (the bell) and as a notification.
 
 Step by step: [docs/getting-started.md](docs/getting-started.md).
-
-
-## Demo
-
-Two short loops of the app, made from real app captures with demo data:
-
-<p align="center"><img src="assets/media/readme-a-team.gif" width="800" alt="Starting a team from an empty Workspace: show Welcome, Start with a helper, research-agent and pr-review-agent ticked, the work folder ~/code/acme-shop and the agent Muse Code, then the lead appears on the map and both helpers join it, all running Muse Code."></p>
-
-<p align="center"><img src="assets/media/readme-b-compass.gif" width="800" alt="research-agent asks the lead a question, PenguPool checks it against the owner's confident Compass line and the answer goes back, and when security-agent asks a question no line covers, its card reads ? Need input and the question waits for the owner in Waiting on you."></p>
-
-What the demo shows, against the [hackathon's](https://dev.meta.ai/events/global-hackathon) framing:
-
-| Official framing | What to demonstrate |
-| --- | --- |
-| Build for Your World | The builder's real friction: repeating context and repeatedly checking desktop sessions. The same preference or decision carried into the work. |
-| Creativity | Muse serves both the coding work and the owner's remote participation, in one concrete workflow. |
-| Technical ambition | The Muse plugin's hooks and the paired-device answer path, plus helper-specific memory and team context. |
-| Working results | One real question-and-answer round trip, the agent's continued work and a verifiable output; the release and setup links above. |
 
 ## Help
 
@@ -174,18 +128,3 @@ test or change PenguPool, read [CONTRIBUTING.md](CONTRIBUTING.md). Each release'
 ## License
 
 [MIT](LICENSE).
-
-## Credits
-
-- **PAHF** — *Learning Personalized Agents from Human Feedback*, Kaiqu Liang, Julia Kruk,
-  Shengyi Qian, et al. (Meta Superintelligence Labs, Princeton University, Duke University),
-  [github.com/facebookresearch/PAHF](https://github.com/facebookresearch/PAHF), MIT License.
-  The Compass's memory pipeline was compared against PAHF's: its feedback loop (keep only
-  personal information, summarise it in one sentence, update after a correction) and its
-  finding that stale preferences used confidently hurt most after a change shaped how the
-  Compass weighs corrections and fades silent lines. Borrowed: the change-of-preference cue
-  phrases and the carve-out for narrower rules in the question that decides whether a
-  correction changes a preference (from PAHF's `check_update_prompt`), and the drift rate of its
-  shopping personas (682 of 1200 preference lines change) as a scenario in the Compass drift
-  benchmark. No PAHF code or data files are included. PAHF is Copyright (c) Meta Platforms,
-  Inc. and affiliates, under the MIT License.

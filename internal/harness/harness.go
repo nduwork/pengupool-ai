@@ -21,7 +21,6 @@ import (
 
 const (
 	Claude  = "claude"
-	Muse    = "muse"
 	OMP     = "omp"
 	Pi      = "pi"
 	Codex   = "codex"
@@ -48,16 +47,12 @@ type Agent struct {
 	// EarlyStart agents fire SessionStart before their login and trust dialogs, so they count as
 	// ready only after their first finished turn.
 	EarlyStart bool `json:"-"`
-	// HookOutCap caps a hook answer's additionalContext in bytes when > 0 (Muse drops a hook
-	// answer whose stdout passes 16 KiB, the roster and the triage note with it); 0 leaves it whole.
-	HookOutCap int `json:"-"`
 }
 
 // Agents are the supported runtimes, in menu order. Any of them can share a team with any other:
 // team messages go through PenguPool, which delivers each in the recipient's own way.
 var Agents = []Agent{
 	{ID: Claude, Label: "Claude Code", Hint: "Anthropic's coding agent", Compact: "/compact", Clear: "/clear"},
-	{ID: Muse, Label: "Muse Code", Hint: "Meta's coding agent", Compact: "/compact", Clear: "/new", Typed: true, HookOutCap: 12 << 10},
 	{ID: Codex, Label: "Codex", Hint: "OpenAI's coding agent", Compact: "/compact", Clear: "/new", Typed: true},
 	{ID: Pi, Label: "pi", Hint: "pi coding agent", Compact: "/compact", Clear: "/new"},
 	{ID: OMP, Label: "OMP", Hint: "oh-my-pi agent", Compact: "/compact", Clear: "/new"},
@@ -77,28 +72,17 @@ func Find(id string) (Agent, bool) {
 
 // Dropped returns the error for a session on a harness PenguPool no longer runs, or nil.
 func Dropped(kind string) error {
-	if kind == "opencode" {
+	switch kind {
+	case "opencode":
 		return fmt.Errorf("OpenCode is no longer supported; start a new session on another agent")
+	case "muse":
+		return fmt.Errorf("Muse Code is no longer supported; start a new session on another agent")
 	}
 	return nil
 }
 
 // IsAgent reports whether id names a supported agent runtime.
 func IsAgent(id string) bool { _, ok := Find(id); return ok }
-
-// museReadTools are Muse's read-only tools (snake_case): they may run while triage holds a
-// session's working tools, like the shared look-tools (web reads are reads). Anything else fails
-// closed into the hold.
-var museReadTools = map[string]bool{"read_file": true, "search": true, "web_fetch": true, "web_search": true}
-
-// ReadTool reports whether name is a read-only tool of the harness kind, beyond the shared
-// look-tools: triage lets it run while it holds the session's working tools.
-func ReadTool(kind, name string) bool {
-	if kind == Muse {
-		return museReadTools[name]
-	}
-	return false
-}
 
 // ClaudeEvents are the Claude Code hooks PenguPool listens to.
 var ClaudeEvents = []string{
@@ -181,25 +165,6 @@ func spec(kind string, p Params) ([]string, []string, error) {
 		}
 		for _, d := range p.ReadDirs {
 			cmd = append(cmd, "--add-dir", d)
-		}
-		return cmd, env, nil
-	case Muse:
-		// Muse Code: the interactive TUI in the session's terminal. Approval is the TUI's own.
-		bin, err := Lookup(Muse, p.Env)
-		if err != nil {
-			return nil, nil, err
-		}
-		if p.Resume != "" {
-			// PenguPool-launched sessions trust their workspace for the run, so project hooks load
-			// without a dialog.
-			return []string{bin, "resume", p.Resume, "--trust-workspace"}, env, nil
-		}
-		cmd := []string{bin, "--workspace", p.Cwd, "--trust-workspace"}
-		if p.Model != "" {
-			cmd = append(cmd, "--model", p.Model)
-		}
-		if p.Effort != "" {
-			cmd = append(cmd, "--reasoning-effort", p.Effort)
 		}
 		return cmd, env, nil
 	case OMP:
@@ -493,7 +458,7 @@ func Lookup(kind string, env []string) (string, error) {
 			return p, nil
 		}
 	}
-	// Installers (muse, claude) put binaries in ~/.local/bin, which a GUI-launched daemon's PATH
+	// Installers (claude) put binaries in ~/.local/bin, which a GUI-launched daemon's PATH
 	// often lacks.
 	if home, err := os.UserHomeDir(); err == nil {
 		p := filepath.Join(home, ".local", "bin", kind)

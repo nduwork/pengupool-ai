@@ -9,7 +9,7 @@ import (
 )
 
 // hooklessAfter is how long after the owner's first prompt an agent launch with no hook at all is
-// flagged. A hooked agent sends UserPromptSubmit (Codex and Muse SessionStart too) within seconds of a
+// flagged. A hooked agent sends UserPromptSubmit (Codex SessionStart too) within seconds of a
 // prompt, so a long quiet turn never trips it.
 const hooklessAfter = 2 * time.Minute
 

@@ -164,9 +164,6 @@ func (p *Pool) spawn(ctx context.Context, r spawnReq) (store.Session, error) {
 	if p.testSpawn != nil {
 		return p.testSpawn(r)
 	}
-	if r.Harness == harness.Muse { // a Muse installed or upgraded since the daemon started gets its hooks first
-		harness.EnsureMusePlugin(p.st.Dir(), p.exe, p.env, p.logf)
-	}
 	if (r.SkillID != "" || r.TrustFrom != "") && r.Resume == "" { // a helper or a worktree starts in a folder PenguPool made: trust it, so no dialog waits for the owner
 		if err := pretrustFolder(r.Harness, r.Cwd, r.TrustFrom); err != nil {
 			p.logf("pool: trust %s for %s: %v", r.Cwd, r.Harness, err)
@@ -569,7 +566,7 @@ func (p *Pool) skillRepo(id string) string {
 	return ""
 }
 
-// readyLoop readies Codex and Muse sessions. Both run their SessionStart hook only with the first
+// readyLoop readies Codex sessions. Codex runs its SessionStart hook only with the first
 // prompt, so a session left at "starting" would never receive a team message. It is ready once its
 // screen shows the agent's prompt (promptMarkers): a folder-trust dialog, a sign-in or an update
 // screen does not show it, and a typed message would answer them.
@@ -588,50 +585,11 @@ func (p *Pool) readyLoop(ctx context.Context) {
 	}
 }
 
-// promptMarkers is what each agent shows only at its prompt: Codex's footer (0.164), Muse's input
-// rule (1.4.14). ponytail: tied to their wording; a later version that changes it leaves its sessions
-// "starting" until their first prompt, as before.
+// promptMarkers is what each agent shows only at its prompt: Codex's footer (0.164). ponytail: tied
+// to its wording; a later version that changes it leaves its sessions "starting" until their first
+// prompt, as before.
 var promptMarkers = map[string]string{
 	harness.Codex: "? for shortcuts",
-	harness.Muse:  "Voice input (⌥ + v to start)",
-}
-
-// museStatusRe is Muse's status line under its prompt (1.4.14): "<model> · <effort> · <folder> · <mode>".
-// ponytail: tied to that layout; a Muse that changes it shows "Muse Code · Meta" with no model.
-var museStatusRe = regexp.MustCompile(`(?m)^\s*(\S+) · (?:minimal|low|medium|high|xhigh|max) · `)
-
-// museModel keeps the model Muse shows on its own status line: Muse's hooks carry no model, so its
-// screen is the evidence. It returns the model, or "" when the line is not on screen. The status line
-// is under the prompt, so the last match is it: agent output above can look the same.
-func (p *Pool) museModel(id, screen string) string {
-	all := museStatusRe.FindAllStringSubmatch(screen, -1)
-	if all == nil {
-		return ""
-	}
-	m := all[len(all)-1]
-	if s, ok := p.session(id); ok && s.Model != m[1] {
-		p.setSession(id, func(x *store.Session) { x.Model = m[1] })
-	}
-	return m[1]
-}
-
-// museTurnModel logs the model a Muse turn ran on, from its status line now, else the --model it was
-// started with; the session log then says per turn what the agent ran on.
-func (p *Pool) museTurnModel(s store.Session) {
-	text := ""
-	if p.testScreen != nil {
-		text, _ = p.testScreen(s.ID)
-	} else if p.hub != nil {
-		text, _ = p.hub.ScreenText(s.ID)
-	}
-	switch m := p.museModel(s.ID, text); {
-	case m != "":
-		p.logLine(s.ID, "turn: model "+m+" (Muse status line)")
-	case s.LaunchModel != "":
-		p.logLine(s.ID, "turn: model "+s.LaunchModel+" (--model)")
-	default:
-		p.logLine(s.ID, "turn: model not shown")
-	}
 }
 
 func (p *Pool) readyByPrompt() {
@@ -647,9 +605,6 @@ func (p *Pool) readyByPrompt() {
 		text, ok := screen(s.ID)
 		if !ok || !strings.Contains(text, marker) {
 			continue
-		}
-		if s.Harness == harness.Muse {
-			p.museModel(s.ID, text) // its label shows the model before its first turn
 		}
 		changed := false
 		p.setSession(s.ID, func(x *store.Session) {

@@ -268,24 +268,3 @@ func isHubSkill(d *protocol.Domain, id string) bool {
 	sk := findSkill(d, id)
 	return sk != nil && teamHubSkill(*sk)
 }
-
-// fitContext re-renders id's context to fit limit bytes for a harness that drops a hook answer
-// past its stdout ceiling: the team sections and extras stay whole and the compass takes what is
-// left, so the roster and the triage note survive. A final clip guards a pathological goal.
-func (p *Pool) fitContext(id string, extra []string, limit int) string {
-	extras := strings.Join(extra, "")
-	compass := decision.SecretRe.ReplaceAllString(p.renderCompass(), "[left out: looked like a secret]")
-	room := limit - (len(p.renderContext(id)) - len(compass)) - len(extras) - 256
-	if room < 0 {
-		room = 0
-	}
-	text := p.renderContextCap(id, room) + extras
-	if len(text) > limit {
-		cut := strings.LastIndex(text[:limit-64], "\n")
-		if cut < 0 {
-			cut = limit - 64
-		}
-		text = text[:cut] + "\n…trimmed to this harness's hook answer limit\n"
-	}
-	return text
-}

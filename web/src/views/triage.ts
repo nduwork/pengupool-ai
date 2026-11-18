@@ -16,6 +16,7 @@ export interface RemovedModel {
 
 /** "Ollama chat format": the format a removed model spoke, as the app names it. */
 export function formatName(r: RemovedModel): string {
+  if (r.type === "meta") return "Muse Spark API"; // retired in 0.12.0
   if (r.format !== "openai-chat") return `${r.format} format`;
   return r.type === "ollama" ? "Ollama chat format" : "chat format";
 }
@@ -47,9 +48,4 @@ export function watchTriage(read: () => Promise<TriageStatus | null>, set: (t: T
   load();
   const t = setInterval(load, intervalMs);
   return () => clearInterval(t);
-}
-
-/** The Spark tab's note for a Meta -contributor model id, whose prompts and answers Meta may train on; null otherwise. */
-export function contributorNote(model: string | undefined): string | null {
-  return model?.trim().endsWith("-contributor") === true ? "Contributor mode: Meta may train on the tasks sent for triage." : null;
 }

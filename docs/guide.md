@@ -32,7 +32,7 @@ team's message log.
 When a member hands one of its children work (`Task:`, or `--type task`), your decision model checks
 who should do it, whichever model it is. If it picks another running child, the task goes there and
 the sender is told; the sender can send it back with `--override "<reason>"`, and the reason is
-recorded. The pick, with the model's probability or reasoning, is on the message. A message that
+recorded. The pick, with the model's probability, is on the message. A message that
 hands over no work, such as a note or a cancel, is not checked.
 
 ## The Compass
@@ -55,11 +55,6 @@ match the task, and reads one in full with `pengupool experience show`. Each jou
 helper. You can list, open and delete entries on the Helpers page.
 
 ## Waiting on you
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../assets/screenshots/screen-ask-dark.webp">
-  <img alt="Waiting on you: pr-review-agent (Muse Code) asks whether to approve PR #12, with its options, answered from the notification. Behind it, the three-level team, where pr-review-agent's card reads ? Need input." src="../assets/screenshots/screen-ask-light.webp">
-</picture>
 
 Questions, check-ins and permission prompts collect under the bell. Each shows who asks, their team,
 the question with its options, and the agent's last words, so you can decide from there. Questions and

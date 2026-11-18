@@ -97,7 +97,7 @@ func TestTeamStartRefusals(t *testing.T) {
 		{map[string]any{"skill_ids": []string{"sk-res"}}, "choose a folder"},
 		{map[string]any{"skill_ids": []string{"nope"}}, "no helper"},
 		{map[string]any{"skill_ids": []string{"sk-lead"}}, "leads the team"},
-		{map[string]any{"skill_ids": []string{}, "harness": "muse"}, ""}, // not installed (agentOnPath puts only claude first)
+		{map[string]any{"skill_ids": []string{}, "harness": "codex"}, ""}, // not installed (agentOnPath puts only claude first)
 	} {
 		if _, err := call(t, p, true, "team.start", c.in); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%v: %v", c.in, err)

@@ -14,7 +14,7 @@ import { GitHubAccount } from "./GitHub";
 import { UpdateSheet } from "./Update";
 import { NewSessionDialog } from "./NewSession";
 import { PageHeader } from "./Page";
-import { contributorNote, formatName, type RemovedModel } from "./triage";
+import { formatName, type RemovedModel } from "./triage";
 
 // Settings, one subpanel per topic: General (the host, updates, terminal history, the daily backup),
 // Agents (which are installed, Claude Code on Ollama), Decision model, GitHub (the account and sync),
@@ -100,12 +100,10 @@ interface ProvidersResp {
   defaults: Record<string, ProviderCfg>;
 }
 
-// Three kinds of decision model, one slot: local hosted (Ollama) and online (Jev), which are calibrated,
-// and Muse Spark on the Meta Model API, which is not. Any one of them is chosen with Use for triage.
+// Two kinds of decision model, one slot: local hosted (Ollama) and online (Jev). Either is chosen with Use for triage.
 const TYPES = [
   { id: "ollama", label: "Local hosted" },
   { id: "jev", label: "Online / cloud" },
-  { id: "meta", label: "Meta · Muse Spark" },
 ];
 
 /** The provider's models, listed by the provider itself (with the typed or saved key). With a capability,
@@ -298,7 +296,7 @@ function Providers(): ReactElement {
       </H>
       {(data.removed ?? []).map((m) => (
         <p key={m.type} className="mb-4 rounded-md bg-warning/10 p-3 text-caption text-warning">
-          <strong>{TYPES.find((t) => t.id === m.type)?.label ?? m.type} model removed.</strong> {m.model ? `"${m.model}" used` : "It used"} the{" "}
+          <strong>{TYPES.find((t) => t.id === m.type)?.label ?? (m.type === "meta" ? "Muse Spark" : m.type)} model removed.</strong> {m.model ? `"${m.model}" used` : "It used"} the{" "}
           {formatName(m)}, which triage no longer supports.{" "}
           {m.type === "ollama" ? "Pull a System One decision model in Ollama, pick it below, save, check, and use it for triage." : "Set up a System One model below, save, check, and use it for triage."}
         </p>
@@ -334,9 +332,7 @@ function Providers(): ReactElement {
           hint={
             type === "ollama"
               ? "The Ollama address. PenguPool calls its System One endpoint, /v1/systemone."
-              : type === "meta"
-                ? "The Meta Model API. PenguPool calls its chat completions, /chat/completions. The questions and their state (redacted) go to Meta."
-                : "The full endpoint URL."
+              : "The full endpoint URL."
           }
         >
           Address
@@ -373,12 +369,11 @@ function Providers(): ReactElement {
             hint="Ollama lists no model that declares the decision capability. Pull a System One decision model, then reload."
           />
         ) : (
-          <Label hint={type === "meta" ? "The Meta Model API's model string. Reasoning effort: minimal (fixed for triage)." : "Any model string."}>
+          <Label hint="Any model string.">
             Model
-            <Input value={draft.model ?? ""} onChange={(e) => set("model", e.target.value)} className="font-mono" placeholder={type === "meta" ? "muse-spark-1.3" : undefined} />
+            <Input value={draft.model ?? ""} onChange={(e) => set("model", e.target.value)} className="font-mono" />
           </Label>
         )}
-        {type === "meta" && contributorNote(draft.model) !== null ? <p className="text-caption text-warning">{contributorNote(draft.model)}</p> : null}
         <div className="flex flex-wrap gap-2">
           <Button
             variant={next === "save" ? "default" : "secondary"}
@@ -1141,9 +1136,6 @@ function AgentPermissions(): ReactElement | null {
         </Row>
         <Row title="pi" hint="Never asks, so nothing is needed.">
           <Badge tone="neutral">not needed</Badge>
-        </Row>
-        <Row title="Muse Code" hint="Not supported yet: Muse has no documented way to add a rule. It still asks.">
-          <Badge tone="neutral">not yet</Badge>
         </Row>
         {writtenFiles.length > 0 ? (
           <div className="border-t border-border py-3">

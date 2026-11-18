@@ -263,7 +263,7 @@ func (s *screen) recordScrollRegion(params ansi.Params) {
 // so the next write is not read as the rest of the broken sequence, and the panic comes back as an
 // error.
 // ponytail: the screen may show a few wrong cells until the agent repaints; a full repaint would
-// need the agent's help, and Claude Code and Muse repaint often anyway.
+// need the agent's help, and Claude Code repaints often anyway.
 func (s *screen) Write(p []byte) (n int, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -27,8 +27,8 @@ func (e *ErrCorrupt) Error() string {
 func (e *ErrCorrupt) Unwrap() error { return e.Err }
 
 // IsHomeDefault reports whether dir is the owner's real store: PENGUPOOL_HOME must be unset and dir
-// must resolve to ~/.pengupool-ai/v2. Installers that write outside the store (the Muse plugin) run
-// only then, so a throwaway daemon never touches the owner's Muse home.
+// must resolve to ~/.pengupool-ai/v2. Work that reaches outside the store (Tailscale Serve)
+// runs only then, so a throwaway daemon never touches the owner's machine setup.
 func IsHomeDefault(dir string) bool {
 	if os.Getenv("PENGUPOOL_HOME") != "" {
 		return false

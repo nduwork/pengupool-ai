@@ -3,12 +3,12 @@
 ## What you need
 
 - A Mac with Apple Silicon.
-- At least one coding agent installed and signed in on its own. This walkthrough uses **Muse Code**,
-  Meta's coding agent; PenguPool also supports Claude Code, Codex, pi and OMP. It runs the agents it
-  finds on your login `PATH`; it never installs or signs in to them.
+- At least one coding agent installed and signed in on its own: Claude Code, Codex, pi or OMP. This
+  walkthrough uses **Claude Code**. PenguPool runs the agents it finds on your login `PATH`; it never
+  installs or signs in to them.
 - A decision model for triage: a System One model, local through [Ollama](https://ollama.com) or
-  online, or Muse Spark on the Meta Model API. PenguPool uses it to decide where your preferences
-  belong, whether a check-in can go on and who does a task. It is required.
+  online. PenguPool uses it to decide where your preferences belong, whether a check-in can go on and
+  who does a task. It is required.
 
 ## Install or update
 
@@ -38,18 +38,11 @@ Workspace is empty.
 
 ## Set the decision model
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../assets/screenshots/screen-settings-dark.webp">
-  <img alt="Settings → Decision model: a local System One model, tev1:0.8b, in use for triage" src="../assets/screenshots/screen-settings-light.webp">
-</picture>
-
 Settings → **Decision model**:
 
-1. Pick **Local hosted** (a System One decision model served by Ollama), **Online / cloud** (a System
-   One endpoint) or **Meta · Muse Spark** (the Meta Model API). Muse Spark is uncalibrated, so with it
-   nothing else acts on its own: it still picks who does a task, but check-ins and Compass changes
-   wait for you.
-2. Fill in the address and model (and the API key for an online or Meta model), then **Save provider**.
+1. Pick **Local hosted** (a System One decision model served by Ollama) or **Online / cloud** (a System
+   One endpoint).
+2. Fill in the address and model (and the API key for an online model), then **Save provider**.
 3. **Check connection.** PenguPool asks the model a yes/no, a pick-one and a score question with
    plain answers, and shows how it did.
 4. When the check passes, **Use for triage**.
@@ -76,14 +69,14 @@ Details: [Agents (harnesses)](harnesses.md#agent-permissions).
 
 - **Start with a helper.** Starts a new team led by team-lead-agent. Tick the helpers you want
   (seven common ones are suggested; search reaches the rest), choose the work folder they will use,
-  select **Muse Code** in the agent picker (or another installed agent), and **Start team**. The lead alone needs no folder. team-lead-agent and the other
+  select an installed agent in the agent picker, and **Start team**. The lead alone needs no folder. team-lead-agent and the other
   helpers come from the Helper hub (the *Helpers* page).
 - **Start in a folder** (⌘N, also *New session* in the sidebar). One agent in a folder, a new worktree
-  of a repository, or a fresh clone. To start with Meta's coding agent, pick **Muse Code** as the agent.
+  of a repository, or a fresh clone.
 
-### A first task with Muse Code
+### A first task with Claude Code
 
-Choose **Start in a folder**, select a small demo repository and pick **Muse Code**. Ask it to inspect
+Choose **Start in a folder**, select a small demo repository and pick **Claude Code**. Ask it to inspect
 the project and propose one small improvement, with a clear question for you before changing it.
 
 When it needs you (a question, a permission prompt, or a check-in at the end of a turn) it appears

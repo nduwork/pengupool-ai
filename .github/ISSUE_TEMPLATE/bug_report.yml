@@ -22,7 +22,7 @@ body:
     id: agent
     attributes:
       label: Agent and its version
-      description: For example Claude Code 2.1.316, Muse Code, Codex 0.166.0, or "none"
+      description: For example Claude Code 2.1.316, Codex 0.166.0, or "none"
   - type: textarea
     id: steps
     attributes:

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { contributorNote, type TriageStatus, triagePrompt, watchTriage } from "./triage";
+import { type TriageStatus, triagePrompt, watchTriage } from "./triage";
 
 describe("triagePrompt", () => {
   it("asks for a triage model while it is missing or not answering, and is quiet once it works", () => {
@@ -10,6 +10,9 @@ describe("triagePrompt", () => {
   });
   it("names a non-Ollama chat model's format plainly", () => {
     expect(triagePrompt({ status: "missing", removed: { type: "openrouter", format: "openai-chat", model: "m", active: true } })).toContain("(m, chat format) was removed");
+  });
+  it("names a retired Muse Spark model, not its wire format", () => {
+    expect(triagePrompt({ status: "missing", removed: { type: "meta", format: "meta-chat", model: "muse-spark-1.3", active: true } })).toContain("(muse-spark-1.3, Muse Spark API) was removed");
   });
   it("says why when the host removed the active model", () => {
     expect(triagePrompt({ status: "missing", removed: { type: "ollama", format: "openai-chat", model: "llama3.1:8b", active: true } })).toBe(
@@ -30,13 +33,5 @@ describe("watchTriage", () => {
     expect(shown).toContain("not answering (connection refused)");
     stop();
     vi.useRealTimers();
-  });
-});
-
-describe("contributorNote", () => {
-  it("notes a -contributor model only", () => {
-    expect(contributorNote("muse-spark-1.3-contributor")).toBe("Contributor mode: Meta may train on the tasks sent for triage.");
-    expect(contributorNote("muse-spark-1.3")).toBeNull();
-    expect(contributorNote(undefined)).toBeNull();
   });
 });

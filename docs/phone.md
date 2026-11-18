@@ -33,7 +33,7 @@ read a session's screen, and the app's own token doesn't work on the phone API.
 
 ## Try it
 
-1. Start a **Muse Code** session in a small demo repository (Start in a folder, then pick Muse Code).
+1. Start a **Claude Code** session in a small demo repository (Start in a folder, then pick Claude Code).
 2. Ask it to inspect the project and propose one small improvement, and to ask you before changing
    anything with PenguPool's ask command, for example
    `pengupool ask --owner-only --option "Go ahead" --option "Not now" "May I make this change?"`

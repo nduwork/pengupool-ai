@@ -2,6 +2,16 @@
 
 Every PenguPool AI release, newest first. Each entry describes that release as it shipped; later releases may have changed or removed what it describes. Downloads are on [GitHub Releases](https://github.com/nduwork/pengupool-ai/releases).
 
+## 0.12.0
+
+PenguPool is now a general application, no longer tied to one vendor's tools. Muse Code and Muse Spark are removed; the Muse app on your phone works as before (pairing, waiting questions, Chat, the companion tools).
+
+Muse Code is no longer an agent PenguPool runs. It is gone from New session, Start with a helper, Settings → Agents and Agent permissions, and PenguPool no longer installs its plugin. A session saved on Muse Code says "Muse Code is no longer supported" when you resume it; start a new session on another agent. To remove the plugin an earlier version installed, run `muse plugins remove pengupool`; until then its hooks do nothing.
+
+Muse Spark is no longer a decision model: Settings → Decision model offers Local hosted and Online / cloud, both System One. A saved Muse Spark model is removed at start; when it was the triage model in use, PenguPool says so until you save another one. Its API key stays in your Keychain (item `provider-meta`, service `PenguPool`); delete it in Keychain Access if you no longer need it. The task record no longer carries a model's reasoning, only its probability, and a session no longer shows a "· Meta" label.
+
+The README no longer carries the hackathon banner, demo or Credits section, and CONTRIBUTING drops its Credits pointer; the docs walk through Claude Code. `pengupool help` now lists `--type task` for `send`.
+
 ## 0.11.4
 
 Muse Spark is now an ordinary decision model. In Settings → Decision model, Local hosted, Online / cloud and **Meta · Muse Spark** are three choices for one slot; each is saved, checked and chosen with **Use for triage**. An earlier Muse Spark setup becomes a saved Meta model, and the triage model in use stays as it is. Muse Spark is uncalibrated, so when it is the triage model nothing acts on its answers alone: check-ins go to you, the Compass asks, every Done report is kept, and team proposals keep each helper's own agent.

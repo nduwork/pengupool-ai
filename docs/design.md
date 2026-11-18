@@ -91,9 +91,9 @@ reads: the Compass. Only the owner's own words become Compass lines, and each li
 
 ## 5. The gateway model
 
-The owner talks to their Muse in natural, messy language. Muse densifies it into organized prompts
-to the Lead. The Lead plans and distributes the work. Results come back compressed: one decision for
-the owner at a time.
+The owner talks to the Lead in natural, messy language, from the Mac or a paired phone app. The
+Lead turns it into organized prompts for the team. The Lead plans and distributes the work. Results
+come back compressed: one decision for the owner at a time.
 
 The remote agent's role shifts from solo executor to gateway between the owner and the team the owner
 built. That is what makes execution compliant rather than fully autonomous.
@@ -104,7 +104,7 @@ The owner knows every member and places each one. Each member has its own permis
 jurisdiction, so no agent goes beyond what it is permitted.
 
 Provenance is structural: an agent's yes is not the owner's yes. In November 2026, for example, an
-agent's ask to create the meta-demo repository could be answered only by the owner. In PenguPool
+agent's ask to create a demo repository could be answered only by the owner. In PenguPool
 the Lead cannot approve, merge or change direction for the owner. A question is answered in the
 owner's name only from the owner: their own prompt, or their recorded decisions and Compass lines.
 Pushes, merges, releases and similar acts still come to the owner, unless one of the owner's
