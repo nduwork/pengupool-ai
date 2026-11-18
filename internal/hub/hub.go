@@ -271,7 +271,7 @@ func (h *Hub) Spawn(ctx context.Context, spec SpawnSpec) (store.Session, error) 
 		close(reaped)
 	}()
 
-	handshake, err := h.waitHandshake(ctx, handlePath, exited)
+	handshake, err := h.waitHandshake(ctx, handlePath, cmd.Process.Pid, exited)
 	if err != nil {
 		h.abortSpawn(cmd, handlePath, id, reaped, log)
 		return zero, err
@@ -620,18 +620,27 @@ func (h *Hub) handshakes() (map[string]session.Handshake, error) {
 	return out, nil
 }
 
-// waitHandshake waits for the worker to publish its handshake file, giving up when the child exits
-// first, when ctx is done, or after five seconds.
-func (h *Hub) waitHandshake(ctx context.Context, path string, exited <-chan error) (session.Handshake, error) {
+// waitHandshake waits for the worker pid to publish its handshake file, giving up when the child
+// exits first, when ctx is done, or after five seconds. A handshake from another pid is an earlier
+// worker's under the same session id (one that exited on its own leaves its file): never this one's.
+func (h *Hub) waitHandshake(ctx context.Context, path string, pid int, exited <-chan error) (session.Handshake, error) {
 	deadline := time.NewTimer(handshakeTimeout)
 	defer deadline.Stop()
 	for {
 		hd, err := session.ReadHandshake(path)
-		if err == nil {
+		if err == nil && hd.Pid == pid {
 			return hd, nil
 		}
 		select {
 		case werr := <-exited:
+			// A child that exits at once takes its worker with it; the worker leaves its exit code in
+			// the handshake file first.
+			if hd, err := session.ReadHandshake(path); err == nil && hd.Pid == pid && hd.ExitCode != nil {
+				return session.Handshake{}, protocol.Errorf(protocol.CodeUnavailable, "it exited right after starting (exit code %d)", *hd.ExitCode)
+			}
+			if werr == nil {
+				return session.Handshake{}, protocol.Errorf(protocol.CodeUnavailable, "worker exited before its handshake")
+			}
 			return session.Handshake{}, protocol.Errorf(protocol.CodeUnavailable, "worker exited before its handshake: %v", werr)
 		case <-ctx.Done():
 			return session.Handshake{}, ctx.Err()

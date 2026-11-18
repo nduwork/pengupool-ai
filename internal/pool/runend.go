@@ -104,8 +104,8 @@ func (p *Pool) runRestore(_ context.Context, _ struct{}) (any, error) {
 			n++
 		}
 	}
+	gap := restoreGap
 	go func() {
-		first := true
 		for _, r := range todo {
 			if err := harness.Dropped(r.Harness); err != nil {
 				p.logf("pool: restore %s: skipped: %v", r.Name, err)
@@ -114,18 +114,30 @@ func (p *Pool) runRestore(_ context.Context, _ struct{}) (any, error) {
 			if !r.Agent {
 				continue
 			}
-			if !first {
-				time.Sleep(restoreGap)
-			}
-			first = false
-			if _, err := p.resume(context.Background(), sessionIn{SessionID: r.ID}); err != nil {
-				p.logf("pool: restore %s: %v", r.Name, err)
-				continue
-			}
-			p.logf("pool: restored %s", r.Name)
+			began := time.Now()
+			p.restoreOne(r.ID, r.Name)
+			time.Sleep(time.Until(began.Add(gap))) // a session that failed to start still waits out the gap
 		}
 	}()
 	return map[string]int{"restoring": n}, nil
+}
+
+// restoreOne starts one lost agent session again and logs how that went.
+func (p *Pool) restoreOne(id, name string) {
+	res, err := p.resume(context.Background(), sessionIn{SessionID: id})
+	if err != nil {
+		p.logf("pool: restore %s: %v", name, err)
+		return
+	}
+	if why := p.watchRelaunch(id); why != "" {
+		p.logf("pool: restore %s: %s", name, why)
+		return
+	}
+	if r, ok := res.(relaunched); ok && r.Fresh {
+		p.logf("pool: restored %s fresh: it had no saved conversation", name)
+		return
+	}
+	p.logf("pool: restored %s", name)
 }
 
 func (p *Pool) clearRestore() error {

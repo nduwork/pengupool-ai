@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,5 +65,31 @@ func TestPsFailureIsNotAForeignWorker(t *testing.T) {
 	}
 	if _, err := os.Stat(handle); err != nil {
 		t.Errorf("the handshake was removed without proof the worker is gone: %v", err)
+	}
+}
+
+// A program that exits at once takes its worker with it before the hub reads the handshake: the
+// error names the program's exit code, which the worker leaves in its handshake file on the way out.
+func TestWaitHandshakeNamesTheExitCodeOfAProgramThatExitsAtOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.json")
+	exited := make(chan error, 1)
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		code := 3
+		if err := session.WriteHandshake(path, session.Handshake{SessionID: "s", Pid: 4242, ExitCode: &code}); err != nil {
+			t.Error(err)
+		}
+		exited <- nil
+	}()
+	_, err := (&Hub{}).waitHandshake(context.Background(), path, 4242, exited)
+	if err == nil || !strings.Contains(err.Error(), "it exited right after starting (exit code 3)") {
+		t.Fatalf("waitHandshake: %v", err)
+	}
+
+	// No handshake at all, and a worker that exited cleanly: no "<nil>" in the message.
+	exited <- nil
+	_, err = (&Hub{}).waitHandshake(context.Background(), filepath.Join(t.TempDir(), "none.json"), 4242, exited)
+	if err == nil || strings.Contains(err.Error(), "<nil>") {
+		t.Fatalf("waitHandshake without a handshake: %v", err)
 	}
 }

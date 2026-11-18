@@ -9,7 +9,8 @@ their finished jobs, and collects everything waiting on you in one place.
 
 A session is one agent (or a plain terminal) running in its own terminal. Sessions run in workers
 of their own, so they keep running when the app or its host restarts; the app reattaches to them.
-An agent session that ended can be resumed from its own transcript.
+An agent session that ended can be resumed from its own transcript; one that never got a prompt has
+nothing saved, so it starts fresh in the same place.
 
 ## Teams and roles
 

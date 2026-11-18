@@ -1659,3 +1659,30 @@ func TestSupervisionFollowsTheScreen(t *testing.T) {
 		t.Fatalf("the cleared text is still on screen: %q", got)
 	}
 }
+
+// A session started again under its own id after its agent exited on its own: the earlier worker's
+// handshake is still on disk, and the new record must carry the new worker, not the dead one.
+func TestRespawnUnderTheSameIDIgnoresTheOldHandshake(t *testing.T) {
+	h, st := newHub(t)
+	spec := sleepSpec(t)
+	spec.Command = []string{"/bin/sh", "-c", "sleep 0.3; exit 0"}
+	first := spawn(t, h, spec)
+	for end := time.Now().Add(10 * time.Second); stored(t, st, first.ID).State == "running"; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatal("the first agent never exited")
+		}
+	}
+	if _, err := session.ReadHandshake(session.HandshakePath(st.Dir(), first.ID)); err != nil {
+		t.Skipf("no handshake left behind to trip on: %v", err)
+	}
+	spec.ID, spec.Command = first.ID, []string{"/bin/sh", "-c", "sleep 30"}
+	again := spawn(t, h, spec)
+	t.Cleanup(func() { _ = h.Kill(context.Background(), again.ID) })
+	if again.Pid == first.Pid {
+		t.Fatalf("respawn recorded the dead worker's pid %d", again.Pid)
+	}
+	time.Sleep(1500 * time.Millisecond)
+	if s := stored(t, st, again.ID); s.State != "running" || s.Pid != again.Pid {
+		t.Fatalf("after 1.5 s: state %s pid %d, want running pid %d", s.State, s.Pid, again.Pid)
+	}
+}

@@ -214,24 +214,67 @@ func (p *Pool) input(id string, chunks ...string) error {
 	return nil
 }
 
-// sessionRestart stops the agent and resumes its conversation under the same session id.
+// sessionRestart stops the agent and starts it again under the same session id: resumed from its
+// conversation, or fresh when it saved none. A removed agent or a deleted helper is refused before it
+// is stopped, and an agent that exits right after restarting fails the request.
 func (p *Pool) sessionRestart(ctx context.Context, in sessionIn) (any, error) {
 	s, ok := p.session(in.SessionID)
 	if !ok {
 		return nil, notFound("no session %s", in.SessionID)
 	}
-	if s.State == "running" {
-		if err := p.hub.Kill(ctx, s.ID); err != nil {
-			return nil, err
-		}
-		for i := 0; i < 50; i++ {
-			if cur, _ := p.session(s.ID); cur.State != "running" {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+	if err := p.canRelaunch(s); err != nil {
+		return nil, err
 	}
-	return p.resume(ctx, in)
+	resumeID := resumeIDOf(s)
+	if err := p.stopWorker(ctx, s); err != nil {
+		return nil, ownerReads(s.Name, err)
+	}
+	if s, _ = p.session(s.ID); s.State == "running" {
+		return nil, conflict("%s was still running 5 s after it was told to stop", s.Name)
+	}
+	res, err := p.relaunch(ctx, s, resumeID)
+	if err != nil {
+		return nil, err
+	}
+	if why := p.watchRelaunch(s.ID); why != "" {
+		p.logLine(s.ID, "session: "+why)
+		return nil, conflict("%s: %s", s.Name, why)
+	}
+	return res, nil
+}
+
+// ownerReads turns an unavailable error into a conflict naming the session: the app shows no toast for
+// unavailable, and these are failures the owner asked about and must read.
+func ownerReads(name string, err error) error {
+	if pe := (*protocol.Error)(nil); errors.As(err, &pe) && pe.Code == protocol.CodeUnavailable {
+		return conflict("%s: %s", name, pe.Message)
+	}
+	return err
+}
+
+// stopWorker stops a running session's worker and waits up to 5 s for it to read as stopped.
+func (p *Pool) stopWorker(ctx context.Context, s store.Session) error {
+	if s.State != "running" {
+		return nil
+	}
+	if err := p.killWorker(ctx, s.ID); err != nil {
+		return err
+	}
+	for i := 0; i < 50; i++ {
+		if cur, _ := p.session(s.ID); cur.State != "running" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil
+}
+
+// killWorker stops a session's worker: through the hub, or testKill in tests.
+func (p *Pool) killWorker(ctx context.Context, id string) error {
+	if p.testKill != nil {
+		return p.testKill(id)
+	}
+	return p.hub.Kill(ctx, id)
 }
 
 // sessionClose stops a session and takes it off the map. A team helper in its own worktree simply
@@ -860,7 +903,50 @@ func (p *Pool) repoWorktrees(ctx context.Context, in pathIn) (any, error) {
 			}
 		}
 	}
+	p.nameWorktrees(wts, in.Path)
 	return wts, nil
+}
+
+// nameWorktrees gives each worktree the spelling a running session or the caller uses for it: git
+// reports real paths (/private/var), while a session keeps the path it was started with (/var). The
+// order of known is fixed, so every caller gets the same answer.
+func (p *Pool) nameWorktrees(wts []Worktree, caller string) {
+	var known []string
+	for _, s := range p.st.State().Sessions {
+		if s.State == "running" && s.Cwd != "" {
+			known = append(known, s.Cwd)
+		}
+	}
+	slices.Sort(known)
+	known = append(known, caller)
+	named := make([]bool, len(wts))
+	for i := range wts {
+		if slices.Contains(known, wts[i].Path) {
+			named[i] = true
+			continue
+		}
+		for _, k := range known {
+			if samePath(k, wts[i].Path) {
+				wts[i].Path, named[i] = k, true
+				break
+			}
+		}
+	}
+	// A session in a worktree's subfolder: name the worktree by the session's spelling of its root.
+	for _, k := range known {
+		rk, best := realPath(k), -1
+		for i := range wts {
+			if rw := realPath(wts[i].Path); strings.HasPrefix(rk, rw+"/") && (best < 0 || len(rw) > len(realPath(wts[best].Path))) {
+				best = i
+			}
+		}
+		if best < 0 || named[best] {
+			continue
+		}
+		if sub := strings.TrimPrefix(rk, realPath(wts[best].Path)); strings.HasSuffix(k, sub) {
+			wts[best].Path, named[best] = strings.TrimSuffix(k, sub), true
+		}
+	}
 }
 
 // repoBranches lists a repository's local branches for New session's New worktree, its default branch
@@ -910,7 +996,7 @@ type worktreeRmIn struct {
 // worktreeRemove removes a worktree only when nothing would be lost and no session runs there.
 func (p *Pool) worktreeRemove(_ context.Context, in worktreeRmIn) (any, error) {
 	for _, s := range p.st.State().Sessions {
-		if s.State == "running" && (s.Cwd == in.Path || strings.HasPrefix(s.Cwd, in.Path+"/")) {
+		if s.State == "running" && (samePath(s.Cwd, in.Path) || strings.HasPrefix(realPath(s.Cwd), realPath(in.Path)+"/")) {
 			return nil, conflict("%s is running in that worktree", s.Name)
 		}
 	}

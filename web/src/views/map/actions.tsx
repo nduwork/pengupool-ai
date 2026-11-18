@@ -94,7 +94,11 @@ export function SessionMenu({ s, folded, canFold, onFold }: { s: SessionView; fo
       <Item disabled={!agent || !running} onSelect={() => void app.call("session.slash", { session_id: s.id, command: "clear" })} icon={<Eraser />}>
         Fresh context ({AGENTS.find((a) => a.id === s.harness)?.clear ?? "/clear"})
       </Item>
-      <Item icon={<RotateCcw />} disabled={!agent} onSelect={() => void app.call("session.restart", { session_id: s.id })}>
+      <Item icon={<RotateCcw />} disabled={!agent} onSelect={() =>
+          void app.call<{ fresh?: boolean }>("session.restart", { session_id: s.id }).then((r) => {
+            if (r?.fresh === true) toast(`${s.name} had no saved conversation, so it started fresh in the same place.`);
+          })
+        }>
         Restart & resume
       </Item>
       <Sep />

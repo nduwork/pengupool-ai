@@ -30,6 +30,7 @@ export function EnvSwitcher(): ReactElement {
     setSwitching(name);
     void desktop?.switchEnvironment(id, name);
   };
+  const shown = switching ?? current?.name ?? "This machine"; // the accessible name starts with it (WCAG 2.5.3)
   return (
     <DropdownMenu.Root onOpenChange={(open) => open && void desktop?.environments().then((r) => setItems(r.items))}>
       <DropdownMenu.Trigger asChild>
@@ -39,10 +40,11 @@ export function EnvSwitcher(): ReactElement {
             "flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-label font-semibold hover:bg-hover",
             current !== null && "bg-primary/10 text-primary hover:bg-primary/15",
           )}
-          aria-label="Switch environment"
+          aria-label={`${shown}, switch environment`}
+          aria-busy={switching !== null}
         >
           {switching !== null ? <Loader2 className="size-3.5 shrink-0 animate-spin" /> : current !== null ? <Server className="size-3.5 shrink-0" /> : <Laptop className="size-3.5 shrink-0" />}
-          <span className="truncate">{switching ?? current?.name ?? "This machine"}</span>
+          <span className="truncate">{shown}</span>
           <ChevronDown className="size-3.5 shrink-0 opacity-60" />
         </button>
       </DropdownMenu.Trigger>
