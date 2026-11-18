@@ -992,7 +992,9 @@ func (p *Pool) serveWatchRound(ctx context.Context) {
 				scheme, old = s, rest
 			}
 		}
-		if old = strings.TrimRight(old, "/"); old == "" || old == name {
+		// Only a saved MagicDNS name follows (machine.tailnet.ts.net): a short name or a tailnet IP the
+		// owner saved still works after a rename, and rewriting it would refuse devices paired at it.
+		if old = strings.TrimRight(old, "/"); old == "" || old == name || !magicDNS(old) || !magicDNS(name) {
 			return nil
 		}
 		cfg.Network.Tailscale = scheme + name
@@ -1002,6 +1004,11 @@ func (p *Pool) serveWatchRound(ctx context.Context) {
 	if res.RenamedTo != "" {
 		p.logf("pool: tailscale name changed; Serve name saved as %s", res.RenamedTo)
 	}
+}
+
+// magicDNS reports a full MagicDNS name: machine.tailnet.ts.net.
+func magicDNS(host string) bool {
+	return strings.HasSuffix(host, ".ts.net") && strings.Count(host, ".") >= 3
 }
 
 // settingsServeCheck wakes the watchdog now: Settings › Tailscale and › Muse app call it on open.

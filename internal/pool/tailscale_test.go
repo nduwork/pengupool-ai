@@ -1084,8 +1084,8 @@ func TestServeWatchAfterSwitchDuringRound(t *testing.T) {
 	}
 }
 
-// After a machine or tailnet rename the saved name follows, keeping its scheme, and the hosts a
-// device may use follow with it.
+// After a machine or tailnet rename a saved MagicDNS name follows, keeping its scheme; a saved short
+// name or tailnet IP is the owner's choice and stays.
 func TestServeWatchFollowsARename(t *testing.T) {
 	for _, scheme := range []string{"https://", "http://"} {
 		st := watchStore(t, scheme+"old-name.tailnet.ts.net")
@@ -1095,6 +1095,16 @@ func TestServeWatchFollowsARename(t *testing.T) {
 		p.serveWatchRound(context.Background())
 		if got := st.Config().Network.Tailscale; got != scheme+"probe-machine.tailnet.ts.net" || p.serveWatch.RenamedTo == "" {
 			t.Fatalf("saved = %q, watch = %+v", got, p.serveWatch)
+		}
+	}
+	for _, saved := range []string{"https://probe-machine", "http://100.101.102.103"} {
+		st := watchStore(t, saved)
+		f := &fakeServe{routes: map[string]string{"443": "http://127.0.0.1:7787"}}
+		f.install(t)
+		p := New(Options{Store: st, Exe: "pengupool"})
+		p.serveWatchRound(context.Background())
+		if got := st.Config().Network.Tailscale; got != saved {
+			t.Fatalf("saved %q became %q", saved, got)
 		}
 	}
 }
