@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -48,7 +47,8 @@ func releaseImage(names []string) string {
 
 // updateCheck reports the newest non-draft release with a disk image (pre-releases count) and
 // whether it is newer than this host; a successful answer is kept for 30 minutes and published in
-// the domain, so the title bar shows it without asking.
+// the domain, so the title bar shows it without asking. A newer release with no image this app can
+// install (one still being published) is named in Error, so About never calls this the newest.
 func (p *Pool) updateCheck(ctx context.Context, in refreshIn) (any, error) {
 	p.updMu.Lock()
 	defer p.updMu.Unlock()
@@ -65,10 +65,10 @@ func (p *Pool) updateCheck(ctx context.Context, in refreshIn) (any, error) {
 		u.Error = "sign in to GitHub in Settings to check for updates"
 		return u, nil
 	}
-	raw, err := p.ghRun(ctx, "", "api", "repos/"+releaseRepo+"/releases?per_page=20")
+	raw, err := p.ghRunFor(ctx, 20*time.Second, "", "api", "repos/"+releaseRepo+"/releases?per_page=20")
 	if err != nil {
-		u.Error = err.Error()
-		return u, nil
+		u.Error = "Could not reach GitHub to check for updates (" + err.Error() + ")"
+		return u, nil // not cached: the next check asks again
 	}
 	var rels []struct {
 		Tag    string `json:"tag_name"`
@@ -83,19 +83,30 @@ func (p *Pool) updateCheck(ctx context.Context, in refreshIn) (any, error) {
 		u.Error = "unexpected answer from GitHub: " + err.Error()
 		return u, nil
 	}
+	unusable, unusableURL := "", "" // the newest release with no image this app can install
 	for _, r := range rels {
-		if r.Draft || !releaseTagRe.MatchString(r.Tag) || (u.Tag != "" && compareVersions(r.Tag, u.Tag) <= 0) {
+		if r.Draft || !releaseTagRe.MatchString(r.Tag) {
 			continue
 		}
 		var names []string
 		for _, a := range r.Assets {
 			names = append(names, a.Name)
 		}
-		if img := releaseImage(names); img != "" {
+		img := releaseImage(names)
+		if img == "" {
+			if unusable == "" || compareVersions(r.Tag, unusable) > 0 {
+				unusable, unusableURL = r.Tag, r.URL
+			}
+			continue
+		}
+		if u.Tag == "" || compareVersions(r.Tag, u.Tag) > 0 {
 			u.Tag, u.Latest, u.URL, u.Asset, u.Notes = r.Tag, strings.TrimPrefix(r.Tag, "v"), r.URL, img, trimNotes(r.Body)
 		}
 	}
 	u.Newer = u.Tag != "" && compareVersions(u.Tag, p.version) > 0
+	if unusable != "" && compareVersions(unusable, p.version) > 0 && (u.Tag == "" || compareVersions(unusable, u.Tag) > 0) {
+		u.Error = "PenguPool " + strings.TrimPrefix(unusable, "v") + " is out, but its release has no disk image this app can install yet (" + unusableURL + "). Try again in a few minutes, or download it from the release page."
+	}
 	p.upd, p.updAt = &u, time.Now()
 	if u.Newer {
 		p.publishUpdate(&u)
@@ -129,10 +140,11 @@ func (p *Pool) updateLoop(ctx context.Context) {
 	if p.version == "" {
 		return
 	}
-	// A notice the previous version saved is stale now.
+	// A notice the previous version saved is stale now, and so is any download it did not install.
 	if u := p.st.State().Domain.Update; u != nil && u.Current != p.version {
 		p.publishUpdate(nil)
 	}
+	pruneInstalled(filepath.Join(p.st.Dir(), updatesDir), p.version)
 	wait := time.Minute
 	for {
 		select {
@@ -151,7 +163,7 @@ type updateDownloadIn struct {
 }
 
 // updateDownload fetches a release's disk image into <store>/updates/<tag> and checks it is a disk
-// image; only the two newest update folders are kept.
+// image; nothing else is kept under updates/.
 func (p *Pool) updateDownload(ctx context.Context, in updateDownloadIn) (any, error) {
 	if !releaseTagRe.MatchString(in.Tag) {
 		return nil, invalid("not a release tag: %q", in.Tag)
@@ -188,22 +200,31 @@ func (p *Pool) updateDownload(ctx context.Context, in updateDownloadIn) (any, er
 		os.RemoveAll(dir)
 		return nil, err
 	}
+	_ = os.Chmod(img, 0o600) // gh writes it with the umask
 	pruneUpdates(root, in.Tag)
 	return map[string]string{"path": img}, nil
 }
 
-// pruneUpdates keeps two update folders: keep and the newest other one.
+// pruneUpdates removes every entry of updates/ but keep, whatever its name. RemoveAll unlinks a
+// symlink entry and never follows it.
 func pruneUpdates(root, keep string) {
 	entries, _ := os.ReadDir(root)
-	var tags []string
 	for _, e := range entries {
-		if e.IsDir() && releaseTagRe.MatchString(e.Name()) && e.Name() != keep {
-			tags = append(tags, e.Name())
+		if e.Name() != keep {
+			os.RemoveAll(filepath.Join(root, e.Name()))
 		}
 	}
-	slices.SortFunc(tags, func(a, b string) int { return compareVersions(b, a) })
-	for _, t := range tags[min(1, len(tags)):] {
-		os.RemoveAll(filepath.Join(root, t))
+}
+
+// pruneInstalled removes, at start, what an update left: every entry of updates/ that is not a
+// release newer than the running version. An owner who installs by dragging the disk image never
+// runs the app's install script, so this is the only clean-up then. A still-newer download stays.
+func pruneInstalled(root, version string) {
+	entries, _ := os.ReadDir(root)
+	for _, e := range entries {
+		if !releaseTagRe.MatchString(e.Name()) || compareVersions(e.Name(), version) <= 0 {
+			os.RemoveAll(filepath.Join(root, e.Name()))
+		}
 	}
 }
 

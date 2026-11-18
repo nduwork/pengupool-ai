@@ -1,10 +1,12 @@
 // In-app update, the desktop half: the host downloads the new disk image into <store>/updates/<tag>
 // (internal/pool/update.go); the app writes the script below, starts it detached and quits. The
 // script waits for the app to exit, copies the new PenguPool AI.app next to the installed one, stops
-// the old host, swaps the two and opens the new app. Agent sessions keep running: their workers
+// this store's old host, swaps the two, opens the new app and removes its own leftovers. Agent sessions keep running: their workers
 // outlive the host and the new host adopts them. Plain functions only, so node --test runs them.
 import { realpathSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
+
+import { STOP_HOST_SH } from "./stophost.ts";
 
 /** The running .app bundle, from the main executable's path (…/PenguPool AI.app/Contents/MacOS/PenguPool AI), or null. */
 export function bundleOf(execPath: string): string | null {
@@ -34,13 +36,20 @@ export interface InstallPlan {
   dmg: string;
   log: string; // <store>/logs/update.log
   dir: string; // a fresh temporary directory for the script and the mount point
+  store: string; // <store>: only its host is stopped, and its updates/ emptied after a good install
+  path?: string; // the script's PATH; only tests set it
 }
 
-/** The install script. Every step is logged; a failure before the swap reopens the installed app. */
+/**
+ * The install script. Every step is logged, and every way out (success, a failure, a signal) ends
+ * in finish(): it puts the installed app back if the swap failed, reopens whichever app is there, and
+ * removes what the updater left. After a good install nothing of the updater's remains; after a failed
+ * one the download stays so the owner can try again.
+ */
 export function installScript(p: InstallPlan): string {
   return `#!/bin/sh
 # PenguPool update, written by the app; it runs once, detached, after the app quits.
-PATH=/usr/bin:/bin:/usr/sbin:/sbin
+PATH=${p.path === undefined ? "/usr/bin:/bin:/usr/sbin:/sbin" : sq(p.path)}
 export PATH
 PID=${p.pid}
 BUNDLE=${sq(p.bundle)}
@@ -49,29 +58,49 @@ OLD=${sq(`${p.bundle}.old`)}
 DMG=${sq(p.dmg)}
 LOG=${sq(p.log)}
 DIR=${sq(p.dir)}
+STORE=${sq(p.store)}
 MNT="$DIR/mnt"
-HOST="$BUNDLE/Contents/Resources/bin/pengupool daemon"
-CLI="$HOME/.local/bin/pengupool-ai daemon"
 MOUNTED=
+STATUS=1 # 0 once the new app is in place
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG"; }
-# The old host's pids, started from the bundle or the CLI link: its command line starts with $HOST
-# or $CLI, compared as plain text (a shell that merely mentions the path is not the host).
-hostpids() { ps -axo pid=,command= | HOST="$HOST" CLI="$CLI" awk '{ pid = $1; sub(/^ *[0-9]+ +/, "") } index($0, ENVIRON["HOST"]) == 1 || index($0, ENVIRON["CLI"]) == 1 { print pid }'; }
-detach() {
+${STOP_HOST_SH}
+detach() { # MOUNTED is cleared only when the image really is detached
   [ -n "$MOUNTED" ] || return 0
-  hdiutil detach "$MNT" -quiet >> "$LOG" 2>&1 || hdiutil detach "$MNT" -force -quiet >> "$LOG" 2>&1 || log "could not detach $MNT"
-  MOUNTED=
+  if hdiutil detach "$MNT" -quiet >> "$LOG" 2>&1 || hdiutil detach "$MNT" -force -quiet >> "$LOG" 2>&1; then MOUNTED=; else log "could not detach $MNT"; fi
 }
-fail() {
-  log "failed: $*; reopening the installed app"
+# After a successful install nothing of the updater's is left. Only these places, by these names:
+# never the store's data, never backups/.
+tidy() {
+  rm -rf "$OLD"; [ -e "$OLD" ] && log "could not remove $OLD"
+  if [ -d "$STORE/updates" ] && [ ! -L "$STORE/updates" ]; then
+    for d in "$STORE/updates"/* "$STORE/updates"/.[!.]*; do
+      [ -e "$d" ] || [ -L "$d" ] || continue
+      rm -rf "$d" && log "removed $d"
+    done
+  fi
+  for d in "$(dirname "$DIR")"/pengupool-update-*; do # temp folders earlier failed updates left
+    [ -d "$d" ] && [ ! -L "$d" ] && [ "$d" != "$DIR" ] || continue
+    hdiutil detach "$d/mnt" -force -quiet > /dev/null 2>&1
+    rm -rf "$d" && log "removed $d"
+  done
+}
+finish() { # every way out of the script ends here, once
+  trap - EXIT HUP INT TERM
   detach
   rm -rf "$NEW"
-  open "$BUNDLE"
-  exit 1
+  if [ ! -d "$BUNDLE" ] && [ -d "$OLD" ]; then mv "$OLD" "$BUNDLE" || log "could not restore $OLD"; fi
+  if [ "$STATUS" = 0 ]; then tidy; log "installed; opening the new app"; else log "reopening the installed app"; fi
+  APP="$BUNDLE"; [ -d "$APP" ] || APP="$OLD"
+  open "$APP" || { sleep 2; open "$APP"; } || log "could not open $APP"
+  if [ -z "$MOUNTED" ]; then rm -rf "$DIR"; else rm -f "$DIR/update.sh"; fi
 }
+fail() { log "failed: $*"; exit 1; }
+trap finish EXIT
+trap 'exit 1' HUP INT TERM
 
 mkdir -p "$(dirname "$LOG")" "$MNT"
+( umask 077; : >> "$LOG" ); chmod 600 "$LOG" 2> /dev/null
 log "updating $BUNDLE from $DMG"
 i=0
 while kill -0 "$PID" 2>/dev/null; do
@@ -92,33 +121,20 @@ fi
 rm -rf "$NEW"
 [ -e "$NEW" ] && fail "could not remove $NEW"
 ditto "$MNT/PenguPool AI.app" "$NEW" >> "$LOG" 2>&1 || fail "could not copy the new app"
-find "$NEW" -xattrname com.apple.quarantine -exec xattr -d -s com.apple.quarantine {} \\; 2>/dev/null # macOS xattr has no -r
+find "$NEW" -xattrname com.apple.quarantine -exec xattr -d -s com.apple.quarantine {} \; 2>/dev/null # macOS xattr has no -r
 log "copied the new app"
 detach
-# The old host would answer the new app; sessions keep running without it.
-PIDS=$(hostpids)
-if [ -n "$PIDS" ]; then
-  # shellcheck disable=SC2086
-  kill $PIDS 2>/dev/null && log "stopping the old host ($PIDS)"
+# The old host would answer the new app; sessions keep running without it. Only this store's host.
+if stop_store_host "$STORE"; then
+  [ -n "$HOST_PID" ] && log "stopped the old host ($HOST_PID)"
+else
+  kill -KILL "$HOST_PID" 2>/dev/null
+  log "the old host ($HOST_PID) was killed"
 fi
-i=0
-while PIDS=$(hostpids) && [ -n "$PIDS" ]; do
-  i=$((i + 1))
-  # shellcheck disable=SC2086
-  if [ "$i" -ge 20 ]; then kill -KILL $PIDS 2>/dev/null; log "the old host was killed"; break; fi
-  sleep 0.5
-done
 rm -rf "$OLD"
 [ -e "$OLD" ] && fail "could not remove $OLD"
 mv "$BUNDLE" "$OLD" || fail "could not move the installed app aside"
-if ! mv "$NEW" "$BUNDLE"; then
-  mv "$OLD" "$BUNDLE" || log "could not restore $OLD"
-  fail "could not move the new app into place"
-fi
-rm -rf "$OLD"
-[ -e "$OLD" ] && log "could not remove $OLD (the next update removes it)"
-log "installed; opening the new app"
-open "$BUNDLE" || log "could not open $BUNDLE"
-rm -rf "$DIR"
+mv "$NEW" "$BUNDLE" || fail "could not move the new app into place" # finish puts $OLD back
+STATUS=0
 `;
 }

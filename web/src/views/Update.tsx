@@ -11,6 +11,18 @@ import type { Update } from "../protocol/domain";
 // host download the disk image and the desktop app install it and restart; agent sessions keep
 // running. In a browser (or on an SSH host) it links to the release page instead.
 
+/**
+ * About's sentence for an update check. "This is the newest version." only when GitHub answered and
+ * no newer release exists at all; an error (GitHub out of reach, a newer release with no image yet)
+ * is shown, with the installable newer release when there is one.
+ */
+export function updateLine(u: Update | null): string {
+  if (u === null) return "";
+  const available = u.newer ? `PenguPool ${u.latest ?? ""} is available.` : "";
+  if (u.error !== undefined) return available === "" ? u.error : `${u.error} ${available}`;
+  return available !== "" ? available : "This is the newest version.";
+}
+
 export function UpdatePill(): ReactElement | null {
   const app = useApp();
   const u = app.domain.update;

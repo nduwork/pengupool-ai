@@ -23,7 +23,9 @@ func fakeReleases(t *testing.T, version string) (*Pool, string) {
 case "$1 $2" in
 "auth status")
   if [ -f "$PP_GH/signed_out" ]; then echo '{"hosts":{"github.com":[]}}'; else echo '{"hosts":{"github.com":[{"login":"me","active":true,"state":"success"}]}}'; fi ;;
-"api repos/nduwork/pengupool-ai/releases?per_page=20") cat "$PP_GH/releases.json" ;;
+"api repos/nduwork/pengupool-ai/releases?per_page=20")
+  if [ -f "$PP_GH/api_down" ]; then echo "error connecting to api.github.com" >&2; exit 1; fi
+  cat "$PP_GH/releases.json" ;;
 "release download")
   echo "$@" > "$PP_GH/download.args"
   while [ $# -gt 0 ]; do [ "$1" = "-D" ] && dir="$2"; [ "$1" = "-p" ] && asset="$2"; shift; done
@@ -61,7 +63,8 @@ func TestCompareVersions(t *testing.T) {
 }
 
 // The newest non-draft release with a disk image wins by semver (a release beats its own
-// pre-release, 0.8.10-rc.1 beats 0.8.9); it is published in the domain only when newer.
+// pre-release, 0.8.10-rc.1 beats 0.8.9); it is published in the domain only when newer. A newer
+// release with no image (0.8.11 here) is named in Error, and the installable one is still offered.
 func TestUpdateCheck(t *testing.T) {
 	p, root := fakeReleases(t, "0.8.2")
 	os.WriteFile(filepath.Join(root, "releases.json"), []byte(releasesJSON), 0o644)
@@ -71,7 +74,7 @@ func TestUpdateCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := got.(protocol.Update)
-	if u.Error != "" || !u.Newer || u.Latest != "0.8.10-rc.1" || u.Tag != "v0.8.10-rc.1" || u.Current != "0.8.2" || u.Asset != "PenguPool-AI-0.8.10-rc.1-mac-arm64.dmg" || u.Notes != "rc" {
+	if !strings.Contains(u.Error, "PenguPool 0.8.11 is out, but its release has no disk image this app can install yet (x)") || !u.Newer || u.Latest != "0.8.10-rc.1" || u.Tag != "v0.8.10-rc.1" || u.Current != "0.8.2" || u.Asset != "PenguPool-AI-0.8.10-rc.1-mac-arm64.dmg" || u.Notes != "rc" {
 		t.Fatalf("check %+v", u)
 	}
 	if d := p.st.State().Domain.Update; d == nil || d.Tag != "v0.8.10-rc.1" {
@@ -97,6 +100,75 @@ func TestUpdateCheck(t *testing.T) {
 	}
 }
 
+// The newest release has no image and nothing installable is newer: not "the newest version".
+// A newer pre-release with an image is offered as any release. GitHub out of reach says so, and is
+// asked again next time.
+func TestUpdateCheckCannotInstall(t *testing.T) {
+	p, root := fakeReleases(t, "0.8.10")
+	ctx := context.Background()
+	os.WriteFile(filepath.Join(root, "releases.json"), []byte(`[
+ {"tag_name":"v0.8.11","draft":false,"html_url":"https://example.test/v0.8.11","body":"","assets":[{"name":"notes.txt"}]},
+ {"tag_name":"v0.8.10","draft":false,"html_url":"u","body":"","assets":[{"name":"PenguPool-AI-0.8.10-mac-arm64.dmg"}]}]`), 0o644)
+	got, _ := p.updateCheck(ctx, refreshIn{Refresh: true})
+	if u := got.(protocol.Update); u.Newer || !strings.Contains(u.Error, "is out, but its release has no disk image") || !strings.Contains(u.Error, "https://example.test/v0.8.11") {
+		t.Fatalf("no image: %+v", u)
+	}
+	os.WriteFile(filepath.Join(root, "releases.json"), []byte(`[
+ {"tag_name":"v0.8.11-rc.1","draft":false,"prerelease":true,"html_url":"r","body":"","assets":[{"name":"PenguPool-AI-0.8.11-rc.1-mac-arm64.dmg"}]}]`), 0o644)
+	got, _ = p.updateCheck(ctx, refreshIn{Refresh: true})
+	if u := got.(protocol.Update); !u.Newer || u.Error != "" || u.Tag != "v0.8.11-rc.1" {
+		t.Fatalf("pre-release: %+v", u)
+	}
+	os.WriteFile(filepath.Join(root, "api_down"), nil, 0o644)
+	got, _ = p.updateCheck(ctx, refreshIn{Refresh: true})
+	if u := got.(protocol.Update); !strings.HasPrefix(u.Error, "Could not reach GitHub to check for updates (") || u.Newer {
+		t.Fatalf("unreachable: %+v", u)
+	}
+	os.Remove(filepath.Join(root, "api_down"))
+	if got, _ := p.updateCheck(ctx, refreshIn{}); got.(protocol.Update).Error != "" {
+		t.Fatalf("an unreachable answer was cached: %+v", got)
+	}
+}
+
+// pruneUpdates keeps only the new download; pruneInstalled keeps only downloads newer than this
+// version. Neither follows a symlink entry.
+func TestPruneUpdates(t *testing.T) {
+	mk := func() (string, string) {
+		root := filepath.Join(t.TempDir(), "updates")
+		for _, d := range []string{"v0.12.0", "v0.13.0", "v0.13.1", "v0.14.0-rc.1", "junk"} {
+			os.MkdirAll(filepath.Join(root, d), 0o700)
+		}
+		os.WriteFile(filepath.Join(root, ".partial"), nil, 0o600)
+		outside := filepath.Join(t.TempDir(), "keep.json")
+		os.WriteFile(outside, []byte("keep"), 0o600)
+		os.Symlink(outside, filepath.Join(root, "stray"))
+		return root, outside
+	}
+	names := func(root string) (out []string) {
+		es, _ := os.ReadDir(root)
+		for _, e := range es {
+			out = append(out, e.Name())
+		}
+		return out
+	}
+	root, outside := mk()
+	pruneUpdates(root, "v0.13.1")
+	if got := strings.Join(names(root), " "); got != "v0.13.1" {
+		t.Fatalf("pruneUpdates kept %q", got)
+	}
+	if b, err := os.ReadFile(outside); err != nil || string(b) != "keep" {
+		t.Fatal("pruneUpdates followed a symlink")
+	}
+	root, outside = mk()
+	pruneInstalled(root, "0.13.0")
+	if got := strings.Join(names(root), " "); got != "v0.13.1 v0.14.0-rc.1" {
+		t.Fatalf("pruneInstalled kept %q", got)
+	}
+	if b, err := os.ReadFile(outside); err != nil || string(b) != "keep" {
+		t.Fatal("pruneInstalled followed a symlink")
+	}
+}
+
 func TestUpdateCheckSignedOut(t *testing.T) {
 	p, root := fakeReleases(t, "0.8.2")
 	os.WriteFile(filepath.Join(root, "signed_out"), nil, 0o644)
@@ -115,8 +187,8 @@ func TestUpdateCheckSignedOut(t *testing.T) {
 	}
 }
 
-// The download lands in <store>/updates/<tag>, is checked as a disk image, and only two update
-// folders stay.
+// The download lands in <store>/updates/<tag>, readable by the owner only, is checked as a disk
+// image, and nothing else stays under updates/.
 func TestUpdateDownload(t *testing.T) {
 	p, root := fakeReleases(t, "0.8.2")
 	ctx := context.Background()
@@ -145,8 +217,11 @@ func TestUpdateDownload(t *testing.T) {
 		t.Fatalf("gh %s", s)
 	}
 	left, _ := os.ReadDir(updates)
-	if len(left) != 2 || left[0].Name() != "v0.8.2" || left[1].Name() != "v0.8.3" {
+	if len(left) != 1 || left[0].Name() != "v0.8.3" {
 		t.Fatalf("kept %v", left)
+	}
+	if fi, err := os.Stat(want); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("image mode %v %v", fi.Mode(), err)
 	}
 	// Not a disk image: refused and removed.
 	p.testDisk = func(string) error { return errors.New("not a disk image") }
