@@ -286,9 +286,10 @@ const typeLine = async (text) => {
 | --- | --- | --- |
 | `403 forbidden host` | The URL's host is not the Serve name: an IP, a different name, a typo. | Use the URL that Pair a Muse device shows. `tailscale status` on the PenguPool machine shows its name. |
 | Connection refused or times out on port 7787 | The host listens on loopback only; port 7787 is not for other devices. | Set up Serve (step 1) and use its HTTPS URL. |
-| Pair a Muse device is greyed out ("Set up Tailscale Serve first") | Serve is not set up, or Tailscale is not running here. | Step 1 (Settings › Tailscale), check `tailscale status`, then make a new code. |
+| Pair a Muse device is greyed out ("Set up Tailscale Serve first") | No Tailscale Serve name is saved yet. | Step 1 (Settings › Tailscale), check `tailscale status`, then make a new code. |
 | `401 unauthorized` | Token missing, mistyped, or revoked; for `/pair`, a wrong or expired code. | Check the `Authorization: Bearer` header. Pair again for a revoked device, or make a new code. |
 | `409` on pairing | A device with that name is already paired. | Make a new code, and pair under another name or revoke the old one first. |
 | `409` on an answer | The ask changed or was already answered. | Read `/next` again. |
 | `503` with `Retry-After` | A tap still running (1 s), or pairing paused after wrong codes (60 s). | Retry after the stated time. |
+| `503` without `Retry-After` | The host is briefly unreachable, for example while it restarts. | Retry in a few seconds; the companion tools do this on their own. |
 | The phone was never asked to approve, or the device doesn't appear | Tailscale has not approved the device, or the approval link lapsed. | In the Tailscale admin console, under Machines, check that the device is there, approved and connected. |

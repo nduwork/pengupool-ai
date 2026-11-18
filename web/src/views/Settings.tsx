@@ -1490,7 +1490,7 @@ function MuseDevices({ onChanged, openTailscale }: { onChanged: () => void; open
         </Button>
         {blocked !== null ? (
           <p className="min-w-0 text-caption text-muted-foreground [overflow-wrap:anywhere]">
-            Set up Tailscale Serve first. {blocked}.{" "}
+            {blocked}{" "}
             <button type="button" className="underline hover:text-foreground" onClick={openTailscale}>
               Open Settings › Tailscale
             </button>

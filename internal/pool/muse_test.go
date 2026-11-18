@@ -368,8 +368,9 @@ func TestMuseErrorsCarryACode(t *testing.T) {
 			if err == nil {
 				continue
 			}
-			if pe := (*protocol.Error)(nil); !errors.As(err, &pe) || pe.Code == "" {
-				t.Errorf("%s %s: uncoded %v", typ, raw, err)
+			// museBoundary codes whatever reaches it as internal, so internal here is a missed path.
+			if pe := (*protocol.Error)(nil); !errors.As(err, &pe) || pe.Code == "" || pe.Code == protocol.CodeInternal {
+				t.Errorf("%s %s: no fitting code: %v", typ, raw, err)
 			}
 		}
 	}

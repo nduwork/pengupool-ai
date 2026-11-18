@@ -177,6 +177,20 @@ class HttpLayerTests(unittest.TestCase):
             pp.device_post("/sessions/s1/say", {"words": "hi"})
         self.assertEqual((len(calls), sleeps), (1, []))
 
+    def test_get_retries_a_reset_and_a_502(self):
+        pp.TRANSPORT = "serve"
+        calls, sleeps = scripted_tunnel([None, b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n",
+                                         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n[]"])
+        status, _ = pp.device_get("/sessions")
+        self.assertEqual((status, len(calls), sleeps), (200, 3, [1, 2]))
+
+    def test_certificate_error_is_never_retried(self):
+        pp.TRANSPORT = "serve"
+        calls, sleeps = scripted_tunnel([ssl.SSLCertVerificationError("bad cert")] * 4)
+        with self.assertRaises(ssl.SSLCertVerificationError):
+            pp.device_get("/sessions")
+        self.assertEqual((len(calls), sleeps), (1, []))
+
     def test_say_retries_a_connection_that_never_opened(self):
         pp.TRANSPORT = "serve"
         calls, sleeps = scripted_tunnel([OSError("connection refused"), b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"])
