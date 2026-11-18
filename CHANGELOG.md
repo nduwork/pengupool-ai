@@ -28,6 +28,10 @@ About no longer says "This is the newest version." when a newer release is still
 
 **Shut down** (Settings → General) stops every session on this Mac, then the host and, in the desktop app, the app. Closing or quitting the app still leaves everything running. No session can start while the host shuts down, and a paired phone keeps its pairing for the next start.
 
+The Muse app connection heals itself and shows what is wrong. PenguPool checks Tailscale Serve every minute, and when you open Settings › Tailscale or › Muse app: it points its own route back at the host after Tailscale restarts and follows a rename of the machine or tailnet, with no click; it never adds a route you removed or touches another app's. Settings › Muse app shows whether devices can reach the host and the last 20 requests it refused (a wrong address, a revoked device, an unknown token, a wrong pairing code), kept in memory until the host restarts. **Re-pair…** gives a device that lost its token a new one under the same name; the old token gets 401. A device can check its own connection with `GET /api/muse/v1/status` (its name, the host's version and start epoch, the asks waiting for it), and the companion has `pp.status()`.
+
+Opening Settings no longer crashes the host when an agent's `--version` is slow to start (macOS scanning a newly installed agent, for example): the check gives up after 10 seconds and says so.
+
 ## 0.11.4
 
 Muse Spark is now an ordinary decision model. In Settings → Decision model, Local hosted, Online / cloud and **Meta · Muse Spark** are three choices for one slot; each is saved, checked and chosen with **Use for triage**. An earlier Muse Spark setup becomes a saved Meta model, and the triage model in use stays as it is. Muse Spark is uncalibrated, so when it is the triage model nothing acts on its answers alone: check-ins go to you, the Compass asks, every Done report is kept, and team proposals keep each helper's own agent.

@@ -44,14 +44,26 @@ The device token is, and every call except pairing needs it.
    ```
 
    The token is shown once. PenguPool keeps only its SHA-256 hash (in `config.json` in its store),
-   so a lost token cannot be shown again: pair again under a new name.
+   so a lost token cannot be shown again: re-pair the device (below) to give it a new one.
 3. The device now appears under Settings › Muse app with when it was last seen.
 
 Pairing rules: each device name pairs once (`409` for a name already paired; the code is used up
 by that try, so make a new one). A wrong or expired
 code is `401`. After 10 wrong codes, pairing is paused for a minute (`503`, `Retry-After: 60`).
 
+**Re-pair** a device that lost its token under Settings › Muse app › Re-pair…: it makes a code for
+that device only. Pair with it under the same name; the device keeps its place in the list, gets a
+new token, and the old token gets `401` from then on. The code refuses any other name (`409`, and the
+code is used up). An agent client makes one with `muse.pairCode` and `{"replace": "My phone"}`.
+
 **Revoke** a device under Settings › Muse app › Revoke. Its token stops working on its next call.
+
+Settings › Muse app also shows whether devices can reach the host (the Serve address, or the first
+failing Tailscale check) and the last 20 requests the host refused since it started: a wrong address,
+a revoked device, an unknown token, a wrong pairing code. PenguPool checks Serve every minute and
+when you open Settings › Tailscale or › Muse app: it points its own route back at the host after
+Tailscale restarts, and follows a rename of the machine or the tailnet, so devices keep working with
+no click. It never adds a route you removed.
 
 An agent client with the owner's token can also make a code itself with the `muse.pairCode`
 request (see [The owner WebSocket API](#the-owner-websocket-api)). It answers `{code, url}`.
@@ -63,6 +75,15 @@ Every call carries the token: `Authorization: Bearer <token>`. Set this up once:
 ```bash
 API=https://mac.tail1234.ts.net/api/muse/v1
 AUTH="Authorization: Bearer 9f2c…"
+```
+
+**Check the connection.** Answers this device's name, the host's version, its start `epoch` (it
+changes when the host restarts), how many asks this device may see, and when it was paired. `401`
+means the token was revoked or replaced; `403` means the wrong address.
+
+```bash
+curl -s "$API/status" -H "$AUTH"
+# {"device":"My phone","host_version":"0.12.0","epoch":"01a1…","waiting":2,"paired_at":"2026-11-18T10:00:00Z"}
 ```
 
 **List sessions.**
@@ -287,8 +308,8 @@ const typeLine = async (text) => {
 | `403 forbidden host` | The URL's host is not the Serve name: an IP, a different name, a typo. | Use the URL that Pair a Muse device shows. `tailscale status` on the PenguPool machine shows its name. |
 | Connection refused or times out on port 7787 | The host listens on loopback only; port 7787 is not for other devices. | Set up Serve (step 1) and use its HTTPS URL. |
 | Pair a Muse device is greyed out ("Set up Tailscale Serve first") | No Tailscale Serve name is saved yet. | Step 1 (Settings › Tailscale), check `tailscale status`, then make a new code. |
-| `401 unauthorized` | Token missing, mistyped, or revoked; for `/pair`, a wrong or expired code. | Check the `Authorization: Bearer` header. Pair again for a revoked device, or make a new code. |
-| `409` on pairing | A device with that name is already paired. | Make a new code, and pair under another name or revoke the old one first. |
+| `401 unauthorized` | Token missing, mistyped, revoked or replaced by a re-pair; for `/pair`, a wrong or expired code. | Check the `Authorization: Bearer` header. Settings › Muse app lists the refusal and says which. Re-pair the device, or make a new code. |
+| `409` on pairing | A device with that name is already paired, or a re-pair code was used under another name. | Use Re-pair… for that device, or pair under another name. |
 | `409` on an answer | The ask changed or was already answered. | Read `/next` again. |
 | `503` with `Retry-After` | A tap still running (1 s), or pairing paused after wrong codes (60 s). | Retry after the stated time. |
 | `503` without `Retry-After` | The host is briefly unreachable, for example while it restarts. | Retry in a few seconds; the companion tools do this on their own. |

@@ -162,23 +162,25 @@ func cmdDaemon(args []string) error {
 	pl.MarkLost(wasRunning)
 	go pl.Run(ctx)
 	srv, err := gateway.New(gateway.Options{
-		SocketPath: hubSocket(dir),
-		HTTPAddr:   addr,
-		Store:      st,
-		Sessions:   hubSessions{h: h},
-		Static:     staticFS(),
-		Logf:       logf,
-		RPC:        pl.RPC,
-		MuseWait:   pl.MuseWait,
-		OwnerInput: pl.OwnerInput,
-		InSession:  pl.InAgentSession,
-		PhoneHosts: func() []string { return phoneHosts(st.Config().Network.Tailscale) },
+		SocketPath:  hubSocket(dir),
+		HTTPAddr:    addr,
+		Store:       st,
+		Sessions:    hubSessions{h: h},
+		Static:      staticFS(),
+		Logf:        logf,
+		RPC:         pl.RPC,
+		MuseWait:    pl.MuseWait,
+		MuseRefused: pl.NoteMuseRefused,
+		OwnerInput:  pl.OwnerInput,
+		InSession:   pl.InAgentSession,
+		PhoneHosts:  func() []string { return phoneHosts(st.Config().Network.Tailscale) },
 	})
 	if err != nil {
 		return err
 	}
 	pool.HTTPAddr = srv.HTTPAddr
-	go pl.HealTailscaleServe(ctx) // re-serve after a port change; owner's home only
+	go pl.HealTailscaleServe(ctx)  // re-serve after a port change; owner's home only
+	go pl.WatchTailscaleServe(ctx) // then keep Serve and its name current, every minute
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ctx) }()

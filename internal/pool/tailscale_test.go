@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nduwork/pengupool-ai/internal/gateway"
 	"github.com/nduwork/pengupool-ai/internal/store"
 )
 
@@ -1007,5 +1008,186 @@ func TestTailscaleStatusNotJSONShowsTheCLIText(t *testing.T) {
 	c := checkByID(t, p.tailscaleChecks(), "login")
 	if c.OK || c.Detail != "The Tailscale GUI failed to start" {
 		t.Fatalf("login check = %+v, want the CLI's text", c)
+	}
+}
+
+// watchStore is a home store whose saved Serve name is the stub's own tailnet name, served by
+// PenguPool at port 1111 last time.
+func watchStore(t *testing.T, saved string) *store.Store {
+	t.Helper()
+	st := healHomeStore(t)
+	if err := st.UpdateConfig(func(c *store.Config) error { c.Network.Tailscale = saved; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	setServePort(t, st, "1111")
+	return st
+}
+
+// A route left stale after start-up (tailscaled restarted onto the old port) is re-pointed on the
+// watchdog's next round, with no click; a route that is gone stays gone.
+func TestServeWatchRepointsAStaleRoute(t *testing.T) {
+	st := watchStore(t, "https://probe-machine.tailnet.ts.net")
+	f := &fakeServe{routes: map[string]string{"443": "http://127.0.0.1:1111"}}
+	f.install(t)
+	p := New(Options{Store: st, Exe: "pengupool"})
+	p.serveWatchRound(context.Background())
+	if f.routes["443"] != "http://127.0.0.1:7787" || !p.serveWatch.Repointed {
+		t.Fatalf("routes = %v, watch = %+v: want :443 re-pointed at 7787", f.routes, p.serveWatch)
+	}
+	f.routes = map[string]string{}
+	p.serveWatchRound(context.Background())
+	if len(f.routes) != 0 || p.serveWatch.Repointed {
+		t.Fatalf("routes = %v: the watchdog served a route the owner may have turned off", f.routes)
+	}
+}
+
+// Another app's route is never touched, and does not make the name follow a rename.
+func TestServeWatchLeavesAnotherAppsRoute(t *testing.T) {
+	st := watchStore(t, "https://old-name.tailnet.ts.net")
+	f := &fakeServe{routes: map[string]string{"443": "http://127.0.0.1:9999"}}
+	f.install(t)
+	p := New(Options{Store: st, Exe: "pengupool"})
+	p.serveWatchRound(context.Background())
+	if f.routes["443"] != "http://127.0.0.1:9999" || len(f.routes) != 1 {
+		t.Fatalf("routes = %v: another app's route changed", f.routes)
+	}
+	if got := st.Config().Network.Tailscale; got != "https://old-name.tailnet.ts.net" {
+		t.Fatalf("saved name = %q: renamed with no PenguPool route", got)
+	}
+}
+
+// A store from before the ServePort record whose route already points here records it on the first
+// round, so a route the owner later points at another local app is left alone.
+func TestServeWatchRecordsALegacyRoute(t *testing.T) {
+	st := watchStore(t, "https://probe-machine.tailnet.ts.net")
+	setServePort(t, st, "")
+	f := &fakeServe{routes: map[string]string{"443": "http://127.0.0.1:7787"}}
+	f.install(t)
+	p := New(Options{Store: st, Exe: "pengupool"})
+	p.serveWatchRound(context.Background())
+	if got := st.Config().Network.ServePort; got != "7787" {
+		t.Fatalf("ServePort = %q, want 7787 recorded", got)
+	}
+	f.routes["443"] = "http://127.0.0.1:3000"
+	p.serveWatchRound(context.Background())
+	if f.routes["443"] != "http://127.0.0.1:3000" {
+		t.Fatalf("routes = %v: another app's route was taken back", f.routes)
+	}
+}
+
+// A Settings switch to HTTP made during a round wins: the round re-reads Serve under the lock.
+func TestServeWatchAfterSwitchDuringRound(t *testing.T) {
+	st := watchStore(t, "https://probe-machine.tailnet.ts.net")
+	f := &fakeServe{routes: map[string]string{"443": "http://127.0.0.1:1111"}}
+	f.install(t)
+	p := New(Options{Store: st, Exe: "pengupool"})
+	run, clicked := tailscaleCmd, false
+	tailscaleCmd = func(ctx context.Context, bin string, args ...string) ([]byte, error) {
+		if len(args) >= 1 && args[0] == "status" && !clicked { // the round has read tailscaled; the owner clicks
+			clicked = true
+			url := "http://probe-machine.tailnet.ts.net"
+			if res, err := p.settingsSave(context.Background(), settingsIn{Tailscale: &url, EnableServeHTTP: true}); err != nil {
+				t.Fatal(err)
+			} else if e, _ := res.(map[string]any)["serve_http_error"].(string); e != "" {
+				t.Fatalf("switch: %s", e)
+			}
+		}
+		return run(ctx, bin, args...)
+	}
+	p.serveWatchRound(context.Background())
+	if !clicked || len(f.routes) != 1 || f.routes["80"] != "http://127.0.0.1:7787" {
+		t.Fatalf("clicked = %v, routes = %v: want only :80 at 7787", clicked, f.routes)
+	}
+	if got := st.Config().Network.Tailscale; got != "http://probe-machine.tailnet.ts.net" {
+		t.Fatalf("saved = %q: the round undid the switch's scheme", got)
+	}
+}
+
+// After a machine or tailnet rename a saved MagicDNS name follows, keeping its scheme; a saved short
+// name or tailnet IP is the owner's choice and stays.
+func TestServeWatchFollowsARename(t *testing.T) {
+	for _, scheme := range []string{"https://", "http://"} {
+		st := watchStore(t, scheme+"old-name.tailnet.ts.net")
+		f := &fakeServe{routes: map[string]string{"443": "http://127.0.0.1:7787"}}
+		f.install(t)
+		p := New(Options{Store: st, Exe: "pengupool"})
+		p.serveWatchRound(context.Background())
+		if got := st.Config().Network.Tailscale; got != scheme+"probe-machine.tailnet.ts.net" || p.serveWatch.RenamedTo == "" {
+			t.Fatalf("saved = %q, watch = %+v", got, p.serveWatch)
+		}
+	}
+	for _, saved := range []string{"https://probe-machine", "http://100.101.102.103"} {
+		st := watchStore(t, saved)
+		f := &fakeServe{routes: map[string]string{"443": "http://127.0.0.1:7787"}}
+		f.install(t)
+		p := New(Options{Store: st, Exe: "pengupool"})
+		p.serveWatchRound(context.Background())
+		if got := st.Config().Network.Tailscale; got != saved {
+			t.Fatalf("saved %q became %q", saved, got)
+		}
+	}
+}
+
+// Nothing happens with no Serve name saved, or on a store that isn't the owner's home; a stopped
+// tailscaled is recorded for the panel and nothing is served.
+func TestServeWatchGuards(t *testing.T) {
+	st := watchStore(t, "")
+	ran := stubTailscale(t, tailscaleStatusRunning, tailscaleServeJSON("http://127.0.0.1:1111"))
+	p := New(Options{Store: st, Exe: "pengupool"})
+	p.serveWatchRound(context.Background())
+	if len(*ran) != 0 || !p.serveWatch.At.IsZero() {
+		t.Fatalf("ran %v with no Serve name saved", *ran)
+	}
+
+	st = watchStore(t, "https://probe-machine.tailnet.ts.net")
+	ran = stubTailscale(t, tailscaleStatusStopped, tailscaleServeJSON("http://127.0.0.1:1111"))
+	p = New(Options{Store: st, Exe: "pengupool"})
+	p.serveWatchRound(context.Background())
+	if len(*ran) != 0 || p.serveWatch.Problem != "Tailscale isn't running" {
+		t.Fatalf("ran %v, watch %+v", *ran, p.serveWatch)
+	}
+
+	t.Setenv("PENGUPOOL_HOME", t.TempDir()) // a throwaway store: the watchdog never starts
+	done := make(chan struct{})
+	go func() { p.WatchTailscaleServe(context.Background()); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the watchdog ran on a throwaway store")
+	}
+}
+
+// settings.serveCheck runs a round at once; the watchdog stops when its context ends.
+func TestServeWatchCheckNowAndStop(t *testing.T) {
+	st := watchStore(t, "https://probe-machine.tailnet.ts.net")
+	f := &fakeServe{routes: map[string]string{"443": "http://127.0.0.1:1111"}}
+	f.install(t)
+	oldAfter := serveWatchAfter
+	serveWatchAfter = func(time.Duration) <-chan time.Time { return nil } // only a kick wakes it
+	t.Cleanup(func() { serveWatchAfter = oldAfter })
+	p := New(Options{Store: st, Exe: "pengupool"})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { p.WatchTailscaleServe(ctx); close(done) }()
+	if _, err := p.RPC(context.Background(), gateway.Caller{Owner: true}, "settings.serveCheck", nil); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; ; i++ {
+		p.serveWatchMu.Lock()
+		at := p.serveWatch.At
+		p.serveWatchMu.Unlock()
+		if !at.IsZero() {
+			break
+		}
+		if i > 500 {
+			t.Fatal("settings.serveCheck did not run a round")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the watchdog did not stop with its context")
 	}
 }

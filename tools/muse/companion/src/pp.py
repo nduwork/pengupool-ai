@@ -13,6 +13,7 @@ the device API (/api/muse/v1), which is the companion's only channel:
   pp.device_get("/next")            -> (status, body bytes)  204 = no ask
   pp.device_post("/sessions/<id>/say", {"words": "..."})
   pp.healthz()                      -> (status, dict)  daemon epoch etc.
+  pp.status()                       -> (status, dict)  this device: name, epoch, waiting
 
 The device token is read from $PENGUPOOL_DEVICE_TOKEN or ./device-token
 (mode 0600). The bootstrap token is never read, held, or sent by this
@@ -361,6 +362,17 @@ def healthz():
         return status, {}
 
 
+def status():
+    """GET /api/muse/v1/status: this device's connection check. Returns (status, dict) with
+    device, host_version, epoch (changes when the host restarts), waiting and paired_at.
+    A revoked or replaced token raises DeviceRefused (401); a wrong address too (403)."""
+    code, body = device_get("/status")
+    try:
+        return code, json.loads(body)
+    except Exception:
+        return code, {}
+
+
 def api(method, path, body=None):
     """One call on the device API. Returns (status, parsed JSON or None)."""
     status, raw, _ = request_with_retry(method, API + path, body=body)
@@ -441,6 +453,9 @@ def main():
         print(json.dumps(card, indent=2, ensure_ascii=False) if card else "no ask waiting")
     elif cmd == "healthz":
         code, info = healthz()
+        print(code, json.dumps(info, ensure_ascii=False))
+    elif cmd == "status":
+        code, info = status()
         print(code, json.dumps(info, ensure_ascii=False))
     elif cmd == "say":
         cmd_say(args)

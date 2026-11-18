@@ -31,12 +31,14 @@ import (
 var museAllowed = map[string]bool{
 	"muse.next": true, "muse.answer": true, "muse.say": true,
 	"muse.sessions": true, "muse.compass": true, "muse.action": true, "muse.member": true,
+	"muse.status": true,
 }
 
 // musePairCode is one pending pairing window.
 type musePairCode struct {
 	code    string
 	expires time.Time
+	replace string // a re-pair code: only this paired device may use it, and it gets a new token
 }
 
 // museAnswerDone is one answered tap: the replay cache. The key is the
@@ -641,10 +643,23 @@ type musePairCodeOut struct {
 	URL  string `json:"url"`
 }
 
+type musePairCodeIn struct {
+	Replace string `json:"replace,omitempty"` // re-pair this device: its token is replaced once the code is used
+}
+
 // musePairCode makes a one-time 6-digit pairing code (5 min, one use).
-func (p *Pool) musePairCode(_ context.Context, c gateway.Caller, _ json.RawMessage) (any, error) {
+func (p *Pool) musePairCode(_ context.Context, c gateway.Caller, raw json.RawMessage) (any, error) {
 	if c.Device != "" {
 		return nil, protocol.Errorf(protocol.CodeForbidden, "devices cannot pair")
+	}
+	var in musePairCodeIn
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &in); err != nil {
+			return nil, invalid("params: %v", err)
+		}
+	}
+	if in.Replace != "" && !slices.ContainsFunc(p.st.Config().MuseDevices, func(d store.MuseDevice) bool { return d.Name == in.Replace }) {
+		return nil, notFound("no device %q", in.Replace)
 	}
 	if p.st.Config().Network.Tailscale == "" { // the code would point at a placeholder no device can reach
 		return nil, conflict("Tailscale Serve isn't set up: finish Settings › Tailscale first")
@@ -661,9 +676,13 @@ func (p *Pool) musePairCode(_ context.Context, c gateway.Caller, _ json.RawMessa
 	if p.museCodes == nil {
 		p.museCodes = map[string]*musePairCode{}
 	}
-	p.museCodes[code] = &musePairCode{code: code, expires: time.Now().Add(5 * time.Minute)}
+	p.museCodes[code] = &musePairCode{code: code, expires: time.Now().Add(5 * time.Minute), replace: in.Replace}
 	p.museMu.Unlock()
-	p.logf("muse pairing code made")
+	if in.Replace != "" {
+		p.logf("muse re-pairing code made for %q", in.Replace)
+	} else {
+		p.logf("muse pairing code made")
+	}
 	return musePairCodeOut{Code: code, URL: p.museBaseURL() + "/api/muse/v1"}, nil
 }
 
@@ -714,6 +733,7 @@ func (p *Pool) musePair(_ context.Context, _ gateway.Caller, raw json.RawMessage
 	// names a live code, so counting per code would count nothing.
 	if time.Now().Before(p.musePairBlocked) {
 		p.museMu.Unlock()
+		p.noteMuseRefused("pairing_paused", "", "")
 		return nil, &protocol.Error{Code: protocol.CodeUnavailable, Message: "too many wrong codes, try again later", RetryAfter: 60}
 	}
 	code := strings.TrimSpace(in.Code)
@@ -729,6 +749,7 @@ func (p *Pool) musePair(_ context.Context, _ gateway.Caller, raw json.RawMessage
 			p.musePairFails = 0
 		}
 		p.museMu.Unlock()
+		p.noteMuseRefused("bad_code", "", "")
 		return nil, protocol.Errorf(protocol.CodeUnauthorized, "bad or expired code")
 	}
 	delete(p.museCodes, code)
@@ -740,6 +761,31 @@ func (p *Pool) musePair(_ context.Context, _ gateway.Caller, raw json.RawMessage
 	}
 	token := hex.EncodeToString(tok[:])
 	sum := sha256.Sum256([]byte(token))
+	hash := hex.EncodeToString(sum[:])
+	if pc.replace != "" { // a re-pair: the named device's token is replaced, nothing else
+		if name != pc.replace {
+			return nil, conflict("this code re-pairs %s only", pc.replace)
+		}
+		old := ""
+		err := p.st.UpdateConfig(func(cfg *store.Config) error {
+			i := slices.IndexFunc(cfg.MuseDevices, func(d store.MuseDevice) bool { return d.Name == name })
+			if i < 0 { // revoked since the code was made: it stays revoked
+				return notFound("%s is no longer paired", name)
+			}
+			old = cfg.MuseDevices[i].TokenHash
+			cfg.MuseDevices[i].TokenHash, cfg.MuseDevices[i].RepairedAt = hash, now()
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		p.museMu.Lock()
+		p.noteRevokedLocked(old, name)
+		delete(p.lastNext, name)
+		p.museMu.Unlock()
+		p.logf("muse device re-paired: %q", name)
+		return map[string]string{"token": token}, nil
+	}
 	err := p.st.UpdateConfig(func(cfg *store.Config) error {
 		for _, d := range cfg.MuseDevices {
 			// One name, one token (the code is burnt already: a code is one
@@ -749,14 +795,14 @@ func (p *Pool) musePair(_ context.Context, _ gateway.Caller, raw json.RawMessage
 			}
 		}
 		cfg.MuseDevices = append(cfg.MuseDevices, store.MuseDevice{
-			Name: name, TokenHash: hex.EncodeToString(sum[:]), CreatedAt: now(),
+			Name: name, TokenHash: hash, CreatedAt: now(),
 		})
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	p.logf("muse device paired: %s", name)
+	p.logf("muse device paired: %q", name)
 	return map[string]string{"token": token}, nil
 }
 
@@ -770,11 +816,13 @@ func (p *Pool) museRevoke(_ context.Context, _ gateway.Caller, raw json.RawMessa
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return nil, invalid("params: %v", err)
 	}
+	old := ""
 	err := p.st.UpdateConfig(func(cfg *store.Config) error {
 		i := slices.IndexFunc(cfg.MuseDevices, func(d store.MuseDevice) bool { return d.Name == in.Name })
 		if i < 0 {
 			return notFound("no device %q", in.Name)
 		}
+		old = cfg.MuseDevices[i].TokenHash
 		cfg.MuseDevices = slices.Delete(cfg.MuseDevices, i, i+1)
 		return nil
 	})
@@ -782,15 +830,17 @@ func (p *Pool) museRevoke(_ context.Context, _ gateway.Caller, raw json.RawMessa
 		return nil, err
 	}
 	p.museMu.Lock()
+	p.noteRevokedLocked(old, in.Name)
 	delete(p.lastNext, in.Name)
 	p.museMu.Unlock()
-	p.logf("muse device revoked: %s", in.Name)
+	p.logf("muse device revoked: %q", in.Name)
 	return map[string]string{"revoked": in.Name}, nil
 }
 
 type museDeviceView struct {
 	Name     string `json:"name"`
 	Created  string `json:"created_at"`
+	Repaired string `json:"repaired_at,omitempty"`
 	LastSeen string `json:"last_seen,omitempty"`
 }
 
@@ -799,7 +849,7 @@ func (p *Pool) museDevices(_ context.Context, _ gateway.Caller, _ json.RawMessag
 	cfg := p.st.Config()
 	out := []museDeviceView{}
 	for _, d := range cfg.MuseDevices {
-		out = append(out, museDeviceView{Name: d.Name, Created: d.CreatedAt, LastSeen: d.LastSeen})
+		out = append(out, museDeviceView{Name: d.Name, Created: d.CreatedAt, Repaired: d.RepairedAt, LastSeen: d.LastSeen})
 	}
 	return out, nil
 }

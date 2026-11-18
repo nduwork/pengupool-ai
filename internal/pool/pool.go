@@ -142,6 +142,11 @@ type Pool struct {
 	museInflight    map[string]bool           // device\x00key -> an answer still running
 	museWake        chan struct{}             // closed when the set of waiting asks may have changed (museChanged)
 	lastNext        map[string]string         // device -> the card museNext last logged for it
+	museRefused     []museRefusal             // the last museRefusedMax refused device-API requests, oldest first
+	museRevoked     []museRevokedHash         // the last museRefusedMax revoked token hashes, to tell revoked from unknown
+	serveKick       chan struct{}             // wakes the Serve watchdog now (settings.serveCheck)
+	serveWatchMu    sync.Mutex                // guards serveWatch
+	serveWatch      serveWatchResult          // the watchdog's last round
 	db              *agentdb.DB               // agents.db: the Compass and logs; nil if it could not open
 	formMu          sync.Mutex                // formation changes apply one at a time
 
@@ -177,8 +182,8 @@ func New(o Options) *Pool {
 		env = withUserPath(agentEnv(os.Environ()), os.Getenv("HOME"))
 	}
 	p := &Pool{
-		triageErr: triageUnchecked,
-		st:        o.Store, hub: o.Hub, exe: o.Exe, env: env, logf: logf, nodes: o.Nodes, version: o.Version, shutdown: o.Shutdown,
+		triageErr: triageUnchecked, serveKick: make(chan struct{}, 1),
+		st: o.Store, hub: o.Hub, exe: o.Exe, env: env, logf: logf, nodes: o.Nodes, version: o.Version, shutdown: o.Shutdown,
 		msgSock: map[string]claudeInbox{}, crossOK: map[sessionPair]time.Time{}, injected: map[string]map[string]string{},
 		lastInput: map[string]time.Time{}, pending: map[string][]protocol.TeamMessage{},
 		ownerEnter: map[string][]credit{}, requireOwnerInput: o.RequireOwnerInput,
@@ -452,6 +457,9 @@ func (p *Pool) handlers() map[string]handler {
 		"muse.member":           museBoundary(p.museMember),
 		"muse.pair":             museBoundary(p.musePair),
 		"muse.pairCode":         p.musePairCode,
+		"muse.status":           museBoundary(p.museStatus),
+		"muse.connection":       p.museConnection,
+		"settings.serveCheck":   bind(p.settingsServeCheck),
 		"muse.devices":          p.museDevices,
 		"muse.revoke":           p.museRevoke,
 		"backup.get":            bind(p.syncGet), // the old names, kept one release
