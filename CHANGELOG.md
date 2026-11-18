@@ -12,6 +12,10 @@ Muse Spark is no longer a decision model: Settings → Decision model offers Loc
 
 The README no longer carries the hackathon banner, demo or Credits section, and CONTRIBUTING drops its Credits pointer; the docs walk through Claude Code. `pengupool help` now lists `--type task` for `send`.
 
+Restarting or resuming a session that never got a prompt no longer fails: an agent saves its conversation only after its first prompt, so PenguPool now checks that the conversation is on disk and, when it isn't, starts the session fresh in the same place, team role and folder, and says so in a toast and in its run log ("restarted fresh"). **Restart & resume** checks that a session can come back (not a removed agent, not a deleted helper) before it stops it. A session that exits within 2 seconds of a restart is reported as failed with its exit code, both from **Restart & resume** and in the host log at restore, instead of being logged as resumed.
+
+A worktree reached through a symlink (`/tmp` and `/var` on macOS) is now seen as in use by the session running there, so it can't be removed under that session, and the worktree list names it the way the session does. Closing a sheet with Esc puts keyboard focus back on what opened it (the card or row a menu was for). A new session stays selected even when its first update arrives after the launch answer. The environment switcher's accessible name now starts with the host name it shows, and the Setup card's rows wrap instead of overflowing a narrow Sidebar.
+
 ## 0.11.4
 
 Muse Spark is now an ordinary decision model. In Settings → Decision model, Local hosted, Online / cloud and **Meta · Muse Spark** are three choices for one slot; each is saved, checked and chosen with **Use for triage**. An earlier Muse Spark setup becomes a saved Meta model, and the triage model in use stays as it is. Muse Spark is uncalibrated, so when it is the triage model nothing acts on its answers alone: check-ins go to you, the Compass asks, every Done report is kept, and team proposals keep each helper's own agent.

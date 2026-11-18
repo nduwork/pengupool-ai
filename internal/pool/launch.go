@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"os/exec"
@@ -377,7 +378,8 @@ type sessionIn struct {
 	SessionID string `json:"session_id"`
 }
 
-// resume relaunches an ended harness session from its transcript under the same domain id.
+// resume starts an ended agent session again under the same domain id: from its saved conversation, or
+// fresh in the same place when it has none.
 func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	s, ok := p.session(in.SessionID)
 	if !ok {
@@ -386,29 +388,60 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	if s.State == "running" {
 		return nil, conflict("session %s is still running", s.Name)
 	}
+	if err := p.canRelaunch(s); err != nil {
+		return nil, err
+	}
+	return p.relaunch(ctx, s, resumeIDOf(s))
+}
+
+// resumeIDOf is what the agent resumes s from: its conversation id, or OMP's and pi's session file.
+// "" when there is nothing to resume: no id was recorded, or the recorded transcript is not on disk
+// (an agent reports its id at start but saves the conversation only after its first prompt).
+func resumeIDOf(s store.Session) string {
+	if s.Transcript != "" {
+		if _, err := os.Stat(s.Transcript); errors.Is(err, fs.ErrNotExist) {
+			return ""
+		}
+	}
+	if (s.Harness == harness.OMP || s.Harness == harness.Pi) && s.Transcript != "" {
+		return s.Transcript
+	}
+	return s.ConvID
+}
+
+// canRelaunch is every reason a session cannot be started again, checked before anything is stopped.
+func (p *Pool) canRelaunch(s store.Session) error {
 	if err := harness.Dropped(s.Harness); err != nil {
-		return nil, invalid("%v", err)
+		return invalid("%v", err)
 	}
 	if !harness.IsAgent(s.Harness) {
-		return nil, invalid("only agent sessions can be resumed")
-	}
-	resumeID := s.ConvID
-	if (s.Harness == harness.OMP || s.Harness == harness.Pi) && s.Transcript != "" {
-		resumeID = s.Transcript
-	}
-	if resumeID == "" {
-		return nil, invalid("no transcript was recorded for %s", s.Name)
+		return invalid("only agent sessions can be resumed")
 	}
 	if d := p.st.State().Domain; s.SkillID != "" && findSkill(&d, s.SkillID) == nil {
-		return nil, invalid("%s's helper was deleted; start a new session instead", s.Name)
+		return invalid("%s's helper was deleted; start a new session instead", s.Name)
 	}
+	return nil
+}
+
+// relaunched is a session started again; Fresh: it had no saved conversation, so it began a new one.
+type relaunched struct {
+	protocol.SessionView
+	Fresh bool `json:"fresh,omitempty"`
+}
+
+// relaunch starts a stopped agent session again under its own id, name, folder, team place, model and
+// read access: resumed from resumeID, or fresh when resumeID is "".
+func (p *Pool) relaunch(ctx context.Context, s store.Session, resumeID string) (any, error) {
 	keep := s
 	p.expireAsks(s.ID) // what it asked before it stopped has no one waiting: it asks again if it still needs to
 	ns, err := p.spawn(ctx, spawnReq{
 		ID: s.ID, Name: s.Name, Harness: s.Harness, Cwd: s.Cwd, Resume: resumeID, Cols: s.Cols, Rows: s.Rows, SkillID: keep.SkillID, Via: s.Via,
 		Model: keep.LaunchModel, ReadDirs: p.resumeReadDirs(keep), TeamID: keep.TeamID,
 		Decorate: func(n *store.Session) {
-			n.TeamID, n.Role, n.SkillID, n.ConvID, n.Transcript = keep.TeamID, keep.Role, keep.SkillID, keep.ConvID, keep.Transcript
+			n.TeamID, n.Role, n.SkillID = keep.TeamID, keep.Role, keep.SkillID
+			if resumeID != "" { // a fresh start names no conversation until its SessionStart reports one
+				n.ConvID, n.Transcript = keep.ConvID, keep.Transcript
+			}
 			if keep.RunLog != "" {
 				n.RunLog = keep.RunLog
 			}
@@ -417,8 +450,17 @@ func (p *Pool) resume(ctx context.Context, in sessionIn) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	p.logLine(ns.ID, "session: resumed from "+resumeID)
-	return ns.View(), nil
+	if resumeID == "" {
+		p.logLine(ns.ID, "session: restarted fresh")
+	} else {
+		p.logLine(ns.ID, "session: resumed from "+resumeID)
+	}
+	return relaunched{ns.View(), resumeID == ""}, nil
+}
+
+// samePath compares two folders after symlinks (git reports /private/var where a caller said /var).
+func samePath(a, b string) bool {
+	return a != "" && b != "" && (a == b || realPath(a) == realPath(b))
 }
 
 // resumeReadDirs is what s was started reading; a session from before that was recorded gets

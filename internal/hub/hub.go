@@ -632,6 +632,14 @@ func (h *Hub) waitHandshake(ctx context.Context, path string, exited <-chan erro
 		}
 		select {
 		case werr := <-exited:
+			// A child that exits at once takes its worker with it; the worker leaves its exit code in
+			// the handshake file first.
+			if hd, err := session.ReadHandshake(path); err == nil && hd.ExitCode != nil {
+				return session.Handshake{}, protocol.Errorf(protocol.CodeUnavailable, "it exited right after starting (exit code %d)", *hd.ExitCode)
+			}
+			if werr == nil {
+				return session.Handshake{}, protocol.Errorf(protocol.CodeUnavailable, "worker exited before its handshake")
+			}
 			return session.Handshake{}, protocol.Errorf(protocol.CodeUnavailable, "worker exited before its handshake: %v", werr)
 		case <-ctx.Done():
 			return session.Handshake{}, ctx.Err()

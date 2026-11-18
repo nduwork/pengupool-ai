@@ -112,6 +112,8 @@ type Pool struct {
 	saves       map[string]int                  // provider type → how often it was saved: a check started before a save does not count (guarded by mu)
 	// testSpawn stands in for starting a worker in tests.
 	testSpawn func(spawnReq) (store.Session, error)
+	// testKill stands in for stopping a worker in tests (killWorker).
+	testKill func(id string) error
 	// testScreen stands in for the hub's followed screens in tests.
 	testScreen func(id string) (string, bool)
 	// testSend stands in for delivering text to a session in tests, testKeys for typing into one.

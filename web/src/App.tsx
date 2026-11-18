@@ -6,6 +6,7 @@ import { Toaster, toast } from "sonner";
 
 import { Ctx, harnessLabel, HOOKS_LONG, hooksAction, isAgent, useApp, usePersisted, type AppCtx, type EditorTab, type Nav, type SpotCheck } from "./app/ctx";
 import { desktop, onSSHHost } from "./app/desktop";
+import { selectionWait } from "./app/selection";
 import { AttachSession, type AttachState } from "./client/attach";
 import { Connection, type ConnectionInfo } from "./client/connection";
 import { TerminalPane, pruneTerminals } from "./components/TerminalPane";
@@ -72,7 +73,30 @@ export function App(): ReactElement {
   const [selected, setSelected] = useState<string | null>(null);
   const [, setAttachState] = useState<AttachState | null>(null);
   const [nav, setNav] = useState<Nav>("workspace");
-  const [dialog, setDialog] = useState<ReactNode>(null);
+  const [dialog, setDialogState] = useState<ReactNode>(null);
+  // A closed sheet hands keyboard focus back to what opened it; a sheet opened from a menu item goes back
+  // to what had focus before the menu (the item is gone once the menu closes).
+  const opener = useRef<HTMLElement | null>(null);
+  const beforeMenu = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const on = (e: FocusEvent): void => {
+      if (e.target instanceof HTMLElement && e.target.closest('[role="menu"]') === null) beforeMenu.current = e.target;
+    };
+    document.addEventListener("focusin", on);
+    return () => document.removeEventListener("focusin", on);
+  }, []);
+  const setDialog = useCallback((d: ReactNode): void => {
+    if (d !== null) {
+      const a = document.activeElement;
+      const from = a instanceof HTMLElement && a.closest('[role="menu"]') !== null ? beforeMenu.current : a;
+      if (opener.current === null && from instanceof HTMLElement && from !== document.body) opener.current = from;
+    } else {
+      const el = opener.current;
+      opener.current = null;
+      if (el !== null) requestAnimationFrame(() => el.isConnected && el.focus());
+    }
+    setDialogState(d);
+  }, []);
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [activeTab, setActiveTab] = useState("map");
   const [theme, setTheme] = usePersisted<"dark" | "light">("theme", window.matchMedia?.("(prefers-color-scheme: light)").matches === true ? "light" : "dark");
@@ -142,12 +166,23 @@ export function App(): ReactElement {
     pruneTerminals(new Set(view.sessions.map((s) => s.id)));
   }, [view.sessions]);
 
+  // A session just selected may not be in the list yet (its state delta can come after the launch
+  // answer): wait up to SELECT_WAIT_MS for it before falling back.
+  const justSelected = useRef<{ id: string; at: number } | null>(null);
+  const [waitOver, setWaitOver] = useState(0); // re-runs the fallback when the wait runs out
   useEffect(() => {
-    if (selected !== null && view.sessions.some((s) => s.id === selected)) return;
-    const visible = view.sessions;
-    const first = visible.find((s) => s.state === "running") ?? visible[0];
+    if (selected !== null && view.sessions.some((s) => s.id === selected)) {
+      if (justSelected.current?.id === selected) justSelected.current = null; // seen: no more waiting for it
+      return;
+    }
+    const wait = selectionWait(justSelected.current, selected, Date.now());
+    if (wait > 0) {
+      const t = window.setTimeout(() => setWaitOver((n) => n + 1), wait);
+      return () => window.clearTimeout(t);
+    }
+    const first = view.sessions.find((s) => s.state === "running") ?? view.sessions[0];
     setSelected(first?.id ?? null);
-  }, [view, selected]);
+  }, [view, selected, waitOver]);
 
   useEffect(() => {
     const timer = window.setInterval(() => attachRef.current?.flushAck(), 200);
@@ -222,6 +257,7 @@ export function App(): ReactElement {
   );
 
   const select = useCallback((id: string | null) => {
+    justSelected.current = id === null ? null : { id, at: Date.now() };
     setSelected(id);
     setNav("workspace");
     if (panels.terminal.current?.isCollapsed()) panels.terminal.current.expand();
@@ -332,7 +368,12 @@ export function App(): ReactElement {
         </p>
         <div className="flex gap-2">
           {isAgent(selectedView) ? (
-            <Button variant="default" onClick={() => void call("session.resume", { session_id: selectedView.id })}>
+            <Button variant="default" onClick={() => {
+                const name = selectedView.name;
+                void call<{ fresh?: boolean }>("session.resume", { session_id: selectedView.id }).then((r) => {
+                  if (r?.fresh === true) toast(`${name} had no saved conversation, so it started fresh in the same place.`);
+                });
+              }}>
               Resume conversation
             </Button>
           ) : null}

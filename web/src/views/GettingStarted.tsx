@@ -62,15 +62,15 @@ export function GettingStarted({ reserve = false }: { reserve?: boolean }): Reac
             if (s.section !== undefined) setSection(s.section);
             app.setNav(s.nav);
           }}
-          className="flex h-8 w-full items-center gap-2 rounded-md px-1 hover:bg-hover"
+          className="flex min-h-8 w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md px-1 py-1 text-left hover:bg-hover"
         >
           {s.done ? <Check className="size-3.5 shrink-0 text-success" /> : <Circle className="size-3.5 shrink-0 text-faint" />}
-          <span className="shrink-0 font-medium">{s.label}</span>
+          <span className="min-w-0 truncate font-medium">{s.label}</span>
           <span className={cn("min-w-0 flex-1 truncate text-right text-caption", s.done ? "text-faint" : "text-muted-foreground")} title={s.detail}>
             {s.detail}
           </span>
           {s.done ? null : (
-            <span aria-hidden className="shrink-0 rounded-md border border-border px-2 py-0.5 text-caption">
+            <span aria-hidden className="ml-auto shrink-0 rounded-md border border-border px-2 py-0.5 text-caption">
               {s.action}
             </span>
           )}
